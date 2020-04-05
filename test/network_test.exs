@@ -1,4 +1,4 @@
-defmodule DockerfileTest do
+defmodule NetworkTest do
   use ExUnit.Case
 
   test "generate new ips" do

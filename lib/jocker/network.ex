@@ -48,7 +48,7 @@ defmodule Jocker.Network do
   @impl true
   def handle_cast({:remove, ip}, state) do
     new_in_use = remove_ip(ip, state)
-    {:noreply, state[[in_use: new_in_use]]}
+    {:noreply, state(state, in_use: new_in_use)}
   end
 
   @impl true
