@@ -3,38 +3,7 @@ defmodule Jocker.MetaData do
   use GenServer
   use Amnesia
   require Config
-  require Record
-
-  Record.defrecord(:layer,
-    id: :none,
-    parent_id: :none,
-    dataset: :none,
-    snapshot: :none,
-    mountpoint: :none
-  )
-
-  Record.defrecord(:image,
-    id: :none,
-    name: :none,
-    tag: :none,
-    layer: :none,
-    command: :none,
-    user: "root",
-    created: :none
-  )
-
-  Record.defrecord(:container,
-    id: :none,
-    name: :none,
-    running: :none,
-    pid: :none,
-    command: :none,
-    layer: :none,
-    ip: :none,
-    image_id: :none,
-    parameters: [],
-    created: :none
-  )
+  import Jocker.Records
 
   def start_link() do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
@@ -61,6 +30,14 @@ defmodule Jocker.MetaData do
 
       Amnesia.Table.write(:image, new_img)
     end
+  end
+
+  def add_layer(layer) do
+    Amnesia.transaction(fn -> Amnesia.Table.write(:layer, layer) end)
+  end
+
+  def get_layer(layer_id) do
+    Amnesia.transaction(fn -> Amnesia.Table.read(:layer, layer_id) end)
   end
 
   def get_image(id_or_tag) do

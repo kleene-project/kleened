@@ -1,13 +1,7 @@
 defmodule MetaDataTest do
   use ExUnit.Case
   import Jocker.MetaData
-
-  # test "starting mnesia" do
-  #  Jocker.ZFS.clear_zroot()
-  #  result = Jocker.MetaData.start_link()
-  #  assert {:ok, pid} = result
-  #  GenServer.stop(pid)
-  # end
+  import Jocker.Records
 
   setup_all do
     Jocker.MetaData.start_link()
@@ -38,6 +32,15 @@ defmodule MetaDataTest do
     assert image1 = get_image("test:oldest")
     assert image2 = get_image("test")
     assert [img2, img1] == list_images()
+  end
+
+  test "adding and getting layers" do
+    layer1 = layer(id: "lol", dataset: "tank/test", mountpoint: "/tank/test/")
+    layer2 = layer(layer1, snapshot: "/tank/test@testing")
+    add_layer(layer1)
+    assert layer1 = get_layer("lol")
+    add_layer(layer2)
+    assert layer2 = get_layer("lol")
   end
 
   test "list containers" do
