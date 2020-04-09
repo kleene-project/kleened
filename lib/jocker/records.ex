@@ -22,7 +22,7 @@ defmodule Jocker.Records do
   Record.defrecord(:container,
     id: :none,
     name: :none,
-    running: :none,
+    running: false,
     pid: :none,
     command: :none,
     layer: :none,
