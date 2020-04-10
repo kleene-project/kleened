@@ -32,6 +32,21 @@ defmodule ContainerTest do
     assert id == img_id
   end
 
+  test "start a container from the supervised container-pool" do
+    opts = [
+      cmd: ["/bin/echo", "test test"],
+      jail_param: []
+    ]
+
+    Jocker.ContainerPool.start_link([])
+    {:ok, pid} = Jocker.ContainerPool.create(opts)
+    Jocker.Container.attach(pid)
+    Jocker.Container.start(pid)
+
+    assert_receive {:container, ^pid, "test test\n"}
+    assert_receive {:container, ^pid, "jail stopped"}
+  end
+
   test "start a container (using devfs), attach to it and receive output" do
     opts = [
       cmd: ["/bin/echo", "test test"],

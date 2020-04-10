@@ -43,18 +43,19 @@ defmodule Jocker.Container do
 
     command = Keyword.get(opts, :cmd, default_cmd)
     user = Keyword.get(opts, :user, default_user)
-
     jail_param = Keyword.get(opts, :jail_param, [])
+    overwrite = Keyword.get(opts, :overwrite, false)
 
     case Keyword.get(opts, :subscribe, nil) do
-      nil ->
-        []
-
-      pid when is_pid(pid) ->
-        [pid]
+      nil -> []
+      pid when is_pid(pid) -> [pid]
     end
 
-    layer = Jocker.Layer.initialize(parent_layer)
+    layer =
+      case overwrite do
+        true -> parent_layer
+        false -> Jocker.Layer.initialize(parent_layer)
+      end
 
     container =
       container(
@@ -104,7 +105,7 @@ defmodule Jocker.Container do
     {:noreply, state}
   end
 
-  def handle_info({port, {:exit_status, 0}}, %State{:starting_port => port} = state) do
+  def handle_info({port, {:exit_status, _}}, %State{:starting_port => port} = state) do
     IO.puts("Jail-starting process exited succesfully.")
 
     case is_jail_running?(state.container) do
