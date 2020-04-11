@@ -30,12 +30,8 @@ defmodule Jocker.Network do
         if_name: if_name
       )
 
-    {"", _exitcode} = System.cmd("ifconfig", [if_name, "destroy"])
+    create_network_interface(if_name)
 
-    _if_name_out = if_name <> "\n"
-    {_if_name_out, 0} = System.cmd("ifconfig", ["lo", "create", "name", if_name])
-
-    Process.flag(:trap_exit, true)
     {:ok, state}
   end
 
@@ -58,6 +54,20 @@ defmodule Jocker.Network do
   end
 
   ### Internal functions
+  defp create_network_interface(jocker_if) do
+    if interface_exists(jocker_if) do
+      {"", _exitcode} = System.cmd("ifconfig", [jocker_if, "destroy"])
+    end
+
+    _jocker_if_out = jocker_if <> "\n"
+    {_jocker_if_out, 0} = System.cmd("ifconfig", ["lo", "create", "name", jocker_if])
+  end
+
+  defp interface_exists(jocker_if) do
+    {if_list, 0} = System.cmd("ifconfig", ["-l"])
+    if_list |> String.trim() |> String.split() |> Enum.find_value(fn x -> x == jocker_if end)
+  end
+
   defp remove_ip(ip, state(in_use: in_use)) do
     ip_int = ip2int(ip)
     MapSet.delete(in_use, ip_int)
