@@ -8,26 +8,10 @@ defmodule ImageTest do
   end
 
   setup do
-    start_supervised(%{
-      :id => Jocker.MetaData,
-      :start => {Jocker.MetaData, :start_link, []}
-    })
-
-    start_supervised(%{
-      :id => Jocker.Layer,
-      :start => {Jocker.Layer, :start_link, []}
-    })
-
-    start_supervised(%{
-      :id => Jocker.Network,
-      :start => {Jocker.Network, :start_link, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]}
-    })
-
-    start_supervised(%{
-      :id => Jocker.ContainerPool,
-      :start => {Jocker.ContainerPool, :start_link, []}
-    })
-
+    start_supervised(Jocker.MetaData)
+    start_supervised(Jocker.Layer)
+    start_supervised({Jocker.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
+    start_supervised(Jocker.ContainerPool)
     :ok
   end
 

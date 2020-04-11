@@ -5,7 +5,7 @@ defmodule Jocker.MetaData do
   require Config
   import Jocker.Records
 
-  def start_link() do
+  def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
 

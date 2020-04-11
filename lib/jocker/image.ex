@@ -69,6 +69,6 @@ defmodule Jocker.Image do
     sources = Enum.map(relative_sources, fn src -> Path.join(context, src) end)
     dest = Path.join(mountpoint, relative_dest)
     args = Enum.reverse([dest | sources])
-    {output, 0} = System.cmd("/bin/cp", ["-R" | args])
+    {_output, 0} = System.cmd("/bin/cp", ["-R" | args])
   end
 end

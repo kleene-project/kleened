@@ -4,7 +4,7 @@ defmodule MetaDataTest do
   import Jocker.Records
 
   setup_all do
-    Jocker.MetaData.start_link()
+    Jocker.MetaData.start_link([])
     :ok
   end
 

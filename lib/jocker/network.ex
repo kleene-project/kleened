@@ -9,7 +9,7 @@ defmodule Jocker.Network do
     if_name: :none
   )
 
-  def start_link(range, if_name) do
+  def start_link([range, if_name]) do
     GenServer.start_link(__MODULE__, [range, if_name], name: __MODULE__)
   end
 
