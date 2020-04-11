@@ -2,8 +2,8 @@ defmodule Jocker.ContainerPool do
   # Automatically defines child_spec/1
   use Supervisor
 
-  def start_link(init_arg) do
-    Supervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
+  def start_link() do
+    Supervisor.start_link(__MODULE__, [], name: __MODULE__)
   end
 
   def create(opts) do
@@ -11,7 +11,7 @@ defmodule Jocker.ContainerPool do
   end
 
   @impl true
-  def init(_init_arg) do
+  def init([]) do
     children = [
       %{
         :id => Jocker.Container,
@@ -19,7 +19,6 @@ defmodule Jocker.ContainerPool do
       }
     ]
 
-    # supervise(children, strategy: :simple_one_for_one)
     Supervisor.init(children, strategy: :simple_one_for_one)
   end
 end

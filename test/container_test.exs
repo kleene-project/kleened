@@ -38,7 +38,7 @@ defmodule ContainerTest do
       jail_param: []
     ]
 
-    Jocker.ContainerPool.start_link([])
+    Jocker.ContainerPool.start_link()
     {:ok, pid} = Jocker.ContainerPool.create(opts)
     Jocker.Container.attach(pid)
     Jocker.Container.start(pid)
