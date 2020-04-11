@@ -46,12 +46,7 @@ defmodule Jocker.Container do
     jail_param = Keyword.get(opts, :jail_param, [])
     overwrite = Keyword.get(opts, :overwrite, false)
 
-    case Keyword.get(opts, :subscribe, nil) do
-      nil -> []
-      pid when is_pid(pid) -> [pid]
-    end
-
-    layer =
+    new_layer =
       case overwrite do
         true -> parent_layer
         false -> Jocker.Layer.initialize(parent_layer)
@@ -60,12 +55,11 @@ defmodule Jocker.Container do
     container =
       container(
         id: Jocker.Utils.uuid(),
-        # FIXME:
-        name: :implment_me,
+        name: Jocker.NameGenerator.new(),
         ip: Jocker.Network.new(),
         pid: self(),
         command: command,
-        layer: layer,
+        layer: new_layer,
         image_id: image_id,
         parameters: ["exec.jail_user=" <> user | jail_param],
         created: :erlang.timestamp()
@@ -77,7 +71,7 @@ defmodule Jocker.Container do
 
   @impl true
   def handle_call({:attach, pid}, _from, %State{subscribers: subscribers} = state) do
-    {:reply, :ok, %State{state | subscribers: [pid | subscribers]}}
+    {:reply, :ok, %State{state | subscribers: Enum.uniq([pid | subscribers])}}
   end
 
   def handle_call(:metadata, _from, %State{container: container} = state) do
