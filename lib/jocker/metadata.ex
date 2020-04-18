@@ -73,21 +73,21 @@ defmodule Jocker.MetaData do
     sort_images(extract(result))
   end
 
-  def list_containers() do
-    match = :_
-    matchspec = [{match, [], [:"$_"]}]
+  def list_containers(opts \\ []) do
+    matchspec =
+      case Keyword.get(opts, :all, false) do
+        false ->
+          match_all = container(_: :_)
+          match = container(match_all, running: true)
+          [{match, [], [:"$_"]}]
+
+        true ->
+          match = container(_: :_)
+          [{match, [], [:"$_"]}]
+      end
 
     result = Amnesia.transaction(fn -> Amnesia.Table.select(:container, matchspec) end)
     sort_containers(extract(result))
-  end
-
-  def list_running_containers() do
-    match_all = container(_: :_)
-    match = container(match_all, running: true)
-    matchspec = [{match, [], [:"$_"]}]
-
-    result = Amnesia.transaction(fn -> Amnesia.Table.select(:container, matchspec) end)
-    extract(result)
   end
 
   def clear_tables do

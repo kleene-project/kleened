@@ -43,11 +43,11 @@ defmodule MetaDataTest do
     assert layer2 = get_layer("lol")
   end
 
-  test "list containers" do
+  test "list all containers" do
     add_container(container(id: "1337", name: "test1", created: now()))
     add_container(container(id: "1338", name: "test2", created: now()))
     add_container(container(id: "1339", name: "test3", created: now()))
-    containers = list_containers()
+    containers = list_containers(all: true)
 
     assert [
              container(id: "1339"),
@@ -59,9 +59,11 @@ defmodule MetaDataTest do
   test "list running containers" do
     add_container(container(id: "1", name: "test1", created: now()))
     add_container(container(id: "2", name: "test2", running: true, created: now()))
-    containers = list_running_containers()
+    containers = list_containers()
+    containers2 = list_containers(all: false)
 
     assert [container(id: "2")] = containers
+    assert containers == containers2
   end
 
   defp now(), do: :erlang.timestamp()
