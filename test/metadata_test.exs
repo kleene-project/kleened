@@ -1,10 +1,10 @@
 defmodule MetaDataTest do
   use ExUnit.Case
-  import Jocker.MetaData
-  import Jocker.Records
+  import Jocker.Engine.MetaData
+  import Jocker.Engine.Records
 
   setup_all do
-    Jocker.MetaData.start_link([])
+    Jocker.Engine.MetaData.start_link([])
     :ok
   end
 

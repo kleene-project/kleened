@@ -1,4 +1,4 @@
-defmodule Jocker.Utils do
+defmodule Jocker.Engine.Utils do
   def decode_tagname(tagname) do
     case String.split(tagname, ":") do
       [name] ->

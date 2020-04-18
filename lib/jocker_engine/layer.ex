@@ -1,7 +1,7 @@
-defmodule Jocker.Layer do
+defmodule Jocker.Engine.Layer do
   use GenServer
-  import Jocker.Records
-  require Jocker.Config
+  import Jocker.Engine.Records
+  require Jocker.Engine.Config
 
   def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
@@ -33,9 +33,9 @@ defmodule Jocker.Layer do
   end
 
   defp initialize_(layer(snapshot: parent_snapshot)) do
-    id = Jocker.Utils.uuid()
-    dataset = Path.join(Jocker.Config.zroot(), id)
-    0 = Jocker.ZFS.clone(parent_snapshot, dataset)
+    id = Jocker.Engine.Utils.uuid()
+    dataset = Path.join(Jocker.Engine.Config.zroot(), id)
+    0 = Jocker.Engine.ZFS.clone(parent_snapshot, dataset)
 
     new_layer =
       layer(
@@ -44,15 +44,15 @@ defmodule Jocker.Layer do
         mountpoint: Path.join("/", dataset)
       )
 
-    Jocker.MetaData.add_layer(new_layer)
+    Jocker.Engine.MetaData.add_layer(new_layer)
     new_layer
   end
 
   defp finalize_(layer(dataset: dataset) = layer) do
     snapshot = dataset <> "@layer"
-    0 = Jocker.ZFS.snapshot(snapshot)
+    0 = Jocker.Engine.ZFS.snapshot(snapshot)
     updated_layer = layer(layer, snapshot: snapshot)
-    Jocker.MetaData.add_layer(updated_layer)
+    Jocker.Engine.MetaData.add_layer(updated_layer)
     updated_layer
   end
 end

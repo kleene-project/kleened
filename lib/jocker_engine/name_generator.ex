@@ -1,4 +1,4 @@
-defmodule Jocker.NameGenerator do
+defmodule Jocker.Engine.NameGenerator do
   def new() do
     adjectives = adjective_list()
     names = name_list()

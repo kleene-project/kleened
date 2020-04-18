@@ -1,5 +1,5 @@
-defmodule Jocker.ZFS do
-  import Jocker.Config
+defmodule Jocker.Engine.ZFS do
+  import Jocker.Engine.Config
 
   def clear_zroot do
     destroy_force(zroot())
@@ -36,7 +36,7 @@ defmodule Jocker.ZFS do
   end
 
   def cmd(cmd) do
-   {_stdout, exit_code} = System.cmd("/sbin/zfs", cmd)
+    {_stdout, exit_code} = System.cmd("/sbin/zfs", cmd)
     exit_code
   end
 end

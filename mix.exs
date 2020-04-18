@@ -8,7 +8,7 @@ defmodule Jocker.MixProject do
       elixir: "~> 1.9",
       start_permanent: Mix.env() == :prod,
       escript: [
-        main_module: JockerCLI,
+        main_module: Jocker.CLI.Main,
         name: "jocker",
         app: nil,
         embed_elixir: true
@@ -21,7 +21,7 @@ defmodule Jocker.MixProject do
   def application do
     [
       extra_applications: [:logger],
-      mod: {Jocker.Application, []}
+      mod: {Jocker.Engine.Application, []}
     ]
   end
 

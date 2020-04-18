@@ -1,4 +1,4 @@
-defmodule Jocker.Network do
+defmodule Jocker.Engine.Network do
   use GenServer
   require Record
 

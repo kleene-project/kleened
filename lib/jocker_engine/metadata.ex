@@ -1,9 +1,9 @@
-defmodule Jocker.MetaData do
-  alias Jocker.Config
+defmodule Jocker.Engine.MetaData do
+  alias Jocker.Engine.Config
   use GenServer
   use Amnesia
   require Config
-  import Jocker.Records
+  import Jocker.Engine.Records
 
   def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
@@ -47,7 +47,7 @@ defmodule Jocker.MetaData do
           image
 
         nil ->
-          {name, tag} = Jocker.Utils.decode_tagname(id_or_tag)
+          {name, tag} = Jocker.Engine.Utils.decode_tagname(id_or_tag)
           match_all = image(_: :_)
           match = image(match_all, name: name, tag: tag)
           matchspec = [{match, [], [:"$_"]}]

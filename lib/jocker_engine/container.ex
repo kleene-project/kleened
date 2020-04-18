@@ -1,11 +1,12 @@
-defmodule Jocker.Container do
+defmodule Jocker.Engine.Container do
   defmodule State do
     defstruct container: nil,
               subscribers: nil,
               starting_port: nil
   end
 
-  import Jocker.Records
+  alias Jocker.Engine.MetaData
+  import Jocker.Engine.Records
   use GenServer
 
   ### ===================================================================
@@ -39,7 +40,7 @@ defmodule Jocker.Container do
       user: default_user,
       command: default_cmd,
       layer: parent_layer
-    ) = Keyword.get(opts, :image, Jocker.MetaData.get_image("base"))
+    ) = Keyword.get(opts, :image, MetaData.get_image("base"))
 
     command = Keyword.get(opts, :cmd, default_cmd)
     user = Keyword.get(opts, :user, default_user)
@@ -49,14 +50,14 @@ defmodule Jocker.Container do
     new_layer =
       case overwrite do
         true -> parent_layer
-        false -> Jocker.Layer.initialize(parent_layer)
+        false -> Jocker.Engine.Layer.initialize(parent_layer)
       end
 
     container =
       container(
-        id: Jocker.Utils.uuid(),
-        name: Jocker.NameGenerator.new(),
-        ip: Jocker.Network.new(),
+        id: Jocker.Engine.Utils.uuid(),
+        name: Jocker.Engine.NameGenerator.new(),
+        ip: Jocker.Engine.Network.new(),
         pid: self(),
         command: command,
         layer: new_layer,
@@ -65,7 +66,7 @@ defmodule Jocker.Container do
         created: :erlang.timestamp()
       )
 
-    Jocker.MetaData.add_container(container)
+    MetaData.add_container(container)
     {:ok, %State{container: container, subscribers: []}}
   end
 
@@ -81,7 +82,7 @@ defmodule Jocker.Container do
   def handle_call(:start, _from, %State{:container => container} = state) do
     port = start_(container)
     updated_container = container(container, running: true)
-    Jocker.MetaData.add_container(updated_container)
+    MetaData.add_container(updated_container)
     {:reply, :ok, %State{state | :container => updated_container, :starting_port => port}}
   end
 
@@ -136,7 +137,7 @@ defmodule Jocker.Container do
         pid: nil
       )
 
-    Jocker.MetaData.add_container(updated_container)
+    MetaData.add_container(updated_container)
   end
 
   ### ===================================================================

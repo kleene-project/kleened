@@ -1,17 +1,18 @@
 defmodule ImageTest do
   use ExUnit.Case
-  require Jocker.Config
-  import Jocker.Records
+  require Jocker.Engine.Config
+  alias Jocker.Engine.Image
+  import Jocker.Engine.Records
 
   setup_all do
-    Jocker.ZFS.clear_zroot()
+    Jocker.Engine.ZFS.clear_zroot()
   end
 
   setup do
-    start_supervised(Jocker.MetaData)
-    start_supervised(Jocker.Layer)
-    start_supervised({Jocker.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
-    start_supervised(Jocker.ContainerPool)
+    start_supervised(Jocker.Engine.MetaData)
+    start_supervised(Jocker.Engine.Layer)
+    start_supervised({Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
+    start_supervised(Jocker.Engine.ContainerPool)
     :ok
   end
 
@@ -23,7 +24,7 @@ defmodule ImageTest do
       run: ["/bin/sh", "-c", "echo 'lol1' > " <> file_path]
     ]
 
-    image(layer: layer(mountpoint: mountpoint)) = Jocker.Image.create_image(instructions)
+    image(layer: layer(mountpoint: mountpoint)) = Image.create_image(instructions)
     assert File.read(Path.join(mountpoint, file_path)) == {:ok, "lol1\n"}
   end
 
@@ -34,7 +35,7 @@ defmodule ImageTest do
     ]
 
     context = create_test_context("test_copy_instruction")
-    image(layer: layer(mountpoint: mountpoint)) = Jocker.Image.create_image(instructions, context)
+    image(layer: layer(mountpoint: mountpoint)) = Image.create_image(instructions, context)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
   end
 
@@ -47,16 +48,16 @@ defmodule ImageTest do
     ]
 
     context = create_test_context("test_image_builder_three_layers")
-    image(layer: layer(mountpoint: mountpoint)) = Jocker.Image.create_image(instructions, context)
+    image(layer: layer(mountpoint: mountpoint)) = Image.create_image(instructions, context)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test_1.txt")) == {:ok, "lol1\n"}
     assert File.read(Path.join(mountpoint, "root/test_2.txt")) == {:ok, "lol2\n"}
   end
 
   defp create_test_context(name) do
-    dataset = Path.join(Jocker.Config.zroot(), name)
+    dataset = Path.join(Jocker.Engine.Config.zroot(), name)
     mountpoint = Path.join("/", dataset)
-    Jocker.ZFS.create(dataset)
+    Jocker.Engine.ZFS.create(dataset)
     {"", 0} = System.cmd("sh", ["-c", "echo 'lol' > #{mountpoint}/test.txt"])
     mountpoint
   end

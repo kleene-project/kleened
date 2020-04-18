@@ -1,7 +1,7 @@
-defmodule Jocker.Image do
+defmodule Jocker.Engine.Image do
   # TODO: Need support for building multiple images from a set of instructions (i.e. a Dockerfile)
   # TODO: Need support for volumes
-  import Jocker.Records
+  import Jocker.Engine.Records
 
   defmodule State do
     defstruct context: nil,
@@ -18,16 +18,18 @@ defmodule Jocker.Image do
     %State{:image => image(layer: layer) = image} =
       Enum.reduce(instructions, state, &process_instructions/2)
 
-    finalized_layer = Jocker.Layer.finalize(layer)
+    finalized_layer = Jocker.Engine.Layer.finalize(layer)
     now = :erlang.timestamp()
     image(image, layer: finalized_layer, created: now)
   end
 
   defp process_instructions({:from, image_id}, state) do
-    image(layer: parent_layer) = parent_image = Jocker.MetaData.get_image(image_id)
-    new_layer = Jocker.Layer.initialize(parent_layer)
+    image(layer: parent_layer) = parent_image = Jocker.Engine.MetaData.get_image(image_id)
+    new_layer = Jocker.Engine.Layer.initialize(parent_layer)
     # TODO: Consider using the layer-id instead of generating a new one
-    build_image = image(parent_image, layer: new_layer, id: Jocker.Utils.uuid(), created: :none)
+    build_image =
+      image(parent_image, layer: new_layer, id: Jocker.Engine.Utils.uuid(), created: :none)
+
     %State{state | image: build_image}
   end
 
@@ -52,9 +54,9 @@ defmodule Jocker.Image do
       cmd: cmd
     ]
 
-    {:ok, pid} = Jocker.ContainerPool.create(opts)
-    Jocker.Container.attach(pid)
-    Jocker.Container.start(pid)
+    {:ok, pid} = Jocker.Engine.ContainerPool.create(opts)
+    Jocker.Engine.Container.attach(pid)
+    Jocker.Engine.Container.start(pid)
 
     receive do
       {:container, ^pid, "jail stopped"} -> :ok

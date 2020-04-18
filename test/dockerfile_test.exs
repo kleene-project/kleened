@@ -1,5 +1,5 @@
 defmodule DockerfileTest do
-  import Jocker.Dockerfile
+  import Jocker.Engine.Dockerfile
 
   use ExUnit.Case
 

@@ -1,7 +1,7 @@
 defmodule ZFSTest do
-  alias Jocker.Config
+  alias Jocker.Engine.Config
   require Config
-  import Jocker.ZFS
+  import Jocker.Engine.ZFS
 
   use ExUnit.Case
 

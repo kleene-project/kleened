@@ -1,4 +1,4 @@
-defmodule JockerCLI do
+defmodule Jocker.CLI.Main do
   @moduledoc """
   Documentation for the CLI-interface of jocker.
   """

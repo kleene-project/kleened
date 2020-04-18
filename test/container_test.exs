@@ -1,22 +1,24 @@
 defmodule ContainerTest do
   use ExUnit.Case
-  import Jocker.Records
+  alias Jocker.Engine.Container
+  alias Jocker.Engine.ContainerPool
+  import Jocker.Engine.Records
 
   setup_all do
-    Jocker.ZFS.clear_zroot()
+    Jocker.Engine.ZFS.clear_zroot()
   end
 
   setup do
-    start_supervised(Jocker.MetaData)
-    start_supervised(Jocker.Layer)
-    start_supervised({Jocker.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
+    start_supervised(Jocker.Engine.MetaData)
+    start_supervised(Jocker.Engine.Layer)
+    start_supervised({Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
     :ok
   end
 
   test "create a container and fetch metadata" do
-    image(id: id) = Jocker.MetaData.get_image("base")
-    {:ok, pid} = Jocker.Container.create([])
-    container(image_id: img_id) = Jocker.Container.metadata(pid)
+    image(id: id) = Jocker.Engine.MetaData.get_image("base")
+    {:ok, pid} = Container.create([])
+    container(image_id: img_id) = Container.metadata(pid)
     assert id == img_id
   end
 
@@ -26,10 +28,10 @@ defmodule ContainerTest do
       jail_param: []
     ]
 
-    Jocker.ContainerPool.start_link([])
-    {:ok, pid} = Jocker.ContainerPool.create(opts)
-    Jocker.Container.attach(pid)
-    Jocker.Container.start(pid)
+    ContainerPool.start_link([])
+    {:ok, pid} = ContainerPool.create(opts)
+    Container.attach(pid)
+    Container.start(pid)
 
     assert_receive {:container, ^pid, "test test\n"}
     assert_receive {:container, ^pid, "jail stopped"}
@@ -41,12 +43,12 @@ defmodule ContainerTest do
       jail_param: ["mount.devfs"]
     ]
 
-    {:ok, pid} = Jocker.Container.create(opts)
-    :ok = Jocker.Container.attach(pid)
+    {:ok, pid} = Container.create(opts)
+    :ok = Container.attach(pid)
 
-    container(command: cmd_out) = container = Jocker.Container.metadata(pid)
+    container(command: cmd_out) = container = Container.metadata(pid)
 
-    Jocker.Container.start(pid)
+    Container.start(pid)
 
     assert opts[:cmd] == cmd_out
     assert_receive {:container, ^pid, "test test\n"}
@@ -64,7 +66,7 @@ defmodule ContainerTest do
     Process.flag(:trap_exit, true)
 
     assert devfs_mounted(container)
-    :ok = Jocker.Container.stop(pid)
+    :ok = Container.stop(pid)
     assert_receive {:container, ^pid, "jail stopped"}
     assert_receive {:EXIT, ^pid, :normal}
     assert not devfs_mounted(container)
@@ -80,7 +82,7 @@ defmodule ContainerTest do
     {pid, container} = start_attached_container(opts)
 
     assert devfs_mounted(container)
-    :ok = Jocker.Container.stop(pid)
+    :ok = Container.stop(pid)
     assert not devfs_mounted(container)
   end
 
@@ -98,10 +100,10 @@ defmodule ContainerTest do
   end
 
   defp start_attached_container(opts) do
-    {:ok, pid} = Jocker.Container.create(opts)
-    :ok = Jocker.Container.attach(pid)
-    container = Jocker.Container.metadata(pid)
-    Jocker.Container.start(pid)
+    {:ok, pid} = Container.create(opts)
+    :ok = Container.attach(pid)
+    container = Container.metadata(pid)
+    Container.start(pid)
     {pid, container}
   end
 

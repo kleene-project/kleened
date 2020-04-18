@@ -1,4 +1,4 @@
-defmodule Jocker.Records do
+defmodule Jocker.Engine.Records do
   require Record
 
   Record.defrecord(:layer,

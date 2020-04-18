@@ -1,4 +1,4 @@
-defmodule Jocker.ContainerPool do
+defmodule Jocker.Engine.ContainerPool do
   # Automatically defines child_spec/1
   use Supervisor
 
@@ -14,8 +14,8 @@ defmodule Jocker.ContainerPool do
   def init([]) do
     children = [
       %{
-        :id => Jocker.Container,
-        :start => {Jocker.Container, :create, []}
+        :id => Jocker.Engine.Container,
+        :start => {Jocker.Engine.Container, :create, []}
       }
     ]
 

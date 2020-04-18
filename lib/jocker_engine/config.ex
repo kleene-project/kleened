@@ -1,4 +1,4 @@
-defmodule Jocker.Config do
+defmodule Jocker.Engine.Config do
   defmacro zroot, do: "zroot/mindflayer_dev"
 
   # Default image-snap to use when cloning: '@image'
