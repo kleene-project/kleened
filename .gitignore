@@ -24,3 +24,6 @@ jocker-*.tar
 
 # Ignore vim-session files
 vim_*
+
+# Ignore cli-binary
+jocker
