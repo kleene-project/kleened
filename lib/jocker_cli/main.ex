@@ -1,34 +1,24 @@
 defmodule Jocker.CLI.Main do
-  @moduledoc """
-  Documentation for the CLI-interface of jocker.
-  """
+  import Jocker.CLI.Docs
+  import Jocker.Engine.Records
+  alias Jocker.CLI.EngineClient
 
-  @doc """
-  Usage:	jocker [OPTIONS] COMMAND
-
-  A self-sufficient runtime for containers
-
-  Options:
-  -D, --debug              Enable debug mode
-  -v, --version            Print version information and quit
-
-  Management Commands:
-  container   Manage containers
-  image       Manage images
-
-  Run 'jocker COMMAND --help' for more information on a command.
-  """
-  def main(["--help"]) do
-    IO.puts(@doc)
+  def main(args) do
+    Process.register(self(), :cli_master)
+    spawn_link(__MODULE__, :main_, [args])
+    print_output()
   end
 
-  def main([]) do
-    main(["--help"])
+  def main_([]) do
+    main_(["--help"])
   end
 
-  def main(argv) do
+  def main_(["--help"]) do
+    to_cli(main_help(), :eof)
+  end
+
+  def main_(argv) do
     {options, args, invalid} =
-      head =
       OptionParser.parse_head(argv,
         aliases: [
           D: :debug,
@@ -41,11 +31,9 @@ defmodule Jocker.CLI.Main do
         ]
       )
 
-    IO.puts("DEBUG: #{inspect(head)}")
-
     case {options, args, invalid} do
       {_opts, [], []} ->
-        # FIXME: imeplement me
+        # FIXME: plz2implement
         :implement_me
 
       {[], rest, []} ->
@@ -55,13 +43,12 @@ defmodule Jocker.CLI.Main do
         parse_subcommand(rest)
 
       {_, _, [unknown_flag | _rest]} ->
-        print_error(:unknown_flag, unknown_flag)
+        to_cli("unknown flag: '#{unknown_flag}")
+        to_cli("See 'jocker --help'", :eof)
     end
   end
 
   defp parse_subcommand(argv) do
-    IO.puts("DEBUG parse_subcommand: #{inspect(argv)}")
-
     case argv do
       ["image" | []] ->
         image_help()
@@ -76,7 +63,7 @@ defmodule Jocker.CLI.Main do
         image_ls(opts)
 
       ["image", unknown_subcmd | _opts] ->
-        print_error(:unknown_subcommand, "image #{unknown_subcmd}")
+        to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.", :eof)
 
       ["container" | []] ->
         container_help()
@@ -91,41 +78,18 @@ defmodule Jocker.CLI.Main do
         container_build(opts)
 
       ["container", unknown_subcmd | _opts] ->
-        print_error(:unknown_subcommand, "container #{unknown_subcmd}")
+        to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.", :eof)
 
       [unknown_subcmd | _opts] ->
-        print_error(:unknown_subcommand, unknown_subcmd)
+        to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.", :eof)
 
       _unexpected ->
-        IO.puts("Unexpected error occured.")
+        to_cli("Unexpected error occured.", :eof)
     end
   end
 
-  @doc """
-  Usage:	jocker image COMMAND
-
-  Manage images
-
-  Commands:
-    build       Build an image from a Dockerfile
-    ls          List images
-
-  Run 'jocker image COMMAND --help' for more information on a command.
-  """
-  def image_help() do
-    IO.puts(@doc)
-  end
-
-  @doc """
-  Usage:	jocker image build [OPTIONS] PATH
-
-  Build an image from a Dockerfile
-
-  Options:
-  -t, --tag list                Name and optionally a tag in the 'name:tag' format
-  """
   def image_build(argv) do
-    case process_subcommand(@doc, "image build", argv,
+    case process_subcommand(image_build_help(), "image build", argv,
            aliases: [t: :tag],
            strict: [
              tag: :string,
@@ -133,13 +97,23 @@ defmodule Jocker.CLI.Main do
            ]
          ) do
       {options, [path]} ->
-        # FIXME we need tag-parser and constructing a real command for the backend:
-        tag = Keyword.get(options, :tag, "<none>:<none>")
-        IO.puts("COMMAND: image build -t #{tag} #{path}")
+        context = Path.absname(path)
+        dockerfile_path = Path.join(context, "Dockerfile")
+        tagname = Jocker.Engine.Utils.decode_tagname(Keyword.get(options, :tag, "<none>:<none>"))
+        rpc = [Jocker.Engine.Image, :build_image_from_file, [dockerfile_path, tagname, context]]
+        _output = EngineClient.command(rpc)
+
+        receive do
+          {:server_reply, {:ok, image(id: id)}} ->
+            to_cli("Image succesfully created with id #{id}", :eof)
+
+          what ->
+            IO.puts("ERROR: Unexpected message received from backend: #{inspect(what)}")
+        end
 
       {_options, []} ->
-        IO.puts("\"jocker image build\" requires exactly 1 argument.")
-        IO.puts(@doc)
+        to_cli("\"jocker image build\" requires exactly 1 argument.")
+        to_cli(image_build_help(), :eof)
         :error
 
       :error ->
@@ -147,17 +121,48 @@ defmodule Jocker.CLI.Main do
     end
   end
 
-  @doc """
-
-  Usage:	docker image ls [OPTIONS]
-
-  List images
-
-  Options:
-    -a, --all             Show all images (default hides intermediate images)
-  """
   def image_ls(argv) do
-    case process_subcommand(@doc, "image ls", argv,
+    case process_subcommand(image_ls_help(), "image ls", argv,
+           strict: [
+             help: :boolean
+           ]
+         ) do
+      {_options, []} ->
+        rpc = [Jocker.Engine.MetaData, :list_images, []]
+        {:ok, _pid} = EngineClient.start_link([])
+        _output = EngineClient.command(rpc)
+
+        receive do
+          {:server_reply, images} ->
+            print_image(image(name: "NAME", tag: "TAG", id: "IMAGE ID", created: "CREATED"))
+            Enum.map(images, &print_image/1)
+            cli_eof()
+
+          what ->
+            IO.puts("ERROR: Unexpected message received from backend: #{inspect(what)}")
+        end
+
+      {_options, _args} ->
+        to_cli("\"jocker image ls\" requires no arguments.")
+        to_cli(image_ls_help(), :eof)
+
+      :error ->
+        :ok
+    end
+  end
+
+  defp print_image(image(name: name_, tag: tag_, id: id_, created: timestamp_)) do
+    # FIXME we need to have a "SIZE" column as the last column
+    name = cell(name_, 12)
+    tag = cell(tag_, 10)
+    id = cell(id_, 12)
+    timestamp = cell(timestamp_, 16)
+    n = 3
+    to_cli("#{name}#{sp(n)}#{tag}#{sp(n)}#{id}#{sp(n)}#{timestamp}\n")
+  end
+
+  def container_ls(argv) do
+    case process_subcommand(container_ls_help(), "image ls", argv,
            aliases: [a: :all],
            strict: [
              all: :boolean,
@@ -165,40 +170,68 @@ defmodule Jocker.CLI.Main do
            ]
          ) do
       {options, []} ->
-        cmd =
-          case Keyword.get(options, :all, false) do
-            true -> "image ls --all"
-            false -> "image ls"
-          end
+        {:ok, _pid} = EngineClient.start_link([])
+        all = Keyword.get(options, :all, false)
+        rpc = [Jocker.Engine.MetaData, :list_containers, [[{:all, all}]]]
+        _output = EngineClient.command(rpc)
 
-        IO.puts("COMMAND: " <> cmd)
+        receive do
+          {:server_reply, containers} ->
+            print_container(
+              container(
+                id: "CONTAINER ID",
+                image_id: "IMAGE",
+                command: "COMMAND",
+                running: "STATUS",
+                created: "CREATED",
+                name: "NAME"
+              )
+            )
+
+            Enum.map(containers, &print_container/1)
+            cli_eof()
+
+          what ->
+            IO.puts("ERROR: Unexpected message received from backend: #{inspect(what)}")
+        end
 
       {_options, _args} ->
-        IO.puts("\"jocker image ls\" requires no arguments.")
-        IO.puts(@doc)
+        to_cli("\"jocker image ls\" requires no arguments.")
+        to_cli(container_ls_help(), :eof)
 
       :error ->
         :ok
     end
   end
 
-  @doc """
-  Usage:  docker container COMMAND
+  defp print_container(
+         # FIXME we need a "PORTS" column showing ports exposed on the container
+         container(
+           id: id_,
+           image_id: img_id_,
+           name: name,
+           command: cmd_,
+           running: running,
+           created: timestamp_
+         )
+       ) do
+    status_ =
+      case running do
+        true -> "running"
+        false -> "stopped"
+        other -> other
+      end
 
-  Manage containers
+    id = cell(id_, 12)
+    img_id = cell(img_id_, 25)
+    cmd = cell(cmd_, 23)
+    timestamp = cell(timestamp_, 16)
+    status = cell(status_, 7)
+    n = 3
 
-  Commands:
-    ls          List containers
-    run         Run a command in a new container
-
-  Run 'docker container COMMAND --help' for more information on a command.
-  """
-  def container_help() do
-    IO.puts(@doc)
-  end
-
-  # FIXME implement these two functions
-  defp container_ls(_opts) do
+    to_cli(
+      "#{id}#{sp(n)}#{img_id}#{sp(n)}#{cmd}#{sp(n)}#{timestamp}#{sp(n)}#{status}#{sp(n)}#{name}\n"
+    )
   end
 
   defp container_build(_opts) do
@@ -207,7 +240,7 @@ defmodule Jocker.CLI.Main do
   defp process_subcommand(docs, subcmd, argv, opts) do
     {options, _, _} = output = OptionParser.parse(argv, opts)
 
-    IO.puts("DEBUG #{subcmd}: #{inspect(output)}")
+    # IO.puts("DEBUG #{subcmd}: #{inspect(output)}")
     help = Keyword.get(options, :help, false)
 
     case output do
@@ -219,17 +252,49 @@ defmodule Jocker.CLI.Main do
         {options, args}
 
       {_, _, [unknown_flag | _rest]} ->
-        print_error(:unknown_flag, unknown_flag)
-        IO.puts("See '#{subcmd} --help'")
+        to_cli("unknown flag: '#{unknown_flag}")
+        to_cli("See '#{subcmd} --help'", :eof)
         :error
     end
   end
 
-  defp print_error(:unknown_flag, unknown_flag) do
-    IO.puts("unknown flag: '#{unknown_flag}\nSee 'jocker --help'.")
+  defp cell(content, size) do
+    content_length = String.length(content)
+
+    case content_length < size do
+      true -> content <> sp(size - content_length)
+      false -> String.slice(content, 0, size)
+    end
   end
 
-  defp print_error(:unknown_subcommand, subcmd) do
-    IO.puts("jocker: '#{subcmd}' is not a jocker command.")
+  defp sp(n) do
+    String.pad_trailing(" ", n)
+  end
+
+  defp print_output() do
+    receive do
+      {:msg, :eof} ->
+        :ok
+
+      {:msg, msg} ->
+        IO.puts(msg)
+        print_output()
+
+      unknown_message ->
+        exit({:error, "Unexpected cli output: #{inspect(unknown_message)}"})
+    end
+  end
+
+  defp cli_eof() do
+    Process.send(:cli_master, {:msg, :eof}, [])
+  end
+
+  defp to_cli(msg, eof \\ nil) do
+    Process.send(:cli_master, {:msg, msg}, [])
+
+    case eof do
+      :eof -> cli_eof()
+      nil -> :ok
+    end
   end
 end

@@ -44,7 +44,7 @@ defmodule DockerfileTest do
   end
 
   test "a real dockerfile" do
-    {:ok, file} = File.read("./test/data/Dockerfile")
+    {:ok, file} = File.read("./test/data/test_dockerfile/Dockerfile")
     instructions = parse(file)
     assert [{:from, _} | _] = instructions
   end

@@ -14,4 +14,17 @@ defmodule Jocker.Engine.Utils do
     <<uuid::binary-size(12), _rest::binary>> = uuid_all
     uuid
   end
+
+  def decode_buffer(buffer) do
+    case :erlang.binary_to_term(buffer) do
+      :badarg ->
+        {:no_full_msg, buffer}
+
+      reply ->
+        buffer_size = byte_size(:erlang.term_to_binary(buffer))
+        used_size = byte_size(:erlang.term_to_binary(reply))
+        new_buffer = String.slice(buffer, used_size, buffer_size)
+        {reply, new_buffer}
+    end
+  end
 end

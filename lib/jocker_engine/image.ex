@@ -9,6 +9,15 @@ defmodule Jocker.Engine.Image do
               user: nil
   end
 
+  def build_image_from_file(dockerfile_path, {name, tag}, context) do
+    {:ok, dockerfile} = File.read(dockerfile_path)
+    instructions = Jocker.Engine.Dockerfile.parse(dockerfile)
+    {:ok, img_raw} = create_image(instructions, context)
+    img = image(img_raw, name: name, tag: tag)
+    Jocker.Engine.MetaData.add_image(img)
+    {:ok, img}
+  end
+
   def create_image(instructions, context \\ "./") do
     state = %State{
       :context => context,
@@ -19,8 +28,8 @@ defmodule Jocker.Engine.Image do
       Enum.reduce(instructions, state, &process_instructions/2)
 
     finalized_layer = Jocker.Engine.Layer.finalize(layer)
-    now = :erlang.timestamp()
-    image(image, layer: finalized_layer, created: now)
+    now = DateTime.to_iso8601(DateTime.utc_now())
+    {:ok, image(image, layer: finalized_layer, created: now)}
   end
 
   defp process_instructions({:from, image_id}, state) do

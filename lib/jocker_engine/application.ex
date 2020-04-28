@@ -5,6 +5,10 @@ defmodule Jocker.Engine.Application do
 
   use Application
 
+  def start_link() do
+    start(nil, nil)
+  end
+
   def start(_type, _args) do
     children = [
       # Starts a worker by calling: JockTMod.Worker.start_link(arg)

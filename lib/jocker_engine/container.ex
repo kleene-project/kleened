@@ -63,7 +63,7 @@ defmodule Jocker.Engine.Container do
         layer: new_layer,
         image_id: image_id,
         parameters: ["exec.jail_user=" <> user | jail_param],
-        created: :erlang.timestamp()
+        created: DateTime.to_iso8601(DateTime.utc_now())
       )
 
     MetaData.add_container(container)
