@@ -35,7 +35,7 @@ defmodule CLITest do
     stop_client()
   end
 
-  test "jocker with no arguments" do
+  test "jocker <no arguments or options>" do
     [msg] = jocker_cmd([])
     assert "\nUsage:\tjocker [OPTIONS] COMMAND" == String.slice(msg, 0, 32)
   end
@@ -101,6 +101,17 @@ defmodule CLITest do
 
     assert msg3 ==
              "testing-id-t   base                        /bin/ls                   1970-01-01T00:00   stopped   testname\n"
+  end
+
+  test "jocker container create" do
+    {:ok, _pid} = Jocker.CLI.EngineClient.start_link([])
+    [id] = jocker_cmd(["container", "create", "base"])
+    containers = Jocker.Engine.MetaData.list_containers(all: true)
+    assert [container(id: ^id)] = containers
+
+    [id2] = jocker_cmd(["container", "create", "--name", "loltest", "base"])
+    containers2 = Jocker.Engine.MetaData.list_containers(all: true)
+    assert [container(id: ^id2, name: "loltest") | _] = containers2
   end
 
   defp stop_client() do

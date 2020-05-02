@@ -71,6 +71,18 @@ defmodule Jocker.CLI.Docs do
 
   @doc """
 
+  Usage:  docker container create [OPTIONS] IMAGE [COMMAND] [ARG...]
+
+  Create a new container
+
+  Options:
+        --name string                    Assign a name to the container
+
+  """
+  def container_create_help(), do: @doc
+
+  @doc """
+
   Usage:  docker container ls [OPTIONS]
 
   List containers

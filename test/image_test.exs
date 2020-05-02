@@ -24,7 +24,7 @@ defmodule ImageTest do
       run: ["/bin/sh", "-c", "echo 'lol1' > " <> file_path]
     ]
 
-    image(layer: layer(mountpoint: mountpoint)) = Image.create_image(instructions)
+    {:ok, image(layer: layer(mountpoint: mountpoint))} = Image.create_image(instructions)
     assert File.read(Path.join(mountpoint, file_path)) == {:ok, "lol1\n"}
   end
 
@@ -35,7 +35,7 @@ defmodule ImageTest do
     ]
 
     context = create_test_context("test_copy_instruction")
-    image(layer: layer(mountpoint: mountpoint)) = Image.create_image(instructions, context)
+    {:ok, image(layer: layer(mountpoint: mountpoint))} = Image.create_image(instructions, context)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
   end
 
@@ -48,7 +48,7 @@ defmodule ImageTest do
     ]
 
     context = create_test_context("test_image_builder_three_layers")
-    image(layer: layer(mountpoint: mountpoint)) = Image.create_image(instructions, context)
+    {:ok, image(layer: layer(mountpoint: mountpoint))} = Image.create_image(instructions, context)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test_1.txt")) == {:ok, "lol1\n"}
     assert File.read(Path.join(mountpoint, "root/test_2.txt")) == {:ok, "lol2\n"}

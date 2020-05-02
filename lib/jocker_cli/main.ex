@@ -33,7 +33,7 @@ defmodule Jocker.CLI.Main do
 
     case {options, args, invalid} do
       {_opts, [], []} ->
-        # FIXME: plz2implement
+        # TODO: plz2implement
         :implement_me
 
       {[], rest, []} ->
@@ -74,8 +74,8 @@ defmodule Jocker.CLI.Main do
       ["container", "ls" | opts] ->
         container_ls(opts)
 
-      ["container", "run" | opts] ->
-        container_build(opts)
+      ["container", "create" | opts] ->
+        container_create(opts)
 
       ["container", unknown_subcmd | _opts] ->
         to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.", :eof)
@@ -102,14 +102,8 @@ defmodule Jocker.CLI.Main do
         tagname = Jocker.Engine.Utils.decode_tagname(Keyword.get(options, :tag, "<none>:<none>"))
         rpc = [Jocker.Engine.Image, :build_image_from_file, [dockerfile_path, tagname, context]]
         _output = EngineClient.command(rpc)
-
-        receive do
-          {:server_reply, {:ok, image(id: id)}} ->
-            to_cli("Image succesfully created with id #{id}", :eof)
-
-          what ->
-            IO.puts("ERROR: Unexpected message received from backend: #{inspect(what)}")
-        end
+        {:ok, image(id: id)} = fetch_reply()
+        to_cli("Image succesfully created with id #{id}", :eof)
 
       {_options, []} ->
         to_cli("\"jocker image build\" requires exactly 1 argument.")
@@ -131,16 +125,10 @@ defmodule Jocker.CLI.Main do
         rpc = [Jocker.Engine.MetaData, :list_images, []]
         {:ok, _pid} = EngineClient.start_link([])
         _output = EngineClient.command(rpc)
-
-        receive do
-          {:server_reply, images} ->
-            print_image(image(name: "NAME", tag: "TAG", id: "IMAGE ID", created: "CREATED"))
-            Enum.map(images, &print_image/1)
-            cli_eof()
-
-          what ->
-            IO.puts("ERROR: Unexpected message received from backend: #{inspect(what)}")
-        end
+        images = fetch_reply()
+        print_image(image(name: "NAME", tag: "TAG", id: "IMAGE ID", created: "CREATED"))
+        Enum.map(images, &print_image/1)
+        cli_eof()
 
       {_options, _args} ->
         to_cli("\"jocker image ls\" requires no arguments.")
@@ -152,7 +140,7 @@ defmodule Jocker.CLI.Main do
   end
 
   defp print_image(image(name: name_, tag: tag_, id: id_, created: timestamp_)) do
-    # FIXME we need to have a "SIZE" column as the last column
+    # TODO we need to have a "SIZE" column as the last column
     name = cell(name_, 12)
     tag = cell(tag_, 10)
     id = cell(id_, 12)
@@ -174,26 +162,21 @@ defmodule Jocker.CLI.Main do
         all = Keyword.get(options, :all, false)
         rpc = [Jocker.Engine.MetaData, :list_containers, [[{:all, all}]]]
         _output = EngineClient.command(rpc)
+        containers = fetch_reply()
 
-        receive do
-          {:server_reply, containers} ->
-            print_container(
-              container(
-                id: "CONTAINER ID",
-                image_id: "IMAGE",
-                command: "COMMAND",
-                running: "STATUS",
-                created: "CREATED",
-                name: "NAME"
-              )
-            )
+        print_container(
+          container(
+            id: "CONTAINER ID",
+            image_id: "IMAGE",
+            command: "COMMAND",
+            running: "STATUS",
+            created: "CREATED",
+            name: "NAME"
+          )
+        )
 
-            Enum.map(containers, &print_container/1)
-            cli_eof()
-
-          what ->
-            IO.puts("ERROR: Unexpected message received from backend: #{inspect(what)}")
-        end
+        Enum.map(containers, &print_container/1)
+        cli_eof()
 
       {_options, _args} ->
         to_cli("\"jocker image ls\" requires no arguments.")
@@ -204,8 +187,51 @@ defmodule Jocker.CLI.Main do
     end
   end
 
+  def container_create(argv) do
+    case process_subcommand(container_create_help(), "container create", argv,
+           strict: [
+             name: :string,
+             help: :boolean
+           ]
+         ) do
+      {_options, []} ->
+        to_cli("\"jocker image ls\" at least 1 arguments.")
+        to_cli(container_create_help(), :eof)
+
+      {options, [image | cmd]} ->
+        opts =
+          case length(cmd) do
+            0 ->
+              []
+
+            _n ->
+              [cmd: cmd, image: image]
+          end
+
+        opts2 =
+          case(Keyword.get(options, :name, false)) do
+            false ->
+              []
+
+            name ->
+              [name: name]
+          end
+
+        rpc = [Jocker.Engine.ContainerPool, :create, [opts ++ opts2]]
+        :ok = EngineClient.command(rpc)
+        {:ok, pid} = fetch_reply()
+        rpc2 = [Jocker.Engine.Container, :metadata, [pid]]
+        :ok = EngineClient.command(rpc2)
+        container(id: id) = fetch_reply()
+        to_cli(id, :eof)
+
+      :error ->
+        :ok
+    end
+  end
+
   defp print_container(
-         # FIXME we need a "PORTS" column showing ports exposed on the container
+         # TODO we need a "PORTS" column showing ports exposed on the container
          container(
            id: id_,
            image_id: img_id_,
@@ -232,9 +258,6 @@ defmodule Jocker.CLI.Main do
     to_cli(
       "#{id}#{sp(n)}#{img_id}#{sp(n)}#{cmd}#{sp(n)}#{timestamp}#{sp(n)}#{status}#{sp(n)}#{name}\n"
     )
-  end
-
-  defp container_build(_opts) do
   end
 
   defp process_subcommand(docs, subcmd, argv, opts) do
@@ -287,6 +310,16 @@ defmodule Jocker.CLI.Main do
 
   defp cli_eof() do
     Process.send(:cli_master, {:msg, :eof}, [])
+  end
+
+  defp fetch_reply() do
+    receive do
+      {:server_reply, reply} ->
+        reply
+
+      what ->
+        {:error, "ERROR: Unexpected message received from backend: #{inspect(what)}"}
+    end
   end
 
   defp to_cli(msg, eof \\ nil) do

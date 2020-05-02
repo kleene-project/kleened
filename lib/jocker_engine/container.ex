@@ -46,6 +46,7 @@ defmodule Jocker.Engine.Container do
     user = Keyword.get(opts, :user, default_user)
     jail_param = Keyword.get(opts, :jail_param, [])
     overwrite = Keyword.get(opts, :overwrite, false)
+    name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
 
     new_layer =
       case overwrite do
@@ -56,7 +57,7 @@ defmodule Jocker.Engine.Container do
     container =
       container(
         id: Jocker.Engine.Utils.uuid(),
-        name: Jocker.Engine.NameGenerator.new(),
+        name: name,
         ip: Jocker.Engine.Network.new(),
         pid: self(),
         command: command,
