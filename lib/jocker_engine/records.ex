@@ -31,4 +31,37 @@ defmodule Jocker.Engine.Records do
     parameters: [],
     created: :none
   )
+
+  @type layer() ::
+          record(:layer,
+            id: String.t() | :none,
+            dataset: String.t() | :none,
+            snapshot: String.t() | :none,
+            mountpoint: String.t() | :none
+          )
+
+  @type image() ::
+          record(:image,
+            id: String.t() | :none,
+            name: String.t() | :none,
+            tag: {String.t(), String.t()},
+            layer: layer(),
+            command: [String.t()],
+            user: String.t(),
+            created: String.t()
+          )
+
+  @type container() ::
+          record(:container,
+            id: String.t() | :none,
+            name: String.t() | :none,
+            running: true | false,
+            pid: pid(),
+            command: [String.t()],
+            layer: layer(),
+            ip: String.t(),
+            image_id: String.t(),
+            parameters: [String.t()],
+            created: String.t()
+          )
 end

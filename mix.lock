@@ -1,6 +1,8 @@
 %{
   "amnesia": {:hex, :amnesia, "0.2.8", "81199a1c4c8db886cfb8ea159f746d5ffdb188bee96cb944f63bdb4465b09fa0", [:mix], [{:exquisite, "~> 0.1.7", [hex: :exquisite, repo: "hexpm", optional: false]}], "hexpm", "6037898c974457809ffa1f9a74cccab8f48c99b206aee9b3fc7bb3af73b06b14"},
+  "dialyxir": {:hex, :dialyxir, "1.0.0", "6a1fa629f7881a9f5aaf3a78f094b2a51a0357c843871b8bc98824e7342d00a5", [:mix], [{:erlex, ">= 0.2.6", [hex: :erlex, repo: "hexpm", optional: false]}], "hexpm", "aeb06588145fac14ca08d8061a142d52753dbc2cf7f0d00fc1013f53f8654654"},
   "elixir_uuid": {:hex, :elixir_uuid, "1.2.1", "dce506597acb7e6b0daeaff52ff6a9043f5919a4c3315abb4143f0b00378c097", [:mix], [], "hexpm", "f7eba2ea6c3555cea09706492716b0d87397b88946e6380898c2889d68585752"},
+  "erlex": {:hex, :erlex, "0.2.6", "c7987d15e899c7a2f34f5420d2a2ea0d659682c06ac607572df55a43753aa12e", [:mix], [], "hexpm", "2ed2e25711feb44d52b17d2780eabf998452f6efda104877a3881c2f8c0c0c75"},
   "exquisite": {:hex, :exquisite, "0.1.10", "e3ca4f8b812696a40a6da3bcd4e9861cef879ee2eb239d5485b0f96885fc9fba", [:mix], [], "hexpm", "0af9319851f1e21dd4adab812c82247f05e11cc19820fa17cc74afd696e2313c"},
   "jason": {:hex, :jason, "1.2.0", "10043418c42d2493d0ee212d3fddd25d7ffe484380afad769a0a38795938e448", [:mix], [{:decimal, "~> 1.0", [hex: :decimal, repo: "hexpm", optional: true]}], "hexpm", "116747dbe057794c3a3e4e143b7c8390b29f634e16c78a7f59ba75bfa6852e7f"},
 }

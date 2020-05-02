@@ -13,6 +13,11 @@ defmodule Jocker.MixProject do
         app: nil,
         embed_elixir: true
       ],
+      dialyzer: [
+        # plt_ignore_apps: [:amnesia],
+        ignore_warnings: "config/dialyzer.ignore",
+        plt_add_deps: :apps_direct
+      ],
       deps: deps()
     ]
   end
@@ -30,7 +35,8 @@ defmodule Jocker.MixProject do
     [
       {:jason, "~> 1.2"},
       {:elixir_uuid, "~> 1.2"},
-      {:amnesia, "~> 0.2.8"}
+      {:amnesia, "~> 0.2.8"},
+      {:dialyxir, "~> 1.0", only: [:dev], runtime: false}
       # {:dep_from_hexpm, "~> 0.3.0"},
       # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
     ]

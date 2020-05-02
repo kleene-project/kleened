@@ -5,14 +5,19 @@ defmodule Jocker.Engine.MetaData do
   require Config
   import Jocker.Engine.Records
 
+  @typep trans_return() :: any() | no_return()
+
+  @spec start_link([]) :: GenServer.on_start()
   def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
 
+  @spec add_container(Jocker.Engine.Records.container()) :: trans_return()
   def add_container(container) do
     Amnesia.transaction(fn -> Amnesia.Table.write(:container, container) end)
   end
 
+  @spec add_image(Jocker.Engine.Records.image()) :: trans_return()
   def add_image(image(name: new_name, tag: new_tag) = new_img) do
     match_all = image(_: :_)
     match = image(match_all, name: new_name, tag: new_tag)
@@ -32,21 +37,24 @@ defmodule Jocker.Engine.MetaData do
     end
   end
 
+  @spec add_image(Jocker.Engine.Records.layer()) :: trans_return()
   def add_layer(layer) do
     Amnesia.transaction(fn -> Amnesia.Table.write(:layer, layer) end)
   end
 
+  @spec get_layer(String.t()) :: trans_return()
   def get_layer(layer_id) do
     Amnesia.transaction(fn -> Amnesia.Table.read(:layer, layer_id) end)
   end
 
+  @spec get_image(String.t()) :: trans_return()
   def get_image(id_or_tag) do
     Amnesia.transaction do
       case Amnesia.Table.read(:image, id_or_tag) do
         [image] ->
           image
 
-        nil ->
+        _ ->
           {name, tag} = Jocker.Engine.Utils.decode_tagname(id_or_tag)
           match_all = image(_: :_)
           match = image(match_all, name: name, tag: tag)
@@ -63,6 +71,7 @@ defmodule Jocker.Engine.MetaData do
     end
   end
 
+  @spec list_images() :: [Jocker.Engine.Records.image()]
   def list_images() do
     match_all = image(_: :_)
     match = image(match_all, id: :"$1")
@@ -130,9 +139,10 @@ defmodule Jocker.Engine.MetaData do
     )
 
     insert_base_objects()
-    {:ok, :state}
+    {:ok, nil}
   end
 
+  @spec sort_images([Jocker.Engine.Records.image()]) :: [Jocker.Engine.Records.image()]
   defp sort_images(images) do
     Enum.sort(images, fn image(created: a), image(created: b) -> a >= b end)
   end
