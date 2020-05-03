@@ -18,6 +18,12 @@ defmodule Jocker.Engine.MetaData do
   end
 
   @spec add_image(Jocker.Engine.Records.image()) :: trans_return()
+  def add_image(image(name: :none, tag: :none) = new_img) do
+    Amnesia.transaction do
+      Amnesia.Table.write(:image, new_img)
+    end
+  end
+
   def add_image(image(name: new_name, tag: new_tag) = new_img) do
     match_all = image(_: :_)
     match = image(match_all, name: new_name, tag: new_tag)
@@ -26,18 +32,19 @@ defmodule Jocker.Engine.MetaData do
 
     Amnesia.transaction do
       case Amnesia.Table.select(:image, matchspec) do
-        [existing_img] ->
-          Amnesia.Table.write(:image, image(existing_img, name: :none, tag: :none))
-
         nil ->
           :ok
+
+        result ->
+          [existing_img] = extract(result)
+          Amnesia.Table.write(:image, image(existing_img, name: :none, tag: :none))
       end
 
       Amnesia.Table.write(:image, new_img)
     end
   end
 
-  @spec add_image(Jocker.Engine.Records.layer()) :: trans_return()
+  @spec add_layer(Jocker.Engine.Records.layer()) :: trans_return()
   def add_layer(layer) do
     Amnesia.transaction(fn -> Amnesia.Table.write(:layer, layer) end)
   end
@@ -65,7 +72,8 @@ defmodule Jocker.Engine.MetaData do
               :not_found
 
             result ->
-              extract(result)
+              [img] = extract(result)
+              img
           end
       end
     end
@@ -173,6 +181,7 @@ defmodule Jocker.Engine.MetaData do
     end
   end
 
+  @spec extract(any()) :: [term()]
   defp extract(nil), do: []
 
   defp extract(result), do: result.values()

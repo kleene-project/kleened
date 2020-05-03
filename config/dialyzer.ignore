@@ -4,3 +4,4 @@ The call 'Elixir.Jocker.Engine.MetaData':extract(_result@1::'Elixir.Amnesia.Tabl
 :0: Unknown function mnesia:transaction/1
 The call 'Elixir.Supervisor':init(_children@1::[#{'id':='Elixir.Jocker.Engine.Container', 'start':={'Elixir.Jocker.Engine.Container','create',[]}},...],[{'strategy','simple_one_for_one'},...]) breaks the contract ([supervisor:child_spec() | {module(),term()} | module()],[init_option()]) -> {'ok',tuple()}
 Function init/1 has no local return
+The call 'Elixir.Jocker.Engine.MetaData':extract(_result@2::'Elixir.Amnesia.Table.Select':t()) contains an opaque term as 1st argument when a structured term of type atom() | #{'values':=_, _=>_} is expected

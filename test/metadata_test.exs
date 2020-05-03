@@ -28,10 +28,16 @@ defmodule MetaDataTest do
     img2 = image(id: "lel", name: "test", tag: "latest", created: now())
     add_image(img1)
     add_image(img2)
-    assert image1 = get_image(image(img1, :id))
-    assert image1 = get_image("test:oldest")
-    assert image2 = get_image("test")
+    assert img1 == get_image(image(img1, :id))
+    assert img1 == get_image("test:oldest")
+    assert img2 == get_image("test")
     assert [img2, img1] == list_images()
+
+    # Test that name/tag will be removed from existing image if a new image is added with conflicting nametag
+    img3 = image(id: "lel2", name: "test", tag: "latest", created: now())
+    img2_nametag_removed = image(img2, name: :none, tag: :none)
+    add_image(img3)
+    assert img2_nametag_removed == get_image("lel")
   end
 
   test "adding and getting layers" do

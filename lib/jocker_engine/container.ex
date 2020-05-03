@@ -9,6 +9,14 @@ defmodule Jocker.Engine.Container do
   import Jocker.Engine.Records
   use GenServer
 
+  @type create_opts() ::
+          {:image, Jocker.Engine.Records.container()}
+          | {:name, String.t()}
+          | {:cmd, [String.t()]}
+          | {:user, String.t()}
+          | {:jail_param, [String.t()]}
+          | {:overwrite, boolean()}
+
   ### ===================================================================
   ### API
   ### ===================================================================
@@ -35,12 +43,14 @@ defmodule Jocker.Engine.Container do
 
   @impl true
   def init(opts) do
+    image_name = Keyword.get(opts, :image, "base")
+
     image(
       id: image_id,
       user: default_user,
       command: default_cmd,
       layer: parent_layer
-    ) = Keyword.get(opts, :image, MetaData.get_image("base"))
+    ) = MetaData.get_image(image_name)
 
     command = Keyword.get(opts, :cmd, default_cmd)
     user = Keyword.get(opts, :user, default_user)

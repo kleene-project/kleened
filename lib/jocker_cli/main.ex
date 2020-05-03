@@ -159,8 +159,7 @@ defmodule Jocker.CLI.Main do
          ) do
       {options, []} ->
         {:ok, _pid} = EngineClient.start_link([])
-        all = Keyword.get(options, :all, false)
-        rpc = [Jocker.Engine.MetaData, :list_containers, [[{:all, all}]]]
+        rpc = [Jocker.Engine.MetaData, :list_containers, [options]]
         _output = EngineClient.command(rpc)
         containers = fetch_reply()
 
@@ -195,29 +194,20 @@ defmodule Jocker.CLI.Main do
            ]
          ) do
       {_options, []} ->
-        to_cli("\"jocker image ls\" at least 1 arguments.")
+        to_cli("\"jocker container create\" requires at least 1 arguments.")
         to_cli(container_create_help(), :eof)
 
       {options, [image | cmd]} ->
         opts =
           case length(cmd) do
             0 ->
-              []
+              [image: image] ++ options
 
             _n ->
-              [cmd: cmd, image: image]
+              [cmd: cmd, image: image] ++ options
           end
 
-        opts2 =
-          case(Keyword.get(options, :name, false)) do
-            false ->
-              []
-
-            name ->
-              [name: name]
-          end
-
-        rpc = [Jocker.Engine.ContainerPool, :create, [opts ++ opts2]]
+        rpc = [Jocker.Engine.ContainerPool, :create, [opts]]
         :ok = EngineClient.command(rpc)
         {:ok, pid} = fetch_reply()
         rpc2 = [Jocker.Engine.Container, :metadata, [pid]]

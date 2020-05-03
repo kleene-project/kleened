@@ -35,10 +35,19 @@ defmodule Jocker.Engine.Image do
   defp process_instructions({:from, image_id}, state) do
     image(layer: parent_layer) = parent_image = Jocker.Engine.MetaData.get_image(image_id)
     new_layer = Jocker.Engine.Layer.initialize(parent_layer)
-    # TODO: Consider using the layer-id instead of generating a new one
+    # Create a new image-record that is going to be our newly created image.
+    # it is going to be used as a reference for the RUN instructions issued during image build
+    # and therefore we add it to the metadata database now.
     build_image =
-      image(parent_image, layer: new_layer, id: Jocker.Engine.Utils.uuid(), created: :none)
+      image(parent_image,
+        layer: new_layer,
+        name: :none,
+        tag: :none,
+        id: Jocker.Engine.Utils.uuid(),
+        created: :none
+      )
 
+    Jocker.Engine.MetaData.add_image(build_image)
     %State{state | image: build_image}
   end
 
@@ -56,8 +65,10 @@ defmodule Jocker.Engine.Image do
   end
 
   defp process_instructions({:run, cmd}, state) do
+    image(id: img_id) = state.image
+
     opts = [
-      image: state.image,
+      image: img_id,
       user: state.user,
       overwrite: true,
       cmd: cmd
