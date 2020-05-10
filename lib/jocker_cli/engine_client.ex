@@ -6,6 +6,7 @@ defmodule Jocker.CLI.EngineClient do
   end
 
   use GenServer
+  require Logger
   require Jocker.Engine.Config
   alias :gen_tcp, as: GenTCP
   alias :erlang, as: Erlang
@@ -30,7 +31,6 @@ defmodule Jocker.CLI.EngineClient do
     IO.puts("jocker-cli: Connecting to jocker-engine")
 
     case GenTCP.connect({:local, api_socket}, 0, [:binary, {:packet, :raw}, {:active, true}]) do
-      # FIXME: This fails with :econnrefused. Might be because api_server is crashing
       {:ok, socket} ->
         IO.puts("jocker-cli: Connection succesfully established")
         {:ok, %State{:socket => socket, :caller => callers_pid, :buffer => ""}}
@@ -44,16 +44,16 @@ defmodule Jocker.CLI.EngineClient do
 
   @impl true
   def handle_call({:command, cmd}, _from, %State{socket: socket} = state) do
-    IO.puts("jocker-cli: Sending command to jocker-engine #{inspect(cmd)}")
+    Logger.info("Sending command to jocker-engine #{inspect(cmd)}")
     cmd_binary = Erlang.term_to_binary(cmd)
 
     case GenTCP.send(socket, cmd_binary) do
       :ok ->
-        IO.puts("jocker-cli: Succesfully sent")
+        Logger.debug("Succesfully sent")
         {:reply, :ok, state}
 
       {:error, reason} ->
-        IO.puts("jocker-cli: Error sending msg: #{reason}")
+        Logger.warn("Error sending msg: #{reason}")
         {:stop, reason, state}
     end
   end
@@ -75,6 +75,7 @@ defmodule Jocker.CLI.EngineClient do
         {:noreply, %State{state | :buffer => new_buffer}}
 
       {reply, new_buffer} ->
+        Logger.debug("Receiving reply from server: #{inspect(reply)}")
         Process.send(pid, {:server_reply, reply}, [])
         {:noreply, %State{state | :buffer => new_buffer}}
     end

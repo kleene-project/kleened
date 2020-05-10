@@ -49,6 +49,13 @@ defmodule MetaDataTest do
     assert layer2 = get_layer("lol")
   end
 
+  test "get containers" do
+    add_container(container(id: "1337", name: "test1", created: now()))
+    assert container(id: "1337") = get_container("1337")
+    assert container(id: "1337") = get_container("test1")
+    assert :not_found == get_container("lol")
+  end
+
   test "list all containers" do
     add_container(container(id: "1337", name: "test1", created: now()))
     add_container(container(id: "1338", name: "test2", created: now()))

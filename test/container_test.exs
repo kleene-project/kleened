@@ -34,7 +34,7 @@ defmodule ContainerTest do
     Container.start(pid)
 
     assert_receive {:container, ^pid, "test test\n"}
-    assert_receive {:container, ^pid, "jail stopped"}
+    assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
   end
 
   test "start a container (using devfs), attach to it and receive output" do
@@ -52,7 +52,7 @@ defmodule ContainerTest do
 
     assert opts[:cmd] == cmd_out
     assert_receive {:container, ^pid, "test test\n"}
-    assert_receive {:container, ^pid, "jail stopped"}
+    assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
     assert not devfs_mounted(container)
   end
 
@@ -67,7 +67,7 @@ defmodule ContainerTest do
 
     assert devfs_mounted(container)
     :ok = Container.stop(pid)
-    assert_receive {:container, ^pid, "jail stopped"}
+    assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
     assert_receive {:EXIT, ^pid, :normal}
     assert not devfs_mounted(container)
   end
@@ -95,7 +95,7 @@ defmodule ContainerTest do
 
     {pid, _container} = start_attached_container(opts)
 
-    assert_receive {:container, ^pid, "jail stopped"}
+    assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
     assert_receive {:container, ^pid, "uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"}
   end
 

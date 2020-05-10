@@ -1,6 +1,7 @@
 defmodule Jocker.Engine.APIServer do
   defmodule State do
     defstruct api_socket: nil,
+              sockets: nil,
               buffers: nil
   end
 
@@ -16,7 +17,6 @@ defmodule Jocker.Engine.APIServer do
 
   @impl true
   def init([]) do
-    # IO.puts("jocker-engine: Initating API backed")
     Logger.info("jocker-engine: Initating API backed")
     api_socket = Jocker.Engine.Config.api_socket()
     File.rm(api_socket)
@@ -33,7 +33,7 @@ defmodule Jocker.Engine.APIServer do
     server_pid = self()
     _listener_pid = Process.spawn(fn -> listen(server_pid, listening_socket) end, [:link])
 
-    {:ok, %State{:api_socket => listening_socket, :buffers => %{}}}
+    {:ok, %State{:api_socket => listening_socket, :sockets => %{}, :buffers => %{}}}
   end
 
   @impl true
@@ -53,7 +53,7 @@ defmodule Jocker.Engine.APIServer do
   end
 
   def handle_info({:tcp, socket, data}, state) do
-    Logger.debug("jocker-engine: receiving data")
+    # Logger.debug("receiving data")
     buffer = Map.get(state.buffers, socket)
 
     case Jocker.Engine.Utils.decode_buffer(buffer <> data) do
@@ -61,8 +61,15 @@ defmodule Jocker.Engine.APIServer do
         updated_buffers = Map.put(state.buffers, socket, new_buffer)
         {:noreply, %State{state | :buffers => updated_buffers}}
 
+      {[Jocker.Engine.ContainerPool, :create, _] = command, new_buffer} ->
+        {:ok, pid} = reply = evaluate_command(command)
+        updated_buffers = Map.put(state.buffers, socket, new_buffer)
+        sockets = Map.put(state.sockets, pid, socket)
+        GenTCP.send(socket, Erlang.term_to_binary(reply))
+        {:noreply, %State{state | :buffers => updated_buffers, :sockets => sockets}}
+
       {command, new_buffer} ->
-        Logger.debug("jocker-engine: decoded command #{inspect(command)}")
+        Logger.debug("decoded command #{inspect(command)}")
         reply = evaluate_command(command)
         GenTCP.send(socket, Erlang.term_to_binary(reply))
         updated_buffers = Map.put(state.buffers, socket, new_buffer)
@@ -70,8 +77,15 @@ defmodule Jocker.Engine.APIServer do
     end
   end
 
+  def handle_info({:container, pid, msg} = container_msg, state) do
+    Logger.debug("Receiving message from container: #{inspect(container_msg)}")
+    socket = state.sockets[pid]
+    GenTCP.send(socket, Erlang.term_to_binary(container_msg))
+    {:noreply, state}
+  end
+
   def handle_info(msg, state) do
-    Logger.warn("jocker-engine: unknown message received #{inspect(msg)}")
+    Logger.warn("Unknown message received #{inspect(msg)}")
     {:noreply, state}
   end
 
@@ -82,7 +96,7 @@ defmodule Jocker.Engine.APIServer do
   defp listen(server_pid, listening_socket) do
     case GenTCP.accept(listening_socket) do
       {:ok, socket} ->
-        Logger.info("jocker-engine: Incoming connection: #{inspect(socket)}")
+        Logger.info("Incoming connection: #{inspect(socket)}")
         GenTCP.controlling_process(socket, server_pid)
         :inet.setopts(socket, [{:active, true}])
         :ok = Process.send(server_pid, {:client_connected, socket}, [])

@@ -5,12 +5,14 @@ defmodule Jocker.Engine.Container do
               starting_port: nil
   end
 
+  require Logger
   alias Jocker.Engine.MetaData
   import Jocker.Engine.Records
   use GenServer
 
   @type create_opts() ::
-          {:image, Jocker.Engine.Records.container()}
+          {:id_or_name, String.t()}
+          | {:image, Jocker.Engine.Records.container()}
           | {:name, String.t()}
           | {:cmd, [String.t()]}
           | {:user, String.t()}
@@ -20,15 +22,18 @@ defmodule Jocker.Engine.Container do
   ### ===================================================================
   ### API
   ### ===================================================================
+  @spec create(create_opts) :: GenServer.on_start()
   def create(opts),
     do: GenServer.start_link(__MODULE__, opts)
 
+  @spec attach(pid()) :: :ok
   def attach(pid),
     do: GenServer.call(pid, {:attach, self()})
 
   def metadata(pid),
     do: GenServer.call(pid, :metadata)
 
+  @spec start(pid()) :: :ok
   def start(pid) do
     GenServer.call(pid, :start)
   end
@@ -43,42 +48,58 @@ defmodule Jocker.Engine.Container do
 
   @impl true
   def init(opts) do
-    image_name = Keyword.get(opts, :image, "base")
-
-    image(
-      id: image_id,
-      user: default_user,
-      command: default_cmd,
-      layer: parent_layer
-    ) = MetaData.get_image(image_name)
-
-    command = Keyword.get(opts, :cmd, default_cmd)
-    user = Keyword.get(opts, :user, default_user)
-    jail_param = Keyword.get(opts, :jail_param, [])
-    overwrite = Keyword.get(opts, :overwrite, false)
-    name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
-
-    new_layer =
-      case overwrite do
-        true -> parent_layer
-        false -> Jocker.Engine.Layer.initialize(parent_layer)
-      end
+    Keyword.get(opts, :id_or_name, :none)
 
     container =
-      container(
-        id: Jocker.Engine.Utils.uuid(),
-        name: name,
-        ip: Jocker.Engine.Network.new(),
-        pid: self(),
-        command: command,
-        layer: new_layer,
-        image_id: image_id,
-        parameters: ["exec.jail_user=" <> user | jail_param],
-        created: DateTime.to_iso8601(DateTime.utc_now())
-      )
+      case Keyword.get(opts, :id_or_name, :none) do
+        :none ->
+          image_name = Keyword.get(opts, :image, "base")
 
-    MetaData.add_container(container)
-    {:ok, %State{container: container, subscribers: []}}
+          image(
+            id: image_id,
+            user: default_user,
+            command: default_cmd,
+            layer: parent_layer
+          ) = MetaData.get_image(image_name)
+
+          command = Keyword.get(opts, :cmd, default_cmd)
+          user = Keyword.get(opts, :user, default_user)
+          jail_param = Keyword.get(opts, :jail_param, [])
+          overwrite = Keyword.get(opts, :overwrite, false)
+          name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
+
+          new_layer =
+            case overwrite do
+              true -> parent_layer
+              false -> Jocker.Engine.Layer.initialize(parent_layer)
+            end
+
+          cont =
+            container(
+              id: Jocker.Engine.Utils.uuid(),
+              name: name,
+              ip: Jocker.Engine.Network.new(),
+              pid: self(),
+              command: command,
+              layer: new_layer,
+              image_id: image_id,
+              parameters: ["exec.jail_user=" <> user | jail_param],
+              created: DateTime.to_iso8601(DateTime.utc_now())
+            )
+
+          MetaData.add_container(cont)
+          {:ok, %State{container: cont, subscribers: []}}
+
+        id_or_name ->
+          case Jocker.Engine.MetaData.get_container(id_or_name) do
+            :not_found ->
+              {:stop, :normal, :no_state}
+
+            cont ->
+              # MetaData.add_container(cont)
+              {:ok, %State{container: cont, subscribers: []}}
+          end
+      end
   end
 
   @impl true
@@ -88,6 +109,10 @@ defmodule Jocker.Engine.Container do
 
   def handle_call(:metadata, _from, %State{container: container} = state) do
     {:reply, container, state}
+  end
+
+  def handle_call(:start, _from, %State{:container => container(running: true)} = state) do
+    {:reply, :already_started, state}
   end
 
   def handle_call(:start, _from, %State{:container => container} = state) do
@@ -106,13 +131,13 @@ defmodule Jocker.Engine.Container do
 
   @impl true
   def handle_info({port, {:data, msg}}, %State{:starting_port => port} = state) do
-    IO.puts("Msg from jail-starting port: #{inspect(msg)}")
+    IO.puts("Msg from jail-port: #{inspect(msg)}")
     relay_msg(msg, state)
     {:noreply, state}
   end
 
   def handle_info({port, {:exit_status, _}}, %State{:starting_port => port} = state) do
-    IO.puts("Jail-starting process exited succesfully.")
+    Logger.info("Jail-starting process exited succesfully.")
 
     case is_jail_running?(state.container) do
       false ->
@@ -121,7 +146,7 @@ defmodule Jocker.Engine.Container do
       true ->
         # Since the jail-starting process is stopped no messages will be sent to Jocker.
         # This happens when, e.g., a full-blow vm-jail has been started (using /etc/rc)
-        relay_msg("end of output", state)
+        relay_msg({:shutdown, :end_of_ouput}, state)
         {:noreply, %State{state | :starting_port => nil}}
     end
   end
@@ -140,7 +165,7 @@ defmodule Jocker.Engine.Container do
   def terminate(_reason, state) do
     IO.puts("Jail shutting down. Cleaning up.")
     jail_cleanup(state.container)
-    relay_msg("jail stopped", state)
+    relay_msg({:shutdown, :jail_stopped}, state)
 
     updated_container =
       container(state.container,
@@ -155,7 +180,7 @@ defmodule Jocker.Engine.Container do
   ### Internal functions
   ### ===================================================================
   defp relay_msg(msg, state) do
-    IO.puts("relaying msg: #{msg}")
+    IO.puts("relaying msg: #{inspect(msg)}")
     wrapped_msg = {:container, self(), msg}
     Enum.map(state.subscribers, fn x -> Process.send(x, wrapped_msg, []) end)
   end

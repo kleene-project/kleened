@@ -71,7 +71,7 @@ defmodule Jocker.CLI.Docs do
 
   @doc """
 
-  Usage:  docker container create [OPTIONS] IMAGE [COMMAND] [ARG...]
+  Usage:  jocker container create [OPTIONS] IMAGE [COMMAND] [ARG...]
 
   Create a new container
 
@@ -83,7 +83,20 @@ defmodule Jocker.CLI.Docs do
 
   @doc """
 
-  Usage:  docker container ls [OPTIONS]
+  Usage:	jocker container start [OPTIONS] CONTAINER [CONTAINER...]
+
+  Start one or more stopped containers
+
+  Options:
+
+      -a, --attach               Attach STDOUT/STDERR and forward signals
+
+  """
+  def container_start_help(), do: @doc
+
+  @doc """
+
+  Usage:  jocker container ls [OPTIONS]
 
   List containers
 

@@ -90,6 +90,30 @@ defmodule Jocker.Engine.MetaData do
     sort_images(extract(result))
   end
 
+  @spec get_container(String.t()) :: trans_return()
+  def get_container(id_or_name) do
+    Amnesia.transaction do
+      case Amnesia.Table.read(:container, id_or_name) do
+        [container(id: id_or_name) = present_container] ->
+          present_container
+
+        _ ->
+          match_all = container(_: :_)
+          match = container(match_all, name: id_or_name)
+          matchspec = [{match, [], [:"$_"]}]
+
+          case Amnesia.Table.select(:container, matchspec) do
+            nil ->
+              :not_found
+
+            result ->
+              [cont] = extract(result)
+              cont
+          end
+      end
+    end
+  end
+
   def list_containers(opts \\ []) do
     matchspec =
       case Keyword.get(opts, :all, false) do

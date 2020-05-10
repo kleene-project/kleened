@@ -77,6 +77,9 @@ defmodule Jocker.CLI.Main do
       ["container", "create" | opts] ->
         container_create(opts)
 
+      ["container", "start" | opts] ->
+        container_start(opts)
+
       ["container", unknown_subcmd | _opts] ->
         to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.", :eof)
 
@@ -97,6 +100,7 @@ defmodule Jocker.CLI.Main do
            ]
          ) do
       {options, [path]} ->
+        {:ok, _pid} = Jocker.CLI.EngineClient.start_link([])
         context = Path.absname(path)
         dockerfile_path = Path.join(context, "Dockerfile")
         tagname = Jocker.Engine.Utils.decode_tagname(Keyword.get(options, :tag, "<none>:<none>"))
@@ -122,8 +126,8 @@ defmodule Jocker.CLI.Main do
            ]
          ) do
       {_options, []} ->
-        rpc = [Jocker.Engine.MetaData, :list_images, []]
         {:ok, _pid} = EngineClient.start_link([])
+        rpc = [Jocker.Engine.MetaData, :list_images, []]
         _output = EngineClient.command(rpc)
         images = fetch_reply()
         print_image(image(name: "NAME", tag: "TAG", id: "IMAGE ID", created: "CREATED"))
@@ -167,7 +171,7 @@ defmodule Jocker.CLI.Main do
           container(
             id: "CONTAINER ID",
             image_id: "IMAGE",
-            command: "COMMAND",
+            command: ["COMMAND"],
             running: "STATUS",
             created: "CREATED",
             name: "NAME"
@@ -194,7 +198,7 @@ defmodule Jocker.CLI.Main do
            ]
          ) do
       {_options, []} ->
-        to_cli("\"jocker container create\" requires at least 1 arguments.")
+        to_cli("\"jocker container create\" requires at least 1 argument.")
         to_cli(container_create_help(), :eof)
 
       {options, [image | cmd]} ->
@@ -207,6 +211,7 @@ defmodule Jocker.CLI.Main do
               [cmd: cmd, image: image] ++ options
           end
 
+        {:ok, _pid} = EngineClient.start_link([])
         rpc = [Jocker.Engine.ContainerPool, :create, [opts]]
         :ok = EngineClient.command(rpc)
         {:ok, pid} = fetch_reply()
@@ -217,6 +222,110 @@ defmodule Jocker.CLI.Main do
 
       :error ->
         :ok
+    end
+  end
+
+  def container_start(argv) do
+    case process_subcommand(container_start_help(), "container start", argv,
+           aliases: [
+             a: :attach
+           ],
+           strict: [
+             attach: :boolean,
+             help: :boolean
+           ]
+         ) do
+      {options, []} ->
+        to_cli("\"jocker container start\" requires at least 1 argument.")
+        to_cli(container_start_help(), :eof)
+
+      {options, containers} ->
+        {:ok, _pid} = EngineClient.start_link([])
+
+        case {Keyword.get(options, :attach, false), length(containers)} do
+          {false, _} ->
+            Enum.map(containers, &start_single_container/1)
+            cli_eof()
+
+          {true, 1} ->
+            [id_or_name] = containers
+            start_single_container(id_or_name, true)
+            output_container_messages()
+            cli_eof()
+
+          {true, _n} ->
+            to_cli("jocker: you cannot start and attach multiple containers at once\n", :eof)
+        end
+
+      :error ->
+        :ok
+    end
+  end
+
+  defp output_container_messages() do
+    case fetch_reply() do
+      {:container, _pid, {:shutdown, :end_of_ouput}} ->
+        to_cli(
+          "jocker: primary process terminated but the container is still running in the background"
+        )
+
+        :ok
+
+      {:container, _pid, {:shutdown, :jail_stopped}} ->
+        :ok
+
+      {:container, _pid, msg} ->
+        to_cli(msg)
+        output_container_messages()
+
+      unknown_msg ->
+        IO.puts(
+          "Unknown message received while waiting for container output #{inspect(unknown_msg)}"
+        )
+    end
+  end
+
+  defp start_single_container(id_or_name, attach \\ false) do
+    EngineClient.command([
+      Jocker.Engine.MetaData,
+      :get_container,
+      [id_or_name]
+    ])
+
+    case fetch_reply() do
+      container(id: id) ->
+        EngineClient.command([
+          Jocker.Engine.ContainerPool,
+          :create,
+          [[id_or_name: id]]
+        ])
+
+        {:ok, pid} = fetch_reply()
+
+        if attach do
+          EngineClient.command([
+            Jocker.Engine.Container,
+            :attach,
+            [pid]
+          ])
+
+          :ok = fetch_reply()
+        end
+
+        EngineClient.command([
+          Jocker.Engine.Container,
+          :start,
+          [pid]
+        ])
+
+        :ok = fetch_reply()
+
+        if not attach do
+          to_cli("#{id}\n")
+        end
+
+      :not_found ->
+        to_cli("Error response from daemon: No such container: #{id_or_name}")
     end
   end
 
@@ -240,7 +349,7 @@ defmodule Jocker.CLI.Main do
 
     id = cell(id_, 12)
     img_id = cell(img_id_, 25)
-    cmd = cell(cmd_, 23)
+    cmd = cell(Enum.join(cmd_, " "), 23)
     timestamp = cell(timestamp_, 16)
     status = cell(status_, 7)
     n = 3

@@ -79,7 +79,7 @@ defmodule Jocker.Engine.Image do
     Jocker.Engine.Container.start(pid)
 
     receive do
-      {:container, ^pid, "jail stopped"} -> :ok
+      {:container, ^pid, {:shutdown, :jail_stopped}} -> :ok
     end
 
     state
