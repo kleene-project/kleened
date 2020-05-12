@@ -86,6 +86,12 @@ defmodule ContainerTest do
     assert not devfs_mounted(container)
   end
 
+  test "try creating containers from non-existing images and non-existing ids" do
+    Jocker.Engine.ContainerPool.start_link([])
+    assert :image_not_found == Jocker.Engine.ContainerPool.create(image: "nonexisting")
+    assert :container_not_found == Jocker.Engine.ContainerPool.create(id_or_name: "nonexisting")
+  end
+
   test "start a container as non-root" do
     opts = [
       cmd: ["/usr/bin/id"],

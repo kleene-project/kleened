@@ -62,11 +62,21 @@ defmodule Jocker.Engine.APIServer do
         {:noreply, %State{state | :buffers => updated_buffers}}
 
       {[Jocker.Engine.ContainerPool, :create, _] = command, new_buffer} ->
-        {:ok, pid} = reply = evaluate_command(command)
+        reply = evaluate_command(command)
         updated_buffers = Map.put(state.buffers, socket, new_buffer)
-        sockets = Map.put(state.sockets, pid, socket)
+
+        new_state =
+          case reply do
+            {:ok, pid} ->
+              sockets = Map.put(state.sockets, pid, socket)
+              %State{state | :buffers => updated_buffers, :sockets => sockets}
+
+            some_error ->
+              %State{state | :buffers => updated_buffers}
+          end
+
         GenTCP.send(socket, Erlang.term_to_binary(reply))
-        {:noreply, %State{state | :buffers => updated_buffers, :sockets => sockets}}
+        {:noreply, new_state}
 
       {command, new_buffer} ->
         Logger.debug("decoded command #{inspect(command)}")
@@ -77,7 +87,7 @@ defmodule Jocker.Engine.APIServer do
     end
   end
 
-  def handle_info({:container, pid, msg} = container_msg, state) do
+  def handle_info({:container, pid, _msg} = container_msg, state) do
     Logger.debug("Receiving message from container: #{inspect(container_msg)}")
     socket = state.sockets[pid]
     GenTCP.send(socket, Erlang.term_to_binary(container_msg))
@@ -103,7 +113,7 @@ defmodule Jocker.Engine.APIServer do
         listen(server_pid, listening_socket)
 
       {:error, reason} ->
-        IO.puts("API-server crashed: #{reason}")
+        Logger.error("API-server crashed: #{reason}")
         exit(:normal)
     end
   end

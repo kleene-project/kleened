@@ -7,7 +7,10 @@ defmodule Jocker.Engine.ContainerPool do
   end
 
   def create(opts) do
-    Supervisor.start_child(__MODULE__, [opts])
+    case Supervisor.start_child(__MODULE__, [opts]) do
+      {:error, {:bad_return_value, {:stop, :normal, msg}}} -> msg
+      other_return_value -> other_return_value
+    end
   end
 
   @impl true

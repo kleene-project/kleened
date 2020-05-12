@@ -54,7 +54,7 @@ defmodule Jocker.Engine.MetaData do
     Amnesia.transaction(fn -> Amnesia.Table.read(:layer, layer_id) end)
   end
 
-  @spec get_image(String.t()) :: trans_return()
+  @spec get_image(String.t()) :: trans_return() | :not_found
   def get_image(id_or_tag) do
     Amnesia.transaction do
       case Amnesia.Table.read(:image, id_or_tag) do
@@ -94,7 +94,7 @@ defmodule Jocker.Engine.MetaData do
   def get_container(id_or_name) do
     Amnesia.transaction do
       case Amnesia.Table.read(:container, id_or_name) do
-        [container(id: id_or_name) = present_container] ->
+        [container(id: ^id_or_name) = present_container] ->
           present_container
 
         _ ->

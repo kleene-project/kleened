@@ -50,56 +50,64 @@ defmodule Jocker.Engine.Container do
   def init(opts) do
     Keyword.get(opts, :id_or_name, :none)
 
-    container =
-      case Keyword.get(opts, :id_or_name, :none) do
-        :none ->
-          image_name = Keyword.get(opts, :image, "base")
+    case Keyword.get(opts, :id_or_name, :none) do
+      :none ->
+        image_name = Keyword.get(opts, :image, "base")
+        img = MetaData.get_image(image_name)
 
-          image(
-            id: image_id,
-            user: default_user,
-            command: default_cmd,
-            layer: parent_layer
-          ) = MetaData.get_image(image_name)
+        case img do
+          :not_found ->
+            {:stop, :normal, :image_not_found}
 
-          command = Keyword.get(opts, :cmd, default_cmd)
-          user = Keyword.get(opts, :user, default_user)
-          jail_param = Keyword.get(opts, :jail_param, [])
-          overwrite = Keyword.get(opts, :overwrite, false)
-          name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
+          _image ->
+            # Extract default values from image:
+            image(
+              id: image_id,
+              user: default_user,
+              command: default_cmd,
+              layer: parent_layer
+            ) = img
 
-          new_layer =
-            case overwrite do
-              true -> parent_layer
-              false -> Jocker.Engine.Layer.initialize(parent_layer)
-            end
+            # Extract values from options:
+            command = Keyword.get(opts, :cmd, default_cmd)
+            user = Keyword.get(opts, :user, default_user)
+            jail_param = Keyword.get(opts, :jail_param, [])
+            overwrite = Keyword.get(opts, :overwrite, false)
+            name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
 
-          cont =
-            container(
-              id: Jocker.Engine.Utils.uuid(),
-              name: name,
-              ip: Jocker.Engine.Network.new(),
-              pid: self(),
-              command: command,
-              layer: new_layer,
-              image_id: image_id,
-              parameters: ["exec.jail_user=" <> user | jail_param],
-              created: DateTime.to_iso8601(DateTime.utc_now())
-            )
+            new_layer =
+              case overwrite do
+                true -> parent_layer
+                false -> Jocker.Engine.Layer.initialize(parent_layer)
+              end
 
-          MetaData.add_container(cont)
-          {:ok, %State{container: cont, subscribers: []}}
+            cont =
+              container(
+                id: Jocker.Engine.Utils.uuid(),
+                name: name,
+                ip: Jocker.Engine.Network.new(),
+                pid: self(),
+                command: command,
+                layer: new_layer,
+                image_id: image_id,
+                parameters: ["exec.jail_user=" <> user | jail_param],
+                created: DateTime.to_iso8601(DateTime.utc_now())
+              )
 
-        id_or_name ->
-          case Jocker.Engine.MetaData.get_container(id_or_name) do
-            :not_found ->
-              {:stop, :normal, :no_state}
+            MetaData.add_container(cont)
+            {:ok, %State{container: cont, subscribers: []}}
+        end
 
-            cont ->
-              # MetaData.add_container(cont)
-              {:ok, %State{container: cont, subscribers: []}}
-          end
-      end
+      id_or_name ->
+        case Jocker.Engine.MetaData.get_container(id_or_name) do
+          :not_found ->
+            {:stop, :normal, :container_not_found}
+
+          cont ->
+            # MetaData.add_container(cont)
+            {:ok, %State{container: cont, subscribers: []}}
+        end
+    end
   end
 
   @impl true

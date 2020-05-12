@@ -15,7 +15,8 @@ defmodule Jocker.Engine.Application do
       Jocker.Engine.MetaData,
       Jocker.Engine.Layer,
       {Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]},
-      Jocker.Engine.ContainerPool
+      Jocker.Engine.ContainerPool,
+      Jocker.Engine.APIServer
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

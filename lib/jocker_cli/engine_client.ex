@@ -28,16 +28,15 @@ defmodule Jocker.CLI.EngineClient do
   def init([callers_pid]) do
     api_socket = Jocker.Engine.Config.api_socket()
 
-    IO.puts("jocker-cli: Connecting to jocker-engine")
+    Logger.info("Connecting to jocker-engine")
 
     case GenTCP.connect({:local, api_socket}, 0, [:binary, {:packet, :raw}, {:active, true}]) do
       {:ok, socket} ->
-        IO.puts("jocker-cli: Connection succesfully established")
+        Logger.info("Connection succesfully established")
         {:ok, %State{:socket => socket, :caller => callers_pid, :buffer => ""}}
 
       {:error, reason} ->
         IO.puts("jocker-cli: Error connecting to backed: #{reason}")
-        IO.puts("CLIENT-ERROR#{inspect(File.stat(api_socket))}")
         {:stop, reason}
     end
   end

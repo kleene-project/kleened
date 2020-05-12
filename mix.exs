@@ -10,7 +10,7 @@ defmodule Jocker.MixProject do
       escript: [
         main_module: Jocker.CLI.Main,
         name: "jocker",
-        app: nil,
+        app: :logger,
         embed_elixir: true
       ],
       dialyzer: [
@@ -32,7 +32,7 @@ defmodule Jocker.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger],
+      extra_applications: [:logger, :crypto],
       mod: {Jocker.Engine.Application, []}
     ]
   end

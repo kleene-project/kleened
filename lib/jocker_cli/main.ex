@@ -2,8 +2,10 @@ defmodule Jocker.CLI.Main do
   import Jocker.CLI.Docs
   import Jocker.Engine.Records
   alias Jocker.CLI.EngineClient
+  require Logger
 
   def main(args) do
+    Logger.configure(level: :error)
     Process.register(self(), :cli_master)
     spawn_link(__MODULE__, :main_, [args])
     print_output()
@@ -51,10 +53,10 @@ defmodule Jocker.CLI.Main do
   defp parse_subcommand(argv) do
     case argv do
       ["image" | []] ->
-        image_help()
+        to_cli(image_help(), :eof)
 
       ["image" | ["--help"]] ->
-        image_help()
+        to_cli(image_help(), :eof)
 
       ["image", "build" | opts] ->
         image_build(opts)
@@ -66,10 +68,10 @@ defmodule Jocker.CLI.Main do
         to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.", :eof)
 
       ["container" | []] ->
-        container_help()
+        to_cli(container_help(), :eof)
 
       ["container" | ["--help"]] ->
-        container_help()
+        to_cli(container_help(), :eof)
 
       ["container", "ls" | opts] ->
         container_ls(opts)
@@ -214,11 +216,17 @@ defmodule Jocker.CLI.Main do
         {:ok, _pid} = EngineClient.start_link([])
         rpc = [Jocker.Engine.ContainerPool, :create, [opts]]
         :ok = EngineClient.command(rpc)
-        {:ok, pid} = fetch_reply()
-        rpc2 = [Jocker.Engine.Container, :metadata, [pid]]
-        :ok = EngineClient.command(rpc2)
-        container(id: id) = fetch_reply()
-        to_cli(id, :eof)
+
+        case fetch_reply() do
+          :image_not_found ->
+            to_cli("Unable to find image '#{image}'", :eof)
+
+          {:ok, pid} ->
+            rpc2 = [Jocker.Engine.Container, :metadata, [pid]]
+            :ok = EngineClient.command(rpc2)
+            container(id: id) = fetch_reply()
+            to_cli(id, :eof)
+        end
 
       :error ->
         :ok
@@ -235,7 +243,7 @@ defmodule Jocker.CLI.Main do
              help: :boolean
            ]
          ) do
-      {options, []} ->
+      {_options, []} ->
         to_cli("\"jocker container start\" requires at least 1 argument.")
         to_cli(container_start_help(), :eof)
 
@@ -325,7 +333,7 @@ defmodule Jocker.CLI.Main do
         end
 
       :not_found ->
-        to_cli("Error response from daemon: No such container: #{id_or_name}")
+        to_cli("Error response from daemon: No such container: #{id_or_name}", :eof)
     end
   end
 
@@ -362,12 +370,11 @@ defmodule Jocker.CLI.Main do
   defp process_subcommand(docs, subcmd, argv, opts) do
     {options, _, _} = output = OptionParser.parse(argv, opts)
 
-    # IO.puts("DEBUG #{subcmd}: #{inspect(output)}")
     help = Keyword.get(options, :help, false)
 
     case output do
       {_, _, []} when help ->
-        IO.puts(docs)
+        to_cli(docs, :eof)
         :error
 
       {options, args, []} ->
