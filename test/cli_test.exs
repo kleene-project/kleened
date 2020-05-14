@@ -56,8 +56,8 @@ defmodule CLITest do
     Jocker.Engine.MetaData.add_image(img)
 
     [msg1, msg2] = jocker_cmd(["image", "ls"])
-    assert "NAME           TAG          IMAGE ID       CREATED         \n" == msg1
-    assert "test-image     latest       test-image-i   1970-01-01T00:00\n" == msg2
+    assert "NAME           TAG          IMAGE ID       CREATED     \n" == msg1
+    assert "test-image     latest       test-image-i   50 years    \n" == msg2
   end
 
   test "jocker image build" do
@@ -87,7 +87,7 @@ defmodule CLITest do
     [msg1] = jocker_cmd(["container", "ls"])
 
     header =
-      "CONTAINER ID   IMAGE                       COMMAND                   CREATED            STATUS    NAME\n"
+      "CONTAINER ID   IMAGE                       COMMAND                   CREATED        STATUS    NAME\n"
 
     assert msg1 == header
 
@@ -96,7 +96,7 @@ defmodule CLITest do
     assert msg2 == header
 
     assert msg3 ==
-             "testing-id-t   base                        /bin/ls                   1970-01-01T00:00   stopped   testname\n"
+             "testing-id-t   base                        /bin/ls                   50 years       stopped   testname\n"
   end
 
   test "jocker container create" do

@@ -150,7 +150,13 @@ defmodule Jocker.CLI.Main do
     name = cell(name_, 12)
     tag = cell(tag_, 10)
     id = cell(id_, 12)
-    timestamp = cell(timestamp_, 16)
+
+    timestamp =
+      case timestamp_ do
+        "CREATED" -> cell(timestamp_, 12)
+        _ -> cell(Jocker.Engine.Utils.human_duration(timestamp_), 12)
+      end
+
     n = 3
     to_cli("#{name}#{sp(n)}#{tag}#{sp(n)}#{id}#{sp(n)}#{timestamp}\n")
   end
@@ -358,7 +364,13 @@ defmodule Jocker.CLI.Main do
     id = cell(id_, 12)
     img_id = cell(img_id_, 25)
     cmd = cell(Enum.join(cmd_, " "), 23)
-    timestamp = cell(timestamp_, 16)
+
+    timestamp =
+      case timestamp_ do
+        "CREATED" -> cell(timestamp_, 12)
+        _ -> cell(Jocker.Engine.Utils.human_duration(timestamp_), 12)
+      end
+
     status = cell(status_, 7)
     n = 3
 
