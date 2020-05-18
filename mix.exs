@@ -42,7 +42,7 @@ defmodule Jocker.MixProject do
     [
       {:jason, "~> 1.2"},
       {:elixir_uuid, "~> 1.2"},
-      {:amnesia, "~> 0.2.8"},
+      {:sqlitex, "~> 1.7"},
       {:dialyxir, "~> 1.0", only: [:dev], runtime: false},
       {:earmark, "~> 1.4.4", only: :dev},
       {:ex_doc, "~> 0.19", only: :dev},

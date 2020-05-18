@@ -71,7 +71,7 @@ defmodule Jocker.Engine.APIServer do
               sockets = Map.put(state.sockets, pid, socket)
               %State{state | :buffers => updated_buffers, :sockets => sockets}
 
-            some_error ->
+            _some_error ->
               %State{state | :buffers => updated_buffers}
           end
 

@@ -28,6 +28,10 @@ defmodule Jocker.Engine.Utils do
     end
   end
 
+  def human_duration("") do
+    ""
+  end
+
   def human_duration(from_string) do
     now = DateTime.to_unix(DateTime.utc_now())
     {:ok, from_datetime, 0} = DateTime.from_iso8601(from_string)

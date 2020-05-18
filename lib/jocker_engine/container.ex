@@ -10,7 +10,7 @@ defmodule Jocker.Engine.Container do
   import Jocker.Engine.Records
   use GenServer
 
-  @type create_opts() ::
+  @type create_opts() :: [
           {:id_or_name, String.t()}
           | {:image, Jocker.Engine.Records.container()}
           | {:name, String.t()}
@@ -18,6 +18,7 @@ defmodule Jocker.Engine.Container do
           | {:user, String.t()}
           | {:jail_param, [String.t()]}
           | {:overwrite, boolean()}
+        ]
 
   ### ===================================================================
   ### API
@@ -65,8 +66,10 @@ defmodule Jocker.Engine.Container do
               id: image_id,
               user: default_user,
               command: default_cmd,
-              layer: parent_layer
+              layer_id: parent_layer_id
             ) = img
+
+            parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
 
             # Extract values from options:
             command = Keyword.get(opts, :cmd, default_cmd)
@@ -75,7 +78,7 @@ defmodule Jocker.Engine.Container do
             overwrite = Keyword.get(opts, :overwrite, false)
             name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
 
-            new_layer =
+            layer(id: new_layer_id) =
               case overwrite do
                 true -> parent_layer
                 false -> Jocker.Engine.Layer.initialize(parent_layer)
@@ -88,7 +91,7 @@ defmodule Jocker.Engine.Container do
                 ip: Jocker.Engine.Network.new(),
                 pid: self(),
                 command: command,
-                layer: new_layer,
+                layer_id: new_layer_id,
                 image_id: image_id,
                 parameters: ["exec.jail_user=" <> user | jail_param],
                 created: DateTime.to_iso8601(DateTime.utc_now())
@@ -196,12 +199,14 @@ defmodule Jocker.Engine.Container do
   defp start_(
          container(
            id: id,
-           layer: layer(mountpoint: path),
+           layer_id: layer_id,
            command: [cmd | cmd_args],
            ip: ip,
            parameters: parameters
          )
        ) do
+    layer(mountpoint: path) = Jocker.Engine.MetaData.get_layer(layer_id)
+
     args =
       ~w"-c path=#{path} name=#{id} ip4.addr=#{ip}" ++
         parameters ++ ["command=#{cmd}"] ++ cmd_args
@@ -222,7 +227,8 @@ defmodule Jocker.Engine.Container do
     end
   end
 
-  defp jail_cleanup(container(layer: layer(mountpoint: mountpoint))) do
+  defp jail_cleanup(container(layer_id: layer_id)) do
+    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     # remove any devfs mounts of the jail
     {output, _exitcode} = System.cmd("mount", [])
     output |> String.split("\n") |> Enum.map(&umount_container_devfs(&1, mountpoint))

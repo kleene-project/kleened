@@ -27,3 +27,6 @@ vim_*
 
 # Ignore cli-binary
 jocker
+
+# Ignore sqlite database files
+*.sqlite

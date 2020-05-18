@@ -2,6 +2,7 @@ defmodule Jocker.Engine.Application do
   # See https://hexdocs.pm/elixir/Application.html
   # for more information on OTP Applications
   @moduledoc false
+  require Jocker.Engine.Config
 
   use Application
 
@@ -12,7 +13,7 @@ defmodule Jocker.Engine.Application do
   def start(_type, _args) do
     children = [
       # Starts a worker by calling: JockTMod.Worker.start_link(arg)
-      Jocker.Engine.MetaData,
+      {Jocker.Engine.MetaData, [file: Jocker.Engine.Config.metadata_db()]},
       Jocker.Engine.Layer,
       {Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]},
       Jocker.Engine.ContainerPool,

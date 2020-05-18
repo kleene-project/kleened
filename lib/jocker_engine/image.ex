@@ -24,23 +24,25 @@ defmodule Jocker.Engine.Image do
       :user => "root"
     }
 
-    %State{:image => image(layer: layer) = image} =
+    %State{:image => image(layer_id: layer_id) = image} =
       Enum.reduce(instructions, state, &process_instructions/2)
 
-    finalized_layer = Jocker.Engine.Layer.finalize(layer)
+    layer = Jocker.Engine.MetaData.get_layer(layer_id)
+    Jocker.Engine.Layer.finalize(layer)
     now = DateTime.to_iso8601(DateTime.utc_now())
-    {:ok, image(image, layer: finalized_layer, created: now)}
+    {:ok, image(image, created: now)}
   end
 
   defp process_instructions({:from, image_id}, state) do
-    image(layer: parent_layer) = parent_image = Jocker.Engine.MetaData.get_image(image_id)
-    new_layer = Jocker.Engine.Layer.initialize(parent_layer)
+    image(layer_id: parent_layer_id) = parent_image = Jocker.Engine.MetaData.get_image(image_id)
+    parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
+    layer(id: new_layer_id) = Jocker.Engine.Layer.initialize(parent_layer)
     # Create a new image-record that is going to be our newly created image.
     # it is going to be used as a reference for the RUN instructions issued during image build
     # and therefore we add it to the metadata database now.
     build_image =
       image(parent_image,
-        layer: new_layer,
+        layer_id: new_layer_id,
         name: :none,
         tag: :none,
         id: Jocker.Engine.Utils.uuid(),
@@ -85,8 +87,9 @@ defmodule Jocker.Engine.Image do
     state
   end
 
-  defp copy_files(context, srcdest, image(layer: layer(mountpoint: mountpoint))) do
+  defp copy_files(context, srcdest, image(layer_id: layer_id)) do
     # FIXME Elixir have nice wildcard-expansion stuff that we could use here
+    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     {relative_dest, relative_sources} = List.pop_at(srcdest, -1)
     sources = Enum.map(relative_sources, fn src -> Path.join(context, src) end)
     dest = Path.join(mountpoint, relative_dest)

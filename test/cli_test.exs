@@ -1,10 +1,12 @@
 defmodule CLITest do
   use ExUnit.Case
+  require Jocker.Engine.Config
   import Jocker.Engine.Records
 
   setup_all do
+    Application.stop(:jocker)
     Jocker.Engine.ZFS.clear_zroot()
-    start_supervised(Jocker.Engine.MetaData)
+    start_supervised({Jocker.Engine.MetaData, [file: Jocker.Engine.Config.metadata_db()]})
     start_supervised(Jocker.Engine.Layer)
     start_supervised({Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
     start_supervised(Jocker.Engine.ContainerPool)

@@ -1,15 +1,17 @@
 defmodule ContainerTest do
   use ExUnit.Case
+  require Jocker.Engine.Config
   alias Jocker.Engine.Container
   alias Jocker.Engine.ContainerPool
   import Jocker.Engine.Records
 
   setup_all do
+    Application.stop(:jocker)
     Jocker.Engine.ZFS.clear_zroot()
   end
 
   setup do
-    start_supervised(Jocker.Engine.MetaData)
+    start_supervised({Jocker.Engine.MetaData, [file: Jocker.Engine.Config.metadata_db()]})
     start_supervised(Jocker.Engine.Layer)
     start_supervised({Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
     :ok
@@ -113,7 +115,8 @@ defmodule ContainerTest do
     {pid, container}
   end
 
-  defp devfs_mounted(container(layer: layer(mountpoint: mountpoint))) do
+  defp devfs_mounted(container(layer_id: layer_id)) do
+    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     devfs_path = Path.join(mountpoint, "dev")
 
     case System.cmd("sh", ["-c", "mount | grep \"devfs on #{devfs_path}\""]) do

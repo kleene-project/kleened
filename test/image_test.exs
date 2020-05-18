@@ -5,14 +5,16 @@ defmodule ImageTest do
   import Jocker.Engine.Records
 
   setup_all do
+    Application.stop(:jocker)
     Jocker.Engine.ZFS.clear_zroot()
   end
 
   setup do
-    start_supervised(Jocker.Engine.MetaData)
+    start_supervised({Jocker.Engine.MetaData, [file: Jocker.Engine.Config.metadata_db()]})
     start_supervised(Jocker.Engine.Layer)
     start_supervised({Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
     start_supervised(Jocker.Engine.ContainerPool)
+    on_exit(fn -> stop_and_delete_db() end)
     :ok
   end
 
@@ -24,7 +26,8 @@ defmodule ImageTest do
       run: ["/bin/sh", "-c", "echo 'lol1' > " <> file_path]
     ]
 
-    {:ok, image(layer: layer(mountpoint: mountpoint))} = Image.create_image(instructions)
+    {:ok, image(layer_id: layer_id)} = Image.create_image(instructions)
+    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, file_path)) == {:ok, "lol1\n"}
   end
 
@@ -35,7 +38,8 @@ defmodule ImageTest do
     ]
 
     context = create_test_context("test_copy_instruction")
-    {:ok, image(layer: layer(mountpoint: mountpoint))} = Image.create_image(instructions, context)
+    {:ok, image(layer_id: layer_id)} = Image.create_image(instructions, context)
+    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
   end
 
@@ -48,7 +52,8 @@ defmodule ImageTest do
     ]
 
     context = create_test_context("test_image_builder_three_layers")
-    {:ok, image(layer: layer(mountpoint: mountpoint))} = Image.create_image(instructions, context)
+    {:ok, image(layer_id: layer_id)} = Image.create_image(instructions, context)
+    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test_1.txt")) == {:ok, "lol1\n"}
     assert File.read(Path.join(mountpoint, "root/test_2.txt")) == {:ok, "lol2\n"}
@@ -60,5 +65,10 @@ defmodule ImageTest do
     Jocker.Engine.ZFS.create(dataset)
     {"", 0} = System.cmd("sh", ["-c", "echo 'lol' > #{mountpoint}/test.txt"])
     mountpoint
+  end
+
+  defp stop_and_delete_db() do
+    # Agent.stop(Jocker.Engine.MetaData)
+    File.rm(Jocker.Engine.Config.metadata_db())
   end
 end

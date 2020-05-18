@@ -10,13 +10,13 @@ defmodule Jocker.Engine.Records do
   )
 
   Record.defrecord(:image,
-    id: :none,
-    name: :none,
-    tag: :none,
-    layer: :none,
-    command: :none,
+    id: "",
+    name: "",
+    tag: "",
+    layer_id: "",
+    command: [],
     user: "root",
-    created: :none
+    created: ""
   )
 
   Record.defrecord(:container,
@@ -25,7 +25,7 @@ defmodule Jocker.Engine.Records do
     running: false,
     pid: :none,
     command: :none,
-    layer: :none,
+    layer_id: :none,
     ip: :none,
     image_id: :none,
     parameters: [],
@@ -42,10 +42,10 @@ defmodule Jocker.Engine.Records do
 
   @type image() ::
           record(:image,
-            id: String.t() | :none,
-            name: String.t() | :none,
-            tag: {String.t(), String.t()},
-            layer: layer(),
+            id: String.t(),
+            name: String.t(),
+            tag: String.t(),
+            layer_id: String.t(),
             command: [String.t()],
             user: String.t(),
             created: String.t()
@@ -58,7 +58,7 @@ defmodule Jocker.Engine.Records do
             running: true | false,
             pid: pid(),
             command: [String.t()],
-            layer: layer(),
+            layer_id: String.t(),
             ip: String.t(),
             image_id: String.t(),
             parameters: [String.t()],

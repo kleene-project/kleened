@@ -1,26 +1,36 @@
 defmodule MetaDataTest do
   use ExUnit.Case
+  require Jocker.Engine.Config
   import Jocker.Engine.MetaData
   import Jocker.Engine.Records
 
   setup_all do
-    Jocker.Engine.MetaData.start_link([])
+    :ok = Application.stop(:jocker)
     :ok
   end
 
   setup do
-    on_exit(fn -> clear_tables() end)
+    File.rm(dbfile())
+    start_link(file: dbfile())
+    :ok
   end
 
-  test "fetching stuff that is empty/not there" do
-    assert [] = list_images()
-    img1 = image(id: "lol", name: "test", tag: "oldest", created: now())
-    img2 = image(id: "lel", name: "test", tag: "latest", created: now())
-    add_image(img1)
-    add_image(img2)
-    assert :not_found = get_image("not_here")
-    assert :not_found = get_image("not_here:either")
-    assert [] = list_containers()
+  test "test db creation" do
+    assert db_exists?()
+    stop()
+    File.rm(dbfile())
+    start_link(file: dbfile())
+    assert db_exists?()
+  end
+
+  test "adding and getting layers" do
+    layer1 = layer(id: "lol", dataset: "tank/test", mountpoint: "/tank/test/")
+    layer2 = layer(layer1, snapshot: "/tank/test@testing")
+    add_layer(layer1)
+    assert layer1 = get_layer("lol")
+    add_layer(layer2)
+    assert layer2 = get_layer("lol")
+    assert :not_found == get_layer("notexist")
   end
 
   test "adding and getting images" do
@@ -35,22 +45,35 @@ defmodule MetaDataTest do
 
     # Test that name/tag will be removed from existing image if a new image is added with conflicting nametag
     img3 = image(id: "lel2", name: "test", tag: "latest", created: now())
-    img2_nametag_removed = image(img2, name: :none, tag: :none)
+    img2_nametag_removed = image(img2, name: "", tag: "")
     add_image(img3)
     assert img2_nametag_removed == get_image("lel")
   end
 
-  test "adding and getting layers" do
-    layer1 = layer(id: "lol", dataset: "tank/test", mountpoint: "/tank/test/")
-    layer2 = layer(layer1, snapshot: "/tank/test@testing")
-    add_layer(layer1)
-    assert layer1 = get_layer("lol")
-    add_layer(layer2)
-    assert layer2 = get_layer("lol")
+  test "empty nametags are avoided in overwrite logic" do
+    img1 = image(id: "lol1", name: "", tag: "", created: now())
+    img2 = image(id: "lol2", name: "", tag: "", created: now())
+    img3 = image(id: "lol3", name: "", tag: "", created: now())
+    add_image(img1)
+    add_image(img2)
+    add_image(img3)
+    assert [img3, img2, img1] == list_images()
+  end
+
+  test "fetching images that is not there" do
+    assert [] = list_images()
+    img1 = image(id: "lol", name: "test", tag: "oldest", created: now())
+    img2 = image(id: "lel", name: "test", tag: "latest", created: now())
+    add_image(img1)
+    add_image(img2)
+    assert :not_found = get_image("not_here")
+    assert :not_found = get_image("not_here:either")
   end
 
   test "get containers" do
     add_container(container(id: "1337", name: "test1", created: now()))
+    add_container(container(id: "1338", name: "1337", created: now()))
+    add_container(container(id: "1339", name: "1337", created: now()))
     assert container(id: "1337") = get_container("1337")
     assert container(id: "1337") = get_container("test1")
     assert :not_found == get_container("lol")
@@ -79,5 +102,19 @@ defmodule MetaDataTest do
     assert containers == containers2
   end
 
-  defp now(), do: :erlang.timestamp()
+  defp dbfile() do
+    Jocker.Engine.Config.metadata_db()
+  end
+
+  defp db_exists?() do
+    case File.stat(dbfile()) do
+      {:ok, _} -> true
+      {:error, _} -> false
+    end
+  end
+
+  defp now() do
+    :timer.sleep(10)
+    DateTime.to_iso8601(DateTime.utc_now())
+  end
 end
