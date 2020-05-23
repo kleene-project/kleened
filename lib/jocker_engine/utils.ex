@@ -1,4 +1,13 @@
 defmodule Jocker.Engine.Utils do
+  def timestamp_now() do
+    DateTime.to_iso8601(DateTime.utc_now())
+  end
+
+  def unmount(path) do
+    {"", return_code} = System.cmd("/sbin/umount", [path])
+    return_code
+  end
+
   def decode_tagname(tagname) do
     case String.split(tagname, ":") do
       [name] ->

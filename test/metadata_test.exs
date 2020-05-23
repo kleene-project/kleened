@@ -4,8 +4,10 @@ defmodule MetaDataTest do
   import Jocker.Engine.MetaData
   import Jocker.Engine.Records
 
+  @moduletag :capture_log
+
   setup_all do
-    :ok = Application.stop(:jocker)
+    Application.stop(:jocker)
     :ok
   end
 
@@ -100,6 +102,82 @@ defmodule MetaDataTest do
 
     assert [container(id: "2")] = containers
     assert containers == containers2
+  end
+
+  test "adding and listing volumes" do
+    [] = list_volumes()
+
+    vol1 =
+      volume(
+        name: "test1",
+        dataset: "dataset/location",
+        mountpoint: "mountpoint/location",
+        created: now()
+      )
+
+    vol1_modified = volume(vol1, dataset: "dataset/new_location")
+
+    vol2 =
+      volume(
+        name: "test2",
+        dataset: "dataset/location",
+        mountpoint: "mountpoint/location",
+        created: now()
+      )
+
+    add_volume(vol1)
+    assert [vol1] == list_volumes()
+    add_volume(vol2)
+    assert [vol2, vol1] == list_volumes()
+    add_volume(vol1_modified)
+    assert [vol2, vol1_modified] == list_volumes()
+  end
+
+  test "removing volumes" do
+    vol1 =
+      volume(
+        name: "test1",
+        dataset: "dataset/location",
+        mountpoint: "mountpoint/location",
+        created: now()
+      )
+
+    add_volume(vol1)
+    assert [vol1] == list_volumes()
+    :ok = remove_volume(vol1)
+    assert [] == list_volumes()
+  end
+
+  test "adding and listing mounts" do
+    vol_name = "testvol"
+
+    vol =
+      volume(
+        name: vol_name,
+        dataset: "dataset/location",
+        mountpoint: "mountpoint/location",
+        created: now()
+      )
+
+    assert [] == list_mounts(vol)
+
+    mnt1 =
+      mount(
+        container_id: "contestid",
+        volume_name: vol_name,
+        location: "location1",
+        read_only: false
+      )
+
+    mnt2 = mount(mnt1, read_only: true)
+    mnt3 = mount(volume_name: "some_other_name")
+
+    add_mount(mnt1)
+    assert [mnt1] == list_mounts(vol)
+    add_mount(mnt2)
+    assert [mnt1, mnt2] == list_mounts(vol)
+    add_mount(mnt3)
+    assert [mnt1, mnt2] == list_mounts(vol)
   end
 
   defp dbfile() do

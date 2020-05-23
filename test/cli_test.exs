@@ -3,6 +3,8 @@ defmodule CLITest do
   require Jocker.Engine.Config
   import Jocker.Engine.Records
 
+  @moduletag :capture_log
+
   setup_all do
     Application.stop(:jocker)
     Jocker.Engine.ZFS.clear_zroot()
@@ -17,6 +19,7 @@ defmodule CLITest do
   setup do
     Process.register(self(), :cli_master)
     Jocker.Engine.MetaData.clear_tables()
+    :ok
   end
 
   test "escript main help" do

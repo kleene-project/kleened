@@ -1,7 +1,8 @@
 defmodule DockerfileTest do
   import Jocker.Engine.Dockerfile
-
   use ExUnit.Case
+
+  @moduletag :capture_log
 
   test "from instruction" do
     test1 = parse("# Testing\nFROM lol\n# One more comment")

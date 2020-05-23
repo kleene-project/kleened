@@ -4,6 +4,8 @@ defmodule ImageTest do
   alias Jocker.Engine.Image
   import Jocker.Engine.Records
 
+  @moduletag :capture_log
+
   setup_all do
     Application.stop(:jocker)
     Jocker.Engine.ZFS.clear_zroot()

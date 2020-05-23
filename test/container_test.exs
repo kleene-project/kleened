@@ -5,6 +5,8 @@ defmodule ContainerTest do
   alias Jocker.Engine.ContainerPool
   import Jocker.Engine.Records
 
+  @moduletag :capture_log
+
   setup_all do
     Application.stop(:jocker)
     Jocker.Engine.ZFS.clear_zroot()

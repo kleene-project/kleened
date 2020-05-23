@@ -45,6 +45,27 @@ defmodule Jocker.Engine.MetaData do
     created  TEXT
     )
   """
+
+  @table_volumes """
+  CREATE TABLE IF NOT EXISTS
+  volumes (
+    name       TEXT PRIMARY KEY,
+    dataset    TEXT,
+    mountpoint TEXT,
+    created    TEXT
+    )
+  """
+
+  @table_mounts """
+  CREATE TABLE IF NOT EXISTS
+  mounts (
+    container_id TEXT,
+    volume_name  TEXT,
+    location     TEXT,
+    read_only    INTEGER
+    )
+  """
+
   @type list_containers_opts :: [
           {:all, boolean()}
         ]
@@ -74,7 +95,7 @@ defmodule Jocker.Engine.MetaData do
 
   @spec add_layer(Jocker.Engine.Records.layer()) :: :ok
   def add_layer(layer) do
-    Agent.update(__MODULE__, fn db -> add_layer_(db, layer) end)
+    Agent.get(__MODULE__, fn db -> add_layer_(db, layer) end)
   end
 
   @spec get_layer(String.t()) :: Jocker.Engine.Records.layer() | :not_found
@@ -84,7 +105,7 @@ defmodule Jocker.Engine.MetaData do
 
   @spec add_image(Jocker.Engine.Records.image()) :: :ok
   def add_image(image) do
-    Agent.update(__MODULE__, fn db -> add_image_(db, image) end)
+    Agent.get(__MODULE__, fn db -> add_image_(db, image) end)
   end
 
   @spec get_image(String.t()) :: Jocker.Engine.Records.image() | :not_found
@@ -99,7 +120,7 @@ defmodule Jocker.Engine.MetaData do
 
   @spec add_container(Jocker.Engine.Records.container()) :: :ok
   def add_container(container) do
-    Agent.update(__MODULE__, fn db -> add_container_(db, container) end)
+    Agent.get(__MODULE__, fn db -> add_container_(db, container) end)
   end
 
   @spec get_container(String.t()) :: Jocker.Engine.Records.container() | :not_found
@@ -112,9 +133,39 @@ defmodule Jocker.Engine.MetaData do
     Agent.get(__MODULE__, fn db -> list_containers_(db, opts) end)
   end
 
+  @spec add_volume(Jocker.Engine.Records.volume()) :: :ok
+  def add_volume(volume) do
+    Agent.get(__MODULE__, fn db -> add_volume_(db, volume) end)
+  end
+
+  @spec remove_volume(Jocker.Engine.Records.volume()) :: :ok | :not_found
+  def remove_volume(volume) do
+    Agent.get(__MODULE__, fn db -> remove_volume_(db, volume) end)
+  end
+
+  @spec list_volumes([]) :: [Jocker.Engine.Records.volume()]
+  def list_volumes(opts \\ []) do
+    Agent.get(__MODULE__, fn db -> list_volumes_(db, opts) end)
+  end
+
+  @spec add_mount(Jocker.Engine.Records.mount()) :: :ok
+  def add_mount(mount) do
+    Agent.get(__MODULE__, fn db -> add_mount_(db, mount) end)
+  end
+
+  @spec remove_mounts(Jocker.Engine.Records.volume()) :: :ok | :not_found
+  def remove_mounts(volume) do
+    Agent.get(__MODULE__, fn db -> remove_mounts_(db, volume) end)
+  end
+
+  @spec list_mounts(Jocker.Engine.Records.volume()) :: [Jocker.Engine.Records.mount()]
+  def list_mounts(volume) do
+    Agent.get(__MODULE__, fn db -> list_mounts_(db, volume) end)
+  end
+
   @spec clear_tables() :: :ok
   def clear_tables() do
-    Agent.update(__MODULE__, fn db -> clear_tables_(db) end)
+    Agent.get(__MODULE__, fn db -> clear_tables_(db) end)
   end
 
   ##########################
@@ -122,8 +173,7 @@ defmodule Jocker.Engine.MetaData do
   ##########################
   def add_layer_(db, layer) do
     row = record2row(layer)
-    :ok = exec(db, "INSERT OR REPLACE INTO layers VALUES (?, ?, ?, ?, ?)", row)
-    db
+    exec(db, "INSERT OR REPLACE INTO layers VALUES (?, ?, ?, ?, ?)", row)
   end
 
   def get_layer_(db, layer_id) do
@@ -158,8 +208,6 @@ defmodule Jocker.Engine.MetaData do
   end
 
   def get_image_(db, id_or_nametag) do
-    IO.puts("LOL #{inspect(File.stat(Jocker.Engine.Config.metadata_db()))}")
-
     result =
       case fetch_all(db, "SELECT * FROM images WHERE id=?", [id_or_nametag]) do
         {:ok, []} ->
@@ -190,8 +238,7 @@ defmodule Jocker.Engine.MetaData do
           Sqlitex.connection()
   def add_container_(db, container) do
     row = record2row(container)
-    :ok = exec(db, "INSERT OR REPLACE INTO containers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
-    db
+    exec(db, "INSERT OR REPLACE INTO containers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
   end
 
   @spec get_container_(Sqlitex.connection(), String.t()) ::
@@ -225,11 +272,50 @@ defmodule Jocker.Engine.MetaData do
     Enum.map(rows, fn row -> row2record(:container, row) end)
   end
 
+  @spec add_volume_(Sqlitex.connection(), Jocker.Engine.Records.volume()) :: :ok
+  def add_volume_(db, volume) do
+    row = record2row(volume)
+    exec(db, "INSERT OR REPLACE INTO volumes VALUES (?, ?, ?, ?)", row)
+  end
+
+  @spec remove_volume_(Sqlitex.connection(), Jocker.Engine.Records.volume()) :: :ok
+  def remove_volume_(db, volume(name: name)) do
+    sql = "DELETE FROM volumes WHERE name = ?;"
+    :ok = exec(db, sql, [name])
+  end
+
+  @spec list_volumes_(Sqlitex.connection(), String.t()) ::
+          Jocker.Engine.Records.volume() | :not_found
+  def list_volumes_(db, _opts) do
+    sql = "SELECT * FROM volumes ORDER BY created DESC"
+    {:ok, rows} = fetch_all(db, sql, [])
+    Enum.map(rows, fn row -> row2record(:volume, row) end)
+  end
+
+  @spec add_mount_(Sqlitex.connection(), Jocker.Engine.Records.mount()) :: :ok
+  def add_mount_(db, mount) do
+    row = record2row(mount)
+    exec(db, "INSERT OR REPLACE INTO mounts VALUES (?, ?, ?, ?)", row)
+  end
+
+  @spec remove_mounts_(Sqlitex.connection(), Jocker.Engine.Records.volume()) :: :ok
+  def remove_mounts_(db, volume(name: name)) do
+    sql = "DELETE FROM mounts WHERE volume_name = ?;"
+    :ok = exec(db, sql, [name])
+  end
+
+  @spec list_mounts_(Sqlitex.connection(), Jocker.Engine.Records.volume()) ::
+          [Jocker.Engine.Records.mount()]
+  def list_mounts_(db, volume(name: name)) do
+    sql = "SELECT * FROM mounts WHERE volume_name = ?"
+    {:ok, rows} = fetch_all(db, sql, [name])
+    Enum.map(rows, fn row -> row2record(:mount, row) end)
+  end
+
   @spec clear_tables_(Sqlitex.connection()) :: Sqlitex.connection()
   def clear_tables_(db) do
     drop_tables(db)
     create_tables(db)
-    db
   end
 
   @spec row2record(record_type(), []) :: jocker_record()
@@ -251,6 +337,10 @@ defmodule Jocker.Engine.MetaData do
           row_upd = Keyword.update(row, :command, nil, &decode/1)
           List.to_tuple([type | Keyword.values(row_upd)])
 
+        :mount ->
+          row_upd = Keyword.update(row, :read_only, nil, &int2bool/1)
+          List.to_tuple([type | Keyword.values(row_upd)])
+
         type ->
           List.to_tuple([type | Keyword.values(row)])
       end
@@ -259,6 +349,7 @@ defmodule Jocker.Engine.MetaData do
     record
   end
 
+  # FIXME spec is wrong!
   @spec record2row({}) :: []
   def record2row(rec) do
     Logger.debug("Converting record: #{inspect(rec)}")
@@ -289,6 +380,12 @@ defmodule Jocker.Engine.MetaData do
           image(command: cmd) = rec
           cmd_json = encode(cmd)
           [_type | new_values] = Tuple.to_list(image(rec, command: cmd_json))
+          new_values
+
+        :mount ->
+          mount(read_only: ro) = rec
+          ro_integer = bool2int(ro)
+          [_type | new_values] = Tuple.to_list(mount(rec, read_only: ro_integer))
           new_values
 
         _type ->
@@ -338,6 +435,8 @@ defmodule Jocker.Engine.MetaData do
     {:ok, []} = Sqlitex.query(db, "DROP TABLE images")
     {:ok, []} = Sqlitex.query(db, "DROP TABLE containers")
     {:ok, []} = Sqlitex.query(db, "DROP TABLE layers")
+    {:ok, []} = Sqlitex.query(db, "DROP TABLE volumes")
+    {:ok, []} = Sqlitex.query(db, "DROP TABLE mounts")
   end
 
   def create_tables(db) do
@@ -359,6 +458,8 @@ defmodule Jocker.Engine.MetaData do
     {:ok, []} = Sqlitex.query(db, @table_layers)
     {:ok, []} = Sqlitex.query(db, @table_images)
     {:ok, []} = Sqlitex.query(db, @table_containers)
+    {:ok, []} = Sqlitex.query(db, @table_volumes)
+    {:ok, []} = Sqlitex.query(db, @table_mounts)
     add_layer_(db, base_layer)
     add_image_(db, base_image)
   end

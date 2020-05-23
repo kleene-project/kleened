@@ -31,6 +31,7 @@ defmodule Jocker.Engine.Container do
   def attach(pid),
     do: GenServer.call(pid, {:attach, self()})
 
+  @spec metadata(pid()) :: Jocker.Engine.Records.container()
   def metadata(pid),
     do: GenServer.call(pid, :metadata)
 
@@ -191,7 +192,7 @@ defmodule Jocker.Engine.Container do
   ### Internal functions
   ### ===================================================================
   defp relay_msg(msg, state) do
-    IO.puts("relaying msg: #{inspect(msg)}")
+    Logger.debug("relaying msg: #{inspect(msg)}")
     wrapped_msg = {:container, self(), msg}
     Enum.map(state.subscribers, fn x -> Process.send(x, wrapped_msg, []) end)
   end
