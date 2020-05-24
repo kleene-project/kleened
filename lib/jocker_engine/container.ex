@@ -98,6 +98,9 @@ defmodule Jocker.Engine.Container do
                 created: DateTime.to_iso8601(DateTime.utc_now())
               )
 
+            # Mount volumes into container (if any have been provided)
+            bind_volumes(opts, cont)
+
             MetaData.add_container(cont)
             {:ok, %State{container: cont, subscribers: []}}
         end
@@ -191,6 +194,40 @@ defmodule Jocker.Engine.Container do
   ### ===================================================================
   ### Internal functions
   ### ===================================================================
+  defp bind_volumes(options, container) do
+    Enum.map(options, fn vol -> bind_volumes_(vol, container) end)
+  end
+
+  defp bind_volumes_({:volume, vol_raw}, cont) do
+    arg =
+      case String.split(vol_raw, ":") do
+        [<<"/", _::binary>> = location] ->
+          # anonymous volume
+          create_and_bind("", location, [ro: false], cont)
+
+        [<<"/", _::binary>> = location, "ro"] ->
+          # anonymous volume - readonly
+          create_and_bind("", location, [ro: true], cont)
+
+        [name, location, "ro"] ->
+          # named volume - readonly
+          create_and_bind(name, location, [ro: true], cont)
+
+        [name, location] ->
+          # named volume
+          create_and_bind(name, location, [ro: false], cont)
+      end
+  end
+
+  defp bind_volumes_(_, cont) do
+    :ok
+  end
+
+  defp create_and_bind(name, location, opts, cont) do
+    vol = Jocker.Engine.Volume.create_volume(name)
+    Jocker.Engine.Volume.bind_volume(cont, vol, location, opts)
+  end
+
   defp relay_msg(msg, state) do
     Logger.debug("relaying msg: #{inspect(msg)}")
     wrapped_msg = {:container, self(), msg}

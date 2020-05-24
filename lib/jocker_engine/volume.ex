@@ -64,11 +64,11 @@ defmodule Jocker.Engine.Volume do
       ) do
     layer(mountpoint: container_mountpoint) = MetaData.get_layer(layer_id)
     absolute_location = Path.join(container_mountpoint, location)
-    read_only = Keyword.get(opts, :rw, true)
+    read_only = Keyword.get(opts, :ro, false)
 
     case read_only do
-      true -> mount_nullfs([volume_mountpoint, absolute_location])
-      false -> mount_nullfs(["-o", "ro", volume_mountpoint, absolute_location])
+      false -> mount_nullfs([volume_mountpoint, absolute_location])
+      true -> mount_nullfs(["-o", "ro", volume_mountpoint, absolute_location])
     end
 
     mnt =

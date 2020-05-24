@@ -1,5 +1,9 @@
 defmodule CLITest do
   use ExUnit.Case
+  alias Jocker.Engine.Container
+  alias Jocker.Engine.Image
+  alias Jocker.Engine.MetaData
+  alias Jocker.Engine.Volume
   require Jocker.Engine.Config
   import Jocker.Engine.Records
 
@@ -8,7 +12,8 @@ defmodule CLITest do
   setup_all do
     Application.stop(:jocker)
     Jocker.Engine.ZFS.clear_zroot()
-    start_supervised({Jocker.Engine.MetaData, [file: Jocker.Engine.Config.metadata_db()]})
+    Jocker.Engine.Volume.initialize()
+    start_supervised({MetaData, [file: Jocker.Engine.Config.metadata_db()]})
     start_supervised(Jocker.Engine.Layer)
     start_supervised({Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
     start_supervised(Jocker.Engine.ContainerPool)
@@ -18,7 +23,7 @@ defmodule CLITest do
 
   setup do
     Process.register(self(), :cli_master)
-    Jocker.Engine.MetaData.clear_tables()
+    MetaData.clear_tables()
     :ok
   end
 
@@ -29,7 +34,7 @@ defmodule CLITest do
 
   test "api_server image ls" do
     {:ok, _pid} = Jocker.CLI.EngineClient.start_link([])
-    rpc = [Jocker.Engine.MetaData, :list_images, []]
+    rpc = [MetaData, :list_images, []]
     :ok = Jocker.CLI.EngineClient.command(rpc)
 
     receive do
@@ -58,7 +63,7 @@ defmodule CLITest do
         created: DateTime.to_iso8601(DateTime.from_unix!(1))
       )
 
-    Jocker.Engine.MetaData.add_image(img)
+    MetaData.add_image(img)
 
     [msg1, msg2] = jocker_cmd(["image", "ls"])
     assert "NAME           TAG          IMAGE ID       CREATED           \n" == msg1
@@ -70,11 +75,11 @@ defmodule CLITest do
 
     [msg1] = jocker_cmd(["image", "build", "-t", "lol:test", path])
     id1 = String.slice(msg1, 34, 12)
-    assert image(name: "lol", tag: "test") = Jocker.Engine.MetaData.get_image(id1)
+    assert image(name: "lol", tag: "test") = MetaData.get_image(id1)
 
     [msg2] = jocker_cmd(["image", "build", path])
     id2 = String.slice(msg2, 34, 12)
-    assert image(name: "<none>", tag: "<none>") = Jocker.Engine.MetaData.get_image(id2)
+    assert image(name: "<none>", tag: "<none>") = MetaData.get_image(id2)
   end
 
   test "jocker container ls" do
@@ -88,7 +93,7 @@ defmodule CLITest do
         created: DateTime.to_iso8601(DateTime.from_unix!(1))
       )
 
-    Jocker.Engine.MetaData.add_container(container)
+    MetaData.add_container(container)
     [msg1] = jocker_cmd(["container", "ls"])
 
     header =
@@ -106,33 +111,80 @@ defmodule CLITest do
 
   test "jocker container create" do
     [id] = jocker_cmd(["container", "create", "base"])
-    containers = Jocker.Engine.MetaData.list_containers(all: true)
+    containers = MetaData.list_containers(all: true)
     assert [container(id: ^id)] = containers
 
     [id2] = jocker_cmd(["container", "create", "--name", "loltest", "base"])
-    containers2 = Jocker.Engine.MetaData.list_containers(all: true)
+
+    containers2 = MetaData.list_containers(all: true)
     assert [container(id: ^id2, name: "loltest") | _] = containers2
   end
 
-  test "jocker container start" do
-    {:ok, pid} = Jocker.Engine.Container.create(image: "base", cmd: ["/bin/sleep", "10000"])
-    container(id: id) = Jocker.Engine.Container.metadata(pid)
+  test "jocker container create with volumes" do
+    instructions = [
+      from: "base",
+      run: ["/bin/sh", "-c", "mkdir /testdir1"],
+      run: ["/bin/sh", "-c", "mkdir /testdir2"],
+      run: ["/bin/sh", "-c", "mkdir /testdir3"],
+      run: ["/bin/sh", "-c", "mkdir /testdir4"]
+    ]
 
-    assert [container(id: ^id, running: false)] =
-             Jocker.Engine.MetaData.list_containers(all: true)
+    {:ok, image(id: image_id, layer_id: layer_id)} = Image.create_image(instructions)
+
+    volume(mountpoint: mountpoint_vol1) = Volume.create_volume("testvol-1")
+    volume_testfile1 = Path.join(mountpoint_vol1, "testfile1")
+    {"", 0} = System.cmd("/usr/bin/touch", [volume_testfile1])
+
+    volume(mountpoint: mountpoint_vol2) = Volume.create_volume("testvol-2")
+    volume_testfile2 = Path.join(mountpoint_vol2, "testfile2")
+    {"", 0} = System.cmd("/usr/bin/touch", [volume_testfile2])
+
+    [id] =
+      jocker_cmd([
+        "container",
+        "create",
+        "-v",
+        "testvol-1:/testdir1:ro",
+        "--volume",
+        "testvol-2:/testdir2",
+        "-v",
+        "/testdir3:ro",
+        "-v",
+        "/testdir4",
+        image_id
+      ])
+
+    container(layer_id: layer_id) = MetaData.get_container(id)
+    layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
+
+    assert is_file?(Path.join(mountpoint, "testdir1/testfile1"))
+
+    assert is_file?(Path.join(mountpoint, "testdir2/testfile2"))
+
+    assert {"", 1} ==
+             System.cmd("/usr/bin/touch", [Path.join(mountpoint, "testdir3/readonly_test")])
+
+    assert {"", 1} ==
+             System.cmd("/usr/bin/touch", [Path.join(mountpoint, "testdir1/readonly_test")])
+  end
+
+  test "jocker container start" do
+    {:ok, pid} = Container.create(image: "base", cmd: ["/bin/sleep", "10000"])
+    container(id: id) = Container.metadata(pid)
+
+    assert [container(id: ^id, running: false)] = MetaData.list_containers(all: true)
 
     assert ["#{id}\n"] == jocker_cmd(["container", "start", id])
-    assert [container(id: ^id, running: true)] = Jocker.Engine.MetaData.list_containers(all: true)
-    Jocker.Engine.Container.stop(pid)
+    assert [container(id: ^id, running: true)] = MetaData.list_containers(all: true)
+    Container.stop(pid)
 
-    assert [container(id: ^id, running: false)] =
-             Jocker.Engine.MetaData.list_containers(all: true)
+    assert [container(id: ^id, running: false)] = MetaData.list_containers(all: true)
   end
 
   test "jocker container start --attach" do
-    {:ok, pid} = Jocker.Engine.Container.create(image: "base", cmd: ["/bin/sh", "-c", "echo lol"])
-    container(id: id) = Jocker.Engine.Container.metadata(pid)
-    Jocker.Engine.Container.stop(pid)
+    {:ok, pid} = Container.create(image: "base", cmd: ["/bin/sh", "-c", "echo lol"])
+    container(id: id) = Container.metadata(pid)
+    Container.stop(pid)
     assert ["lol\n"] == jocker_cmd(["container", "start", "-a", id])
   end
 
@@ -141,7 +193,7 @@ defmodule CLITest do
     assert ["testvol\n"] == jocker_cmd(["volume", "create", "testvol"])
     # Check for idempotency:
     assert ["testvol\n"] == jocker_cmd(["volume", "create", "testvol"])
-    volumes = Jocker.Engine.MetaData.list_volumes()
+    volumes = MetaData.list_volumes()
     assert [volume(name: ^volume_name, dataset: dataset, mountpoint: mountpoint)] = volumes
     assert {:ok, %File.Stat{:type => :directory}} = File.stat(mountpoint)
     assert {"#{dataset}\n", 0} == System.cmd("/sbin/zfs", ["list", "-H", "-o", "name", dataset])
@@ -155,12 +207,12 @@ defmodule CLITest do
     volume(name: name3) = vol3 = Jocker.Engine.Volume.create_volume()
 
     assert ["test1\n"] == jocker_cmd(["volume", "rm", "test1"])
-    [vol3, vol2] = Jocker.Engine.MetaData.list_volumes()
+    [vol3, vol2] = MetaData.list_volumes()
 
     assert ["test2\n", "Error: No such volume: test5\n", "#{name3}\n"] ==
              jocker_cmd(["volume", "rm", "test2", "test5", name3])
 
-    assert [] = Jocker.Engine.MetaData.list_volumes()
+    assert [] = MetaData.list_volumes()
   end
 
   test "jocker volume ls" do
@@ -205,6 +257,13 @@ defmodule CLITest do
     case Enum.find(Process.registered(), fn x -> x == Jocker.CLI.EngineClient end) do
       Jocker.CLI.EngineClient -> true
       nil -> false
+    end
+  end
+
+  defp is_file?(filepath) do
+    case File.stat(filepath) do
+      {:ok, %File.Stat{type: :regular}} -> true
+      _notthecase -> false
     end
   end
 

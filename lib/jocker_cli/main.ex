@@ -193,8 +193,12 @@ defmodule Jocker.CLI.Main do
 
   def container_create(argv) do
     case process_subcommand(container_create_help(), "container create", argv,
+           aliases: [
+             v: :volume
+           ],
            strict: [
              name: :string,
+             volume: :keep,
              help: :boolean
            ]
          ) do

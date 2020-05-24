@@ -90,6 +90,7 @@ defmodule Jocker.CLI.Docs do
   Options:
 
       -a, --attach               Attach STDOUT/STDERR and forward signals
+      -v, --volume               Bind mount a volume
 
   """
   def container_start_help(), do: @doc
