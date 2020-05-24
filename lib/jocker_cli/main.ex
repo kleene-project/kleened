@@ -160,17 +160,12 @@ defmodule Jocker.CLI.Main do
     end
   end
 
-  defp print_image(image(name: name_, tag: tag_, id: id_, created: timestamp_)) do
+  defp print_image(image(name: name_, tag: tag_, id: id_, created: created)) do
     # TODO we need to have a "SIZE" column as the last column
     name = cell(name_, 12)
     tag = cell(tag_, 10)
     id = cell(id_, 12)
-
-    timestamp =
-      case timestamp_ do
-        "CREATED" -> cell(timestamp_, 12)
-        _ -> cell(Jocker.Engine.Utils.human_duration(timestamp_), 12)
-      end
+    timestamp = format_timestamp(created)
 
     n = 3
     to_cli("#{name}#{sp(n)}#{tag}#{sp(n)}#{id}#{sp(n)}#{timestamp}\n")
@@ -404,15 +399,8 @@ defmodule Jocker.CLI.Main do
 
   defp print_volume([name, created]) do
     name = cell(name, 14)
-
-    timestamp =
-      case created do
-        "CREATED" -> cell(created, 18)
-        _ -> cell(Jocker.Engine.Utils.human_duration(created), 18)
-      end
-
+    timestamp = format_timestamp(created)
     n = 3
-
     to_cli("#{name}#{sp(n)}#{timestamp}\n")
   end
 
@@ -491,7 +479,7 @@ defmodule Jocker.CLI.Main do
            name: name,
            command: cmd_,
            running: running,
-           created: timestamp_
+           created: created
          )
        ) do
     status_ =
@@ -504,19 +492,20 @@ defmodule Jocker.CLI.Main do
     id = cell(id_, 12)
     img_id = cell(img_id_, 25)
     cmd = cell(Enum.join(cmd_, " "), 23)
-
-    timestamp =
-      case timestamp_ do
-        "CREATED" -> cell(timestamp_, 12)
-        _ -> cell(Jocker.Engine.Utils.human_duration(timestamp_), 12)
-      end
-
+    timestamp = format_timestamp(created)
     status = cell(status_, 7)
     n = 3
 
     to_cli(
       "#{id}#{sp(n)}#{img_id}#{sp(n)}#{cmd}#{sp(n)}#{timestamp}#{sp(n)}#{status}#{sp(n)}#{name}\n"
     )
+  end
+
+  defp format_timestamp(ts) do
+    case ts do
+      "CREATED" -> cell("CREATED", 18)
+      _ -> cell(Jocker.Engine.Utils.human_duration(ts), 18)
+    end
   end
 
   defp process_subcommand(docs, subcmd, argv, opts) do
