@@ -117,13 +117,13 @@ defmodule Jocker.CLI.Main do
            ]
          ) do
       {options, [path]} ->
-        {:ok, _pid} = Jocker.CLI.EngineClient.start_link([])
         context = Path.absname(path)
         dockerfile_path = Path.join(context, "Dockerfile")
         tagname = Jocker.Engine.Utils.decode_tagname(Keyword.get(options, :tag, "<none>:<none>"))
-        rpc = [Jocker.Engine.Image, :build_image_from_file, [dockerfile_path, tagname, context]]
-        _output = EngineClient.command(rpc)
-        {:ok, image(id: id)} = fetch_reply()
+
+        {:ok, image(id: id)} =
+          rpc([Jocker.Engine.Image, :build_image_from_file, [dockerfile_path, tagname, context]])
+
         to_cli("Image succesfully created with id #{id}", :eof)
 
       {_options, []} ->
@@ -143,10 +143,7 @@ defmodule Jocker.CLI.Main do
            ]
          ) do
       {_options, []} ->
-        {:ok, _pid} = EngineClient.start_link([])
-        rpc = [Jocker.Engine.MetaData, :list_images, []]
-        _output = EngineClient.command(rpc)
-        images = fetch_reply()
+        images = rpc([Jocker.Engine.MetaData, :list_images, []])
         print_image(image(name: "NAME", tag: "TAG", id: "IMAGE ID", created: "CREATED"))
         Enum.map(images, &print_image/1)
         cli_eof()
@@ -160,17 +157,6 @@ defmodule Jocker.CLI.Main do
     end
   end
 
-  defp print_image(image(name: name_, tag: tag_, id: id_, created: created)) do
-    # TODO we need to have a "SIZE" column as the last column
-    name = cell(name_, 12)
-    tag = cell(tag_, 10)
-    id = cell(id_, 12)
-    timestamp = format_timestamp(created)
-
-    n = 3
-    to_cli("#{name}#{sp(n)}#{tag}#{sp(n)}#{id}#{sp(n)}#{timestamp}\n")
-  end
-
   def container_ls(argv) do
     case process_subcommand(container_ls_help(), "image ls", argv,
            aliases: [a: :all],
@@ -180,10 +166,7 @@ defmodule Jocker.CLI.Main do
            ]
          ) do
       {options, []} ->
-        {:ok, _pid} = EngineClient.start_link([])
-        rpc = [Jocker.Engine.MetaData, :list_containers, [options]]
-        _output = EngineClient.command(rpc)
-        containers = fetch_reply()
+        containers = rpc([Jocker.Engine.MetaData, :list_containers, [options]])
 
         print_container(
           container(
@@ -229,18 +212,12 @@ defmodule Jocker.CLI.Main do
               [cmd: cmd, image: image] ++ options
           end
 
-        {:ok, _pid} = EngineClient.start_link([])
-        rpc = [Jocker.Engine.ContainerPool, :create, [opts]]
-        :ok = EngineClient.command(rpc)
-
-        case fetch_reply() do
+        case rpc([Jocker.Engine.ContainerPool, :create, [opts]]) do
           :image_not_found ->
             to_cli("Unable to find image '#{image}'", :eof)
 
           {:ok, pid} ->
-            rpc2 = [Jocker.Engine.Container, :metadata, [pid]]
-            :ok = EngineClient.command(rpc2)
-            container(id: id) = fetch_reply()
+            container(id: id) = rpc([Jocker.Engine.Container, :metadata, [pid]])
             to_cli(id, :eof)
         end
 
@@ -264,8 +241,6 @@ defmodule Jocker.CLI.Main do
         to_cli(container_start_help(), :eof)
 
       {options, containers} ->
-        {:ok, _pid} = EngineClient.start_link([])
-
         case {Keyword.get(options, :attach, false), length(containers)} do
           {false, _} ->
             Enum.map(containers, &start_single_container/1)
@@ -295,17 +270,11 @@ defmodule Jocker.CLI.Main do
       {_options, args} ->
         case args do
           [] ->
-            {:ok, _pid} = EngineClient.start_link([])
-            rpc2 = [Jocker.Engine.Volume, :create_volume, []]
-            :ok = EngineClient.command(rpc2)
-            volume(name: name) = fetch_reply()
+            volume(name: name) = rpc([Jocker.Engine.Volume, :create_volume, []])
             to_cli(name <> "\n", :eof)
 
           [name] ->
-            {:ok, _pid} = EngineClient.start_link([])
-            rpc2 = [Jocker.Engine.Volume, :create_volume, [name]]
-            :ok = EngineClient.command(rpc2)
-            volume(name: name) = fetch_reply()
+            volume(name: name) = rpc([Jocker.Engine.Volume, :create_volume, [name]])
             to_cli(name <> "\n", :eof)
 
           _ ->
@@ -331,7 +300,6 @@ defmodule Jocker.CLI.Main do
             to_cli(volume_rm_help(), :eof)
 
           volumes ->
-            {:ok, _pid} = EngineClient.start_link([])
             Enum.map(volumes, &remove_a_volume/1)
             cli_eof()
         end
@@ -342,15 +310,12 @@ defmodule Jocker.CLI.Main do
   end
 
   defp remove_a_volume(name) do
-    :ok = EngineClient.command([Jocker.Engine.MetaData, :get_volume, [name]])
-
-    case fetch_reply() do
+    case rpc([Jocker.Engine.MetaData, :get_volume, [name]]) do
       :not_found ->
         to_cli("Error: No such volume: #{name}\n")
 
       volume ->
-        :ok = EngineClient.command([Jocker.Engine.Volume, :delete_volume, [volume]])
-        :ok = fetch_reply()
+        :ok = rpc([Jocker.Engine.Volume, :delete_volume, [volume]])
         to_cli("#{name}\n")
     end
   end
@@ -368,10 +333,7 @@ defmodule Jocker.CLI.Main do
       {options, args} ->
         case args do
           [] ->
-            # FIXME: fix support for --quiet
-            {:ok, _pid} = EngineClient.start_link([])
-            :ok = EngineClient.command([Jocker.Engine.MetaData, :list_volumes, []])
-            volumes = fetch_reply()
+            volumes = rpc([Jocker.Engine.MetaData, :list_volumes, []])
 
             case Keyword.get(options, :quiet, false) do
               false ->
@@ -397,78 +359,15 @@ defmodule Jocker.CLI.Main do
     end
   end
 
-  defp print_volume([name, created]) do
-    name = cell(name, 14)
+  defp print_image(image(name: name_, tag: tag_, id: id_, created: created)) do
+    # TODO we need to have a "SIZE" column as the last column
+    name = cell(name_, 12)
+    tag = cell(tag_, 10)
+    id = cell(id_, 12)
     timestamp = format_timestamp(created)
+
     n = 3
-    to_cli("#{name}#{sp(n)}#{timestamp}\n")
-  end
-
-  defp output_container_messages() do
-    case fetch_reply() do
-      {:container, _pid, {:shutdown, :end_of_ouput}} ->
-        to_cli(
-          "jocker: primary process terminated but the container is still running in the background"
-        )
-
-        :ok
-
-      {:container, _pid, {:shutdown, :jail_stopped}} ->
-        :ok
-
-      {:container, _pid, msg} ->
-        to_cli(msg)
-        output_container_messages()
-
-      unknown_msg ->
-        IO.puts(
-          "Unknown message received while waiting for container output #{inspect(unknown_msg)}"
-        )
-    end
-  end
-
-  defp start_single_container(id_or_name, attach \\ false) do
-    EngineClient.command([
-      Jocker.Engine.MetaData,
-      :get_container,
-      [id_or_name]
-    ])
-
-    case fetch_reply() do
-      container(id: id) ->
-        EngineClient.command([
-          Jocker.Engine.ContainerPool,
-          :create,
-          [[id_or_name: id]]
-        ])
-
-        {:ok, pid} = fetch_reply()
-
-        if attach do
-          EngineClient.command([
-            Jocker.Engine.Container,
-            :attach,
-            [pid]
-          ])
-
-          :ok = fetch_reply()
-        end
-
-        EngineClient.command([
-          Jocker.Engine.Container,
-          :start,
-          [pid]
-        ])
-
-        :ok = fetch_reply()
-
-        if not attach do
-          to_cli("#{id}\n")
-        end
-
-      :not_found ->
-        to_cli("Error response from daemon: No such container: #{id_or_name}", :eof)
-    end
+    to_cli("#{name}#{sp(n)}#{tag}#{sp(n)}#{id}#{sp(n)}#{timestamp}\n")
   end
 
   defp print_container(
@@ -501,10 +400,75 @@ defmodule Jocker.CLI.Main do
     )
   end
 
+  defp print_volume([name, created]) do
+    name = cell(name, 14)
+    timestamp = format_timestamp(created)
+    n = 3
+    to_cli("#{name}#{sp(n)}#{timestamp}\n")
+  end
+
   defp format_timestamp(ts) do
     case ts do
       "CREATED" -> cell("CREATED", 18)
       _ -> cell(Jocker.Engine.Utils.human_duration(ts), 18)
+    end
+  end
+
+  defp cell(content, size) do
+    content_length = String.length(content)
+
+    case content_length < size do
+      true -> content <> sp(size - content_length)
+      false -> String.slice(content, 0, size)
+    end
+  end
+
+  defp sp(n) do
+    String.pad_trailing(" ", n)
+  end
+
+  defp start_single_container(id_or_name, attach \\ false) do
+    case rpc([
+           Jocker.Engine.MetaData,
+           :get_container,
+           [id_or_name]
+         ]) do
+      container(id: id) ->
+        {:ok, pid} = rpc([Jocker.Engine.ContainerPool, :create, [[id_or_name: id]]])
+
+        if attach do
+          :ok = rpc([Jocker.Engine.Container, :attach, [pid]])
+          :ok = rpc([Jocker.Engine.Container, :start, [pid]])
+        else
+          :ok = rpc([Jocker.Engine.Container, :start, [pid]])
+          to_cli("#{id}\n")
+        end
+
+      :not_found ->
+        to_cli("Error response from daemon: No such container: #{id_or_name}", :eof)
+    end
+  end
+
+  defp output_container_messages() do
+    case fetch_reply() do
+      {:container, _pid, {:shutdown, :end_of_ouput}} ->
+        to_cli(
+          "jocker: primary process terminated but the container is still running in the background"
+        )
+
+        :ok
+
+      {:container, _pid, {:shutdown, :jail_stopped}} ->
+        :ok
+
+      {:container, _pid, msg} ->
+        to_cli(msg)
+        output_container_messages()
+
+      unknown_msg ->
+        IO.puts(
+          "Unknown message received while waiting for container output #{inspect(unknown_msg)}"
+        )
     end
   end
 
@@ -528,35 +492,14 @@ defmodule Jocker.CLI.Main do
     end
   end
 
-  defp cell(content, size) do
-    content_length = String.length(content)
-
-    case content_length < size do
-      true -> content <> sp(size - content_length)
-      false -> String.slice(content, 0, size)
+  def rpc(cmd) do
+    case Process.whereis(Jocker.CLI.EngineClient) do
+      nil -> Jocker.CLI.EngineClient.start_link([])
+      _pid -> :ok
     end
-  end
 
-  defp sp(n) do
-    String.pad_trailing(" ", n)
-  end
-
-  defp print_output() do
-    receive do
-      {:msg, :eof} ->
-        :ok
-
-      {:msg, msg} ->
-        IO.puts(msg)
-        print_output()
-
-      unknown_message ->
-        exit({:error, "Unexpected cli output: #{inspect(unknown_message)}"})
-    end
-  end
-
-  defp cli_eof() do
-    Process.send(:cli_master, {:msg, :eof}, [])
+    :ok = EngineClient.command(cmd)
+    fetch_reply()
   end
 
   defp fetch_reply() do
@@ -575,6 +518,24 @@ defmodule Jocker.CLI.Main do
     case eof do
       :eof -> cli_eof()
       nil -> :ok
+    end
+  end
+
+  defp cli_eof() do
+    Process.send(:cli_master, {:msg, :eof}, [])
+  end
+
+  defp print_output() do
+    receive do
+      {:msg, :eof} ->
+        :ok
+
+      {:msg, msg} ->
+        IO.puts(msg)
+        print_output()
+
+      unknown_message ->
+        exit({:error, "Unexpected cli output: #{inspect(unknown_message)}"})
     end
   end
 end

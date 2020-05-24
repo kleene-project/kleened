@@ -167,14 +167,23 @@ defmodule CLITest do
     assert ["VOLUME NAME      CREATED           \n"] == jocker_cmd(["volume", "ls"])
     volume(name: name1) = Jocker.Engine.Volume.create_volume("test1")
     volume(name: name2) = Jocker.Engine.Volume.create_volume()
+    less_than_a_second = "1 second          "
+    one_second = "Less than a second"
 
-    output = [
+    output_scenario1 = [
       "VOLUME NAME      CREATED           \n",
-      "#{name2}     Less than a second\n",
-      "test1            Less than a second\n"
+      "#{name2}     #{less_than_a_second}\n",
+      "test1            #{less_than_a_second}\n"
     ]
 
-    assert output == jocker_cmd(["volume", "ls"])
+    output_scenario2 = [
+      "VOLUME NAME      CREATED           \n",
+      "#{name2}     #{one_second}\n",
+      "test1            #{one_second}\n"
+    ]
+
+    output = jocker_cmd(["volume", "ls"])
+    assert output == output_scenario1 or output == output_scenario2
     assert ["#{name2}\n", "test1\n"] == jocker_cmd(["volume", "ls", "--quiet"])
     assert ["#{name2}\n", "test1\n"] == jocker_cmd(["volume", "ls", "-q"])
   end
