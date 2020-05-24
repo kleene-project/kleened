@@ -85,6 +85,21 @@ defmodule Jocker.CLI.Main do
       ["container", unknown_subcmd | _opts] ->
         to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.", :eof)
 
+      ["volume" | []] ->
+        to_cli(volume_help(), :eof)
+
+      ["volume" | ["--help"]] ->
+        to_cli(volume_help(), :eof)
+
+      ["volume", "ls" | opts] ->
+        volume_ls(opts)
+
+      ["volume", "create" | opts] ->
+        volume_create(opts)
+
+      ["volume", "rm" | opts] ->
+        volume_rm(opts)
+
       [unknown_subcmd | _opts] ->
         to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.", :eof)
 
@@ -276,6 +291,131 @@ defmodule Jocker.CLI.Main do
     end
   end
 
+  def volume_create(argv) do
+    case process_subcommand(volume_create_help(), "volume create", argv,
+           strict: [
+             help: :boolean
+           ]
+         ) do
+      {_options, args} ->
+        case args do
+          [] ->
+            {:ok, _pid} = EngineClient.start_link([])
+            rpc2 = [Jocker.Engine.Volume, :create_volume, []]
+            :ok = EngineClient.command(rpc2)
+            volume(name: name) = fetch_reply()
+            to_cli(name <> "\n", :eof)
+
+          [name] ->
+            {:ok, _pid} = EngineClient.start_link([])
+            rpc2 = [Jocker.Engine.Volume, :create_volume, [name]]
+            :ok = EngineClient.command(rpc2)
+            volume(name: name) = fetch_reply()
+            to_cli(name <> "\n", :eof)
+
+          _ ->
+            to_cli("\"jocker volume create\" requires at most 1 argument.")
+            to_cli(volume_create_help(), :eof)
+        end
+
+      :error ->
+        :ok
+    end
+  end
+
+  def volume_rm(argv) do
+    case process_subcommand(volume_rm_help(), "volume rm", argv,
+           strict: [
+             help: :boolean
+           ]
+         ) do
+      {_options, args} ->
+        case args do
+          [] ->
+            to_cli("\"jocker volume rm\" requires at least 1 argument.")
+            to_cli(volume_rm_help(), :eof)
+
+          volumes ->
+            {:ok, _pid} = EngineClient.start_link([])
+            Enum.map(volumes, &remove_a_volume/1)
+            cli_eof()
+        end
+
+      :error ->
+        :ok
+    end
+  end
+
+  defp remove_a_volume(name) do
+    :ok = EngineClient.command([Jocker.Engine.MetaData, :get_volume, [name]])
+
+    case fetch_reply() do
+      :not_found ->
+        to_cli("Error: No such volume: #{name}\n")
+
+      volume ->
+        :ok = EngineClient.command([Jocker.Engine.Volume, :delete_volume, [volume]])
+        :ok = fetch_reply()
+        to_cli("#{name}\n")
+    end
+  end
+
+  def volume_ls(argv) do
+    case process_subcommand(volume_ls_help(), "volume ls", argv,
+           aliases: [
+             q: :quiet
+           ],
+           strict: [
+             help: :boolean,
+             quiet: :boolean
+           ]
+         ) do
+      {options, args} ->
+        case args do
+          [] ->
+            # FIXME: fix support for --quiet
+            {:ok, _pid} = EngineClient.start_link([])
+            :ok = EngineClient.command([Jocker.Engine.MetaData, :list_volumes, []])
+            volumes = fetch_reply()
+
+            case Keyword.get(options, :quiet, false) do
+              false ->
+                print_volume(["VOLUME NAME", "CREATED"])
+
+                Enum.map(volumes, fn volume(name: name, created: created) ->
+                  print_volume([name, created])
+                end)
+
+              true ->
+                Enum.map(volumes, fn volume(name: name) -> to_cli("#{name}\n") end)
+            end
+
+            cli_eof()
+
+          _arguments ->
+            to_cli("\"jocker volume ls\" accepts no arguments.")
+            to_cli(volume_ls_help(), :eof)
+        end
+
+      :error ->
+        :ok
+    end
+  end
+
+  defp print_volume([name, created]) do
+    name = cell(name, 14)
+
+    timestamp =
+      case created do
+        "CREATED" -> cell(created, 18)
+        _ -> cell(Jocker.Engine.Utils.human_duration(created), 18)
+      end
+
+    n = 3
+
+    to_cli("#{name}#{sp(n)}#{timestamp}\n")
+  end
+
   defp output_container_messages() do
     case fetch_reply() do
       {:container, _pid, {:shutdown, :end_of_ouput}} ->
@@ -393,7 +533,7 @@ defmodule Jocker.CLI.Main do
         {options, args}
 
       {_, _, [unknown_flag | _rest]} ->
-        to_cli("unknown flag: '#{unknown_flag}")
+        to_cli("unknown flag: '#{inspect(unknown_flag)}")
         to_cli("See '#{subcmd} --help'", :eof)
         :error
     end

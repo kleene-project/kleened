@@ -126,6 +126,7 @@ defmodule MetaDataTest do
       )
 
     add_volume(vol1)
+    assert vol1 == get_volume("test1")
     assert [vol1] == list_volumes()
     add_volume(vol2)
     assert [vol2, vol1] == list_volumes()

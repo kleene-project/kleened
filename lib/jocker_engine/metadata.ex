@@ -138,6 +138,11 @@ defmodule Jocker.Engine.MetaData do
     Agent.get(__MODULE__, fn db -> add_volume_(db, volume) end)
   end
 
+  @spec get_volume(String.t()) :: Jocker.Engine.Records.volume() | :not_found
+  def get_volume(name) do
+    Agent.get(__MODULE__, fn db -> get_volume_(db, name) end)
+  end
+
   @spec remove_volume(Jocker.Engine.Records.volume()) :: :ok | :not_found
   def remove_volume(volume) do
     Agent.get(__MODULE__, fn db -> remove_volume_(db, volume) end)
@@ -276,6 +281,16 @@ defmodule Jocker.Engine.MetaData do
   def add_volume_(db, volume) do
     row = record2row(volume)
     exec(db, "INSERT OR REPLACE INTO volumes VALUES (?, ?, ?, ?)", row)
+  end
+
+  @spec get_volume_(Sqlitex.connection(), String.t()) :: Jocker.Engine.Records.volume()
+  def get_volume_(db, name) do
+    sql = "SELECT * FROM volumes WHERE name = ?"
+
+    case fetch_all(db, sql, [name]) do
+      {:ok, []} -> :not_found
+      {:ok, [row]} -> row2record(:volume, row)
+    end
   end
 
   @spec remove_volume_(Sqlitex.connection(), Jocker.Engine.Records.volume()) :: :ok

@@ -136,6 +136,49 @@ defmodule CLITest do
     assert ["lol\n"] == jocker_cmd(["container", "start", "-a", id])
   end
 
+  test "jocker volume create" do
+    volume_name = "testvol"
+    assert ["testvol\n"] == jocker_cmd(["volume", "create", "testvol"])
+    # Check for idempotency:
+    assert ["testvol\n"] == jocker_cmd(["volume", "create", "testvol"])
+    volumes = Jocker.Engine.MetaData.list_volumes()
+    assert [volume(name: ^volume_name, dataset: dataset, mountpoint: mountpoint)] = volumes
+    assert {:ok, %File.Stat{:type => :directory}} = File.stat(mountpoint)
+    assert {"#{dataset}\n", 0} == System.cmd("/sbin/zfs", ["list", "-H", "-o", "name", dataset])
+  end
+
+  test "jocker volume rm" do
+    Jocker.Engine.Volume.create_volume("test1")
+
+    vol2 = Jocker.Engine.Volume.create_volume("test2")
+
+    volume(name: name3) = vol3 = Jocker.Engine.Volume.create_volume()
+
+    assert ["test1\n"] == jocker_cmd(["volume", "rm", "test1"])
+    [vol3, vol2] = Jocker.Engine.MetaData.list_volumes()
+
+    assert ["test2\n", "Error: No such volume: test5\n", "#{name3}\n"] ==
+             jocker_cmd(["volume", "rm", "test2", "test5", name3])
+
+    assert [] = Jocker.Engine.MetaData.list_volumes()
+  end
+
+  test "jocker volume ls" do
+    assert ["VOLUME NAME      CREATED           \n"] == jocker_cmd(["volume", "ls"])
+    volume(name: name1) = Jocker.Engine.Volume.create_volume("test1")
+    volume(name: name2) = Jocker.Engine.Volume.create_volume()
+
+    output = [
+      "VOLUME NAME      CREATED           \n",
+      "#{name2}     Less than a second\n",
+      "test1            Less than a second\n"
+    ]
+
+    assert output == jocker_cmd(["volume", "ls"])
+    assert ["#{name2}\n", "test1\n"] == jocker_cmd(["volume", "ls", "--quiet"])
+    assert ["#{name2}\n", "test1\n"] == jocker_cmd(["volume", "ls", "-q"])
+  end
+
   defp jocker_cmd(command) do
     spawn_link(Jocker.CLI.Main, :main_, [command])
     output = collect_output([])

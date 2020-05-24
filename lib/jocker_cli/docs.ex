@@ -104,4 +104,47 @@ defmodule Jocker.CLI.Docs do
   -a, --all             Show all containers (default shows just running)
   """
   def container_ls_help(), do: @doc
+
+  @doc """
+
+  Usage:	docker volume COMMAND
+
+  Manage volumes
+
+  Commands:
+    create      Create a volume
+    ls          List volumes
+    rm          Remove one or more volumes
+
+  Run 'docker volume COMMAND --help' for more information on a command.
+  """
+  def volume_help(), do: @doc
+
+  @doc """
+
+  Usage:	docker volume create [VOLUME NAME]
+
+  Create a new volume. If no volume name is provided jocker generates one.
+  If the volume name already exists nothing happens.
+  """
+  def volume_create_help(), do: @doc
+
+  @doc """
+
+  Usage:  docker volume rm VOLUME [VOLUME ...]
+
+  Remove one or more volumes
+  """
+  def volume_rm_help(), do: @doc
+
+  @doc """
+
+  Usage:	docker volume ls [OPTIONS]
+
+  List volumes
+
+  Options:
+    -q, --quiet           Only display volume names
+  """
+  def volume_ls_help(), do: @doc
 end
