@@ -56,7 +56,7 @@ defmodule Jocker.Engine.Records do
             id: String.t() | :none,
             name: String.t() | :none,
             running: true | false,
-            pid: pid(),
+            pid: pid() | :none,
             command: [String.t()],
             layer_id: String.t(),
             ip: String.t(),

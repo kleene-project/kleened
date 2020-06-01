@@ -24,7 +24,7 @@ defmodule VolumeTest do
     volume(dataset: dataset, mountpoint: mountpoint) = vol = create_volume("test")
     assert {:ok, %File.Stat{:type => :directory}} = File.stat(mountpoint)
     assert {"#{dataset}\n", 0} == System.cmd("/sbin/zfs", ["list", "-H", "-o", "name", dataset])
-    delete_volume(vol)
+    destroy_volume(vol)
     assert {:error, :enoent} = File.stat(mountpoint)
     assert {"", 1} == System.cmd("/sbin/zfs", ["list", "-H", "-o", "name", dataset])
   end
@@ -37,7 +37,7 @@ defmodule VolumeTest do
     assert [vol2, vol1] == MetaData.list_volumes()
     vol1_new_created = create_volume("test")
     assert [vol1_new_created, vol2] == MetaData.list_volumes()
-    delete_volume(vol1)
+    destroy_volume(vol1)
     assert [vol2] == MetaData.list_volumes()
   end
 

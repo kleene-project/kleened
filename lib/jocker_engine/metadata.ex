@@ -123,6 +123,11 @@ defmodule Jocker.Engine.MetaData do
     Agent.get(__MODULE__, fn db -> add_container_(db, container) end)
   end
 
+  @spec delete_container(Jocker.Engine.Records.container()) :: :ok
+  def delete_container(container) do
+    Agent.get(__MODULE__, fn db -> delete_container_(db, container) end)
+  end
+
   @spec get_container(String.t()) :: Jocker.Engine.Records.container() | :not_found
   def get_container(id_or_name) do
     Agent.get(__MODULE__, fn db -> get_container_(db, id_or_name) end)
@@ -158,8 +163,13 @@ defmodule Jocker.Engine.MetaData do
     Agent.get(__MODULE__, fn db -> add_mount_(db, mount) end)
   end
 
-  @spec remove_mounts(Jocker.Engine.Records.volume()) :: :ok | :not_found
-  def remove_mounts(volume) do
+  @spec remove_mounts_by_container(Jocker.Engine.Records.container()) :: :ok | :not_found
+  def remove_mounts_by_container(container) do
+    Agent.get(__MODULE__, fn db -> remove_mounts_(db, container) end)
+  end
+
+  @spec remove_mounts_by_volume(Jocker.Engine.Records.volume()) :: :ok | :not_found
+  def remove_mounts_by_volume(volume) do
     Agent.get(__MODULE__, fn db -> remove_mounts_(db, volume) end)
   end
 
@@ -243,7 +253,13 @@ defmodule Jocker.Engine.MetaData do
           Sqlitex.connection()
   def add_container_(db, container) do
     row = record2row(container)
-    exec(db, "INSERT OR REPLACE INTO containers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
+    :ok = exec(db, "INSERT OR REPLACE INTO containers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
+  end
+
+  @spec delete_container_(Sqlitex.connection(), Jocker.Engine.Records.container()) ::
+          Sqlitex.connection()
+  def delete_container_(db, container(id: id)) do
+    exec(db, "DELETE FROM containers WHERE id = ?", [id])
   end
 
   @spec get_container_(Sqlitex.connection(), String.t()) ::
@@ -300,7 +316,7 @@ defmodule Jocker.Engine.MetaData do
   end
 
   @spec list_volumes_(Sqlitex.connection(), String.t()) ::
-          Jocker.Engine.Records.volume() | :not_found
+          [Jocker.Engine.Records.volume()]
   def list_volumes_(db, _opts) do
     sql = "SELECT * FROM volumes ORDER BY created DESC"
     {:ok, rows} = fetch_all(db, sql, [])
@@ -313,10 +329,20 @@ defmodule Jocker.Engine.MetaData do
     exec(db, "INSERT OR REPLACE INTO mounts VALUES (?, ?, ?, ?)", row)
   end
 
-  @spec remove_mounts_(Sqlitex.connection(), Jocker.Engine.Records.volume()) :: :ok
+  @spec remove_mounts_(
+          Sqlitex.connection(),
+          Jocker.Engine.Records.volume() | Jocker.Engine.Records.container()
+        ) :: :ok
+  def remove_mounts_(db, container(id: id)) do
+    {:ok, rows} = fetch_all(db, "SELECT * FROM mounts WHERE container_id=?", [id])
+    :ok = exec(db, "DELETE FROM mounts WHERE container_id = ?;", [id])
+    Enum.map(rows, fn row -> row2record(:mount, row) end)
+  end
+
   def remove_mounts_(db, volume(name: name)) do
-    sql = "DELETE FROM mounts WHERE volume_name = ?;"
-    :ok = exec(db, sql, [name])
+    {:ok, rows} = fetch_all(db, "SELECT * FROM mounts WHERE volume_name=?", [name])
+    :ok = exec(db, "DELETE FROM mounts WHERE volume_name=?;", [name])
+    Enum.map(rows, fn row -> row2record(:mount, row) end)
   end
 
   @spec list_mounts_(Sqlitex.connection(), Jocker.Engine.Records.volume()) ::
@@ -335,7 +361,7 @@ defmodule Jocker.Engine.MetaData do
 
   @spec row2record(record_type(), []) :: jocker_record()
   defp row2record(type, row) do
-    Logger.debug("Converting #{inspect(type)}-row: #{inspect(row)}")
+    # Logger.debug("Converting #{inspect(type)}-row: #{inspect(row)}")
 
     record =
       case type do
@@ -344,7 +370,7 @@ defmodule Jocker.Engine.MetaData do
           row_upd = Keyword.update(row_upd, :parameters, nil, &decode/1)
           row_upd = Keyword.update(row_upd, :running, nil, &int2bool/1)
 
-          row_upd = Keyword.update(row_upd, :pid, nil, &str2pid/1)
+          row_upd = Keyword.update(row_upd, :pid, :none, &str2pid/1)
 
           List.to_tuple([type | Keyword.values(row_upd)])
 
@@ -360,14 +386,14 @@ defmodule Jocker.Engine.MetaData do
           List.to_tuple([type | Keyword.values(row)])
       end
 
-    Logger.debug("Converted #{inspect(type)}-row: #{inspect(record)}")
+    # Logger.debug("Converted #{inspect(type)}-row: #{inspect(record)}")
     record
   end
 
   # FIXME spec is wrong!
   @spec record2row({}) :: []
   def record2row(rec) do
-    Logger.debug("Converting record: #{inspect(rec)}")
+    # Logger.debug("Converting record: #{inspect(rec)}")
     [type | values] = Tuple.to_list(rec)
 
     row =
@@ -407,7 +433,7 @@ defmodule Jocker.Engine.MetaData do
           values
       end
 
-    Logger.debug("Converted record: #{inspect(row)}")
+    # Logger.debug("Converted record: #{inspect(row)}")
     row
   end
 
@@ -417,11 +443,10 @@ defmodule Jocker.Engine.MetaData do
   def int2bool(1), do: true
   def int2bool(0), do: false
 
-  def pid2str(nil), do: ""
   def pid2str(:none), do: ""
   def pid2str(pid), do: List.to_string(:erlang.pid_to_list(pid))
 
-  def str2pid(""), do: nil
+  def str2pid(""), do: :none
   def str2pid(pidstr), do: :erlang.list_to_pid(String.to_charlist(pidstr))
 
   defp decode(json) do

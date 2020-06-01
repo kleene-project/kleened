@@ -79,6 +79,9 @@ defmodule Jocker.CLI.Main do
       ["container", "create" | opts] ->
         container_create(opts)
 
+      ["container", "rm" | opts] ->
+        container_rm(opts)
+
       ["container", "start" | opts] ->
         container_start(opts)
 
@@ -222,12 +225,46 @@ defmodule Jocker.CLI.Main do
 
           {:ok, pid} ->
             container(id: id) = rpc([Jocker.Engine.Container, :metadata, [pid]])
-            to_cli(id, :eof)
+            to_cli("#{id}\n", :eof)
         end
 
       :error ->
         :ok
     end
+  end
+
+  def container_rm(argv) do
+    case process_subcommand(container_rm_help(), "container rm", argv,
+           aliases: [
+             # v: :volumes
+           ],
+           strict: [
+             # volumes: :boolean,
+             help: :boolean
+           ]
+         ) do
+      {_options, []} ->
+        to_cli("\"jocker container rm\" requires at least 1 argument.")
+        to_cli(container_rm_help(), :eof)
+
+      {_options, containers} ->
+        :ok = destroy_containers(containers)
+        cli_eof()
+
+      :error ->
+        :ok
+    end
+  end
+
+  defp destroy_containers([container_id | containers]) do
+    :ok = rpc([Jocker.Engine.Container, :destroy, [container_id]])
+    to_cli("#{container_id}\n")
+
+    destroy_containers(containers)
+  end
+
+  defp destroy_containers([]) do
+    :ok
   end
 
   def container_start(argv) do
@@ -319,7 +356,7 @@ defmodule Jocker.CLI.Main do
         to_cli("Error: No such volume: #{name}\n")
 
       volume ->
-        :ok = rpc([Jocker.Engine.Volume, :delete_volume, [volume]])
+        :ok = rpc([Jocker.Engine.Volume, :destroy_volume, [volume]])
         to_cli("#{name}\n")
     end
   end

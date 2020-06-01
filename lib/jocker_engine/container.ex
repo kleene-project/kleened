@@ -7,6 +7,7 @@ defmodule Jocker.Engine.Container do
 
   require Logger
   alias Jocker.Engine.MetaData
+  alias Jocker.Engine.Volume
   import Jocker.Engine.Records
   use GenServer
 
@@ -40,8 +41,26 @@ defmodule Jocker.Engine.Container do
     GenServer.call(pid, :start)
   end
 
+  @spec destroy(String.t()) :: :ok
+  def destroy(id) do
+    container(pid: pid, layer_id: layer_id) = cont = MetaData.get_container(id)
+    layer(dataset: dataset) = MetaData.get_layer(layer_id)
+
+    case pid do
+      :none -> :ok
+      # TODO: consider using monitor/1 (or perhaps the supervisor)
+      # if we want to be sure it is properly terminated
+      _ -> :ok = stop(pid)
+    end
+
+    Volume.destroy_mounts(cont)
+    MetaData.delete_container(cont)
+    0 = Jocker.Engine.ZFS.destroy(dataset)
+    :ok
+  end
+
   def stop(pid) do
-    GenServer.call(pid, :stop)
+    :ok = GenServer.call(pid, :stop)
   end
 
   ### ===================================================================
@@ -146,7 +165,7 @@ defmodule Jocker.Engine.Container do
 
   @impl true
   def handle_info({port, {:data, msg}}, %State{:starting_port => port} = state) do
-    IO.puts("Msg from jail-port: #{inspect(msg)}")
+    Logger.debug("Msg from jail-port: #{inspect(msg)}")
     relay_msg(msg, state)
     {:noreply, state}
   end
@@ -178,17 +197,17 @@ defmodule Jocker.Engine.Container do
 
   @impl true
   def terminate(_reason, state) do
-    IO.puts("Jail shutting down. Cleaning up.")
+    Logger.info("Jail shutting down. Cleaning up.")
     jail_cleanup(state.container)
-    relay_msg({:shutdown, :jail_stopped}, state)
 
     updated_container =
       container(state.container,
         running: false,
-        pid: nil
+        pid: :none
       )
 
     MetaData.add_container(updated_container)
+    relay_msg({:shutdown, :jail_stopped}, state)
   end
 
   ### ===================================================================
@@ -223,9 +242,15 @@ defmodule Jocker.Engine.Container do
     :ok
   end
 
+  defp create_and_bind("", location, opts, cont) do
+    name = Jocker.Engine.Utils.uuid()
+    vol = Volume.create_volume(name)
+    Volume.bind_volume(cont, vol, location, opts)
+  end
+
   defp create_and_bind(name, location, opts, cont) do
-    vol = Jocker.Engine.Volume.create_volume(name)
-    Jocker.Engine.Volume.bind_volume(cont, vol, location, opts)
+    vol = MetaData.get_volume(name)
+    Volume.bind_volume(cont, vol, location, opts)
   end
 
   defp relay_msg(msg, state) do
@@ -248,6 +273,8 @@ defmodule Jocker.Engine.Container do
     args =
       ~w"-c path=#{path} name=#{id} ip4.addr=#{ip}" ++
         parameters ++ ["command=#{cmd}"] ++ cmd_args
+
+    Logger.debug("Executing 'jail' with arguments: #{inspect(args)}")
 
     port =
       Port.open(

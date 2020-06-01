@@ -4,13 +4,16 @@ defmodule CLITest do
   alias Jocker.Engine.Image
   alias Jocker.Engine.MetaData
   alias Jocker.Engine.Volume
+  alias Jocker.Engine.Config
   require Jocker.Engine.Config
   import Jocker.Engine.Records
+  require Logger
 
   @moduletag :capture_log
 
   setup_all do
     Application.stop(:jocker)
+    remove_volume_mounts()
     Jocker.Engine.ZFS.clear_zroot()
     Jocker.Engine.Volume.initialize()
     start_supervised({MetaData, [file: Jocker.Engine.Config.metadata_db()]})
@@ -49,7 +52,7 @@ defmodule CLITest do
   end
 
   test "jocker image ls <irrelevant argument>" do
-    [msg1, _] = jocker_cmd(["image", "ls", "irrelevant_argument"])
+    [msg1, _] = jocker_cmd("image ls irrelevant_argument")
     assert "\"jocker image ls\" requires no arguments." == msg1
   end
 
@@ -71,173 +74,238 @@ defmodule CLITest do
   end
 
   test "jocker image build" do
+    # FIXME: we need "jocker image rm"
     path = "./test/data/test_cli_build_image"
 
-    [msg1] = jocker_cmd(["image", "build", "-t", "lol:test", path])
+    [msg1] = jocker_cmd("image build -t lol:test #{path}")
     id1 = String.slice(msg1, 34, 12)
     assert image(name: "lol", tag: "test") = MetaData.get_image(id1)
 
-    [msg2] = jocker_cmd(["image", "build", path])
+    [msg2] = jocker_cmd("image build #{path}")
     id2 = String.slice(msg2, 34, 12)
     assert image(name: "<none>", tag: "<none>") = MetaData.get_image(id2)
   end
 
   test "jocker container ls" do
-    container =
-      container(
-        id: "testing-id-truncatethis",
-        name: "testname",
-        ip: Jocker.Engine.Network.new(),
-        command: ["/bin/ls"],
-        image_id: "base",
-        created: DateTime.to_iso8601(DateTime.from_unix!(1))
-      )
-
-    MetaData.add_container(container)
-    [msg1] = jocker_cmd(["container", "ls"])
+    name = "testing-name-truncatethis"
+    [id_n] = jocker_cmd("container create --name #{name} base /bin/ls")
+    id = String.trim(id_n)
 
     header =
       "CONTAINER ID   IMAGE                       COMMAND                   CREATED              STATUS    NAME\n"
 
-    assert msg1 == header
+    row =
+      "#{id}   base                        /bin/ls                   Less than a second   stopped   #{
+        name
+      }\n"
 
-    [msg2, msg3] = jocker_cmd(["container", "ls", "-a"])
-
-    assert msg2 == header
-
-    assert msg3 ==
-             "testing-id-t   base                        /bin/ls                   50 years             stopped   testname\n"
+    empty_listing = jocker_cmd(["container", "ls"])
+    listing = jocker_cmd("container ls -a")
+    assert [header] == empty_listing
+    assert [header, row] == listing
   end
 
-  test "jocker container create" do
-    [id] = jocker_cmd(["container", "create", "base"])
-    containers = MetaData.list_containers(all: true)
-    assert [container(id: ^id)] = containers
-
-    [id2] = jocker_cmd(["container", "create", "--name", "loltest", "base"])
-
-    containers2 = MetaData.list_containers(all: true)
-    assert [container(id: ^id2, name: "loltest") | _] = containers2
+  test "Simple creation and removal of a container" do
+    [id_n] = jocker_cmd("container create base")
+    id = String.trim(id_n)
+    assert container(id: ^id, layer_id: layer_id) = MetaData.get_container(id)
+    layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
+    assert is_directory?(mountpoint)
+    [^id_n] = jocker_cmd("container rm #{id}")
+    assert not is_directory?(mountpoint)
   end
 
-  test "jocker container create with volumes" do
+  test "Creating a container with a custom command" do
+    [id_n] = jocker_cmd("container create base /bin/mkdir /loltest")
+    id = String.trim(id_n)
+    assert container(id: ^id, layer_id: layer_id, pid: pid) = MetaData.get_container(id)
+    Container.attach(pid)
+
+    # We '--attach' to make sure the jail is done
+    [] = jocker_cmd("container start --attach #{id}")
+    layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
+    assert is_directory?(mountpoint)
+    assert is_directory?(Path.join(mountpoint, "loltest"))
+    [^id_n] = jocker_cmd("container rm #{id}")
+    assert not is_directory?(mountpoint)
+  end
+
+  test "jocker adding and removing a container with writable volumes" do
     instructions = [
       from: "base",
       run: ["/bin/sh", "-c", "mkdir /testdir1"],
       run: ["/bin/sh", "-c", "mkdir /testdir2"],
-      run: ["/bin/sh", "-c", "mkdir /testdir3"],
-      run: ["/bin/sh", "-c", "mkdir /testdir4"]
+      run: ["/usr/bin/touch", "/loltest"]
     ]
 
-    {:ok, image(id: image_id, layer_id: layer_id)} = Image.create_image(instructions)
+    {:ok, image(id: image_id)} = Image.create_image(instructions)
+    volume(name: vol_name, mountpoint: mountpoint_vol) = vol1 = Volume.create_volume("testvol-1")
+    assert is_directory?(mountpoint_vol)
+    assert touch(Path.join(mountpoint_vol, "testfile"))
 
-    volume(mountpoint: mountpoint_vol1) = Volume.create_volume("testvol-1")
-    volume_testfile1 = Path.join(mountpoint_vol1, "testfile1")
-    {"", 0} = System.cmd("/usr/bin/touch", [volume_testfile1])
+    [id_n] =
+      jocker_cmd(
+        "container create --volume testvol-1:/testdir1 -v /testdir2 #{image_id} /usr/bin/touch /testdir2/testfile2"
+      )
 
-    volume(mountpoint: mountpoint_vol2) = Volume.create_volume("testvol-2")
-    volume_testfile2 = Path.join(mountpoint_vol2, "testfile2")
-    {"", 0} = System.cmd("/usr/bin/touch", [volume_testfile2])
+    id = String.trim(id_n)
+    [] = jocker_cmd("container start --attach #{id}")
 
-    [id] =
-      jocker_cmd([
-        "container",
-        "create",
-        "-v",
-        "testvol-1:/testdir1:ro",
-        "--volume",
-        "testvol-2:/testdir2",
-        "-v",
-        "/testdir3:ro",
-        "-v",
-        "/testdir4",
-        image_id
-      ])
+    container(layer_id: layer_id) = MetaData.get_container(id)
+    layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
+    assert is_file?(Path.join(mountpoint, "testdir1/testfile"))
+    assert is_file?(Path.join(mountpoint, "/loltest"))
+    assert is_file?(Path.join(mountpoint, "/testdir2/testfile2"))
+
+    [vol2] =
+      Enum.reject(MetaData.list_volumes([]), fn
+        volume(name: ^vol_name) -> true
+        _ -> false
+      end)
+
+    Container.destroy(id)
+    Volume.destroy_volume(vol1)
+    Volume.destroy_volume(vol2)
+    assert not is_directory?(mountpoint)
+  end
+
+  test "jocker adding and removing a container with read-only volumes" do
+    instructions = [
+      from: "base",
+      run: ["/bin/sh", "-c", "mkdir /testdir1"],
+      run: ["/bin/sh", "-c", "mkdir /testdir2"]
+    ]
+
+    {:ok, image(id: image_id)} = Image.create_image(instructions)
+    volume(name: vol_name, mountpoint: mountpoint_vol) = vol1 = Volume.create_volume("testvol-1")
+    assert is_directory?(mountpoint_vol)
+    assert touch(Path.join(mountpoint_vol, "testfile_writable_from_mountpoint_vol"))
+
+    [id_n] =
+      jocker_cmd(
+        "container create --volume testvol-1:/testdir1:ro -v /testdir2:ro #{image_id} /usr/bin/touch /testdir2/testfile2"
+      )
+
+    id = String.trim(id_n)
+    [] = jocker_cmd("container start --attach #{id}")
 
     container(layer_id: layer_id) = MetaData.get_container(id)
     layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
 
-    assert is_file?(Path.join(mountpoint, "testdir1/testfile1"))
+    assert is_file?(Path.join(mountpoint, "testdir1/testfile_writable_from_mountpoint_vol"))
+    assert not is_file?(Path.join(mountpoint, "/testdir2/testfile2"))
+    assert not touch(Path.join(mountpoint, "/testdir2/testfile2"))
+    assert not touch(Path.join(mountpoint, "/testdir1/testfile1"))
 
-    assert is_file?(Path.join(mountpoint, "testdir2/testfile2"))
+    [vol2] =
+      Enum.reject(MetaData.list_volumes([]), fn
+        volume(name: ^vol_name) -> true
+        _ -> false
+      end)
 
-    assert {"", 1} ==
-             System.cmd("/usr/bin/touch", [Path.join(mountpoint, "testdir3/readonly_test")])
-
-    assert {"", 1} ==
-             System.cmd("/usr/bin/touch", [Path.join(mountpoint, "testdir1/readonly_test")])
+    Container.destroy(id)
+    Volume.destroy_volume(vol1)
+    Volume.destroy_volume(vol2)
+    assert not is_directory?(mountpoint)
   end
 
-  test "jocker container start" do
-    {:ok, pid} = Container.create(image: "base", cmd: ["/bin/sleep", "10000"])
-    container(id: id) = Container.metadata(pid)
+  test "starting a long-running container and stopping it" do
+    [id_n] = jocker_cmd("container create base /bin/sleep 10000")
+    id = String.trim(id_n)
+    container(pid: pid, name: name) = MetaData.get_container(id)
 
-    assert [container(id: ^id, running: false)] = MetaData.list_containers(all: true)
+    header =
+      "CONTAINER ID   IMAGE                       COMMAND                   CREATED              STATUS    NAME\n"
 
-    assert ["#{id}\n"] == jocker_cmd(["container", "start", id])
-    assert [container(id: ^id, running: true)] = MetaData.list_containers(all: true)
+    row_stopped =
+      "#{id}   base                        /bin/sleep 10000          Less than a second   stopped   #{
+        name
+      }\n"
+
+    row_running =
+      "#{id}   base                        /bin/sleep 10000          Less than a second   running   #{
+        name
+      }\n"
+
+    assert [header, row_stopped] == jocker_cmd("container ls --all")
+    assert [header] == jocker_cmd("container ls")
+    assert ["#{id}\n"] == jocker_cmd("container start #{id}")
+    assert [header, row_running] == jocker_cmd("container ls --all")
+    # FIXME jocker container stop
     Container.stop(pid)
-
-    assert [container(id: ^id, running: false)] = MetaData.list_containers(all: true)
+    assert [header, row_stopped] == jocker_cmd("container ls --all")
   end
 
-  test "jocker container start --attach" do
-    {:ok, pid} = Container.create(image: "base", cmd: ["/bin/sh", "-c", "echo lol"])
-    container(id: id) = Container.metadata(pid)
+  test "start and attach to a container that produces some output" do
+    [id_n] = jocker_cmd("container create base echo lol")
+    id = String.trim(id_n)
+    container(pid: pid) = MetaData.get_container(id)
+    # FIXME jocker container stop
     Container.stop(pid)
-    assert ["lol\n"] == jocker_cmd(["container", "start", "-a", id])
+    assert ["lol\n"] == jocker_cmd("container start -a #{id}")
   end
 
   test "jocker volume create" do
-    volume_name = "testvol"
-    assert ["testvol\n"] == jocker_cmd(["volume", "create", "testvol"])
+    assert ["testvol\n"] == jocker_cmd("volume create testvol")
     # Check for idempotency:
-    assert ["testvol\n"] == jocker_cmd(["volume", "create", "testvol"])
-    volumes = MetaData.list_volumes()
-    assert [volume(name: ^volume_name, dataset: dataset, mountpoint: mountpoint)] = volumes
+    assert ["testvol\n"] == jocker_cmd("volume create testvol")
+
+    volume(name: "testvol", dataset: dataset, mountpoint: mountpoint) =
+      MetaData.get_volume("testvol")
+
     assert {:ok, %File.Stat{:type => :directory}} = File.stat(mountpoint)
     assert {"#{dataset}\n", 0} == System.cmd("/sbin/zfs", ["list", "-H", "-o", "name", dataset])
   end
 
   test "jocker volume rm" do
-    Jocker.Engine.Volume.create_volume("test1")
+    [vol1_n] = jocker_cmd("volume create test1")
+    [vol2_n] = jocker_cmd("volume create test2")
+    [_vol3_n] = jocker_cmd("volume create test3")
+    header = "VOLUME NAME      CREATED           \n"
 
-    vol2 = Jocker.Engine.Volume.create_volume("test2")
+    listing = [
+      header,
+      "test3            Less than a second\n",
+      "test2            Less than a second\n"
+    ]
 
-    volume(name: name3) = vol3 = Jocker.Engine.Volume.create_volume()
+    assert [vol1_n] == jocker_cmd("volume rm test1")
+    assert listing == jocker_cmd("volume ls")
 
-    assert ["test1\n"] == jocker_cmd(["volume", "rm", "test1"])
-    [vol3, vol2] = MetaData.list_volumes()
+    assert [vol2_n, "Error: No such volume: test5\n", "test3\n"] ==
+             jocker_cmd("volume rm test2 test5 test3")
 
-    assert ["test2\n", "Error: No such volume: test5\n", "#{name3}\n"] ==
-             jocker_cmd(["volume", "rm", "test2", "test5", name3])
-
-    assert [] = MetaData.list_volumes()
+    assert [header] == jocker_cmd("volume ls")
   end
 
   test "jocker volume ls" do
-    assert ["VOLUME NAME      CREATED           \n"] == jocker_cmd(["volume", "ls"])
-    volume(name: name1) = Jocker.Engine.Volume.create_volume("test1")
-    volume(name: name2) = Jocker.Engine.Volume.create_volume()
+    header = "VOLUME NAME      CREATED           \n"
     less_than_a_second = "1 second          "
     one_second = "Less than a second"
 
     output_scenario1 = [
-      "VOLUME NAME      CREATED           \n",
-      "#{name2}     #{less_than_a_second}\n",
+      header,
+      "test2            #{less_than_a_second}\n",
       "test1            #{less_than_a_second}\n"
     ]
 
     output_scenario2 = [
-      "VOLUME NAME      CREATED           \n",
-      "#{name2}     #{one_second}\n",
+      header,
+      "test2            #{one_second}\n",
       "test1            #{one_second}\n"
     ]
 
+    assert [header] == jocker_cmd(["volume", "ls"])
+    jocker_cmd("volume create test1")
+    jocker_cmd("volume create test2")
     output = jocker_cmd(["volume", "ls"])
     assert output == output_scenario1 or output == output_scenario2
-    assert ["#{name2}\n", "test1\n"] == jocker_cmd(["volume", "ls", "--quiet"])
-    assert ["#{name2}\n", "test1\n"] == jocker_cmd(["volume", "ls", "-q"])
+    assert ["test2\n", "test1\n"] == jocker_cmd(["volume", "ls", "--quiet"])
+    assert ["test2\n", "test1\n"] == jocker_cmd(["volume", "ls", "-q"])
+  end
+
+  defp jocker_cmd(command) when is_binary(command) do
+    jocker_cmd(String.split(command))
   end
 
   defp jocker_cmd(command) do
@@ -257,6 +325,49 @@ defmodule CLITest do
     case Enum.find(Process.registered(), fn x -> x == Jocker.CLI.EngineClient end) do
       Jocker.CLI.EngineClient -> true
       nil -> false
+    end
+  end
+
+  defp remove_volume_mounts() do
+    case System.cmd("/bin/sh", ["-c", "mount | grep nullfs"]) do
+      {output, 0} ->
+        mounts = String.split(output, "\n")
+        Enum.map(mounts, &remove_mount/1)
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp remove_mount(mount) do
+    case mount |> String.replace(" on ", " ") |> String.split() do
+      [src, dst | _] ->
+        case String.starts_with?(src, "/" <> Config.volume_root()) do
+          true ->
+            Logger.warn("Removing nullfs-mount #{dst}")
+            System.cmd("/sbin/umount", [dst])
+
+          _ ->
+            IO.puts("WTF")
+            :ok
+        end
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp touch(path) do
+    case System.cmd("/usr/bin/touch", [path]) do
+      {"", 0} -> true
+      _ -> false
+    end
+  end
+
+  defp is_directory?(filepath) do
+    case File.stat(filepath) do
+      {:ok, %File.Stat{type: :directory}} -> true
+      _notthecase -> false
     end
   end
 

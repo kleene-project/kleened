@@ -83,6 +83,15 @@ defmodule Jocker.CLI.Docs do
 
   @doc """
 
+  Usage:	docker container rm CONTAINER [CONTAINER...]
+
+  Remove one or more containers
+
+  """
+  def container_rm_help(), do: @doc
+
+  @doc """
+
   Usage:	jocker container start [OPTIONS] CONTAINER [CONTAINER...]
 
   Start one or more stopped containers

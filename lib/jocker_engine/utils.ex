@@ -3,6 +3,7 @@ defmodule Jocker.Engine.Utils do
     DateTime.to_iso8601(DateTime.utc_now())
   end
 
+  @spec unmount(String.t()) :: integer()
   def unmount(path) do
     {"", return_code} = System.cmd("/sbin/umount", [path])
     return_code

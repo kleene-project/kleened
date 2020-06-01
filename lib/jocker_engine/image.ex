@@ -2,6 +2,7 @@ defmodule Jocker.Engine.Image do
   # TODO: Need support for building multiple images from a set of instructions (i.e. a Dockerfile)
   # TODO: Need support for volumes
   import Jocker.Engine.Records
+  require Logger
 
   defmodule State do
     defstruct context: nil,
@@ -34,6 +35,7 @@ defmodule Jocker.Engine.Image do
   end
 
   defp process_instructions({:from, image_id}, state) do
+    Logger.info("Processing instruction: FROM #{image_id}")
     image(layer_id: parent_layer_id) = parent_image = Jocker.Engine.MetaData.get_image(image_id)
     parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
     layer(id: new_layer_id) = Jocker.Engine.Layer.initialize(parent_layer)
@@ -54,19 +56,23 @@ defmodule Jocker.Engine.Image do
   end
 
   defp process_instructions({:copy, src_and_dest}, state) do
+    Logger.info("Processing instruction: COPY #{inspect(src_and_dest)}")
     copy_files(state.context, src_and_dest, state.image)
     state
   end
 
   defp process_instructions({:user, user}, %State{:image => image} = state) do
+    Logger.info("Processing instruction: USER #{user}")
     %State{state | :image => image(image, user: user)}
   end
 
   defp process_instructions({:cmd, cmd}, %State{:image => image} = state) do
+    Logger.info("Processing instruction: CMD #{inspect(cmd)}")
     %State{state | :image => image(image, command: cmd)}
   end
 
   defp process_instructions({:run, cmd}, state) do
+    Logger.info("Processing instruction: RUN #{inspect(cmd)}")
     image(id: img_id) = state.image
 
     opts = [
