@@ -57,6 +57,14 @@ defmodule Jocker.CLI.Docs do
 
   @doc """
 
+  Usage:	docker image rm [OPTIONS] IMAGE [IMAGE...]
+
+  Remove one or more images
+  """
+  def image_rm_help(), do: @doc
+
+  @doc """
+
   Usage:  jocker container COMMAND
 
   Manage containers
@@ -65,7 +73,7 @@ defmodule Jocker.CLI.Docs do
     ls          List containers
     run         Run a command in a new container
 
-  Run 'docker container COMMAND --help' for more information on a command.
+  Run 'jocker container COMMAND --help' for more information on a command.
   """
   def container_help(), do: @doc
 
@@ -83,7 +91,7 @@ defmodule Jocker.CLI.Docs do
 
   @doc """
 
-  Usage:	docker container rm CONTAINER [CONTAINER...]
+  Usage:	jocker container rm CONTAINER [CONTAINER...]
 
   Remove one or more containers
 
@@ -106,6 +114,15 @@ defmodule Jocker.CLI.Docs do
 
   @doc """
 
+  Usage:	jocker container stop CONTAINER [CONTAINER...]
+
+  Stop one or more running containers
+
+  """
+  def container_stop_help(), do: @doc
+
+  @doc """
+
   Usage:  jocker container ls [OPTIONS]
 
   List containers
@@ -117,7 +134,7 @@ defmodule Jocker.CLI.Docs do
 
   @doc """
 
-  Usage:	docker volume COMMAND
+  Usage:	jocker volume COMMAND
 
   Manage volumes
 
@@ -126,13 +143,13 @@ defmodule Jocker.CLI.Docs do
     ls          List volumes
     rm          Remove one or more volumes
 
-  Run 'docker volume COMMAND --help' for more information on a command.
+  Run 'jocker volume COMMAND --help' for more information on a command.
   """
   def volume_help(), do: @doc
 
   @doc """
 
-  Usage:	docker volume create [VOLUME NAME]
+  Usage:	jocker volume create [VOLUME NAME]
 
   Create a new volume. If no volume name is provided jocker generates one.
   If the volume name already exists nothing happens.
@@ -141,7 +158,7 @@ defmodule Jocker.CLI.Docs do
 
   @doc """
 
-  Usage:  docker volume rm VOLUME [VOLUME ...]
+  Usage:  jocker volume rm VOLUME [VOLUME ...]
 
   Remove one or more volumes
   """
@@ -149,7 +166,7 @@ defmodule Jocker.CLI.Docs do
 
   @doc """
 
-  Usage:	docker volume ls [OPTIONS]
+  Usage:	jocker volume ls [OPTIONS]
 
   List volumes
 

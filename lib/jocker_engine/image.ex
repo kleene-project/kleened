@@ -2,6 +2,8 @@ defmodule Jocker.Engine.Image do
   # TODO: Need support for building multiple images from a set of instructions (i.e. a Dockerfile)
   # TODO: Need support for volumes
   import Jocker.Engine.Records
+  alias Jocker.Engine.ZFS
+  alias Jocker.Engine.MetaData
   require Logger
 
   defmodule State do
@@ -17,6 +19,19 @@ defmodule Jocker.Engine.Image do
     img = image(img_raw, name: name, tag: tag)
     Jocker.Engine.MetaData.add_image(img)
     {:ok, img}
+  end
+
+  @spec destroy(String.t()) :: :ok | :not_found
+  def destroy(id_or_nametag) do
+    case MetaData.get_image(id_or_nametag) do
+      :not_found ->
+        :not_found
+
+      image(id: id, layer_id: layer_id) ->
+        layer(dataset: dataset) = MetaData.get_layer(layer_id)
+        0 = ZFS.destroy_force(dataset)
+        MetaData.delete_image(id)
+    end
   end
 
   def create_image(instructions, context \\ "./") do

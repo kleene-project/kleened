@@ -113,6 +113,11 @@ defmodule Jocker.Engine.MetaData do
     Agent.get(__MODULE__, fn db -> get_image_(db, id_or_nametag) end)
   end
 
+  @spec delete_image(String.t()) :: :ok
+  def delete_image(id) do
+    Agent.get(__MODULE__, fn db -> delete_image_(db, id) end)
+  end
+
   @spec list_images() :: [Jocker.Engine.Records.image()]
   def list_images() do
     Agent.get(__MODULE__, fn db -> list_images_(db) end)
@@ -238,6 +243,11 @@ defmodule Jocker.Engine.MetaData do
       [image_row] -> row2record(:image, image_row)
       [] -> :not_found
     end
+  end
+
+  @spec delete_image_(Sqlitex.connection(), String.t()) :: :ok
+  def delete_image_(db, id) do
+    exec(db, "DELETE FROM images WHERE id = ?", [id])
   end
 
   @spec list_images_(Sqlitex.connection()) :: [Jocker.Engine.Records.image()]

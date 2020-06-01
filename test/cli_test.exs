@@ -31,7 +31,8 @@ defmodule CLITest do
   end
 
   test "escript main help" do
-    {output, 0} = exec_jocker([])
+    {:ok, path} = File.cwd()
+    {output, 0} = System.cmd("#{path}/jocker", [])
     assert "\nUsage:\tjocker [OPTIONS] COMMAND" == String.slice(output, 0, 32)
   end
 
@@ -59,31 +60,51 @@ defmodule CLITest do
   test "jocker image ls" do
     img =
       image(
-        id: "test-image-id",
+        id: "test-img-id1",
         name: "test-image",
         tag: "latest",
         command: "/bin/ls",
         created: DateTime.to_iso8601(DateTime.from_unix!(1))
       )
 
+    img_id1 = "test-img-id1"
+    img_id2 = "test-img-id2"
+    img_id3 = "test-img-id3"
     MetaData.add_image(img)
+    header = "NAME           TAG          IMAGE ID       CREATED           \n"
+    row1 = "test-image     latest       #{img_id1}   50 years          \n"
+    row2 = "test-image     latest       #{img_id2}   50 years          \n"
 
-    [msg1, msg2] = jocker_cmd(["image", "ls"])
-    assert "NAME           TAG          IMAGE ID       CREATED           \n" == msg1
-    assert "test-image     latest       test-image-i   50 years          \n" == msg2
+    # Test list one
+    listing = jocker_cmd("image ls")
+    assert [header, row1] == listing
+
+    # Test list two
+    MetaData.add_image(
+      image(img, created: DateTime.to_iso8601(DateTime.from_unix!(2)), id: img_id2)
+    )
+
+    [header, msg2, msg1] = jocker_cmd("image ls")
   end
 
-  test "jocker image build" do
-    # FIXME: we need "jocker image rm"
+  test "build and remove an image with a tag" do
     path = "./test/data/test_cli_build_image"
 
-    [msg1] = jocker_cmd("image build -t lol:test #{path}")
-    id1 = String.slice(msg1, 34, 12)
-    assert image(name: "lol", tag: "test") = MetaData.get_image(id1)
+    [msg] = jocker_cmd("image build #{path}")
+    id = String.slice(msg, 34, 12)
+    assert image(name: "<none>", tag: "<none>") = MetaData.get_image(id)
+    assert ["#{id}\n"] == jocker_cmd("image rm #{id}")
+    assert :not_found == MetaData.get_image(id)
+  end
 
-    [msg2] = jocker_cmd("image build #{path}")
-    id2 = String.slice(msg2, 34, 12)
-    assert image(name: "<none>", tag: "<none>") = MetaData.get_image(id2)
+  test "build and remove a tagged image" do
+    path = "./test/data/test_cli_build_image"
+
+    [msg] = jocker_cmd("image build -t lol:test #{path}")
+    id = String.slice(msg, 34, 12)
+    assert image(name: "lol", tag: "test") = MetaData.get_image(id)
+    assert ["#{id}\n"] == jocker_cmd("image rm #{id}")
+    assert :not_found == MetaData.get_image(id)
   end
 
   test "jocker container ls" do
@@ -222,6 +243,11 @@ defmodule CLITest do
         name
       }\n"
 
+    row_stopped_long =
+      "#{id}   base                        /bin/sleep 10000                    1 second   stopped   #{
+        name
+      }\n"
+
     row_running =
       "#{id}   base                        /bin/sleep 10000          Less than a second   running   #{
         name
@@ -231,8 +257,7 @@ defmodule CLITest do
     assert [header] == jocker_cmd("container ls")
     assert ["#{id}\n"] == jocker_cmd("container start #{id}")
     assert [header, row_running] == jocker_cmd("container ls --all")
-    # FIXME jocker container stop
-    Container.stop(pid)
+    [id_n] = jocker_cmd("container stop #{id}")
     assert [header, row_stopped] == jocker_cmd("container ls --all")
   end
 
@@ -240,8 +265,7 @@ defmodule CLITest do
     [id_n] = jocker_cmd("container create base echo lol")
     id = String.trim(id_n)
     container(pid: pid) = MetaData.get_container(id)
-    # FIXME jocker container stop
-    Container.stop(pid)
+    [id_n] = jocker_cmd("container stop #{id}")
     assert ["lol\n"] == jocker_cmd("container start -a #{id}")
   end
 
@@ -390,10 +414,5 @@ defmodule CLITest do
         IO.puts("Unexpected message received while waiting for cli-messages: #{inspect(other)}")
         exit(:shutdown)
     end
-  end
-
-  defp exec_jocker(args) do
-    {:ok, path} = File.cwd()
-    System.cmd("#{path}/jocker", args)
   end
 end

@@ -64,6 +64,9 @@ defmodule Jocker.CLI.Main do
       ["image", "ls" | opts] ->
         image_ls(opts)
 
+      ["image", "rm" | opts] ->
+        image_rm(opts)
+
       ["image", unknown_subcmd | _opts] ->
         to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.", :eof)
 
@@ -84,6 +87,9 @@ defmodule Jocker.CLI.Main do
 
       ["container", "start" | opts] ->
         container_start(opts)
+
+      ["container", "stop" | opts] ->
+        container_stop(opts)
 
       ["container", unknown_subcmd | _opts] ->
         to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.", :eof)
@@ -136,6 +142,35 @@ defmodule Jocker.CLI.Main do
 
       :error ->
         :ok
+    end
+  end
+
+  def image_rm(argv) do
+    case process_subcommand(image_rm_help(), "image rm", argv,
+           strict: [
+             help: :boolean
+           ]
+         ) do
+      {_options, []} ->
+        to_cli("\"jocker image rm\" requires at least 1 argument.")
+        to_cli(container_rm_help(), :eof)
+
+      {_options, images} ->
+        Enum.map(images, &destroy_image/1)
+        cli_eof()
+
+      :error ->
+        :ok
+    end
+  end
+
+  defp destroy_image(image_id) do
+    case rpc([Jocker.Engine.Image, :destroy, [image_id]]) do
+      :ok ->
+        to_cli("#{image_id}\n")
+
+      :not_found ->
+        to_cli("Error: No such image: #{image_id}\n")
     end
   end
 
@@ -299,6 +334,36 @@ defmodule Jocker.CLI.Main do
 
       :error ->
         :ok
+    end
+  end
+
+  def container_stop(argv) do
+    case process_subcommand(container_stop_help(), "container stop", argv,
+           strict: [
+             help: :boolean
+           ]
+         ) do
+      {_options, []} ->
+        to_cli("\"jocker container rm\" requires at least 1 argument.")
+        to_cli(container_rm_help(), :eof)
+
+      {_options, containers} ->
+        Enum.map(containers, &stop_container/1)
+        cli_eof()
+
+      :error ->
+        :ok
+    end
+  end
+
+  defp stop_container(container_id) do
+    case rpc([Jocker.Engine.MetaData, :get_container, [container_id]]) do
+      container(pid: pid) ->
+        :ok = rpc([Jocker.Engine.Container, :stop, [pid]])
+        to_cli("#{container_id}\n")
+
+      :not_found ->
+        to_cli("Error: No such container: #{container_id}\n")
     end
   end
 
