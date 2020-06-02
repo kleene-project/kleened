@@ -32,8 +32,7 @@ defmodule VolumeTest do
   test "listing of volumes" do
     vol1 = create_volume("test")
     assert [vol1] == MetaData.list_volumes()
-    volume(name: name) = vol2 = create_volume()
-    assert 12 == byte_size(name)
+    volume(name: name) = vol2 = create_volume("lol")
     assert [vol2, vol1] == MetaData.list_volumes()
     vol1_new_created = create_volume("test")
     assert [vol1_new_created, vol2] == MetaData.list_volumes()

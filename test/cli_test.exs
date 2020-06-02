@@ -58,33 +58,34 @@ defmodule CLITest do
   end
 
   test "jocker image ls" do
-    img =
+    img_id1 = "test-img-id1"
+    img_id2 = "test-img-id2"
+
+    img1 =
       image(
-        id: "test-img-id1",
+        id: img_id1,
         name: "test-image",
         tag: "latest",
         command: "/bin/ls",
         created: DateTime.to_iso8601(DateTime.from_unix!(1))
       )
 
-    img_id1 = "test-img-id1"
-    img_id2 = "test-img-id2"
-    img_id3 = "test-img-id3"
-    MetaData.add_image(img)
+    img2 =
+      image(img1, created: DateTime.to_iso8601(DateTime.from_unix!(2)), id: img_id2, name: "lol")
+
     header = "NAME           TAG          IMAGE ID       CREATED           \n"
     row1 = "test-image     latest       #{img_id1}   50 years          \n"
-    row2 = "test-image     latest       #{img_id2}   50 years          \n"
+    row2 = "lol            latest       #{img_id2}   50 years          \n"
 
     # Test list one
+    MetaData.add_image(img1)
     listing = jocker_cmd("image ls")
     assert [header, row1] == listing
 
     # Test list two
-    MetaData.add_image(
-      image(img, created: DateTime.to_iso8601(DateTime.from_unix!(2)), id: img_id2)
-    )
+    MetaData.add_image(img2)
 
-    [header, msg2, msg1] = jocker_cmd("image ls")
+    assert [header, row2, row1] == jocker_cmd("image ls")
   end
 
   test "build and remove an image with a tag" do
@@ -233,7 +234,7 @@ defmodule CLITest do
   test "starting a long-running container and stopping it" do
     [id_n] = jocker_cmd("container create base /bin/sleep 10000")
     id = String.trim(id_n)
-    container(pid: pid, name: name) = MetaData.get_container(id)
+    container(name: name) = MetaData.get_container(id)
 
     header =
       "CONTAINER ID   IMAGE                       COMMAND                   CREATED              STATUS    NAME\n"
@@ -257,15 +258,14 @@ defmodule CLITest do
     assert [header] == jocker_cmd("container ls")
     assert ["#{id}\n"] == jocker_cmd("container start #{id}")
     assert [header, row_running] == jocker_cmd("container ls --all")
-    [id_n] = jocker_cmd("container stop #{id}")
+    assert [id_n] == jocker_cmd("container stop #{id}")
     assert [header, row_stopped] == jocker_cmd("container ls --all")
   end
 
   test "start and attach to a container that produces some output" do
     [id_n] = jocker_cmd("container create base echo lol")
     id = String.trim(id_n)
-    container(pid: pid) = MetaData.get_container(id)
-    [id_n] = jocker_cmd("container stop #{id}")
+    assert [id_n] == jocker_cmd("container stop #{id}")
     assert ["lol\n"] == jocker_cmd("container start -a #{id}")
   end
 
