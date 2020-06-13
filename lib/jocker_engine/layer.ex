@@ -1,7 +1,7 @@
 defmodule Jocker.Engine.Layer do
   use GenServer
   import Jocker.Engine.Records
-  require Jocker.Engine.Config
+  alias Jocker.Engine.Config
 
   def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
@@ -34,7 +34,7 @@ defmodule Jocker.Engine.Layer do
 
   defp initialize_(layer(snapshot: parent_snapshot)) do
     id = Jocker.Engine.Utils.uuid()
-    dataset = Path.join(Jocker.Engine.Config.zroot(), id)
+    dataset = Path.join(Config.get(:zroot), id)
     0 = Jocker.Engine.ZFS.clone(parent_snapshot, dataset)
 
     new_layer =

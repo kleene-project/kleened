@@ -158,7 +158,7 @@ defmodule Jocker.Engine.Container do
 
   def handle_call(:stop, _from, state) do
     container(id: id) = state.container
-    {_output, _exitcode} = System.cmd("/usr/sbin/jail", ["-r", id])
+    {_output, exitcode} = System.cmd("/usr/sbin/jail", ["-r", id], stderr_to_stdout: true)
     reply = :ok
     {:stop, :normal, reply, state}
   end
@@ -286,7 +286,7 @@ defmodule Jocker.Engine.Container do
   end
 
   defp is_jail_running?(container(id: id)) do
-    case System.cmd("jls", ["--libxo=json", "-j", id]) do
+    case System.cmd("jls", ["--libxo=json", "-j", id], stderr_to_stdout: true) do
       {_json, 1} -> false
       {_json, 0} -> true
     end

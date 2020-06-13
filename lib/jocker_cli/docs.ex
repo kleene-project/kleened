@@ -10,12 +10,12 @@ defmodule Jocker.CLI.Docs do
   A self-sufficient runtime for containers
 
   Options:
-  -D, --debug              Enable debug mode
   -v, --version            Print version information and quit
 
   Management Commands:
   container   Manage containers
   image       Manage images
+  volume      Manage volumes
 
   Run 'jocker COMMAND --help' for more information on a command.
   """

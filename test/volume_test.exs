@@ -1,15 +1,16 @@
 defmodule VolumeTest do
   use ExUnit.Case
-  require Jocker.Engine.Config
   import Jocker.Engine.Records
   import Jocker.Engine.Volume
   alias Jocker.Engine.MetaData
+  alias Jocker.Engine.Config
   @moduletag :capture_log
 
   setup_all do
     Application.stop(:jocker)
+    start_supervised(Config)
     Jocker.Engine.ZFS.clear_zroot()
-    start_supervised({Jocker.Engine.MetaData, [file: Jocker.Engine.Config.metadata_db()]})
+    start_supervised(Jocker.Engine.MetaData)
     start_supervised(Jocker.Engine.Layer)
     start_supervised({Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
     initialize()
@@ -32,7 +33,7 @@ defmodule VolumeTest do
   test "listing of volumes" do
     vol1 = create_volume("test")
     assert [vol1] == MetaData.list_volumes()
-    volume(name: name) = vol2 = create_volume("lol")
+    vol2 = create_volume("lol")
     assert [vol2, vol1] == MetaData.list_volumes()
     vol1_new_created = create_volume("test")
     assert [vol1_new_created, vol2] == MetaData.list_volumes()

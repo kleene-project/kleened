@@ -1,6 +1,6 @@
 defmodule MetaDataTest do
   use ExUnit.Case
-  require Jocker.Engine.Config
+  alias Jocker.Engine.Config
   import Jocker.Engine.MetaData
   import Jocker.Engine.Records
 
@@ -8,12 +8,13 @@ defmodule MetaDataTest do
 
   setup_all do
     Application.stop(:jocker)
+    start_supervised(Config)
     :ok
   end
 
   setup do
     File.rm(dbfile())
-    start_link(file: dbfile())
+    start_link([])
     :ok
   end
 
@@ -21,7 +22,7 @@ defmodule MetaDataTest do
     assert db_exists?()
     stop()
     File.rm(dbfile())
-    start_link(file: dbfile())
+    start_link([])
     assert db_exists?()
   end
 
@@ -182,7 +183,7 @@ defmodule MetaDataTest do
   end
 
   defp dbfile() do
-    Jocker.Engine.Config.metadata_db()
+    Config.get(:metadata_db)
   end
 
   defp db_exists?() do

@@ -7,7 +7,7 @@ defmodule Jocker.CLI.EngineClient do
 
   use GenServer
   require Logger
-  require Jocker.Engine.Config
+  alias Jocker.Engine.Config
   alias :gen_tcp, as: GenTCP
   alias :erlang, as: Erlang
 
@@ -26,7 +26,7 @@ defmodule Jocker.CLI.EngineClient do
 
   @impl true
   def init([callers_pid]) do
-    api_socket = Jocker.Engine.Config.api_socket()
+    api_socket = Config.get(:api_socket)
 
     Logger.info("Connecting to jocker-engine")
 

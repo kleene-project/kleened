@@ -13,13 +13,13 @@ defmodule Jocker.Engine.Volume do
 
   @spec initialize() :: :ok
   def initialize() do
-    ZFS.create(Config.volume_root())
+    ZFS.create(Config.get(:volume_root))
     :ok
   end
 
   @spec create_volume(String.t()) :: Jocker.Engine.Records.volume()
   def create_volume(name) do
-    dataset = Path.join(Config.volume_root(), name)
+    dataset = Path.join(Config.get(:volume_root), name)
     mountpoint = Path.join("/", dataset)
     ZFS.create(dataset)
 

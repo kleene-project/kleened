@@ -1,10 +1,10 @@
 defmodule Jocker.Engine.ZFS do
-  import Jocker.Engine.Config
+  alias Jocker.Engine.Config
 
   @spec clear_zroot() :: :ok
   def clear_zroot do
-    destroy_force(zroot())
-    create(zroot())
+    destroy_force(Config.get(:zroot))
+    create(Config.get(:zroot))
     :ok
   end
 
@@ -44,7 +44,7 @@ defmodule Jocker.Engine.ZFS do
 
   @spec cmd([String.t()]) :: integer()
   def cmd(cmd) do
-    {_stdout, exit_code} = System.cmd("/sbin/zfs", cmd)
+    {_stdout, exit_code} = System.cmd("/sbin/zfs", cmd, stderr_to_stdout: true)
     exit_code
   end
 end

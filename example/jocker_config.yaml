@@ -1,0 +1,11 @@
+---
+zroot: "zroot/jocker"
+volume_root: "zroot/jocker/volumes"
+
+metadata_db: "/zroot/jocker/metadata.sqlite"
+api_socket: "/var/run/jocker.sock"
+
+# Default image-snap to use when cloning: '@image'
+base_layer_dataset: "zroot/jocker_basejail"
+base_layer_snapshot: "zroot/jocker_basejail@image"
+base_layer_mountpoint: "/zroot/jocker_basejail"

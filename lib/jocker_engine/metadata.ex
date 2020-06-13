@@ -1,7 +1,6 @@
 defmodule Jocker.Engine.MetaData do
   require Logger
   alias Jocker.Engine.Config
-  require Config
   import Jocker.Engine.Records
 
   use Agent
@@ -70,10 +69,6 @@ defmodule Jocker.Engine.MetaData do
           {:all, boolean()}
         ]
 
-  @type db_opts() :: [
-          {:file, String.t()}
-        ]
-
   @type jocker_record() ::
           Jocker.Engine.Records.layer()
           | Jocker.Engine.Records.container()
@@ -81,9 +76,9 @@ defmodule Jocker.Engine.MetaData do
 
   @type record_type() :: :image | :layer | :container
 
-  @spec start_link(db_opts()) :: Agent.on_start()
-  def start_link(opts) do
-    filepath = Keyword.get(opts, :file)
+  @spec start_link([]) :: Agent.on_start()
+  def start_link([]) do
+    filepath = Config.get(:metadata_db)
     {:ok, db} = Sqlitex.open(filepath)
     create_tables(db)
     Agent.start_link(fn -> db end, name: __MODULE__)
@@ -493,9 +488,9 @@ defmodule Jocker.Engine.MetaData do
     base_layer =
       layer(
         id: "base",
-        dataset: Config.base_layer_dataset(),
-        snapshot: Config.base_layer_snapshot(),
-        mountpoint: Config.base_layer_mountpoint()
+        dataset: Config.get(:base_layer_dataset),
+        snapshot: Config.get(:base_layer_snapshot),
+        mountpoint: Config.get(:base_layer_mountpoint)
       )
 
     base_image =

@@ -5,7 +5,7 @@ defmodule Jocker.Engine.APIServer do
               buffers: nil
   end
 
-  require Jocker.Engine.Config
+  alias Jocker.Engine.Config
   require Logger
   use GenServer
   alias :gen_tcp, as: GenTCP
@@ -18,7 +18,7 @@ defmodule Jocker.Engine.APIServer do
   @impl true
   def init([]) do
     Logger.info("jocker-engine: Initating API backed")
-    api_socket = Jocker.Engine.Config.api_socket()
+    api_socket = Config.get(:api_socket)
     File.rm(api_socket)
 
     {:ok, listening_socket} =

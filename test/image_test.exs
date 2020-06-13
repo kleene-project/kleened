@@ -1,6 +1,6 @@
 defmodule ImageTest do
   use ExUnit.Case
-  require Jocker.Engine.Config
+  alias Jocker.Engine.Config
   alias Jocker.Engine.Image
   import Jocker.Engine.Records
 
@@ -8,11 +8,12 @@ defmodule ImageTest do
 
   setup_all do
     Application.stop(:jocker)
+    start_supervised(Config)
     Jocker.Engine.ZFS.clear_zroot()
   end
 
   setup do
-    start_supervised({Jocker.Engine.MetaData, [file: Jocker.Engine.Config.metadata_db()]})
+    start_supervised(Jocker.Engine.MetaData)
     start_supervised(Jocker.Engine.Layer)
     start_supervised({Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
     start_supervised(Jocker.Engine.ContainerPool)
@@ -62,7 +63,7 @@ defmodule ImageTest do
   end
 
   defp create_test_context(name) do
-    dataset = Path.join(Jocker.Engine.Config.zroot(), name)
+    dataset = Path.join(Config.get(:zroot), name)
     mountpoint = Path.join("/", dataset)
     Jocker.Engine.ZFS.create(dataset)
     {"", 0} = System.cmd("sh", ["-c", "echo 'lol' > #{mountpoint}/test.txt"])
@@ -71,6 +72,6 @@ defmodule ImageTest do
 
   defp stop_and_delete_db() do
     # Agent.stop(Jocker.Engine.MetaData)
-    File.rm(Jocker.Engine.Config.metadata_db())
+    File.rm(Config.get(:metadata_db))
   end
 end

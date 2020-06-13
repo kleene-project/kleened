@@ -5,7 +5,6 @@ defmodule CLITest do
   alias Jocker.Engine.MetaData
   alias Jocker.Engine.Volume
   alias Jocker.Engine.Config
-  require Jocker.Engine.Config
   import Jocker.Engine.Records
   require Logger
 
@@ -13,10 +12,11 @@ defmodule CLITest do
 
   setup_all do
     Application.stop(:jocker)
+    start_supervised(Config)
     remove_volume_mounts()
     Jocker.Engine.ZFS.clear_zroot()
     Jocker.Engine.Volume.initialize()
-    start_supervised({MetaData, [file: Jocker.Engine.Config.metadata_db()]})
+    start_supervised(MetaData)
     start_supervised(Jocker.Engine.Layer)
     start_supervised({Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
     start_supervised(Jocker.Engine.ContainerPool)
@@ -48,6 +48,7 @@ defmodule CLITest do
   end
 
   test "jocker <no arguments or options>" do
+    IO.puts(Config.get(:zroot))
     [msg] = jocker_cmd([])
     assert "\nUsage:\tjocker [OPTIONS] COMMAND" == String.slice(msg, 0, 32)
   end
@@ -366,7 +367,7 @@ defmodule CLITest do
   defp remove_mount(mount) do
     case mount |> String.replace(" on ", " ") |> String.split() do
       [src, dst | _] ->
-        case String.starts_with?(src, "/" <> Config.volume_root()) do
+        case String.starts_with?(src, "/" <> Config.get(:volume_root)) do
           true ->
             Logger.warn("Removing nullfs-mount #{dst}")
             System.cmd("/sbin/umount", [dst])

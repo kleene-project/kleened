@@ -1,6 +1,6 @@
 defmodule ContainerTest do
   use ExUnit.Case
-  require Jocker.Engine.Config
+  alias Jocker.Engine.Config
   alias Jocker.Engine.Container
   alias Jocker.Engine.ContainerPool
   import Jocker.Engine.Records
@@ -9,11 +9,12 @@ defmodule ContainerTest do
 
   setup_all do
     Application.stop(:jocker)
+    start_supervised(Config)
     Jocker.Engine.ZFS.clear_zroot()
   end
 
   setup do
-    start_supervised({Jocker.Engine.MetaData, [file: Jocker.Engine.Config.metadata_db()]})
+    start_supervised(Jocker.Engine.MetaData)
     start_supervised(Jocker.Engine.Layer)
     start_supervised({Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
     :ok

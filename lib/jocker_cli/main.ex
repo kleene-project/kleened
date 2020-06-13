@@ -4,6 +4,8 @@ defmodule Jocker.CLI.Main do
   alias Jocker.CLI.EngineClient
   require Logger
 
+  @cli_version "0.0.0"
+
   def main(args) do
     Logger.configure(level: :error)
     Process.register(self(), :cli_master)
@@ -23,20 +25,20 @@ defmodule Jocker.CLI.Main do
     {options, args, invalid} =
       OptionParser.parse_head(argv,
         aliases: [
-          D: :debug,
           v: :version
         ],
         strict: [
           version: :boolean,
-          debug: :boolean,
           help: :boolean
         ]
       )
 
     case {options, args, invalid} do
-      {_opts, [], []} ->
-        # TODO: plz2implement
-        :implement_me
+      {opts, [], []} ->
+        case Keyword.get(opts, :version) do
+          true -> to_cli("Jocker version #{@cli_version}", :eof)
+          _ -> cli_eof()
+        end
 
       {[], rest, []} ->
         parse_subcommand(rest)
