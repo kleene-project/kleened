@@ -2,12 +2,14 @@ defmodule Jocker.CLI.Main do
   import Jocker.CLI.Docs
   import Jocker.Engine.Records
   alias Jocker.CLI.EngineClient
+  alias Jocker.Engine.Config
   require Logger
 
   @cli_version "0.0.0"
 
   def main(args) do
     Logger.configure(level: :error)
+    {:ok, _pid} = Config.start_link([])
     Process.register(self(), :cli_master)
     spawn_link(__MODULE__, :main_, [args])
     print_output()
@@ -601,8 +603,8 @@ defmodule Jocker.CLI.Main do
   end
 
   def rpc(cmd) do
-    case Process.whereis(Jocker.CLI.EngineClient) do
-      nil -> Jocker.CLI.EngineClient.start_link([])
+    case Process.whereis(EngineClient) do
+      nil -> EngineClient.start_link([])
       _pid -> :ok
     end
 
