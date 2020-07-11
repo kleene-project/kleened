@@ -490,7 +490,7 @@ defmodule Jocker.Engine.MetaData do
         id: "base",
         dataset: Config.get(:base_layer_dataset),
         snapshot: Config.get(:base_layer_snapshot),
-        mountpoint: Config.get(:base_layer_mountpoint)
+        mountpoint: :none
       )
 
     base_image =
