@@ -25,8 +25,23 @@ defmodule Jocker.Engine.Container do
   ### API
   ### ===================================================================
   @spec create(create_opts) :: GenServer.on_start()
-  def create(opts),
-    do: GenServer.start_link(__MODULE__, opts)
+  def create(opts) do
+    # TODO: For some reason DynamicSupervisor.start_child/2 crashes when consecutive calls to it is made (for instance, when building an image).
+    :timer.sleep(10)
+
+    case DynamicSupervisor.start_child(
+           Jocker.Engine.ContainerPool,
+           {Jocker.Engine.Container, opts}
+         ) do
+      {:ok, pid} -> {:ok, pid}
+      {:error, {:bad_return_value, {:stop, :normal, error_msg}}} -> error_msg
+      other -> other
+    end
+  end
+
+  def start_link(opts) do
+    GenServer.start_link(__MODULE__, opts)
+  end
 
   @spec attach(pid()) :: :ok
   def attach(pid),
@@ -69,7 +84,7 @@ defmodule Jocker.Engine.Container do
 
   @impl true
   def init(opts) do
-    Keyword.get(opts, :id_or_name, :none)
+    Logger.debug("Initializing container with opts: #{inspect(opts)}")
 
     case Keyword.get(opts, :id_or_name, :none) do
       :none ->
@@ -156,11 +171,17 @@ defmodule Jocker.Engine.Container do
     {:reply, :ok, %State{state | :container => updated_container, :starting_port => port}}
   end
 
-  def handle_call(:stop, _from, state) do
-    container(id: id) = state.container
-    {_output, exitcode} = System.cmd("/usr/sbin/jail", ["-r", id], stderr_to_stdout: true)
+  def handle_call(:stop, _from, %State{:container => container(running: false)} = state) do
+    Logger.info("Stopping container-process.")
     reply = :ok
     {:stop, :normal, reply, state}
+  end
+
+  def handle_call(:stop, _from, state) do
+    container(id: id) = state.container
+    {output, exitcode} = System.cmd("/usr/sbin/jail", ["-r", id], stderr_to_stdout: true)
+    Logger.info("Stopped jail #{id} with exitcode #{exitcode}: #{output}")
+    {:reply, :ok, state}
   end
 
   @impl true
@@ -186,8 +207,8 @@ defmodule Jocker.Engine.Container do
   end
 
   def handle_info({:EXIT, port, reason}, state) do
-    IO.puts("Container (port #{inspect(port)}) crashed unexpectedly: #{reason}")
-    {:noreply, state}
+    IO.puts("jail (port #{inspect(port)}) crashed unexpectedly: #{reason}")
+    {:stop, :normal, state}
   end
 
   def handle_info(unknown_msg, state) do
@@ -218,27 +239,26 @@ defmodule Jocker.Engine.Container do
   end
 
   defp bind_volumes_({:volume, vol_raw}, cont) do
-    arg =
-      case String.split(vol_raw, ":") do
-        [<<"/", _::binary>> = location] ->
-          # anonymous volume
-          create_and_bind("", location, [ro: false], cont)
+    case String.split(vol_raw, ":") do
+      [<<"/", _::binary>> = location] ->
+        # anonymous volume
+        create_and_bind("", location, [ro: false], cont)
 
-        [<<"/", _::binary>> = location, "ro"] ->
-          # anonymous volume - readonly
-          create_and_bind("", location, [ro: true], cont)
+      [<<"/", _::binary>> = location, "ro"] ->
+        # anonymous volume - readonly
+        create_and_bind("", location, [ro: true], cont)
 
-        [name, location, "ro"] ->
-          # named volume - readonly
-          create_and_bind(name, location, [ro: true], cont)
+      [name, location, "ro"] ->
+        # named volume - readonly
+        create_and_bind(name, location, [ro: true], cont)
 
-        [name, location] ->
-          # named volume
-          create_and_bind(name, location, [ro: false], cont)
-      end
+      [name, location] ->
+        # named volume
+        create_and_bind(name, location, [ro: false], cont)
+    end
   end
 
-  defp bind_volumes_(_, cont) do
+  defp bind_volumes_(_, _cont) do
     :ok
   end
 

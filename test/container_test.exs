@@ -2,7 +2,6 @@ defmodule ContainerTest do
   use ExUnit.Case
   alias Jocker.Engine.Config
   alias Jocker.Engine.Container
-  alias Jocker.Engine.ContainerPool
   import Jocker.Engine.Records
 
   @moduletag :capture_log
@@ -11,6 +10,13 @@ defmodule ContainerTest do
     Application.stop(:jocker)
     start_supervised(Config)
     Jocker.Engine.ZFS.clear_zroot()
+
+    start_supervised(
+      {DynamicSupervisor,
+       name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0}
+    )
+
+    :ok
   end
 
   setup do
@@ -33,8 +39,7 @@ defmodule ContainerTest do
       jail_param: []
     ]
 
-    ContainerPool.start_link([])
-    {:ok, pid} = ContainerPool.create(opts)
+    {:ok, pid} = Container.create(opts)
     Container.attach(pid)
     Container.start(pid)
 
@@ -68,12 +73,10 @@ defmodule ContainerTest do
     ]
 
     {pid, container} = start_attached_container(opts)
-    Process.flag(:trap_exit, true)
 
     assert devfs_mounted(container)
     :ok = Container.stop(pid)
     assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
-    assert_receive {:EXIT, ^pid, :normal}
     assert not devfs_mounted(container)
   end
 
@@ -88,13 +91,13 @@ defmodule ContainerTest do
 
     assert devfs_mounted(container)
     :ok = Container.stop(pid)
+    assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
     assert not devfs_mounted(container)
   end
 
   test "try creating containers from non-existing images and non-existing ids" do
-    Jocker.Engine.ContainerPool.start_link([])
-    assert :image_not_found == Jocker.Engine.ContainerPool.create(image: "nonexisting")
-    assert :container_not_found == Jocker.Engine.ContainerPool.create(id_or_name: "nonexisting")
+    assert :image_not_found == Jocker.Engine.Container.create(image: "nonexisting")
+    assert :container_not_found == Jocker.Engine.Container.create(id_or_name: "nonexisting")
   end
 
   test "start a container as non-root" do

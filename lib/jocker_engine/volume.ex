@@ -11,10 +11,9 @@ defmodule Jocker.Engine.Volume do
           rw: boolean()
         ]
 
-  @spec initialize() :: :ok
-  def initialize() do
+  @spec create_volume_dataset() :: {integer(), String.t()}
+  def create_volume_dataset() do
     ZFS.create(Config.get(:volume_root))
-    :ok
   end
 
   @spec create_volume(String.t()) :: Jocker.Engine.Records.volume()

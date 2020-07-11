@@ -1,5 +1,6 @@
 defmodule Jocker.Engine.ZFS do
   alias Jocker.Engine.Config
+  require Logger
 
   @spec clear_zroot() :: :ok
   def clear_zroot do
@@ -44,7 +45,8 @@ defmodule Jocker.Engine.ZFS do
 
   @spec cmd([String.t()]) :: integer()
   def cmd(cmd) do
-    {_stdout, exit_code} = System.cmd("/sbin/zfs", cmd, stderr_to_stdout: true)
+    {stdout, exit_code} = System.cmd("/sbin/zfs", cmd, stderr_to_stdout: true)
+    Logger.debug("zfs command exited with code #{exit_code} and reason: #{stdout}")
     exit_code
   end
 end

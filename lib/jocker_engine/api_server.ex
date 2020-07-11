@@ -61,7 +61,7 @@ defmodule Jocker.Engine.APIServer do
         updated_buffers = Map.put(state.buffers, socket, new_buffer)
         {:noreply, %State{state | :buffers => updated_buffers}}
 
-      {[Jocker.Engine.ContainerPool, :create, _] = command, new_buffer} ->
+      {[Jocker.Engine.Container, :create, _] = command, new_buffer} ->
         reply = evaluate_command(command)
         updated_buffers = Map.put(state.buffers, socket, new_buffer)
 

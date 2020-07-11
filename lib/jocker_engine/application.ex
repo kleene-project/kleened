@@ -3,6 +3,7 @@ defmodule Jocker.Engine.Application do
   # for more information on OTP Applications
   @moduledoc false
   alias Jocker.Engine.Config
+  require Logger
 
   use Application
 
@@ -12,12 +13,12 @@ defmodule Jocker.Engine.Application do
 
   def start(_type, _args) do
     children = [
-      # Starts a worker by calling: JockTMod.Worker.start_link(arg)
       Jocker.Engine.Config,
       Jocker.Engine.MetaData,
       Jocker.Engine.Layer,
       {Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]},
-      Jocker.Engine.ContainerPool,
+      {DynamicSupervisor,
+       name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0},
       Jocker.Engine.APIServer
     ]
 

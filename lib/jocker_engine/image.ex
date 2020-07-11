@@ -97,7 +97,7 @@ defmodule Jocker.Engine.Image do
       cmd: cmd
     ]
 
-    {:ok, pid} = Jocker.Engine.ContainerPool.create(opts)
+    {:ok, pid} = Jocker.Engine.Container.create(opts)
     Jocker.Engine.Container.attach(pid)
     Jocker.Engine.Container.start(pid)
 

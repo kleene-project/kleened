@@ -258,7 +258,7 @@ defmodule Jocker.CLI.Main do
               [cmd: cmd, image: image] ++ options
           end
 
-        case rpc([Jocker.Engine.ContainerPool, :create, [opts]]) do
+        case rpc([Jocker.Engine.Container, :create, [opts]]) do
           :image_not_found ->
             to_cli("Unable to find image '#{image}'", :eof)
 
@@ -544,7 +544,7 @@ defmodule Jocker.CLI.Main do
            [id_or_name]
          ]) do
       container(id: id) ->
-        {:ok, pid} = rpc([Jocker.Engine.ContainerPool, :create, [[id_or_name: id]]])
+        {:ok, pid} = rpc([Jocker.Engine.Container, :create, [[id_or_name: id]]])
 
         if attach do
           :ok = rpc([Jocker.Engine.Container, :attach, [pid]])

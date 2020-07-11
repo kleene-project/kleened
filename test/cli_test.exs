@@ -15,11 +15,16 @@ defmodule CLITest do
     start_supervised(Config)
     remove_volume_mounts()
     Jocker.Engine.ZFS.clear_zroot()
-    Jocker.Engine.Volume.initialize()
+    Jocker.Engine.Volume.create_volume_dataset()
     start_supervised(MetaData)
     start_supervised(Jocker.Engine.Layer)
     start_supervised({Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
-    start_supervised(Jocker.Engine.ContainerPool)
+
+    start_supervised(
+      {DynamicSupervisor,
+       name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0}
+    )
+
     start_supervised(Jocker.Engine.APIServer)
     :ok
   end
@@ -75,8 +80,8 @@ defmodule CLITest do
       image(img1, created: DateTime.to_iso8601(DateTime.from_unix!(2)), id: img_id2, name: "lol")
 
     header = "NAME           TAG          IMAGE ID       CREATED           \n"
-    row1 = "test-image     latest       #{img_id1}   50 years          \n"
-    row2 = "lol            latest       #{img_id2}   50 years          \n"
+    row1 = "test-image     latest       #{img_id1}   51 years          \n"
+    row2 = "lol            latest       #{img_id2}   51 years          \n"
 
     # Test list one
     MetaData.add_image(img1)
@@ -245,7 +250,7 @@ defmodule CLITest do
         name
       }\n"
 
-    row_stopped_long =
+    _row_stopped_long =
       "#{id}   base                        /bin/sleep 10000                    1 second   stopped   #{
         name
       }\n"

@@ -12,8 +12,16 @@ defmodule VolumeTest do
     Jocker.Engine.ZFS.clear_zroot()
     start_supervised(Jocker.Engine.MetaData)
     start_supervised(Jocker.Engine.Layer)
+
     start_supervised({Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
-    initialize()
+
+    start_supervised(
+      {DynamicSupervisor,
+       name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0}
+    )
+
+    create_volume_dataset()
+    :ok
   end
 
   setup do
