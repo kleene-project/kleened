@@ -14,7 +14,7 @@ defmodule CLITest do
     Application.stop(:jocker)
     start_supervised(Config)
     remove_volume_mounts()
-    Jocker.Engine.ZFS.clear_zroot()
+    TestUtils.clear_zroot()
     Jocker.Engine.Volume.create_volume_dataset()
     start_supervised(MetaData)
     start_supervised(Jocker.Engine.Layer)
@@ -133,7 +133,7 @@ defmodule CLITest do
     assert [header, row] == listing
   end
 
-  test "Simple creation and removal of a container" do
+  test "create and remove a container" do
     [id_n] = jocker_cmd("container create base")
     id = String.trim(id_n)
     assert container(id: ^id, layer_id: layer_id) = MetaData.get_container(id)
@@ -143,7 +143,7 @@ defmodule CLITest do
     assert not is_directory?(mountpoint)
   end
 
-  test "Creating a container with a custom command" do
+  test "create a container with a custom command" do
     [id_n] = jocker_cmd("container create base /bin/mkdir /loltest")
     id = String.trim(id_n)
     assert container(id: ^id, layer_id: layer_id, pid: pid) = MetaData.get_container(id)
@@ -388,7 +388,7 @@ defmodule CLITest do
   end
 
   defp touch(path) do
-    case System.cmd("/usr/bin/touch", [path]) do
+    case System.cmd("/usr/bin/touch", [path], stderr_to_stdout: true) do
       {"", 0} -> true
       _ -> false
     end

@@ -9,7 +9,7 @@ defmodule VolumeTest do
   setup_all do
     Application.stop(:jocker)
     start_supervised(Config)
-    Jocker.Engine.ZFS.clear_zroot()
+    TestUtils.clear_zroot()
     start_supervised(Jocker.Engine.MetaData)
     start_supervised(Jocker.Engine.Layer)
 

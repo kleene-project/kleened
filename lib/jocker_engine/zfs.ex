@@ -2,13 +2,6 @@ defmodule Jocker.Engine.ZFS do
   alias Jocker.Engine.Config
   require Logger
 
-  @spec clear_zroot() :: :ok
-  def clear_zroot do
-    destroy_force(Config.get(:zroot))
-    create(Config.get(:zroot))
-    :ok
-  end
-
   @spec create(String.t()) :: integer()
   def create(dataset) do
     # zfs create [-pu] [-o property=value]... filesystem

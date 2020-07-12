@@ -9,7 +9,7 @@ defmodule ContainerTest do
   setup_all do
     Application.stop(:jocker)
     start_supervised(Config)
-    Jocker.Engine.ZFS.clear_zroot()
+    TestUtils.clear_zroot()
 
     start_supervised(
       {DynamicSupervisor,
@@ -26,25 +26,11 @@ defmodule ContainerTest do
     :ok
   end
 
-  test "create a container and fetch metadata" do
+  test "create container and fetch metadata" do
     image(id: id) = Jocker.Engine.MetaData.get_image("base")
     {:ok, pid} = Container.create([])
     container(image_id: img_id) = Container.metadata(pid)
     assert id == img_id
-  end
-
-  test "start a container from the supervised container-pool" do
-    opts = [
-      cmd: ["/bin/echo", "test test"],
-      jail_param: []
-    ]
-
-    {:ok, pid} = Container.create(opts)
-    Container.attach(pid)
-    Container.start(pid)
-
-    assert_receive {:container, ^pid, "test test\n"}
-    assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
   end
 
   test "start a container (using devfs), attach to it and receive output" do
@@ -95,8 +81,11 @@ defmodule ContainerTest do
     assert not devfs_mounted(container)
   end
 
-  test "try creating containers from non-existing images and non-existing ids" do
+  test "create container from non-existing image" do
     assert :image_not_found == Jocker.Engine.Container.create(image: "nonexisting")
+  end
+
+  test "create container from non-existing id" do
     assert :container_not_found == Jocker.Engine.Container.create(id_or_name: "nonexisting")
   end
 
