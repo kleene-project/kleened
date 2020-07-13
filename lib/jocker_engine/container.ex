@@ -207,12 +207,12 @@ defmodule Jocker.Engine.Container do
   end
 
   def handle_info({:EXIT, port, reason}, state) do
-    IO.puts("jail (port #{inspect(port)}) crashed unexpectedly: #{reason}")
+    Logger.error("jail (port #{inspect(port)}) crashed unexpectedly: #{reason}")
     {:stop, :normal, state}
   end
 
   def handle_info(unknown_msg, state) do
-    IO.puts("Unknown message: #{inspect(unknown_msg)}")
+    Logger.warn("Unknown message: #{inspect(unknown_msg)}")
     {:noreply, state}
   end
 
@@ -294,7 +294,7 @@ defmodule Jocker.Engine.Container do
       ~w"-c path=#{path} name=#{id} ip4.addr=#{ip}" ++
         parameters ++ ["command=#{cmd}"] ++ cmd_args
 
-    Logger.debug("Executing 'jail' with arguments: #{inspect(args)}")
+    Logger.debug("Executing /usr/sbin/jail #{Enum.join(args, " ")}")
 
     port =
       Port.open(

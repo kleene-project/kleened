@@ -1,5 +1,4 @@
 defmodule Jocker.Engine.ZFS do
-  alias Jocker.Engine.Config
   require Logger
 
   @spec create(String.t()) :: integer()

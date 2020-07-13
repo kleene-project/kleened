@@ -23,7 +23,7 @@ defmodule Jocker.Engine.Config do
   end
 
   def put(key, value) do
-    Agent.get(__MODULE__, fn config -> Map.put(config, key, value) end)
+    Agent.update(__MODULE__, fn config -> Map.put(config, key, value) end)
   end
 
   defp initialize() do
@@ -36,6 +36,7 @@ defmodule Jocker.Engine.Config do
     valid_dataset_or_exit(cfg, :volume_root, false)
     valid_dataset_or_exit(cfg, :base_layer_dataset, false)
     valid_snapshot_or_create(cfg, :base_layer_dataset)
+    # TODO validate network entries as well
   end
 
   defp valid_snapshot_or_create(cfg, dataset_type) do

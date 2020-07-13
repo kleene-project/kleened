@@ -1,5 +1,6 @@
 defmodule Jocker.Engine.Network do
   use GenServer
+  alias Jocker.Engine.Config
   require Record
 
   Record.defrecordp(:state,
@@ -9,8 +10,8 @@ defmodule Jocker.Engine.Network do
     if_name: :none
   )
 
-  def start_link([range, if_name]) do
-    GenServer.start_link(__MODULE__, [range, if_name], name: __MODULE__)
+  def start_link([]) do
+    GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
 
   def new(), do: GenServer.call(__MODULE__, :new)
@@ -20,8 +21,12 @@ defmodule Jocker.Engine.Network do
   ### Callback functions
 
   @impl true
-  def init([{ip_first, ip_end}, if_name]) do
+  def init([]) do
     # Internally we convert ip-addresses to integers so they can be easily manipulated
+    if_name = Config.get(:network_if_name)
+    ip_first = Config.get(:network_ip_start)
+    ip_end = Config.get(:network_ip_end)
+
     state =
       state(
         first: ip2int(ip_first),

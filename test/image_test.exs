@@ -16,7 +16,7 @@ defmodule ImageTest do
   setup do
     start_supervised(Jocker.Engine.MetaData)
     start_supervised(Jocker.Engine.Layer)
-    start_supervised({Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]})
+    start_supervised(Jocker.Engine.Network)
 
     start_supervised(
       {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}

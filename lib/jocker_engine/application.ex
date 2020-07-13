@@ -2,7 +2,6 @@ defmodule Jocker.Engine.Application do
   # See https://hexdocs.pm/elixir/Application.html
   # for more information on OTP Applications
   @moduledoc false
-  alias Jocker.Engine.Config
   require Logger
 
   use Application
@@ -16,7 +15,7 @@ defmodule Jocker.Engine.Application do
       Jocker.Engine.Config,
       Jocker.Engine.MetaData,
       Jocker.Engine.Layer,
-      {Jocker.Engine.Network, [{"10.13.37.1", "10.13.37.255"}, "jocker0"]},
+      Jocker.Engine.Network,
       {DynamicSupervisor,
        name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0},
       Jocker.Engine.APIServer
