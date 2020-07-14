@@ -1,6 +1,7 @@
 defmodule Jocker.Engine.Network do
   use GenServer
   alias Jocker.Engine.Config
+  require Logger
   require Record
 
   Record.defrecordp(:state,
@@ -16,7 +17,7 @@ defmodule Jocker.Engine.Network do
 
   def new(), do: GenServer.call(__MODULE__, :new)
 
-  def remove(ip), do: GenServer.cast(__MODULE__, {:remove, ip})
+  def remove(ip), do: GenServer.call(__MODULE__, {:remove, ip})
 
   ### Callback functions
 
@@ -41,15 +42,16 @@ defmodule Jocker.Engine.Network do
   end
 
   @impl true
-  def handle_call(:new, _from, state(first: first) = state) do
+  def handle_call(:new, _from, state(first: first, if_name: if_name) = state) do
     {new_ip, in_use} = new_ip(first, state)
+    add_to_if(new_ip, if_name)
     {:reply, new_ip, state(state, in_use: in_use)}
   end
 
-  @impl true
-  def handle_cast({:remove, ip}, state) do
+  def handle_call({:remove, ip}, _from, state(if_name: if_name) = state) do
+    remove_from_if(ip, if_name)
     new_in_use = remove_ip(ip, state)
-    {:noreply, state(state, in_use: new_in_use)}
+    {:reply, :ok, state(state, in_use: new_in_use)}
   end
 
   @impl true
@@ -71,6 +73,24 @@ defmodule Jocker.Engine.Network do
   defp interface_exists(jocker_if) do
     {if_list, 0} = System.cmd("ifconfig", ["-l"])
     if_list |> String.trim() |> String.split() |> Enum.find_value(fn x -> x == jocker_if end)
+  end
+
+  defp add_to_if(:out_of_ips, _iface) do
+    :ok
+  end
+
+  defp add_to_if(ip, iface) do
+    case System.cmd("ifconfig", [iface, "alias", "#{ip}/32"], stderr_to_stdout: true) do
+      {_, 0} -> :ok
+      {error, _} -> Logger.warn("Some error occured while adding #{ip} to #{iface}: #{error}")
+    end
+  end
+
+  defp remove_from_if(ip, iface) do
+    case System.cmd("ifconfig", [iface, "-alias", "#{ip}"], stderr_to_stdout: true) do
+      {_, 0} -> :ok
+      {error, _} -> Logger.warn("Some error occured while removing #{ip} from #{iface}: #{error}")
+    end
   end
 
   defp remove_ip(ip, state(in_use: in_use)) do
