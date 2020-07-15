@@ -30,7 +30,7 @@ defmodule CLITest do
   end
 
   setup do
-    Process.register(self(), :cli_master)
+    register_as_cli_master()
     MetaData.clear_tables()
     :ok
   end
@@ -143,15 +143,25 @@ defmodule CLITest do
     assert not is_directory?(mountpoint)
   end
 
+  test "create a container with devfs disabled" do
+    [id_n] = jocker_cmd("container create --no-mount.devfs base /bin/sleep 100")
+    id = String.trim(id_n)
+    cont = MetaData.get_container(id)
+    assert [id_n] == jocker_cmd("container start #{id}")
+    assert not TestUtils.devfs_mounted(cont)
+    assert [id_n] == jocker_cmd("container stop #{id}")
+  end
+
   test "create a container with a custom command" do
     [id_n] = jocker_cmd("container create base /bin/mkdir /loltest")
     id = String.trim(id_n)
-    assert container(id: ^id, layer_id: layer_id, pid: pid) = MetaData.get_container(id)
+    assert container(id: ^id, layer_id: layer_id, pid: pid) = cont = MetaData.get_container(id)
     Container.attach(pid)
 
     # We '--attach' to make sure the jail is done
     [] = jocker_cmd("container start --attach #{id}")
     layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
+    assert not TestUtils.devfs_mounted(cont)
     assert is_directory?(mountpoint)
     assert is_directory?(Path.join(mountpoint, "loltest"))
     [^id_n] = jocker_cmd("container rm #{id}")
@@ -384,6 +394,15 @@ defmodule CLITest do
 
       _ ->
         :ok
+    end
+  end
+
+  defp register_as_cli_master() do
+    # Sometimes the last test did not release the ':cli_master' atom before the next
+    # hence this function.
+    case Process.whereis(:cli_master) do
+      nil -> Process.register(self(), :cli_master)
+      _ -> register_as_cli_master()
     end
   end
 

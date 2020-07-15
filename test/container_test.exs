@@ -49,7 +49,7 @@ defmodule ContainerTest do
     assert opts[:cmd] == cmd_out
     assert_receive {:container, ^pid, "test test\n"}
     assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
-    assert not devfs_mounted(container)
+    assert not TestUtils.devfs_mounted(container)
   end
 
   test "start and stop a container (using devfs)" do
@@ -60,10 +60,10 @@ defmodule ContainerTest do
 
     {pid, container} = start_attached_container(opts)
 
-    assert devfs_mounted(container)
+    assert TestUtils.devfs_mounted(container)
     :ok = Container.stop(pid)
     assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
-    assert not devfs_mounted(container)
+    assert not TestUtils.devfs_mounted(container)
   end
 
   test "start and stop a container with '/etc/rc' (using devfs)" do
@@ -75,10 +75,10 @@ defmodule ContainerTest do
 
     {pid, container} = start_attached_container(opts)
 
-    assert devfs_mounted(container)
+    assert TestUtils.devfs_mounted(container)
     :ok = Container.stop(pid)
     assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
-    assert not devfs_mounted(container)
+    assert not TestUtils.devfs_mounted(container)
   end
 
   test "create container from non-existing image" do
@@ -108,15 +108,5 @@ defmodule ContainerTest do
     container = Container.metadata(pid)
     Container.start(pid)
     {pid, container}
-  end
-
-  defp devfs_mounted(container(layer_id: layer_id)) do
-    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
-    devfs_path = Path.join(mountpoint, "dev")
-
-    case System.cmd("sh", ["-c", "mount | grep \"devfs on #{devfs_path}\""]) do
-      {"", 1} -> false
-      {_output, 0} -> true
-    end
   end
 end

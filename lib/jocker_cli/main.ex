@@ -238,24 +238,27 @@ defmodule Jocker.CLI.Main do
            aliases: [
              v: :volume
            ],
-           strict: [
-             name: :string,
-             volume: :keep,
-             help: :boolean
-           ]
+           strict:
+             [
+               name: :string,
+               volume: :keep,
+               help: :boolean
+             ] ++ jail_param_options()
          ) do
       {_options, []} ->
         to_cli("\"jocker container create\" requires at least 1 argument.")
         to_cli(container_create_help(), :eof)
 
       {options, [image | cmd]} ->
+        {jail_param, options} = convert_jail_param_options(options)
+
         opts =
           case length(cmd) do
             0 ->
-              [image: image] ++ options
+              [image: image, jail_param: jail_param] ++ options
 
             _n ->
-              [cmd: cmd, image: image] ++ options
+              [cmd: cmd, image: image, jail_param: jail_param] ++ options
           end
 
         case rpc([Jocker.Engine.Container, :create, [opts]]) do
@@ -270,6 +273,22 @@ defmodule Jocker.CLI.Main do
       :error ->
         :ok
     end
+  end
+
+  defp jail_param_options() do
+    ["mount.devfs": :boolean]
+  end
+
+  defp convert_jail_param_options(options) do
+    {jailparam_value, new_options} = Keyword.pop(options, :"mount.devfs", true)
+
+    jail_param =
+      case jailparam_value do
+        false -> "mount.devfs=false"
+        true -> "mount.devfs=true"
+      end
+
+    {[jail_param], new_options}
   end
 
   def container_rm(argv) do

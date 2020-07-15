@@ -91,6 +91,7 @@ defmodule Jocker.Engine.Image do
     image(id: img_id) = state.image
 
     opts = [
+      jail_param: ["mount.devfs=true"],
       image: img_id,
       user: state.user,
       overwrite: true,
