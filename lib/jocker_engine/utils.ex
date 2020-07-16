@@ -22,7 +22,9 @@ defmodule Jocker.Engine.Utils do
   def uuid() do
     uuid_all = UUID.uuid4(:hex)
     <<uuid::binary-size(12), _rest::binary>> = uuid_all
-    uuid
+
+    # This way we avoid ever getting uuids that could be interpreted as an integer (by, e.g., /usr/sbin/jail)
+    String.replace(uuid, "1", "g")
   end
 
   def decode_buffer(buffer) do
