@@ -54,7 +54,7 @@ defmodule ContainerTest do
 
   test "start and stop a container (using devfs)" do
     opts = [
-      cmd: ["/bin/sleep", "1000"],
+      cmd: ["/bin/sleep", "10"],
       jail_param: ["mount.devfs"]
     ]
 
@@ -70,7 +70,7 @@ defmodule ContainerTest do
     opts = [
       cmd: ["/bin/sh", "/etc/rc"],
       jail_param: ["mount.devfs", "exec.stop=\"/bin/sh /etc/rc.shutdown\""],
-      user: "ntpd"
+      user: "root"
     ]
 
     {pid, container} = start_attached_container(opts)
@@ -86,13 +86,13 @@ defmodule ContainerTest do
   end
 
   test "create container from non-existing id" do
-    assert :container_not_found == Jocker.Engine.Container.create(id_or_name: "nonexisting")
+    assert :container_not_found ==
+             Jocker.Engine.Container.create(existing_container: "nonexisting")
   end
 
   test "start a container as non-root" do
     opts = [
       cmd: ["/usr/bin/id"],
-      jail_param: [],
       user: "ntpd"
     ]
 

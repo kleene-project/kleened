@@ -156,7 +156,6 @@ defmodule CLITest do
     [id_n] = jocker_cmd("container create base /bin/mkdir /loltest")
     id = String.trim(id_n)
     assert container(id: ^id, layer_id: layer_id, pid: pid) = cont = MetaData.get_container(id)
-    Container.attach(pid)
 
     # We '--attach' to make sure the jail is done
     [] = jocker_cmd("container start --attach #{id}")
@@ -260,7 +259,7 @@ defmodule CLITest do
         name
       }\n"
 
-    _row_stopped_long =
+    row_stopped_long =
       "#{id}   base                        /bin/sleep 10000                    1 second   stopped   #{
         name
       }\n"
@@ -270,7 +269,8 @@ defmodule CLITest do
         name
       }\n"
 
-    assert [header, row_stopped] == jocker_cmd("container ls --all")
+    output = jocker_cmd("container ls --all")
+    assert output == [header, row_stopped] or output == [header, row_stopped_long]
     assert [header] == jocker_cmd("container ls")
     assert ["#{id}\n"] == jocker_cmd("container start #{id}")
     assert [header, row_running] == jocker_cmd("container ls --all")
@@ -349,6 +349,7 @@ defmodule CLITest do
   end
 
   defp jocker_cmd(command) do
+    Logger.info("Executing cli-command 'jocker #{Enum.join(command, " ")}'")
     spawn_link(Jocker.CLI.Main, :main_, [command])
     output = collect_output([])
     stop_client()

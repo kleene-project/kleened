@@ -47,6 +47,7 @@ defmodule Jocker.Engine.Records do
     layer_id: :none,
     ip: :none,
     image_id: :none,
+    user: :none,
     parameters: [],
     created: :none
   )
@@ -61,6 +62,7 @@ defmodule Jocker.Engine.Records do
             layer_id: String.t(),
             ip: String.t(),
             image_id: String.t(),
+            user: String.t(),
             parameters: [String.t()],
             created: String.t() | :none
           )

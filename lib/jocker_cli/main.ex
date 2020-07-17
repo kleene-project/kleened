@@ -200,7 +200,7 @@ defmodule Jocker.CLI.Main do
   end
 
   def container_ls(argv) do
-    case process_subcommand(container_ls_help(), "image ls", argv,
+    case process_subcommand(container_ls_help(), "container ls", argv,
            aliases: [a: :all],
            strict: [
              all: :boolean,
@@ -225,7 +225,7 @@ defmodule Jocker.CLI.Main do
         cli_eof()
 
       {_options, _args} ->
-        to_cli("\"jocker image ls\" requires no arguments.")
+        to_cli("\"jocker container ls\" requires no arguments.")
         to_cli(container_ls_help(), :eof)
 
       :error ->
@@ -563,7 +563,7 @@ defmodule Jocker.CLI.Main do
            [id_or_name]
          ]) do
       container(id: id) ->
-        {:ok, pid} = rpc([Jocker.Engine.Container, :create, [[id_or_name: id]]])
+        {:ok, pid} = rpc([Jocker.Engine.Container, :create, [[existing_container: id]]])
 
         if attach do
           :ok = rpc([Jocker.Engine.Container, :attach, [pid]])

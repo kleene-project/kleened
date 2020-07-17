@@ -40,6 +40,7 @@ defmodule Jocker.Engine.MetaData do
     layer_id TEXT,
     ip       TEXT,
     image_id TEXT,
+    user     TEXT,
     parameters TEXT, --[string]
     created  TEXT
     )
@@ -258,7 +259,9 @@ defmodule Jocker.Engine.MetaData do
           Sqlitex.connection()
   def add_container_(db, container) do
     row = record2row(container)
-    :ok = exec(db, "INSERT OR REPLACE INTO containers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
+
+    :ok =
+      exec(db, "INSERT OR REPLACE INTO containers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
   end
 
   @spec delete_container_(Sqlitex.connection(), Jocker.Engine.Records.container()) ::

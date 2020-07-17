@@ -9,6 +9,7 @@ defmodule Jocker.Engine.Image do
   defmodule State do
     defstruct context: nil,
               image: nil,
+              container: nil,
               user: nil
   end
 
@@ -40,65 +41,71 @@ defmodule Jocker.Engine.Image do
       :user => "root"
     }
 
-    %State{:image => image(layer_id: layer_id) = image} =
-      Enum.reduce(instructions, state, &process_instructions/2)
+    %State{:container => cont} = Enum.reduce(instructions, state, &process_instructions/2)
 
-    layer = Jocker.Engine.MetaData.get_layer(layer_id)
+    container(id: image_id, layer_id: layer_id, user: user, command: cmd) = cont
+
+    MetaData.delete_container(cont)
+    layer = MetaData.get_layer(layer_id)
     Jocker.Engine.Layer.finalize(layer)
-    now = DateTime.to_iso8601(DateTime.utc_now())
-    {:ok, image(image, created: now)}
-  end
 
-  defp process_instructions({:from, image_id}, state) do
-    Logger.info("Processing instruction: FROM #{image_id}")
-    image(layer_id: parent_layer_id) = parent_image = Jocker.Engine.MetaData.get_image(image_id)
-    parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
-    layer(id: new_layer_id) = Jocker.Engine.Layer.initialize(parent_layer)
-    # Create a new image-record that is going to be our newly created image.
-    # it is going to be used as a reference for the RUN instructions issued during image build
-    # and therefore we add it to the metadata database now.
-    build_image =
-      image(parent_image,
-        layer_id: new_layer_id,
-        name: :none,
-        tag: :none,
-        id: Jocker.Engine.Utils.uuid(),
-        created: :none
+    img =
+      image(
+        id: image_id,
+        layer_id: layer_id,
+        user: user,
+        command: cmd,
+        created: DateTime.to_iso8601(DateTime.utc_now())
       )
 
-    Jocker.Engine.MetaData.add_image(build_image)
-    %State{state | image: build_image}
+    Jocker.Engine.MetaData.add_image(img)
+    {:ok, img}
   end
 
-  defp process_instructions({:copy, src_and_dest}, state) do
+  defp process_instructions({:from, image_reference}, state) do
+    Logger.info("Processing instruction: FROM #{image_reference}")
+    image(id: image_id, user: user) = Jocker.Engine.MetaData.get_image(image_reference)
+
+    opts = [
+      jail_param: ["mount.devfs=true"],
+      image: image_id,
+      user: user,
+      cmd: []
+    ]
+
+    {:ok, pid} = Jocker.Engine.Container.create(opts)
+    cont = Jocker.Engine.Container.metadata(pid)
+    :ok = Jocker.Engine.Container.stop(pid)
+    %State{state | image: image_id, container: cont, user: user}
+  end
+
+  defp process_instructions({:copy, src_and_dest}, %State{:container => cont} = state) do
     Logger.info("Processing instruction: COPY #{inspect(src_and_dest)}")
-    copy_files(state.context, src_and_dest, state.image)
+    copy_files(state.context, src_and_dest, cont)
     state
   end
 
-  defp process_instructions({:user, user}, %State{:image => image} = state) do
+  defp process_instructions({:user, user}, state) do
     Logger.info("Processing instruction: USER #{user}")
-    %State{state | :image => image(image, user: user)}
+    %State{state | :user => user}
   end
 
-  defp process_instructions({:cmd, cmd}, %State{:image => image} = state) do
+  defp process_instructions({:cmd, cmd}, %State{:container => cont} = state) do
     Logger.info("Processing instruction: CMD #{inspect(cmd)}")
-    %State{state | :image => image(image, command: cmd)}
+    %State{state | :container => container(cont, command: cmd)}
   end
 
   defp process_instructions({:run, cmd}, state) do
     Logger.info("Processing instruction: RUN #{inspect(cmd)}")
-    image(id: img_id) = state.image
+    container(id: container_id) = state.container
 
-    opts = [
-      jail_param: ["mount.devfs=true"],
-      image: img_id,
-      user: state.user,
-      overwrite: true,
-      cmd: cmd
-    ]
+    {:ok, pid} =
+      Jocker.Engine.Container.create(
+        existing_container: container_id,
+        user: state.user,
+        cmd: cmd
+      )
 
-    {:ok, pid} = Jocker.Engine.Container.create(opts)
     Jocker.Engine.Container.attach(pid)
     Jocker.Engine.Container.start(pid)
 
@@ -109,8 +116,8 @@ defmodule Jocker.Engine.Image do
     state
   end
 
-  defp copy_files(context, srcdest, image(layer_id: layer_id)) do
-    # FIXME Elixir have nice wildcard-expansion stuff that we could use here
+  defp copy_files(context, srcdest, container(layer_id: layer_id)) do
+    # TODO Elixir have nice wildcard-expansion stuff that we could use here
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     {relative_dest, relative_sources} = List.pop_at(srcdest, -1)
     sources = Enum.map(relative_sources, fn src -> Path.join(context, src) end)

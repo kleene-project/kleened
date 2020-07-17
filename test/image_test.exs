@@ -2,6 +2,7 @@ defmodule ImageTest do
   use ExUnit.Case
   alias Jocker.Engine.Config
   alias Jocker.Engine.Image
+  alias Jocker.Engine.MetaData
   import Jocker.Engine.Records
 
   @moduletag :capture_log
@@ -18,9 +19,10 @@ defmodule ImageTest do
     start_supervised(Jocker.Engine.Layer)
     start_supervised(Jocker.Engine.Network)
 
-    start_supervised(
-      {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
-    )
+    start_supervised({
+      DynamicSupervisor,
+      name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0
+    })
 
     on_exit(fn -> stop_and_delete_db() end)
     :ok
@@ -37,6 +39,7 @@ defmodule ImageTest do
     {:ok, image(layer_id: layer_id)} = Image.create_image(instructions)
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, file_path)) == {:ok, "lol1\n"}
+    assert [] == MetaData.list_containers(all: true)
   end
 
   test "create an image with a 'COPY' instruction" do
@@ -49,9 +52,21 @@ defmodule ImageTest do
     {:ok, image(layer_id: layer_id)} = Image.create_image(instructions, context)
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
+    assert [] == MetaData.list_containers(all: true)
+  end
+
+  test "create an image with a 'CMD' instruction" do
+    instructions = [
+      from: "base",
+      cmd: ["/bin/sleep", "10"]
+    ]
+
+    {:ok, image(layer_id: layer_id)} = Image.create_image(instructions)
+    assert [] == MetaData.list_containers(all: true)
   end
 
   test "create an image using three RUN/COPY instructions" do
+    # FIXME ! This fails and it looks like the container-process is being restarted several times.
     instructions = [
       from: "base",
       copy: ["test.txt", "/root/"],
@@ -65,6 +80,7 @@ defmodule ImageTest do
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test_1.txt")) == {:ok, "lol1\n"}
     assert File.read(Path.join(mountpoint, "root/test_2.txt")) == {:ok, "lol2\n"}
+    assert [] == MetaData.list_containers(all: true)
   end
 
   defp create_test_context(name) do
