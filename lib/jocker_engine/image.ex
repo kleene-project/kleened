@@ -73,8 +73,7 @@ defmodule Jocker.Engine.Image do
       cmd: []
     ]
 
-    {:ok, pid} = Jocker.Engine.Container.create(opts)
-    cont = Jocker.Engine.Container.metadata(pid)
+    {:ok, container(pid: pid) = cont} = Jocker.Engine.Container.create(opts)
     :ok = Jocker.Engine.Container.stop(pid)
     %State{state | image: image_id, container: cont, user: user}
   end
@@ -99,7 +98,7 @@ defmodule Jocker.Engine.Image do
     Logger.info("Processing instruction: RUN #{inspect(cmd)}")
     container(id: container_id) = state.container
 
-    {:ok, pid} =
+    {:ok, container(pid: pid)} =
       Jocker.Engine.Container.create(
         existing_container: container_id,
         user: state.user,

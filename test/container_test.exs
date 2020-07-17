@@ -5,6 +5,7 @@ defmodule ContainerTest do
   import Jocker.Engine.Records
 
   @moduletag :capture_log
+  # FIXME make tests of proper process-shutdown etc. for jails that autostop
 
   setup_all do
     Application.stop(:jocker)
@@ -12,8 +13,7 @@ defmodule ContainerTest do
     TestUtils.clear_zroot()
 
     start_supervised(
-      {DynamicSupervisor,
-       name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0}
+      {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
     )
 
     :ok
@@ -28,8 +28,7 @@ defmodule ContainerTest do
 
   test "create container and fetch metadata" do
     image(id: id) = Jocker.Engine.MetaData.get_image("base")
-    {:ok, pid} = Container.create([])
-    container(image_id: img_id) = Container.metadata(pid)
+    {:ok, container(image_id: img_id)} = Container.create([])
     assert id == img_id
   end
 
@@ -39,17 +38,16 @@ defmodule ContainerTest do
       jail_param: ["mount.devfs"]
     ]
 
-    {:ok, pid} = Container.create(opts)
+    {:ok, cont} = Container.create(opts)
+    container(pid: pid, command: cmd_out) = cont
     :ok = Container.attach(pid)
-
-    container(command: cmd_out) = container = Container.metadata(pid)
 
     Container.start(pid)
 
     assert opts[:cmd] == cmd_out
     assert_receive {:container, ^pid, "test test\n"}
     assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
-    assert not TestUtils.devfs_mounted(container)
+    assert not TestUtils.devfs_mounted(cont)
   end
 
   test "start and stop a container (using devfs)" do
@@ -98,15 +96,14 @@ defmodule ContainerTest do
 
     {pid, _container} = start_attached_container(opts)
 
-    assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
     assert_receive {:container, ^pid, "uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"}
+    assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
   end
 
   defp start_attached_container(opts) do
-    {:ok, pid} = Container.create(opts)
+    {:ok, container(pid: pid) = cont} = Container.create(opts)
     :ok = Container.attach(pid)
-    container = Container.metadata(pid)
     Container.start(pid)
-    {pid, container}
+    {pid, cont}
   end
 end

@@ -19,10 +19,9 @@ defmodule ImageTest do
     start_supervised(Jocker.Engine.Layer)
     start_supervised(Jocker.Engine.Network)
 
-    start_supervised({
-      DynamicSupervisor,
-      name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0
-    })
+    start_supervised(
+      {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
+    )
 
     on_exit(fn -> stop_and_delete_db() end)
     :ok

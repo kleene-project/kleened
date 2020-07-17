@@ -5,6 +5,7 @@ defmodule Jocker.Engine.APIServer do
               buffers: nil
   end
 
+  import Jocker.Engine.Records
   alias Jocker.Engine.Config
   require Logger
   use GenServer
@@ -67,7 +68,7 @@ defmodule Jocker.Engine.APIServer do
 
         new_state =
           case reply do
-            {:ok, pid} ->
+            {:ok, container(pid: pid)} ->
               sockets = Map.put(state.sockets, pid, socket)
               %State{state | :buffers => updated_buffers, :sockets => sockets}
 

@@ -16,8 +16,7 @@ defmodule VolumeTest do
     start_supervised(Jocker.Engine.Network)
 
     start_supervised(
-      {DynamicSupervisor,
-       name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0}
+      {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
     )
 
     create_volume_dataset()
@@ -54,14 +53,16 @@ defmodule VolumeTest do
     location = "/mnt"
     file = "/mnt/test"
     volume(mountpoint: mountpoint) = vol = create_volume("testvol")
-    {:ok, container_pid} = Jocker.Engine.Container.create(cmd: ["/usr/bin/touch", file])
-    Jocker.Engine.Container.attach(container_pid)
-    con = Jocker.Engine.Container.metadata(container_pid)
+
+    {:ok, container(pid: pid)} = Jocker.Engine.Container.create(cmd: ["/usr/bin/touch", file])
+
+    Jocker.Engine.Container.attach(pid)
+    con = Jocker.Engine.Container.metadata(pid)
     :ok = bind_volume(con, vol, location)
-    Jocker.Engine.Container.start(container_pid)
+    Jocker.Engine.Container.start(pid)
 
     receive do
-      {:container, ^container_pid, {:shutdown, :jail_stopped}} -> :ok
+      {:container, ^pid, {:shutdown, :jail_stopped}} -> :ok
     end
 
     assert {:ok, %File.Stat{:type => :regular}} = File.stat(Path.join(mountpoint, "test"))

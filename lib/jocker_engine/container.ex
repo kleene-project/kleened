@@ -14,7 +14,7 @@ defmodule Jocker.Engine.Container do
 
   @type create_opts() :: [
           {:existing_container, String.t()}
-          | {:image, Jocker.Engine.Records.container()}
+          | {:image, String.t()}
           | {:name, String.t()}
           | {:cmd, [String.t()]}
           | {:user, String.t()}
@@ -24,23 +24,24 @@ defmodule Jocker.Engine.Container do
   ### ===================================================================
   ### API
   ### ===================================================================
-  @spec create(create_opts) :: GenServer.on_start()
+  @spec create(create_opts) :: {:ok, Jocker.Engine.Records.container()} | {:error, term()}
   def create(opts) do
-    # TODO: For some reason DynamicSupervisor.start_child/2 crashes when consecutive calls to it is made (for instance, when building an image).
-    :timer.sleep(10)
+    {:ok, pid} =
+      DynamicSupervisor.start_child(Jocker.Engine.ContainerPool, Jocker.Engine.Container)
 
-    case DynamicSupervisor.start_child(
-           Jocker.Engine.ContainerPool,
-           {Jocker.Engine.Container, opts}
-         ) do
-      {:ok, pid} ->
-        {:ok, pid}
+    output =
+      case Keyword.get(opts, :existing_container, :none) do
+        :none -> GenServer.call(pid, {:create, opts})
+        cont -> GenServer.call(pid, {:recreate, cont, opts})
+      end
 
-      {:error, {:bad_return_value, {:stop, :normal, error_msg}}} ->
-        error_msg
+    case output do
+      {:error, error} ->
+        DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, pid)
+        error
 
-      other ->
-        other
+      {:ok, container} ->
+        {:ok, container}
     end
   end
 
@@ -78,6 +79,7 @@ defmodule Jocker.Engine.Container do
   end
 
   def stop(pid) do
+    :ok = GenServer.call(pid, :shutdown)
     DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, pid)
   end
 
@@ -86,76 +88,79 @@ defmodule Jocker.Engine.Container do
   ### ===================================================================
 
   @impl true
-  def init(opts) do
-    Logger.debug("Initializing container with opts: #{inspect(opts)}")
-    Process.flag(:trap_exit, true)
-
-    case Keyword.get(opts, :existing_container, :none) do
-      :none ->
-        image_name = Keyword.get(opts, :image, "base")
-        img = MetaData.get_image(image_name)
-
-        case img do
-          :not_found ->
-            {:stop, :normal, :image_not_found}
-
-          _image ->
-            # Extract default values from image:
-            image(
-              id: image_id,
-              user: default_user,
-              command: default_cmd,
-              layer_id: parent_layer_id
-            ) = img
-
-            parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
-            layer(id: layer_id) = Layer.initialize(parent_layer)
-
-            # Extract values from options:
-            command = Keyword.get(opts, :cmd, default_cmd)
-            user = Keyword.get(opts, :user, default_user)
-            jail_param = Keyword.get(opts, :jail_param, [])
-            name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
-
-            cont =
-              container(
-                id: Jocker.Engine.Utils.uuid(),
-                name: name,
-                ip: Jocker.Engine.Network.new(),
-                pid: self(),
-                command: command,
-                layer_id: layer_id,
-                image_id: image_id,
-                user: user,
-                # parameters: ["exec.jail_user=" <> user | jail_param],
-                parameters: jail_param,
-                created: DateTime.to_iso8601(DateTime.utc_now())
-              )
-
-            # Mount volumes into container (if any have been provided)
-            bind_volumes(opts, cont)
-
-            MetaData.add_container(cont)
-            :timer.sleep(100)
-            {:ok, %State{container: cont, subscribers: []}}
-        end
-
-      existing_container ->
-        case Jocker.Engine.MetaData.get_container(existing_container) do
-          :not_found ->
-            {:stop, :normal, :container_not_found}
-
-          container(user: default_user, command: default_cmd) = cont ->
-            command = Keyword.get(opts, :cmd, default_cmd)
-            user = Keyword.get(opts, :user, default_user)
-
-            {:ok,
-             %State{container: container(cont, user: user, command: command), subscribers: []}}
-        end
-    end
+  def init([]) do
+    {:ok, %State{}}
   end
 
   @impl true
+  def handle_call({:create, opts}, _from, state) do
+    Logger.debug("Creating container with opts: #{inspect(opts)}")
+    image_name = Keyword.get(opts, :image, "base")
+
+    case MetaData.get_image(image_name) do
+      :not_found ->
+        {:reply, {:error, :image_not_found}, state}
+
+      # Extract default values from image:
+      image(
+        id: image_id,
+        user: default_user,
+        command: default_cmd,
+        layer_id: parent_layer_id
+      ) ->
+        parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
+        layer(id: layer_id) = Layer.initialize(parent_layer)
+
+        # Extract values from options:
+        command = Keyword.get(opts, :cmd, default_cmd)
+        user = Keyword.get(opts, :user, default_user)
+        jail_param = Keyword.get(opts, :jail_param, [])
+        name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
+
+        cont =
+          container(
+            id: Jocker.Engine.Utils.uuid(),
+            name: name,
+            ip: Jocker.Engine.Network.new(),
+            pid: self(),
+            command: command,
+            layer_id: layer_id,
+            image_id: image_id,
+            user: user,
+            # parameters: ["exec.jail_user=" <> user | jail_param],
+            parameters: jail_param,
+            created: DateTime.to_iso8601(DateTime.utc_now())
+          )
+
+        # Mount volumes into container (if any have been provided)
+        bind_volumes(opts, cont)
+
+        MetaData.add_container(cont)
+        {:reply, {:ok, cont}, %State{container: cont, subscribers: []}}
+    end
+  end
+
+  def handle_call({:recreate, existing_container, opts}, _from, state) do
+    Logger.debug("Re-creating container with opts: #{inspect(opts)}")
+
+    case Jocker.Engine.MetaData.get_container(existing_container) do
+      :not_found ->
+        {:reply, {:error, :container_not_found}, state}
+
+      # FIXME: Check that the container just fetched is not running already?
+      container(user: default_user, command: default_cmd) = cont ->
+        command = Keyword.get(opts, :cmd, default_cmd)
+        user = Keyword.get(opts, :user, default_user)
+        new_cont = container(cont, pid: self(), user: user, command: command)
+        {:reply, {:ok, new_cont}, %State{container: new_cont, subscribers: []}}
+    end
+  end
+
+  def handle_call(:shutdown, _from, state) do
+    shutdown_container(state)
+    {:reply, :ok, %State{}}
+  end
+
   def handle_call({:attach, pid}, _from, %State{subscribers: subscribers} = state) do
     {:reply, :ok, %State{state | subscribers: Enum.uniq([pid | subscribers])}}
   end
@@ -188,7 +193,9 @@ defmodule Jocker.Engine.Container do
 
     case is_jail_running?(state.container) do
       false ->
-        {:stop, :normal, %State{state | :starting_port => nil}}
+        shutdown_container(state)
+        DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, self())
+        {:noreply, %State{}}
 
       true ->
         # Since the jail-starting process is stopped no messages will be sent to Jocker.
@@ -201,24 +208,6 @@ defmodule Jocker.Engine.Container do
   def handle_info(unknown_msg, state) do
     Logger.warn("Unknown message: #{inspect(unknown_msg)}")
     {:noreply, state}
-  end
-
-  @impl true
-  def terminate(_reason, state) do
-    container(id: id) = state.container
-    {output, exitcode} = System.cmd("/usr/sbin/jail", ["-r", id], stderr_to_stdout: true)
-    Logger.info("Stopped jail #{id} with exitcode #{exitcode}: #{output}")
-
-    jail_cleanup(state.container)
-
-    updated_container =
-      container(state.container,
-        running: false,
-        pid: :none
-      )
-
-    MetaData.add_container(updated_container)
-    relay_msg({:shutdown, :jail_stopped}, state)
   end
 
   ### ===================================================================
@@ -296,6 +285,24 @@ defmodule Jocker.Engine.Container do
     port
   end
 
+  defp shutdown_container(state) do
+    container(id: id) = state.container
+    Logger.debug("Shutting down jail #{id}")
+    {output, exitcode} = System.cmd("/usr/sbin/jail", ["-r", id], stderr_to_stdout: true)
+    Logger.info("Stopped jail #{id} with exitcode #{exitcode}: #{output}")
+
+    jail_cleanup(state.container)
+
+    updated_container =
+      container(state.container,
+        running: false,
+        pid: :none
+      )
+
+    MetaData.add_container(updated_container)
+    relay_msg({:shutdown, :jail_stopped}, state)
+  end
+
   defp is_jail_running?(container(id: id)) do
     case System.cmd("jls", ["--libxo=json", "-j", id], stderr_to_stdout: true) do
       {_json, 1} -> false
@@ -315,7 +322,7 @@ defmodule Jocker.Engine.Container do
 
     case String.split(line, " ") do
       ["devfs", "on", ^devfs_path | _rest] ->
-        IO.puts("unmounting #{devfs_path}")
+        Logger.info("unmounting #{devfs_path}")
         {"", 0} = System.cmd("/sbin/umount", [devfs_path])
 
       _ ->
