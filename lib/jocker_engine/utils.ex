@@ -3,6 +3,10 @@ defmodule Jocker.Engine.Utils do
     DateTime.to_iso8601(DateTime.utc_now())
   end
 
+  def mount_nullfs(args) do
+    {"", 0} = System.cmd("/sbin/mount_nullfs", args)
+  end
+
   @spec unmount(String.t()) :: integer()
   def unmount(path) do
     {"", return_code} = System.cmd("/sbin/umount", [path])

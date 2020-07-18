@@ -68,10 +68,10 @@ defmodule Jocker.Engine.Volume do
 
     case read_only do
       false ->
-        mount_nullfs([volume_mountpoint, absolute_location])
+        Utils.mount_nullfs([volume_mountpoint, absolute_location])
 
       true ->
-        mount_nullfs(["-o", "ro", volume_mountpoint, absolute_location])
+        Utils.mount_nullfs(["-o", "ro", volume_mountpoint, absolute_location])
     end
 
     mnt =
@@ -84,9 +84,5 @@ defmodule Jocker.Engine.Volume do
 
     MetaData.add_mount(mnt)
     :ok
-  end
-
-  defp mount_nullfs(args) do
-    {"", 0} = System.cmd("/sbin/mount_nullfs", args)
   end
 end

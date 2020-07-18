@@ -288,6 +288,7 @@ defmodule Jocker.Engine.Container do
   defp shutdown_container(state) do
     container(id: id) = state.container
     Logger.debug("Shutting down jail #{id}")
+    # FIXME: check that the container exists before trying to kill it.
     {output, exitcode} = System.cmd("/usr/sbin/jail", ["-r", id], stderr_to_stdout: true)
     Logger.info("Stopped jail #{id} with exitcode #{exitcode}: #{output}")
 

@@ -4,6 +4,7 @@ defmodule Jocker.Engine.Image do
   import Jocker.Engine.Records
   alias Jocker.Engine.ZFS
   alias Jocker.Engine.MetaData
+  alias Jocker.Engine.Utils
   require Logger
 
   defmodule State do
@@ -96,12 +97,15 @@ defmodule Jocker.Engine.Image do
 
   defp process_instructions({:run, cmd}, state) do
     Logger.info("Processing instruction: RUN #{inspect(cmd)}")
-    container(id: container_id) = state.container
+    execute_cmd(state.container, cmd, state.user)
+    state
+  end
 
+  defp execute_cmd(container(id: container_id), cmd, user) do
     {:ok, container(pid: pid)} =
       Jocker.Engine.Container.create(
         existing_container: container_id,
-        user: state.user,
+        user: user,
         cmd: cmd
       )
 
@@ -111,17 +115,35 @@ defmodule Jocker.Engine.Image do
     receive do
       {:container, ^pid, {:shutdown, :jail_stopped}} -> :ok
     end
-
-    state
   end
 
-  defp copy_files(context, srcdest, container(layer_id: layer_id)) do
+  defp copy_files(context, srcdest, container(layer_id: layer_id) = cont) do
     # TODO Elixir have nice wildcard-expansion stuff that we could use here
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
-    {relative_dest, relative_sources} = List.pop_at(srcdest, -1)
-    sources = Enum.map(relative_sources, fn src -> Path.join(context, src) end)
-    dest = Path.join(mountpoint, relative_dest)
+    context_in_jail = Path.join(mountpoint, "/jocker_temporary_context_store")
+
+    mount_context(context, context_in_jail)
+    args = format_source_paths(srcdest)
+    execute_cmd(cont, ["/bin/cp", "-R" | args], "root")
+    unmount_context(context_in_jail)
+  end
+
+  defp format_source_paths(srcdest) do
+    {dest, relative_sources} = List.pop_at(srcdest, -1)
+
+    sources =
+      Enum.map(relative_sources, fn src -> Path.join("/jocker_temporary_context_store", src) end)
+
     args = Enum.reverse([dest | sources])
-    {_output, 0} = System.cmd("/bin/cp", ["-R" | args])
+  end
+
+  defp mount_context(context, context_in_jail) do
+    {output, 0} = System.cmd("/bin/mkdir", [context_in_jail], stderr_to_stdout: true)
+    Utils.mount_nullfs([context, context_in_jail])
+  end
+
+  defp unmount_context(context_in_jail) do
+    Utils.unmount(context_in_jail)
+    {_output, 0} = System.cmd("/bin/rm", ["-r", context_in_jail], stderr_to_stdout: true)
   end
 end

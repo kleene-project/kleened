@@ -54,6 +54,21 @@ defmodule ImageTest do
     assert [] == MetaData.list_containers(all: true)
   end
 
+  test "create an image with a 'COPY' instruction using symlinks" do
+    instructions = [
+      from: "base",
+      run: ["bin/sh", "-c", "mkdir /etc/testdir"],
+      run: ["bin/sh", "-c", "ln -s /etc/testdir /etc/symbolic_testdir"],
+      copy: ["test.txt", "/etc/symbolic_testdir/"]
+    ]
+
+    context = create_test_context("test_copy_instruction_symbolic")
+    {:ok, image(layer_id: layer_id)} = Image.create_image(instructions, context)
+    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
+    # we cannot check the symbolic link from the host:
+    assert File.read(Path.join(mountpoint, "etc/testdir/test.txt")) == {:ok, "lol\n"}
+  end
+
   test "create an image with a 'CMD' instruction" do
     instructions = [
       from: "base",
