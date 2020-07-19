@@ -27,9 +27,11 @@ defmodule Jocker.CLI.Main do
     {options, args, invalid} =
       OptionParser.parse_head(argv,
         aliases: [
-          v: :version
+          v: :version,
+          D: :debug
         ],
         strict: [
+          debug: :boolean,
           version: :boolean,
           help: :boolean
         ]
@@ -45,7 +47,12 @@ defmodule Jocker.CLI.Main do
       {[], rest, []} ->
         parse_subcommand(rest)
 
-      {_opts, rest, []} ->
+      {opts, rest, []} ->
+        case Keyword.get(opts, :debug) do
+          true -> Logger.configure(level: :debug)
+          _ -> :ok
+        end
+
         parse_subcommand(rest)
 
       {_, _, [unknown_flag | _rest]} ->
@@ -137,7 +144,7 @@ defmodule Jocker.CLI.Main do
         {:ok, image(id: id)} =
           rpc([Jocker.Engine.Image, :build_image_from_file, [dockerfile_path, tagname, context]])
 
-        to_cli("Image succesfully created with id #{id}", :eof)
+        to_cli("Image succesfully created with id #{id}\n", :eof)
 
       {_options, []} ->
         to_cli("\"jocker image build\" requires exactly 1 argument.")
@@ -562,7 +569,7 @@ defmodule Jocker.CLI.Main do
            [id_or_name]
          ]) do
       container(id: id) ->
-        {:ok, container(pid: pid)} =
+        {_new_or_existing_pid, container(pid: pid)} =
           rpc([Jocker.Engine.Container, :create, [[existing_container: id]]])
 
         if attach do
@@ -582,7 +589,7 @@ defmodule Jocker.CLI.Main do
     case fetch_reply() do
       {:container, _pid, {:shutdown, :end_of_ouput}} ->
         to_cli(
-          "jocker: primary process terminated but the container is still running in the background"
+          "jocker: primary process terminated but the container is still running in the background\n"
         )
 
         :ok
@@ -660,7 +667,7 @@ defmodule Jocker.CLI.Main do
         :ok
 
       {:msg, msg} ->
-        IO.puts(msg)
+        IO.write(msg)
         print_output()
 
       unknown_message ->

@@ -40,8 +40,8 @@ defmodule Jocker.Engine.Container do
         DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, pid)
         error
 
-      {:ok, container} ->
-        {:ok, container}
+      success ->
+        success
     end
   end
 
@@ -142,17 +142,20 @@ defmodule Jocker.Engine.Container do
 
   def handle_call({:recreate, existing_container, opts}, _from, state) do
     Logger.debug("Re-creating container with opts: #{inspect(opts)}")
+    cont = Jocker.Engine.MetaData.get_container(existing_container)
 
-    case Jocker.Engine.MetaData.get_container(existing_container) do
+    case cont do
       :not_found ->
         {:reply, {:error, :container_not_found}, state}
 
-      # FIXME: Check that the container just fetched is not running already?
-      container(user: default_user, command: default_cmd) = cont ->
+      container(user: default_user, command: default_cmd, pid: :none) ->
         command = Keyword.get(opts, :cmd, default_cmd)
         user = Keyword.get(opts, :user, default_user)
         new_cont = container(cont, pid: self(), user: user, command: command)
         {:reply, {:ok, new_cont}, %State{container: new_cont, subscribers: []}}
+
+      container(user: default_user, command: default_cmd) ->
+        {:reply, {:already_running, cont}, %State{container: cont, subscribers: []}}
     end
   end
 
@@ -279,7 +282,7 @@ defmodule Jocker.Engine.Container do
     port =
       Port.open(
         {:spawn_executable, '/usr/sbin/jail'},
-        [:binary, :exit_status, {:args, args}]
+        [:stderr_to_stdout, :binary, :exit_status, {:args, args}]
       )
 
     port
@@ -288,9 +291,11 @@ defmodule Jocker.Engine.Container do
   defp shutdown_container(state) do
     container(id: id) = state.container
     Logger.debug("Shutting down jail #{id}")
-    # FIXME: check that the container exists before trying to kill it.
-    {output, exitcode} = System.cmd("/usr/sbin/jail", ["-r", id], stderr_to_stdout: true)
-    Logger.info("Stopped jail #{id} with exitcode #{exitcode}: #{output}")
+
+    if is_jail_running?(state.container) do
+      {output, exitcode} = System.cmd("/usr/sbin/jail", ["-r", id], stderr_to_stdout: true)
+      Logger.info("Stopped jail #{id} with exitcode #{exitcode}: #{output}")
+    end
 
     jail_cleanup(state.container)
 
@@ -314,7 +319,7 @@ defmodule Jocker.Engine.Container do
   defp jail_cleanup(container(layer_id: layer_id)) do
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     # remove any devfs mounts of the jail
-    {output, _exitcode} = System.cmd("mount", [])
+    {output, _exitcode} = System.cmd("mount", [], stderr_to_stdout: true)
     output |> String.split("\n") |> Enum.map(&umount_container_devfs(&1, mountpoint))
   end
 
@@ -324,7 +329,7 @@ defmodule Jocker.Engine.Container do
     case String.split(line, " ") do
       ["devfs", "on", ^devfs_path | _rest] ->
         Logger.info("unmounting #{devfs_path}")
-        {"", 0} = System.cmd("/sbin/umount", [devfs_path])
+        {"", 0} = System.cmd("/sbin/umount", [devfs_path], stderr_to_stdout: true)
 
       _ ->
         :ok

@@ -41,19 +41,26 @@ defmodule CLITest do
     assert "\nUsage:\tjocker [OPTIONS] COMMAND" == String.slice(output, 0, 32)
   end
 
-  test "api_server image ls" do
+  test "api_server MetaData.list_images()" do
     {:ok, _pid} = Jocker.CLI.EngineClient.start_link([])
     rpc = [MetaData, :list_images, []]
     :ok = Jocker.CLI.EngineClient.command(rpc)
+    assert_receive {:server_reply, []}
+  end
 
-    receive do
-      {:server_reply, reply} ->
-        assert [] == reply
-    end
+  test "splitting up of data sent over the API-socket into several messages" do
+    Enum.map(
+      1..10,
+      fn n -> Jocker.Engine.Container.create(name: "testcontainer#{n}", cmd: "bin/ls") end
+    )
+
+    {:ok, _pid} = Jocker.CLI.EngineClient.start_link([])
+    rpc = [MetaData, :list_containers, [[all: true]]]
+    :ok = Jocker.CLI.EngineClient.command(rpc)
+    assert_receive {:server_reply, _containers}, 1_000
   end
 
   test "jocker <no arguments or options>" do
-    IO.puts(Config.get(:zroot))
     [msg] = jocker_cmd([])
     assert "\nUsage:\tjocker [OPTIONS] COMMAND" == String.slice(msg, 0, 32)
   end
@@ -224,7 +231,8 @@ defmodule CLITest do
       )
 
     id = String.trim(id_n)
-    [] = jocker_cmd("container start --attach #{id}")
+
+    jocker_cmd("container start --attach #{id}")
 
     container(layer_id: layer_id) = MetaData.get_container(id)
     layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
@@ -385,11 +393,10 @@ defmodule CLITest do
       [src, dst | _] ->
         case String.starts_with?(src, "/" <> Config.get(:volume_root)) do
           true ->
-            Logger.warn("Removing nullfs-mount #{dst}")
+            # Logger.warn("Removing nullfs-mount #{dst}")
             System.cmd("/sbin/umount", [dst])
 
           _ ->
-            IO.puts("WTF")
             :ok
         end
 
@@ -437,7 +444,10 @@ defmodule CLITest do
         collect_output([msg | output])
 
       other ->
-        IO.puts("Unexpected message received while waiting for cli-messages: #{inspect(other)}")
+        Logger.warn(
+          "Unexpected message received while waiting for cli-messages: #{inspect(other)}"
+        )
+
         exit(:shutdown)
     end
   end

@@ -69,7 +69,7 @@ defmodule Jocker.CLI.EngineClient do
   end
 
   def handle_info({:tcp, _socket, data}, %State{caller: pid, buffer: buffer} = state) do
-    case Jocker.Engine.Utils.decode_buffer(data <> buffer) do
+    case Jocker.Engine.Utils.decode_buffer(buffer <> data) do
       {:no_full_msg, new_buffer} ->
         {:noreply, %State{state | :buffer => new_buffer}}
 

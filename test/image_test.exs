@@ -75,7 +75,7 @@ defmodule ImageTest do
       cmd: ["/bin/sleep", "10"]
     ]
 
-    {:ok, image(layer_id: layer_id)} = Image.create_image(instructions)
+    {:ok, _image} = Image.create_image(instructions)
     assert [] == MetaData.list_containers(all: true)
   end
 

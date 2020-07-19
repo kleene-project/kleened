@@ -11,6 +11,7 @@ defmodule Jocker.CLI.Docs do
 
   Options:
   -v, --version            Print version information and quit
+  -D, --debug              Enable debug mode
 
   Management Commands:
   container   Manage containers

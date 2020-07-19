@@ -64,6 +64,18 @@ defmodule ContainerTest do
     assert not TestUtils.devfs_mounted(container)
   end
 
+  test "try to re-create a running container" do
+    opts = [
+      cmd: ["/bin/sleep", "10"],
+      jail_param: ["mount.devfs"]
+    ]
+
+    {pid, container(id: id)} = start_attached_container(opts)
+
+    {:already_running, container(id: ^id, pid: ^pid) = cont} =
+      Container.create(existing_container: id)
+  end
+
   test "start and stop a container with '/etc/rc' (using devfs)" do
     opts = [
       cmd: ["/bin/sh", "/etc/rc"],

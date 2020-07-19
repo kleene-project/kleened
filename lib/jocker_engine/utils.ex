@@ -1,4 +1,6 @@
 defmodule Jocker.Engine.Utils do
+  require Logger
+
   def timestamp_now() do
     DateTime.to_iso8601(DateTime.utc_now())
   end
@@ -32,11 +34,19 @@ defmodule Jocker.Engine.Utils do
   end
 
   def decode_buffer(buffer) do
-    case :erlang.binary_to_term(buffer) do
-      :badarg ->
+    reply =
+      try do
+        :erlang.binary_to_term(buffer)
+      rescue
+        ArgumentError ->
+          :no_full_msg
+      end
+
+    case reply do
+      :no_full_msg ->
         {:no_full_msg, buffer}
 
-      reply ->
+      _full_reply ->
         buffer_size = byte_size(:erlang.term_to_binary(buffer))
         used_size = byte_size(:erlang.term_to_binary(reply))
         new_buffer = String.slice(buffer, used_size, buffer_size)
