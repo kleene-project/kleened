@@ -41,6 +41,13 @@ defmodule CLITest do
     assert "\nUsage:\tjocker [OPTIONS] COMMAND" == String.slice(output, 0, 32)
   end
 
+  test "jocker <no arguments or options>" do
+    spawn_link(Jocker.CLI.Main, :main_, [[]])
+    [msg] = collect_output([])
+    stop_client()
+    assert "\nUsage:\tjocker [OPTIONS] COMMAND" == String.slice(msg, 0, 32)
+  end
+
   test "api_server MetaData.list_images()" do
     {:ok, _pid} = Jocker.CLI.EngineClient.start_link([])
     rpc = [MetaData, :list_images, []]
@@ -58,11 +65,6 @@ defmodule CLITest do
     rpc = [MetaData, :list_containers, [[all: true]]]
     :ok = Jocker.CLI.EngineClient.command(rpc)
     assert_receive {:server_reply, _containers}, 1_000
-  end
-
-  test "jocker <no arguments or options>" do
-    [msg] = jocker_cmd([])
-    assert "\nUsage:\tjocker [OPTIONS] COMMAND" == String.slice(msg, 0, 32)
   end
 
   test "jocker image ls <irrelevant argument>" do
@@ -165,6 +167,7 @@ defmodule CLITest do
     assert container(id: ^id, layer_id: layer_id, pid: pid) = cont = MetaData.get_container(id)
 
     # We '--attach' to make sure the jail is done
+
     [] = jocker_cmd("container start --attach #{id}")
     layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
     assert not TestUtils.devfs_mounted(cont)
@@ -358,7 +361,7 @@ defmodule CLITest do
 
   defp jocker_cmd(command) do
     Logger.info("Executing cli-command 'jocker #{Enum.join(command, " ")}'")
-    spawn_link(Jocker.CLI.Main, :main_, [command])
+    spawn_link(Jocker.CLI.Main, :main_, [["--debug" | command]])
     output = collect_output([])
     stop_client()
     output

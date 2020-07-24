@@ -134,11 +134,11 @@ defmodule Jocker.Engine.Image do
     sources =
       Enum.map(relative_sources, fn src -> Path.join("/jocker_temporary_context_store", src) end)
 
-    args = Enum.reverse([dest | sources])
+    Enum.reverse([dest | sources])
   end
 
   defp mount_context(context, context_in_jail) do
-    {output, 0} = System.cmd("/bin/mkdir", [context_in_jail], stderr_to_stdout: true)
+    {_output, 0} = System.cmd("/bin/mkdir", [context_in_jail], stderr_to_stdout: true)
     Utils.mount_nullfs([context, context_in_jail])
   end
 

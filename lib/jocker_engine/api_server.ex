@@ -39,6 +39,7 @@ defmodule Jocker.Engine.APIServer do
 
   @impl true
   def handle_info({:client_connected, socket}, state) do
+    :inet.setopts(socket, [{:active, true}])
     updated_buffers = Map.put(state.buffers, socket, "")
     {:noreply, %State{state | :buffers => updated_buffers}}
   end
@@ -88,6 +89,14 @@ defmodule Jocker.Engine.APIServer do
     end
   end
 
+  def handle_info({:container, pid, {:shutdown, :jail_stopped}} = container_msg, state) do
+    Logger.debug("Container #{inspect(pid)} is shutting down. Closing client connection")
+    socket = state.sockets[pid]
+    GenTCP.send(socket, Erlang.term_to_binary(container_msg))
+    GenTCP.close(socket)
+    {:noreply, %State{state | :sockets => Map.delete(state.sockets, pid)}}
+  end
+
   def handle_info({:container, pid, _msg} = container_msg, state) do
     Logger.debug("Receiving message from container: #{inspect(container_msg)}")
     socket = state.sockets[pid]
@@ -109,7 +118,6 @@ defmodule Jocker.Engine.APIServer do
       {:ok, socket} ->
         Logger.info("Incoming connection: #{inspect(socket)}")
         GenTCP.controlling_process(socket, server_pid)
-        :inet.setopts(socket, [{:active, true}])
         :ok = Process.send(server_pid, {:client_connected, socket}, [])
         listen(server_pid, listening_socket)
 

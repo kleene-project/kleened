@@ -80,7 +80,6 @@ defmodule ImageTest do
   end
 
   test "create an image using three RUN/COPY instructions" do
-    # FIXME ! This fails and it looks like the container-process is being restarted several times.
     instructions = [
       from: "base",
       copy: ["test.txt", "/root/"],

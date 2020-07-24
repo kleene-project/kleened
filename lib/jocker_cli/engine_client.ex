@@ -14,8 +14,9 @@ defmodule Jocker.CLI.EngineClient do
   ### ===================================================================
   ### API
   ### ===================================================================
-  def start_link([]),
-    do: GenServer.start_link(__MODULE__, [self()], name: __MODULE__)
+  def start_link([]) do
+    GenServer.start_link(__MODULE__, [self()], name: __MODULE__)
+  end
 
   def command(cmd),
     do: GenServer.call(__MODULE__, {:command, cmd})
@@ -36,7 +37,7 @@ defmodule Jocker.CLI.EngineClient do
         {:ok, %State{:socket => socket, :caller => callers_pid, :buffer => ""}}
 
       {:error, reason} ->
-        IO.puts("jocker-cli: Error connecting to backed: #{reason}")
+        Logger.error("jocker-cli: Error connecting to backend: #{reason}")
         {:stop, reason}
     end
   end
@@ -60,7 +61,7 @@ defmodule Jocker.CLI.EngineClient do
   @impl true
   def handle_info({:tcp_closed, _socket}, %State{caller: pid} = state) do
     Process.send(pid, :tcp_closed, [])
-    {:noreply, state}
+    {:noreply, %State{state | :socket => nil, :buffer => ""}}
   end
 
   def handle_info({:tcp_error, _socket, reason}, %State{caller: pid} = state) do

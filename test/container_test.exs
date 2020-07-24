@@ -5,7 +5,6 @@ defmodule ContainerTest do
   import Jocker.Engine.Records
 
   @moduletag :capture_log
-  # FIXME make tests of proper process-shutdown etc. for jails that autostop
 
   setup_all do
     Application.stop(:jocker)

@@ -127,6 +127,7 @@ defmodule Jocker.Engine.Container do
             layer_id: layer_id,
             image_id: image_id,
             user: user,
+            running: false,
             # parameters: ["exec.jail_user=" <> user | jail_param],
             parameters: jail_param,
             created: DateTime.to_iso8601(DateTime.utc_now())
@@ -148,14 +149,14 @@ defmodule Jocker.Engine.Container do
       :not_found ->
         {:reply, {:error, :container_not_found}, state}
 
-      container(user: default_user, command: default_cmd, pid: :none) ->
+      container(running: true) ->
+        {:reply, {:already_running, cont}, %State{container: cont, subscribers: []}}
+
+      container(user: default_user, command: default_cmd) ->
         command = Keyword.get(opts, :cmd, default_cmd)
         user = Keyword.get(opts, :user, default_user)
         new_cont = container(cont, pid: self(), user: user, command: command)
         {:reply, {:ok, new_cont}, %State{container: new_cont, subscribers: []}}
-
-      container(user: default_user, command: default_cmd) ->
-        {:reply, {:already_running, cont}, %State{container: cont, subscribers: []}}
     end
   end
 

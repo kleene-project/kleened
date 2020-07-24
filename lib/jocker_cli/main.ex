@@ -601,8 +601,14 @@ defmodule Jocker.CLI.Main do
         to_cli(msg)
         output_container_messages()
 
+      :tcp_closed ->
+        :connection_closed
+
+      {:tcp_error, reason} ->
+        to_cli("Error! An error occured while communicating with the backend: #{inspect(reason)}")
+
       unknown_msg ->
-        IO.puts(
+        Logger.warn(
           "Unknown message received while waiting for container output #{inspect(unknown_msg)}"
         )
     end
