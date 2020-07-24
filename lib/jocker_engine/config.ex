@@ -10,7 +10,8 @@ defmodule Jocker.Engine.Config do
       :volume_root => "zroot/jocker/volumes",
       :metadata_db => "/zroot/jocker/metadata.sqlite",
       :api_socket => "/var/run/jocker.sock",
-      :base_layer_dataset => "zroot/jocker_basejail"
+      :base_layer_dataset => "zroot/jocker_basejail",
+      :subnet => "10.20.30.40/24"
     }
   end
 

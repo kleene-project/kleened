@@ -10,11 +10,5 @@ base_layer_dataset: "zroot/jocker_basejail"
 # Name of the interface that jocker creates and uses for its ip-addresses
 network_if_name: "jocker0"
 
-# Allocated block of ip-addresses available to jocker.
-# Format is to include end-points and count upwards with the outer right digigt being least significant.
-# E.g.:
-# network_ip_start: "10.0.0.1"
-# network_ip_end: "10.0.1.45"
-# amounts to 10.0.0.1, 10.0.0.2, ..., 10.0.0.255, 10.0.1.1, 10.0.1.2, ..., 10.0.1.45
-network_ip_start: "10.13.37.1"
-network_ip_end: "10.13.37.255"
+# Allocated block of ip-addresses available to jocker in cidr-format.
+subnet: "10.20.30.40/24"
