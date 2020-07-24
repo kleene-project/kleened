@@ -44,10 +44,8 @@ and thus the Jocker-project was born.
 Needless to say, there is a place for both approaches to jails, i.e., comprehensive container management vs. lightweight jail utilities.
 Ezjail in particular have served the author well through the years (thanks for the awesome tool, Dirk!).
 
-Another tool with similiar (but not identical goal) to Jocker is [Focker](https://github.com/sadaszewski/focker), which is a lightweight tool
-for container management with a lesser compatability goal compared to Jocker, but with a similar overall Docker-inspired approach. Check it out!
- 
-
+Another tool with similiar (but not identical goal) to Jocker is [Focker](https://github.com/sadaszewski/focker), a lightweight tool
+for Docker-inspired container management that does not have the same compatability-focus as Jocker. Check it out!
 
 # Installation guide
 Since Jocker is still in an stage of development, the installation is done more or less manually.
@@ -92,7 +90,7 @@ $ mix release
 $ mix escript.build
 ```
 
-## Configure and try Jocker
+## Jocker and network configuration
 Start by copying the sample configuration file into `/usr/local/etc/`
 
 ```
@@ -101,8 +99,32 @@ $ sudo ee /usr/local/etc/jocker_config.yaml # do some editing, if necessary
 ```
 
 in this guide we have used the default values so no editing is necessary
-otherwise make the necessary adjustments. Now we are ready to take jocker for
-a spin. Open a new terminal and start the jocker-engine daemon:
+otherwise make the necessary adjustments.
+
+Assuming you are using rfc1918 (LAN) ip addresses you need a bit of configuration
+to give your containers internet access. Firstly, load pf if it is not already loaded into
+your kernel and enable it in your `rc.conf(5):
+
+```
+$ sudo kldload pf
+$ sysrc pf_enable="YES"
+```
+
+Secondly, add a simple configuration file for pf that is NAT'ing Jocker's ip addresses:
+
+```
+$ cat /etc/pf.conf
+if="em0"                    # This should be your physical interface
+jocker_if="jocker0"         # This should be your jocker loopback interface
+jocker_subnet="10.13.37/24" # This should be the ip-block that is configured in jocker_config.yaml
+internet="10.0.2.15"        # This should be your default gateway
+
+nat on $if from $jocker_subnet to any -> $internet
+```
+
+
+## Running
+Now we are ready to take jocker for a spin. Open a new terminal and start the jocker-engine daemon:
 
 ```
 # Assuming you are back into your cloned jocker git-repository folder
