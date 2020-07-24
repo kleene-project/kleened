@@ -24,21 +24,27 @@ defmodule Jocker.Engine.Network do
   @impl true
   def init([]) do
     # Internally we convert ip-addresses to integers so they can be easily manipulated
-    if_name = Config.get(:network_if_name)
-    ip_first = Config.get(:network_ip_start)
-    ip_end = Config.get(:network_ip_end)
+    case CIDR.parse(Config.get(:subnet)) do
+      %CIDR{first: ip_start, last: ip_end, hosts: _nhosts, mask: _mask} ->
+        ip_first = Enum.join(Tuple.to_list(ip_start), ".")
+        ip_end = Enum.join(Tuple.to_list(ip_end), ".")
+        if_name = Config.get(:network_if_name)
+        create_network_interface(if_name)
 
-    state =
-      state(
-        first: ip2int(ip_first),
-        last: ip2int(ip_end),
-        in_use: MapSet.new(),
-        if_name: if_name
-      )
+        state =
+          state(
+            first: ip2int(ip_first),
+            last: ip2int(ip_end),
+            in_use: MapSet.new(),
+            if_name: if_name
+          )
 
-    create_network_interface(if_name)
+        {:ok, state}
 
-    {:ok, state}
+      {:error, reason} ->
+        Logger.error("Unable to parse 'network_if_name' in configuration file.")
+        {:stop, reason}
+    end
   end
 
   @impl true
