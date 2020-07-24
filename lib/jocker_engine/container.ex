@@ -9,6 +9,7 @@ defmodule Jocker.Engine.Container do
   alias Jocker.Engine.MetaData
   alias Jocker.Engine.Volume
   alias Jocker.Engine.Layer
+  alias Jocker.Engine.Network
   import Jocker.Engine.Records
   use GenServer
 
@@ -121,7 +122,7 @@ defmodule Jocker.Engine.Container do
           container(
             id: Jocker.Engine.Utils.uuid(),
             name: name,
-            ip: Jocker.Engine.Network.new(),
+            ip: Network.new(),
             pid: self(),
             command: command,
             layer_id: layer_id,
@@ -272,6 +273,10 @@ defmodule Jocker.Engine.Container do
            parameters: parameters
          )
        ) do
+    if not Network.ip_added?(ip) do
+      Network.add_to_if(ip)
+    end
+
     layer(mountpoint: path) = Jocker.Engine.MetaData.get_layer(layer_id)
 
     args =

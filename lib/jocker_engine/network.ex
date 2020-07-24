@@ -19,6 +19,34 @@ defmodule Jocker.Engine.Network do
 
   def remove(ip), do: GenServer.call(__MODULE__, {:remove, ip})
 
+  def add_to_if(:out_of_ips, _iface) do
+    :error
+  end
+
+  def add_to_if(ip, iface) do
+    case System.cmd("ifconfig", [iface, "alias", "#{ip}/32"], stderr_to_stdout: true) do
+      {_, 0} ->
+        :ok
+
+      {error, _} ->
+        Logger.error("Some error occured while adding #{ip} to #{iface}: #{error}")
+        :error
+    end
+  end
+
+  def ip_added?(ip) do
+    if_name = Config.get(:network_if_name)
+
+    {output, n} =
+      System.cmd("/bin/sh", ["-c", "ifconfig #{if_name} | grep \"inet \" | grep \"#{ip}\""],
+        stderr_to_stdout: true
+      )
+
+    expected_output = "\tinet #{ip} netmask 0xffffffff\n"
+
+    {expected_output, 0} == {output, n}
+  end
+
   ### Callback functions
 
   @impl true
@@ -79,17 +107,6 @@ defmodule Jocker.Engine.Network do
   defp interface_exists(jocker_if) do
     {if_list, 0} = System.cmd("ifconfig", ["-l"])
     if_list |> String.trim() |> String.split() |> Enum.find_value(fn x -> x == jocker_if end)
-  end
-
-  defp add_to_if(:out_of_ips, _iface) do
-    :ok
-  end
-
-  defp add_to_if(ip, iface) do
-    case System.cmd("ifconfig", [iface, "alias", "#{ip}/32"], stderr_to_stdout: true) do
-      {_, 0} -> :ok
-      {error, _} -> Logger.warn("Some error occured while adding #{ip} to #{iface}: #{error}")
-    end
   end
 
   defp remove_from_if(ip, iface) do

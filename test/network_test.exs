@@ -13,8 +13,8 @@ defmodule NetworkTest do
     assert Network.new() == "10.13.37.0"
     assert Network.new() == "10.13.37.1"
 
-    assert ifconfig_check_if(if_name) ==
-             {"\tinet 10.13.37.0 netmask 0xffffffff\n\tinet 10.13.37.1 netmask 0xffffffff\n", 0}
+    assert Network.ip_added?("10.13.37.0")
+    assert Network.ip_added?("10.13.37.1")
 
     :ok = Network.remove("10.13.37.0")
     :ok = Network.remove("10.13.37.1")
@@ -25,7 +25,7 @@ defmodule NetworkTest do
     GenServer.stop(cfg_pid)
   end
 
-  test "generate new ips" do
+  test "runnig out of ips" do
     Application.stop(:jocker)
     {:ok, cfg_pid} = Config.start_link([])
     Config.put(:network_if_name, "jocker0")
