@@ -71,8 +71,7 @@ defmodule ContainerTest do
 
     {pid, container(id: id)} = start_attached_container(opts)
 
-    {:already_running, container(id: ^id, pid: ^pid) = cont} =
-      Container.create(existing_container: id)
+    {:already_running, container(id: ^id, pid: ^pid)} = Container.create(existing_container: id)
   end
 
   test "start and stop a container with '/etc/rc' (using devfs)" do

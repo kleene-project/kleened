@@ -102,6 +102,8 @@ defmodule Jocker.Engine.MetaData do
 
   @type record_type() :: :image | :layer | :container
 
+  @type db_conn() :: Sqlitex.connection()
+
   @spec start_link([]) :: Agent.on_start()
   def start_link([]) do
     filepath = Config.get(:metadata_db)
@@ -266,12 +268,12 @@ defmodule Jocker.Engine.MetaData do
     end
   end
 
-  @spec delete_image_(Sqlitex.connection(), String.t()) :: :ok
+  @spec delete_image_(db_conn(), String.t()) :: :ok
   def delete_image_(db, id) do
     exec(db, "DELETE FROM images WHERE id = ?", [id])
   end
 
-  @spec list_images_(Sqlitex.connection()) :: [JockerRecords.image()]
+  @spec list_images_(db_conn()) :: [JockerRecords.image()]
   def list_images_(db) do
     {:ok, rows} =
       fetch_all(db, "SELECT * FROM images WHERE id != 'base' ORDER BY created DESC", [])
@@ -280,8 +282,8 @@ defmodule Jocker.Engine.MetaData do
     images
   end
 
-  @spec add_container_(Sqlitex.connection(), JockerRecords.container()) ::
-          Sqlitex.connection()
+  @spec add_container_(db_conn(), JockerRecords.container()) ::
+          db_conn()
   def add_container_(db, container) do
     row = record2row(container)
 
@@ -289,14 +291,12 @@ defmodule Jocker.Engine.MetaData do
       exec(db, "INSERT OR REPLACE INTO containers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
   end
 
-  @spec delete_container_(Sqlitex.connection(), JockerRecords.container()) ::
-          Sqlitex.connection()
+  @spec delete_container_(db_conn(), JockerRecords.container()) :: db_conn()
   def delete_container_(db, container(id: id)) do
     exec(db, "DELETE FROM containers WHERE id = ?", [id])
   end
 
-  @spec get_container_(Sqlitex.connection(), String.t()) ::
-          JockerRecords.container() | :not_found
+  @spec get_container_(db_conn(), String.t()) :: JockerRecords.container() | :not_found
   def get_container_(db, id_or_name) do
     sql = """
     SELECT * FROM containers WHERE id=?
@@ -310,7 +310,7 @@ defmodule Jocker.Engine.MetaData do
     end
   end
 
-  @spec list_containers_(Sqlitex.connection(), String.t()) :: [term()]
+  @spec list_containers_(db_conn(), String.t()) :: [term()]
   def list_containers_(db, opts) do
     sql =
       case Keyword.get(opts, :all, false) do
@@ -326,13 +326,13 @@ defmodule Jocker.Engine.MetaData do
     rows
   end
 
-  @spec add_volume_(Sqlitex.connection(), JockerRecords.volume()) :: :ok
+  @spec add_volume_(db_conn(), JockerRecords.volume()) :: :ok
   def add_volume_(db, volume) do
     row = record2row(volume)
     exec(db, "INSERT OR REPLACE INTO volumes VALUES (?, ?, ?, ?)", row)
   end
 
-  @spec get_volume_(Sqlitex.connection(), String.t()) :: JockerRecords.volume()
+  @spec get_volume_(db_conn(), String.t()) :: JockerRecords.volume()
   def get_volume_(db, name) do
     sql = "SELECT * FROM volumes WHERE name = ?"
 
@@ -342,13 +342,13 @@ defmodule Jocker.Engine.MetaData do
     end
   end
 
-  @spec remove_volume_(Sqlitex.connection(), JockerRecords.volume()) :: :ok
+  @spec remove_volume_(db_conn(), JockerRecords.volume()) :: :ok
   def remove_volume_(db, volume(name: name)) do
     sql = "DELETE FROM volumes WHERE name = ?;"
     :ok = exec(db, sql, [name])
   end
 
-  @spec list_volumes_(Sqlitex.connection(), String.t()) ::
+  @spec list_volumes_(db_conn(), String.t()) ::
           [JockerRecords.volume()]
   def list_volumes_(db, _opts) do
     sql = "SELECT * FROM volumes ORDER BY created DESC"
@@ -356,14 +356,14 @@ defmodule Jocker.Engine.MetaData do
     Enum.map(rows, fn row -> row2record(:volume, row) end)
   end
 
-  @spec add_mount_(Sqlitex.connection(), JockerRecords.mount()) :: :ok
+  @spec add_mount_(db_conn(), JockerRecords.mount()) :: :ok
   def add_mount_(db, mount) do
     row = record2row(mount)
     exec(db, "INSERT OR REPLACE INTO mounts VALUES (?, ?, ?, ?)", row)
   end
 
   @spec remove_mounts_(
-          Sqlitex.connection(),
+          db_conn(),
           JockerRecords.volume() | JockerRecords.container()
         ) :: :ok
   def remove_mounts_(db, container(id: id)) do
@@ -378,7 +378,7 @@ defmodule Jocker.Engine.MetaData do
     Enum.map(rows, fn row -> row2record(:mount, row) end)
   end
 
-  @spec list_mounts_(Sqlitex.connection(), JockerRecords.volume()) ::
+  @spec list_mounts_(db_conn(), JockerRecords.volume()) ::
           [JockerRecords.mount()]
   def list_mounts_(db, volume(name: name)) do
     sql = "SELECT * FROM mounts WHERE volume_name = ?"
@@ -386,7 +386,7 @@ defmodule Jocker.Engine.MetaData do
     Enum.map(rows, fn row -> row2record(:mount, row) end)
   end
 
-  @spec clear_tables_(Sqlitex.connection()) :: Sqlitex.connection()
+  @spec clear_tables_(db_conn()) :: db_conn()
   def clear_tables_(db) do
     drop_tables(db)
     create_tables(db)
