@@ -215,18 +215,50 @@ defmodule Jocker.CLI.Main do
            ]
          ) do
       {options, []} ->
-        containers = rpc([Jocker.Engine.MetaData, :list_containers, [options]])
+        header = %{
+          id: "CONTAINER ID",
+          image_id: "IMAGE",
+          name: "NAME",
+          command: "COMMAND",
+          running: "STATUS",
+          created: "CREATED"
+        }
 
-        print_container(
-          container(
-            id: "CONTAINER ID",
-            image_id: "IMAGE",
-            command: ["COMMAND"],
-            running: "STATUS",
-            created: "CREATED",
-            name: "NAME"
+        print_container(header)
+        containers_raw = rpc([Jocker.Engine.MetaData, :list_containers, [options]])
+        Logger.error("LOL #{inspect(containers_raw)}")
+
+        containers =
+          Enum.map(
+            containers_raw,
+            fn %{
+                 running: running_boolean,
+                 command: command_json,
+                 created: created_iso,
+                 image_id: img_id,
+                 image_name: img_name,
+                 image_tag: img_tag
+               } = row ->
+              {:ok, command} = Jason.decode(command_json)
+              command = Enum.join(command, " ")
+
+              created = Jocker.Engine.Utils.human_duration(created_iso)
+
+              image =
+                case img_name do
+                  "" -> img_id
+                  _ -> "#{img_name}:#{img_tag}"
+                end
+
+              running =
+                case running_boolean do
+                  1 -> "running"
+                  0 -> "stopped"
+                end
+
+              %{row | image_id: image, running: running, command: command, created: created}
+            end
           )
-        )
 
         Enum.map(containers, &print_container/1)
         cli_eof()
@@ -505,34 +537,17 @@ defmodule Jocker.CLI.Main do
     to_cli("#{name}#{sp(n)}#{tag}#{sp(n)}#{id}#{sp(n)}#{timestamp}\n")
   end
 
-  defp print_container(
-         # TODO we need a "PORTS" column showing ports exposed on the container
-         container(
-           id: id_,
-           image_id: img_id_,
-           name: name,
-           command: cmd_,
-           running: running,
-           created: created
-         )
-       ) do
-    status_ =
-      case running do
-        true -> "running"
-        false -> "stopped"
-        other -> other
-      end
+  defp print_container(c) do
+    line = [
+      cell(c.id, 12),
+      cell(c.image_id, 25),
+      cell(c.command, 23),
+      cell(c.created, 18),
+      cell(c.running, 7),
+      c.name
+    ]
 
-    id = cell(id_, 12)
-    img_id = cell(img_id_, 25)
-    cmd = cell(Enum.join(cmd_, " "), 23)
-    timestamp = format_timestamp(created)
-    status = cell(status_, 7)
-    n = 3
-
-    to_cli(
-      "#{id}#{sp(n)}#{img_id}#{sp(n)}#{cmd}#{sp(n)}#{timestamp}#{sp(n)}#{status}#{sp(n)}#{name}\n"
-    )
+    to_cli(Enum.join(line, sp(3)) <> "\n")
   end
 
   defp print_volume([name, created]) do

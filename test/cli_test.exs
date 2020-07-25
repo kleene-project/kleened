@@ -82,11 +82,10 @@ defmodule CLITest do
         name: "test-image",
         tag: "latest",
         command: "/bin/ls",
-        created: DateTime.to_iso8601(DateTime.from_unix!(1))
+        created: epoch(1)
       )
 
-    img2 =
-      image(img1, created: DateTime.to_iso8601(DateTime.from_unix!(2)), id: img_id2, name: "lol")
+    img2 = image(img1, created: epoch(2), id: img_id2, name: "lol")
 
     header = "NAME           TAG          IMAGE ID       CREATED           \n"
     row1 = "test-image     latest       #{img_id1}   51 years          \n"
@@ -124,22 +123,54 @@ defmodule CLITest do
   end
 
   test "jocker container ls" do
-    name = "testing-name-truncatethis"
-    [id_n] = jocker_cmd("container create --name #{name} base /bin/ls")
-    id = String.trim(id_n)
+    MetaData.add_image(image(id: "img_id", name: "", tag: "latest", created: epoch(1)))
+    MetaData.add_image(image(id: "lel", name: "img_name", tag: "latest", created: epoch(2)))
+
+    MetaData.add_container(
+      container(
+        id: "1337",
+        image_id: "img_id",
+        name: "test1",
+        command: ["some_command"],
+        created: epoch(10)
+      )
+    )
+
+    MetaData.add_container(
+      container(
+        id: "1338",
+        running: true,
+        image_id: "lel",
+        name: "test2",
+        command: ["some_command"],
+        created: epoch(11)
+      )
+    )
+
+    MetaData.add_container(
+      container(
+        id: "1339",
+        image_id: "base",
+        name: "test3",
+        command: ["some_command"],
+        created: epoch(12)
+      )
+    )
 
     header =
       "CONTAINER ID   IMAGE                       COMMAND                   CREATED              STATUS    NAME\n"
 
-    row =
-      "#{id}   base                        /bin/ls                   Less than a second   stopped   #{
-        name
-      }\n"
+    row_no_image_name =
+      "1337           img_id                      some_command              51 years             stopped   test1\n"
 
-    empty_listing = jocker_cmd(["container", "ls"])
-    listing = jocker_cmd("container ls -a")
-    assert [header] == empty_listing
-    assert [header, row] == listing
+    row_running =
+      "1338           img_name:latest             some_command              51 years             running   test2\n"
+
+    row_base =
+      "1339           base                        some_command              51 years             stopped   test3\n"
+
+    assert [header, row_running] == jocker_cmd(["container", "ls"])
+    assert [header, row_base, row_running, row_no_image_name] == jocker_cmd("container ls -a")
   end
 
   test "create and remove a container" do
@@ -260,33 +291,29 @@ defmodule CLITest do
   test "starting a long-running container and stopping it" do
     [id_n] = jocker_cmd("container create base /bin/sleep 10000")
     id = String.trim(id_n)
-    container(name: name) = MetaData.get_container(id)
+    container(name: name) = cont = MetaData.get_container(id)
+    MetaData.add_container(container(cont, created: epoch(1)))
 
     header =
       "CONTAINER ID   IMAGE                       COMMAND                   CREATED              STATUS    NAME\n"
 
-    row_stopped =
-      "#{id}   base                        /bin/sleep 10000          Less than a second   stopped   #{
-        name
-      }\n"
-
-    row_stopped_long =
-      "#{id}   base                        /bin/sleep 10000                    1 second   stopped   #{
+    row =
+      "#{id}   base                        /bin/sleep 10000          51 years             stopped   #{
         name
       }\n"
 
     row_running =
-      "#{id}   base                        /bin/sleep 10000          Less than a second   running   #{
+      "#{id}   base                        /bin/sleep 10000          51 years             running   #{
         name
       }\n"
 
     output = jocker_cmd("container ls --all")
-    assert output == [header, row_stopped] or output == [header, row_stopped_long]
+    assert output == [header, row]
     assert [header] == jocker_cmd("container ls")
     assert ["#{id}\n"] == jocker_cmd("container start #{id}")
     assert [header, row_running] == jocker_cmd("container ls --all")
     assert [id_n] == jocker_cmd("container stop #{id}")
-    assert [header, row_stopped] == jocker_cmd("container ls --all")
+    assert [header, row] == jocker_cmd("container ls --all")
   end
 
   test "start and attach to a container that produces some output" do
@@ -406,6 +433,10 @@ defmodule CLITest do
       _ ->
         :ok
     end
+  end
+
+  defp epoch(n) do
+    DateTime.to_iso8601(DateTime.from_unix!(n))
   end
 
   defp register_as_cli_master() do

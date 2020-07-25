@@ -3,6 +3,7 @@ defmodule MetaDataTest do
   alias Jocker.Engine.Config
   import Jocker.Engine.MetaData
   import Jocker.Engine.Records
+  import TestUtils, only: [now: 0]
 
   @moduletag :capture_log
 
@@ -83,25 +84,32 @@ defmodule MetaDataTest do
   end
 
   test "list all containers" do
-    add_container(container(id: "1337", name: "test1", created: now()))
-    add_container(container(id: "1338", name: "test2", created: now()))
-    add_container(container(id: "1339", name: "test3", created: now()))
+    add_image(image(id: "lol", created: now()))
+    add_image(image(id: "lel", name: "test", tag: "latest", created: now()))
+    add_container(container(id: "1337", image_id: "lol", name: "test1", created: now()))
+    add_container(container(id: "1338", image_id: "lel", name: "test2", created: now()))
+    add_container(container(id: "1339", image_id: "base", name: "test3", created: now()))
     containers = list_containers(all: true)
 
     assert [
-             container(id: "1339"),
-             container(id: "1338"),
-             container(id: "1337")
+             %{id: "1339", image_id: "base", name: "test3"},
+             %{id: "1338", image_id: "lel", name: "test2"},
+             %{id: "1337", image_id: "lol", name: "test1"}
            ] = containers
   end
 
   test "list running containers" do
-    add_container(container(id: "1", name: "test1", created: now()))
-    add_container(container(id: "2", name: "test2", running: true, created: now()))
+    add_image(image(id: "lol", created: now()))
+    add_container(container(id: "1", image_id: "lol", name: "test1", created: now()))
+
+    add_container(
+      container(id: "2", image_id: "lol", name: "test2", running: true, created: now())
+    )
+
     containers = list_containers()
     containers2 = list_containers(all: false)
 
-    assert [container(id: "2")] = containers
+    assert [%{id: "2"}] = containers
     assert containers == containers2
   end
 
@@ -191,10 +199,5 @@ defmodule MetaDataTest do
       {:ok, _} -> true
       {:error, _} -> false
     end
-  end
-
-  defp now() do
-    :timer.sleep(10)
-    DateTime.to_iso8601(DateTime.utc_now())
   end
 end

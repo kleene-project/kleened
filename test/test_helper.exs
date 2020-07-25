@@ -5,6 +5,11 @@ import Jocker.Engine.Records
 ExUnit.start()
 
 defmodule TestUtils do
+  def now() do
+    :timer.sleep(10)
+    DateTime.to_iso8601(DateTime.utc_now())
+  end
+
   def clear_zroot do
     ZFS.destroy_force(Config.get(:zroot))
     ZFS.create(Config.get(:zroot))

@@ -19,6 +19,11 @@ defmodule Jocker.Engine.Network do
 
   def remove(ip), do: GenServer.call(__MODULE__, {:remove, ip})
 
+  def add_to_if(ip) do
+    if_name = Config.get(:network_if_name)
+    add_to_if(ip, if_name)
+  end
+
   def add_to_if(:out_of_ips, _iface) do
     :error
   end
