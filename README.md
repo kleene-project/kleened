@@ -47,7 +47,7 @@ Ezjail in particular have served the author well through the years (thanks for t
 Another tool with similiar (but not identical goal) to Jocker is [Focker](https://github.com/sadaszewski/focker), a lightweight tool
 for Docker-inspired container management that does not have the same compatability-focus as Jocker. Check it out!
 
-# Installation guide
+# Getting started
 Since Jocker is still in an stage of development, the installation is done more or less manually.
 It does not require any knowledge of FreeBSD except basic familiarity with unix/linux
 operating systems. However, a few references to the FreeBSD Handbook is made and if you are new to FreeBSD
@@ -122,7 +122,6 @@ internet="10.0.2.15"        # This should be your default gateway
 nat on $if from $jocker_subnet to any -> $internet
 ```
 
-
 ## Running
 Now we are ready to take jocker for a spin. Open a new terminal and start the jocker-engine daemon:
 
@@ -143,6 +142,7 @@ A self-sufficient runtime for containers
 
 Options:
 -v, --version            Print version information and quit
+-D, --debug              Enable debug mode
 
 Management Commands:
 container   Manage containers
@@ -151,3 +151,7 @@ volume      Manage volumes
 
 Run 'jocker COMMAND --help' for more information on a command.
 ```
+
+## Example with simple Dockerfile
+To illustrate how Jocker is used, a simple Dockerfile and context example is given
+[here](https://github.com/lgandersen/jocker/tree/master/example/nginx_image).
