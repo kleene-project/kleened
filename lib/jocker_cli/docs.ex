@@ -91,6 +91,7 @@ defmodule Jocker.CLI.Docs do
 
   Options:
         --name string                    Assign a name to the container
+        --mount.devfs/--no-mount.devfs   Toggle devfs mount (default true)
 
   """
   def container_create_help(), do: @doc
