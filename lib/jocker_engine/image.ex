@@ -74,8 +74,7 @@ defmodule Jocker.Engine.Image do
       cmd: []
     ]
 
-    {:ok, container(pid: pid) = cont} = Jocker.Engine.Container.create(opts)
-    :ok = Jocker.Engine.Container.stop(pid)
+    {:ok, cont} = Jocker.Engine.Container.create(opts)
     %State{state | image: image_id, container: cont, user: user}
   end
 
@@ -101,19 +100,12 @@ defmodule Jocker.Engine.Image do
     state
   end
 
-  defp execute_cmd(container(id: container_id), cmd, user) do
-    {:ok, container(pid: pid)} =
-      Jocker.Engine.Container.create(
-        existing_container: container_id,
-        user: user,
-        cmd: cmd
-      )
-
-    Jocker.Engine.Container.attach(pid)
-    Jocker.Engine.Container.start(pid)
+  defp execute_cmd(container(id: id), cmd, user) do
+    Jocker.Engine.Container.attach(id)
+    Jocker.Engine.Container.start(id, cmd: cmd, user: user)
 
     receive do
-      {:container, ^pid, {:shutdown, :jail_stopped}} -> :ok
+      {:container, ^id, {:shutdown, :jail_stopped}} -> :ok
     end
   end
 

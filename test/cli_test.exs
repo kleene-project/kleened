@@ -319,7 +319,6 @@ defmodule CLITest do
   test "start and attach to a container that produces some output" do
     [id_n] = jocker_cmd("container create base echo lol")
     id = String.trim(id_n)
-    assert [id_n] == jocker_cmd("container stop #{id}")
     assert ["lol\n"] == jocker_cmd("container start -a #{id}")
   end
 

@@ -38,14 +38,14 @@ defmodule ContainerTest do
     ]
 
     {:ok, cont} = Container.create(opts)
-    container(pid: pid, command: cmd_out) = cont
-    :ok = Container.attach(pid)
+    container(id: id, pid: pid, command: cmd_out) = cont
+    :ok = Container.attach(id)
 
-    Container.start(pid)
+    Container.start(id)
 
     assert opts[:cmd] == cmd_out
-    assert_receive {:container, ^pid, "test test\n"}
-    assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
+    assert_receive {:container, ^id, "test test\n"}
+    assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
     assert not TestUtils.devfs_mounted(cont)
   end
 
@@ -55,23 +55,23 @@ defmodule ContainerTest do
       jail_param: ["mount.devfs"]
     ]
 
-    {pid, container} = start_attached_container(opts)
+    container(id: id) = cont = start_attached_container(opts)
 
-    assert TestUtils.devfs_mounted(container)
-    :ok = Container.stop(pid)
-    assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
-    assert not TestUtils.devfs_mounted(container)
+    assert TestUtils.devfs_mounted(cont)
+    assert {:ok, container(id: ^id)} = Container.stop(id)
+    assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
+    assert not TestUtils.devfs_mounted(cont)
   end
 
-  test "try to re-create a running container" do
+  test "try to start a running container" do
     opts = [
       cmd: ["/bin/sleep", "10"],
       jail_param: ["mount.devfs"]
     ]
 
-    {pid, container(id: id)} = start_attached_container(opts)
+    container(id: id) = start_attached_container(opts)
 
-    {:already_running, container(id: ^id, pid: ^pid)} = Container.create(existing_container: id)
+    assert :already_started == Container.start(id)
   end
 
   test "start and stop a container with '/etc/rc' (using devfs)" do
@@ -81,12 +81,12 @@ defmodule ContainerTest do
       user: "root"
     ]
 
-    {pid, container} = start_attached_container(opts)
+    container(id: id) = cont = start_attached_container(opts)
 
-    assert TestUtils.devfs_mounted(container)
-    :ok = Container.stop(pid)
-    assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
-    assert not TestUtils.devfs_mounted(container)
+    assert TestUtils.devfs_mounted(cont)
+    assert {:ok, container(id: ^id)} = Container.stop(id)
+    assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
+    assert not TestUtils.devfs_mounted(cont)
   end
 
   test "create container from non-existing image" do
@@ -94,8 +94,8 @@ defmodule ContainerTest do
   end
 
   test "create container from non-existing id" do
-    assert :container_not_found ==
-             Jocker.Engine.Container.create(existing_container: "nonexisting")
+    assert {:error, :container_not_found} ==
+             Jocker.Engine.Container.start("nonexisting_id")
   end
 
   test "start a container as non-root" do
@@ -104,16 +104,16 @@ defmodule ContainerTest do
       user: "ntpd"
     ]
 
-    {pid, _container} = start_attached_container(opts)
+    container(id: id) = start_attached_container(opts)
 
-    assert_receive {:container, ^pid, "uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"}
-    assert_receive {:container, ^pid, {:shutdown, :jail_stopped}}
+    assert_receive {:container, ^id, "uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"}
+    assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
   end
 
   defp start_attached_container(opts) do
-    {:ok, container(pid: pid) = cont} = Container.create(opts)
-    :ok = Container.attach(pid)
-    Container.start(pid)
-    {pid, cont}
+    {:ok, container(id: id) = cont} = Container.create(opts)
+    :ok = Container.attach(id)
+    Container.start(id)
+    cont
   end
 end

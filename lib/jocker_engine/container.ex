@@ -10,7 +10,8 @@ defmodule Jocker.Engine.Container do
   alias Jocker.Engine.Volume
   alias Jocker.Engine.Layer
   alias Jocker.Engine.Network
-  import Jocker.Engine.Records
+  alias Jocker.Enging.Records, as: JRecord
+  import JRecord
   use GenServer
 
   @type create_opts() :: [
@@ -22,85 +23,23 @@ defmodule Jocker.Engine.Container do
           | {:jail_param, [String.t()]}
         ]
 
+  @type id_or_name() :: String.t()
+
   ### ===================================================================
   ### API
   ### ===================================================================
-  @spec create(create_opts) :: {:ok, Jocker.Engine.Records.container()} | {:error, term()}
-  def create(opts) do
-    {:ok, pid} =
-      DynamicSupervisor.start_child(Jocker.Engine.ContainerPool, Jocker.Engine.Container)
-
-    output =
-      case Keyword.get(opts, :existing_container, :none) do
-        :none -> GenServer.call(pid, {:create, opts})
-        cont -> GenServer.call(pid, {:recreate, cont, opts})
-      end
-
-    case output do
-      {:error, error} ->
-        DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, pid)
-        error
-
-      success ->
-        success
-    end
-  end
-
   def start_link(opts) do
     GenServer.start_link(__MODULE__, opts)
   end
 
-  @spec attach(pid()) :: :ok
-  def attach(pid),
-    do: GenServer.call(pid, {:attach, self()})
-
-  @spec metadata(pid()) :: Jocker.Engine.Records.container()
-  def metadata(pid),
-    do: GenServer.call(pid, :metadata)
-
-  @spec start(pid()) :: :ok
-  def start(pid) do
-    GenServer.call(pid, :start)
-  end
-
-  @spec destroy(String.t()) :: :ok
-  def destroy(id) do
-    container(pid: pid, layer_id: layer_id) = cont = MetaData.get_container(id)
-    layer(dataset: dataset) = MetaData.get_layer(layer_id)
-
-    case pid do
-      :none -> :ok
-      _ -> stop(pid)
-    end
-
-    Volume.destroy_mounts(cont)
-    MetaData.delete_container(cont)
-    0 = Jocker.Engine.ZFS.destroy(dataset)
-    :ok
-  end
-
-  def stop(pid) do
-    :ok = GenServer.call(pid, :shutdown)
-    DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, pid)
-  end
-
-  ### ===================================================================
-  ### gen_server callbacks
-  ### ===================================================================
-
-  @impl true
-  def init([]) do
-    {:ok, %State{}}
-  end
-
-  @impl true
-  def handle_call({:create, opts}, _from, state) do
+  @spec create(create_opts) :: {:ok, JRecord.container()} | :image_not_found
+  def create(opts) do
     Logger.debug("Creating container with opts: #{inspect(opts)}")
     image_name = Keyword.get(opts, :image, "base")
 
     case MetaData.get_image(image_name) do
       :not_found ->
-        {:reply, {:error, :image_not_found}, state}
+        :image_not_found
 
       # Extract default values from image:
       image(
@@ -123,7 +62,6 @@ defmodule Jocker.Engine.Container do
             id: Jocker.Engine.Utils.uuid(),
             name: name,
             ip: Network.new(),
-            pid: self(),
             command: command,
             layer_id: layer_id,
             image_id: image_id,
@@ -137,30 +75,111 @@ defmodule Jocker.Engine.Container do
         # Mount volumes into container (if any have been provided)
         bind_volumes(opts, cont)
 
+        # Store new container
         MetaData.add_container(cont)
-        {:reply, {:ok, cont}, %State{container: cont, subscribers: []}}
+        {:ok, cont}
     end
   end
 
-  def handle_call({:recreate, existing_container, opts}, _from, state) do
-    Logger.debug("Re-creating container with opts: #{inspect(opts)}")
-    cont = Jocker.Engine.MetaData.get_container(existing_container)
+  @spec attach(id_or_name()) :: :ok | {:error, :not_found}
+  def attach(id_or_name) do
+    case spawn_container(id_or_name) do
+      {:ok, _, pid} -> GenServer.call(pid, {:attach, self()})
+      other -> {:error, other}
+    end
+  end
 
-    case cont do
+  @spec start(id_or_name()) :: {:ok, JRecord.container()} | {:error, :not_found}
+  def start(id_or_name, opts \\ []) do
+    case spawn_container(id_or_name) do
+      {:ok, _, pid} -> GenServer.call(pid, {:start, opts})
+      other -> {:error, other}
+    end
+  end
+
+  @spec destroy(id_or_name()) :: :ok
+  def destroy(id_or_name) do
+    case MetaData.get_container(id_or_name) do
+      container(pid: pid, layer_id: layer_id) = cont ->
+        layer(dataset: dataset) = MetaData.get_layer(layer_id)
+
+        case pid do
+          :none -> :ok
+          _ -> stop(pid)
+        end
+
+        Volume.destroy_mounts(cont)
+        MetaData.delete_container(cont)
+        0 = Jocker.Engine.ZFS.destroy(dataset)
+        :ok
+
+      other ->
+        {:error, other}
+    end
+  end
+
+  @spec stop(id_or_name()) :: {:ok, JRecord.container()} | {:error, :not_found}
+  def stop(id_or_name) do
+    case MetaData.get_container(id_or_name) do
+      container(pid: pid) = cont ->
+        :ok = GenServer.call(pid, :shutdown)
+        DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, pid)
+        {:ok, cont}
+
+      other ->
+        {:error, other}
+    end
+  end
+
+  defp spawn_container(id_or_name) do
+    case MetaData.get_container(id_or_name) do
+      container(running: true, pid: :none) = cont ->
+        {:ok, pid} =
+          DynamicSupervisor.start_child(
+            Jocker.Engine.ContainerPool,
+            {Jocker.Engine.Container,
+             [
+               cont
+             ]}
+          )
+
+        {:ok, :jail_running, pid}
+
+      container(running: true, pid: pid) ->
+        {:ok, :jail_running, pid}
+
+      container(running: false, pid: :none) = cont ->
+        {:ok, pid} =
+          DynamicSupervisor.start_child(
+            Jocker.Engine.ContainerPool,
+            {Jocker.Engine.Container,
+             [
+               cont
+             ]}
+          )
+
+        {:ok, :no_jail_running, pid}
+
+      container(running: false, pid: pid) ->
+        {:ok, :no_jail_running, pid}
+
       :not_found ->
-        {:reply, {:error, :container_not_found}, state}
-
-      container(running: true) ->
-        {:reply, {:already_running, cont}, %State{container: cont, subscribers: []}}
-
-      container(user: default_user, command: default_cmd) ->
-        command = Keyword.get(opts, :cmd, default_cmd)
-        user = Keyword.get(opts, :user, default_user)
-        new_cont = container(cont, pid: self(), user: user, command: command)
-        {:reply, {:ok, new_cont}, %State{container: new_cont, subscribers: []}}
+        :container_not_found
     end
   end
 
+  ### ===================================================================
+  ### gen_server callbacks
+  ### ===================================================================
+
+  @impl true
+  def init([cont]) do
+    updated_cont = container(cont, pid: self())
+    MetaData.add_container(updated_cont)
+    {:ok, %State{container: updated_cont, subscribers: []}}
+  end
+
+  @impl true
   def handle_call(:shutdown, _from, state) do
     shutdown_container(state)
     {:reply, :ok, %State{}}
@@ -174,16 +193,22 @@ defmodule Jocker.Engine.Container do
     {:reply, container, state}
   end
 
-  def handle_call(:start, _from, %State{:container => container(running: true)} = state) do
+  def handle_call({:start, _}, _from, %State{:container => container(running: true)} = state) do
     {:reply, :already_started, state}
   end
 
-  def handle_call(:start, _from, %State{:container => container} = state) do
-    port = start_(container)
+  def handle_call({:start, opts}, _from, %State{:container => cont} = state) do
+    container(command: default_cmd, user: default_user) = cont
+
+    command = Keyword.get(opts, :cmd, default_cmd)
+    user = Keyword.get(opts, :user, default_user)
+
+    cont = container(cont, command: command, user: user)
+    port = start_(cont)
     Logger.info("Succesfully started jail-port: #{inspect(port)}")
-    updated_container = container(container, running: true)
-    MetaData.add_container(updated_container)
-    {:reply, :ok, %State{state | :container => updated_container, :starting_port => port}}
+    upd_cont = container(cont, running: true)
+    MetaData.add_container(upd_cont)
+    {:reply, {:ok, upd_cont}, %State{state | :container => upd_cont, :starting_port => port}}
   end
 
   @impl true
@@ -194,7 +219,7 @@ defmodule Jocker.Engine.Container do
   end
 
   def handle_info({port, {:exit_status, _}}, %State{:starting_port => port} = state) do
-    Logger.info("Jail-starting process exited succesfully.")
+    Logger.debug("Jail-starting process exited succesfully.")
 
     case is_jail_running?(state.container) do
       false ->
@@ -259,7 +284,8 @@ defmodule Jocker.Engine.Container do
 
   defp relay_msg(msg, state) do
     # Logger.debug("relaying msg: #{inspect(msg)}")
-    wrapped_msg = {:container, self(), msg}
+    container(id: id) = state.container
+    wrapped_msg = {:container, id, msg}
     Enum.map(state.subscribers, fn x -> Process.send(x, wrapped_msg, []) end)
   end
 

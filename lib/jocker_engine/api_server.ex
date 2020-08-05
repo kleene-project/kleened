@@ -45,6 +45,7 @@ defmodule Jocker.Engine.APIServer do
   end
 
   def handle_info({:tcp_closed, socket}, %State{buffers: buffers} = state) do
+    Logger.debug("Closing connection: #{inspect(socket)}")
     new_buffers = Map.delete(buffers, socket)
     {:noreply, %State{state | :buffers => new_buffers}}
   end
@@ -63,14 +64,14 @@ defmodule Jocker.Engine.APIServer do
         updated_buffers = Map.put(state.buffers, socket, new_buffer)
         {:noreply, %State{state | :buffers => updated_buffers}}
 
-      {[Jocker.Engine.Container, :create, _] = command, new_buffer} ->
+      {[Jocker.Engine.Container, :start, _] = command, new_buffer} ->
         reply = evaluate_command(command)
         updated_buffers = Map.put(state.buffers, socket, new_buffer)
 
         new_state =
           case reply do
-            {:ok, container(pid: pid)} ->
-              sockets = Map.put(state.sockets, pid, socket)
+            {:ok, container(id: id)} ->
+              sockets = Map.put(state.sockets, id, socket)
               %State{state | :buffers => updated_buffers, :sockets => sockets}
 
             _some_error ->
@@ -89,18 +90,18 @@ defmodule Jocker.Engine.APIServer do
     end
   end
 
-  def handle_info({:container, pid, {:shutdown, :jail_stopped}} = container_msg, state) do
-    Logger.debug("Container #{inspect(pid)} is shutting down. Closing client connection")
-    socket = state.sockets[pid]
+  def handle_info({:container, id, {:shutdown, :jail_stopped}} = container_msg, state) do
+    Logger.info("Container #{inspect(id)} is shutting down. Closing client connection")
+    socket = state.sockets[id]
     GenTCP.send(socket, Erlang.term_to_binary(container_msg))
     GenTCP.close(socket)
-    {:noreply, %State{state | :sockets => Map.delete(state.sockets, pid)}}
+    {:noreply, %State{state | :sockets => Map.delete(state.sockets, id)}}
   end
 
-  def handle_info({:container, pid, _msg} = container_msg, state) do
+  def handle_info({:container, id, _msg} = container_msg, state) do
     Logger.debug("Receiving message from container: #{inspect(container_msg)}")
-    socket = state.sockets[pid]
-    GenTCP.send(socket, Erlang.term_to_binary(container_msg))
+    socket = state.sockets[id]
+    what = GenTCP.send(socket, Erlang.term_to_binary(container_msg))
     {:noreply, state}
   end
 

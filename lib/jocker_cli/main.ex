@@ -79,7 +79,7 @@ defmodule Jocker.CLI.Main do
         image_rm(opts)
 
       ["image", unknown_subcmd | _opts] ->
-        to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.", :eof)
+        to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.\n", :eof)
 
       ["container" | []] ->
         to_cli(container_help(), :eof)
@@ -103,7 +103,7 @@ defmodule Jocker.CLI.Main do
         container_stop(opts)
 
       ["container", unknown_subcmd | _opts] ->
-        to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.", :eof)
+        to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.\n", :eof)
 
       ["volume" | []] ->
         to_cli(volume_help(), :eof)
@@ -147,7 +147,7 @@ defmodule Jocker.CLI.Main do
         to_cli("Image succesfully created with id #{id}\n", :eof)
 
       {_options, []} ->
-        to_cli("\"jocker image build\" requires exactly 1 argument.")
+        to_cli("\"jocker image build\" requires exactly 1 argument.\n")
         to_cli(image_build_help(), :eof)
         :error
 
@@ -163,7 +163,7 @@ defmodule Jocker.CLI.Main do
            ]
          ) do
       {_options, []} ->
-        to_cli("\"jocker image rm\" requires at least 1 argument.")
+        to_cli("\"jocker image rm\" requires at least 1 argument.\n")
         to_cli(container_rm_help(), :eof)
 
       {_options, images} ->
@@ -226,7 +226,6 @@ defmodule Jocker.CLI.Main do
 
         print_container(header)
         containers_raw = rpc([Jocker.Engine.MetaData, :list_containers, [options]])
-        Logger.error("LOL #{inspect(containers_raw)}")
 
         containers =
           Enum.map(
@@ -418,12 +417,11 @@ defmodule Jocker.CLI.Main do
   end
 
   defp stop_container(container_id) do
-    case rpc([Jocker.Engine.MetaData, :get_container, [container_id]]) do
-      container(pid: pid) ->
-        :ok = rpc([Jocker.Engine.Container, :stop, [pid]])
-        to_cli("#{container_id}\n")
+    case rpc([Jocker.Engine.Container, :stop, [container_id]]) do
+      {:ok, container(id: id)} ->
+        to_cli("#{id}\n")
 
-      :not_found ->
+      {:error, :not_found} ->
         to_cli("Error: No such container: #{container_id}\n")
     end
   end
@@ -578,25 +576,22 @@ defmodule Jocker.CLI.Main do
   end
 
   defp start_single_container(id_or_name, attach \\ false) do
-    case rpc([
-           Jocker.Engine.MetaData,
-           :get_container,
-           [id_or_name]
-         ]) do
-      container(id: id) ->
-        {_new_or_existing_pid, container(pid: pid)} =
-          rpc([Jocker.Engine.Container, :create, [[existing_container: id]]])
+    if attach do
+      case rpc([Jocker.Engine.Container, :attach, [id_or_name]]) do
+        :ok ->
+          rpc([Jocker.Engine.Container, :start, [id_or_name]])
 
-        if attach do
-          :ok = rpc([Jocker.Engine.Container, :attach, [pid]])
-          :ok = rpc([Jocker.Engine.Container, :start, [pid]])
-        else
-          :ok = rpc([Jocker.Engine.Container, :start, [pid]])
+        {:error, :not_found} ->
+          to_cli("Error: No such container: #{id_or_name}\n")
+      end
+    else
+      case rpc([Jocker.Engine.Container, :start, [id_or_name]]) do
+        {:ok, container(id: id)} ->
           to_cli("#{id}\n")
-        end
 
-      :not_found ->
-        to_cli("Error response from daemon: No such container: #{id_or_name}", :eof)
+        {:error, :not_found} ->
+          to_cli("Error: No such container: #{id_or_name}\n")
+      end
     end
   end
 

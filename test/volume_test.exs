@@ -54,15 +54,14 @@ defmodule VolumeTest do
     file = "/mnt/test"
     volume(mountpoint: mountpoint) = vol = create_volume("testvol")
 
-    {:ok, container(pid: pid)} = Jocker.Engine.Container.create(cmd: ["/usr/bin/touch", file])
+    {:ok, container(id: id) = con} = Jocker.Engine.Container.create(cmd: ["/usr/bin/touch", file])
 
-    Jocker.Engine.Container.attach(pid)
-    con = Jocker.Engine.Container.metadata(pid)
+    Jocker.Engine.Container.attach(id)
     :ok = bind_volume(con, vol, location)
-    Jocker.Engine.Container.start(pid)
+    Jocker.Engine.Container.start(id)
 
     receive do
-      {:container, ^pid, {:shutdown, :jail_stopped}} -> :ok
+      {:container, ^id, {:shutdown, :jail_stopped}} -> :ok
     end
 
     assert {:ok, %File.Stat{:type => :regular}} = File.stat(Path.join(mountpoint, "test"))
