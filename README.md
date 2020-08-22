@@ -15,8 +15,10 @@ might be interesting to know:
 
   * **Docker-inspired**: Besides the basic concepts of container, image, etc., there are several other similarities:
     * **Similar client interface**: The command names and options have by and large been adopted directly from the Docker CLI.
-+    It is not a strict requirement, however, and new commands made exclusively for Jocker might be implemented in the future.
+    It is not a strict requirement, however, and new commands made exclusively for Jocker might be implemented in the future.
+
     * **client/server architecture**: Just like Docker there is seperation between a backend daemon (Jocker Engine) and a client (Jocker Client) that communicates with the backend. At the moment there are tight couplings between client/server so use client on the same machine as the server for now.
+    
     * **Dockerfiles to build images**: Most of the possible instructions from Dockerfiles are understood by Jocker and can be used when building images. Jocker-specific instructions might be implemented in the future.
     Note that this is not an attempt to make a FreeBSD version resembling Docker as much as possible. Deviations in CLI and backend have already been made and more will happen in the future when the basics are in place and further development can evolve in more independent directions.
 
