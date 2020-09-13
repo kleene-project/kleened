@@ -101,7 +101,7 @@ defmodule Jocker.Engine.APIServer do
   def handle_info({:container, id, _msg} = container_msg, state) do
     Logger.debug("Receiving message from container: #{inspect(container_msg)}")
     socket = state.sockets[id]
-    what = GenTCP.send(socket, Erlang.term_to_binary(container_msg))
+    GenTCP.send(socket, Erlang.term_to_binary(container_msg))
     {:noreply, state}
   end
 

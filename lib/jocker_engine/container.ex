@@ -10,7 +10,7 @@ defmodule Jocker.Engine.Container do
   alias Jocker.Engine.Volume
   alias Jocker.Engine.Layer
   alias Jocker.Engine.Network
-  alias Jocker.Enging.Records, as: JRecord
+  alias Jocker.Engine.Records, as: JRecord
   import JRecord
   use GenServer
 
