@@ -26,7 +26,7 @@ defmodule Jocker.Engine.Utils do
   end
 
   def uuid() do
-    uuid_all = UUID.uuid4(:hex)
+    uuid_all = uuid4()
     <<uuid::binary-size(12), _rest::binary>> = uuid_all
 
     # This way we avoid ever getting uuids that could be interpreted as an integer (by, e.g., /usr/sbin/jail)
@@ -105,4 +105,37 @@ defmodule Jocker.Engine.Utils do
         "#{round(duration_hours / 24 / 365)} years"
     end
   end
+
+  ### From 'elixir_uuid' package:
+  # Variant, corresponds to variant 1 0 of RFC 4122.
+  @variant10 2
+  # UUID v4 identifier.
+  @uuid_v4 4
+  def uuid4() do
+    <<u0::48, _::4, u1::12, _::2, u2::62>> = :crypto.strong_rand_bytes(16)
+
+    <<u0::48, @uuid_v4::4, u1::12, @variant10::2, u2::62>>
+    |> uuid_to_string()
+  end
+
+  defp uuid_to_string(<<_::128>> = u) do
+    IO.iodata_to_binary(for <<part::4 <- u>>, do: e(part))
+  end
+
+  defp e(0), do: ?0
+  defp e(1), do: ?1
+  defp e(2), do: ?2
+  defp e(3), do: ?3
+  defp e(4), do: ?4
+  defp e(5), do: ?5
+  defp e(6), do: ?6
+  defp e(7), do: ?7
+  defp e(8), do: ?8
+  defp e(9), do: ?9
+  defp e(10), do: ?a
+  defp e(11), do: ?b
+  defp e(12), do: ?c
+  defp e(13), do: ?d
+  defp e(14), do: ?e
+  defp e(15), do: ?f
 end
