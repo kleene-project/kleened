@@ -42,7 +42,7 @@ defmodule CLITest do
   end
 
   test "jocker <no arguments or options>" do
-    spawn_link(Jocker.CLI.Main, :main_, [[]])
+    spawn_link(Jocker.CLI.Main, :main, [[]])
     [msg] = collect_output([])
     stop_client()
     assert "\nUsage:\tjocker [OPTIONS] COMMAND" == String.slice(msg, 0, 32)

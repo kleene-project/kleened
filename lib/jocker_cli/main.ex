@@ -1,11 +1,33 @@
 defmodule Jocker.CLI.Main do
   import Jocker.CLI.Docs
-  import Jocker.Engine.Records
+  alias Jocker.CLI.Utils
+  import Utils, only: [to_cli: 1, to_cli: 2]
   alias Jocker.CLI.EngineClient
   alias Jocker.Engine.Config
   require Logger
 
   @cli_version "0.0.0"
+
+  @doc """
+
+  Usage:	jocker [OPTIONS] COMMAND
+
+  A self-sufficient runtime for containers
+
+  Options:
+  -v, --version            Print version information and quit
+  -D, --debug              Enable debug mode
+
+  Management Commands:
+  container   Manage containers
+  image       Manage images
+  volume      Manage volumes
+
+  Run 'jocker COMMAND --help' for more information on a command.
+  """
+  def main(args) when args == [] or args == ["--help"] do
+    to_cli(@doc, :eof)
+  end
 
   def main(args) do
     Logger.configure(level: :error)
@@ -13,14 +35,6 @@ defmodule Jocker.CLI.Main do
     Process.register(self(), :cli_master)
     spawn_link(__MODULE__, :main_, [args])
     print_output()
-  end
-
-  def main_([]) do
-    main_(["--help"])
-  end
-
-  def main_(["--help"]) do
-    to_cli(main_help(), :eof)
   end
 
   def main_(argv) do
@@ -41,7 +55,7 @@ defmodule Jocker.CLI.Main do
       {opts, [], []} ->
         case Keyword.get(opts, :version) do
           true -> to_cli("Jocker version #{@cli_version}", :eof)
-          _ -> cli_eof()
+          _ -> to_cli(nil, :eof)
         end
 
       {[], rest, []} ->
@@ -63,568 +77,107 @@ defmodule Jocker.CLI.Main do
 
   defp parse_subcommand(argv) do
     case argv do
-      ["image" | []] ->
-        to_cli(image_help(), :eof)
-
-      ["image" | ["--help"]] ->
-        to_cli(image_help(), :eof)
+      ["image" | subcmd] when subcmd == [] or subcmd == ["--help"] ->
+        to_cli(Jocker.CLI.Image.main_docs(), :eof)
 
       ["image", "build" | opts] ->
-        image_build(opts)
+        process_subcommand(&Jocker.CLI.Image.build/1, opts)
 
       ["image", "ls" | opts] ->
-        image_ls(opts)
+        process_subcommand(&Jocker.CLI.Image.ls/1, opts)
 
       ["image", "rm" | opts] ->
-        image_rm(opts)
+        process_subcommand(&Jocker.CLI.Image.rm/1, opts)
 
       ["image", unknown_subcmd | _opts] ->
-        to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.\n", :eof)
+        to_cli("jocker: 'image #{unknown_subcmd}' is not a jocker command.\n")
+        to_cli(Jocker.CLI.Image.main_docs(), :eof)
 
-      ["container" | []] ->
-        to_cli(container_help(), :eof)
-
-      ["container" | ["--help"]] ->
-        to_cli(container_help(), :eof)
+      ["container" | subcmd] when subcmd == [] or subcmd == ["--help"] ->
+        to_cli(Jocker.CLI.Container.main_docs(), :eof)
 
       ["container", "ls" | opts] ->
-        container_ls(opts)
+        process_subcommand(&Jocker.CLI.Container.ls/1, opts)
 
       ["container", "create" | opts] ->
-        container_create(opts)
+        process_subcommand(&Jocker.CLI.Container.create/1, opts)
 
       ["container", "rm" | opts] ->
-        container_rm(opts)
+        process_subcommand(&Jocker.CLI.Container.rm/1, opts)
 
       ["container", "start" | opts] ->
-        container_start(opts)
+        process_subcommand(&Jocker.CLI.Container.start/1, opts)
 
       ["container", "stop" | opts] ->
-        container_stop(opts)
+        process_subcommand(&Jocker.CLI.Container.stop/1, opts)
 
       ["container", unknown_subcmd | _opts] ->
-        to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.\n", :eof)
+        to_cli("jocker: 'container #{unknown_subcmd}' is not a jocker command.\n")
+        to_cli(Jocker.CLI.Container.main_docs(), :eof)
 
-      ["volume" | []] ->
-        to_cli(volume_help(), :eof)
-
-      ["volume" | ["--help"]] ->
-        to_cli(volume_help(), :eof)
+      ["volume" | subcmd] when subcmd == [] or subcmd == ["--help"] ->
+        to_cli(Jocker.CLI.Volume.main_docs(), :eof)
 
       ["volume", "ls" | opts] ->
-        volume_ls(opts)
+        process_subcommand(&Jocker.CLI.Volume.ls/1, opts)
 
       ["volume", "create" | opts] ->
-        volume_create(opts)
+        process_subcommand(&Jocker.CLI.Volume.create/1, opts)
 
       ["volume", "rm" | opts] ->
-        volume_rm(opts)
+        process_subcommand(&Jocker.CLI.Volume.rm/1, opts)
 
-      [unknown_subcmd | _opts] ->
-        to_cli("jocker: '#{unknown_subcmd}' is not a jocker command.", :eof)
+      [unknown_cmd | _opts] ->
+        to_cli("jocker: '#{unknown_cmd}' is not a jocker command.", :eof)
 
       _unexpected ->
         to_cli("Unexpected error occured.", :eof)
     end
   end
 
-  def image_build(argv) do
-    case process_subcommand(image_build_help(), "image build", argv,
-           aliases: [t: :tag],
-           strict: [
-             tag: :string,
-             help: :boolean
-           ]
-         ) do
-      {options, [path]} ->
-        context = Path.absname(path)
-        dockerfile_path = Path.join(context, "Dockerfile")
-        tagname = Jocker.Engine.Utils.decode_tagname(Keyword.get(options, :tag, "<none>:<none>"))
+  def process_subcommand(command, argv) do
+    spec = command.(:spec)
+    cmd_name = Keyword.get(spec, :name)
+    docs = Keyword.get(spec, :docs)
+    arg_spec = Keyword.get(spec, :arg_spec)
+    options = Keyword.get(spec, :arg_options)
+    aliases = Keyword.get(spec, :aliases, [])
 
-        {:ok, image(id: id)} =
-          rpc([Jocker.Engine.Image, :build_image_from_file, [dockerfile_path, tagname, context]])
+    args =
+      decode_args(docs, cmd_name, argv,
+        aliases: aliases,
+        strict: options
+      )
 
-        to_cli("Image succesfully created with id #{id}\n", :eof)
+    case {arg_spec, args} do
+      {_, :error} ->
+        :ok
 
-      {_options, []} ->
-        to_cli("\"jocker image build\" requires exactly 1 argument.\n")
-        to_cli(image_build_help(), :eof)
+      {"==0", {_opts, args}} when length(args) != 0 ->
+        to_cli("\"jocker #{cmd_name}\" requires no arguments.")
+        to_cli(docs, :eof)
         :error
 
-      :error ->
+      {"==1", {_opts, args}} when length(args) != 1 ->
+        to_cli("\"jocker #{cmd_name}\" requires exactly 1 argument.\n")
+        to_cli(docs, :eof)
+        :error
+
+      {"=>1", {_opts, args}} when length(args) < 1 ->
+        to_cli("\"jocker #{cmd_name}\" requires at least 1 argument.\n")
+        to_cli(docs, :eof)
+
+      {"==0 or ==1", {_opts, args}} when length(args) != 0 and length(args) != 1 ->
+        to_cli("\"jocker #{cmd_name}\" requires at most 1 argument.")
+        to_cli(docs, :eof)
+
+      {_, opt_args} ->
+        command.(opt_args)
         :ok
     end
   end
 
-  def image_rm(argv) do
-    case process_subcommand(image_rm_help(), "image rm", argv,
-           strict: [
-             help: :boolean
-           ]
-         ) do
-      {_options, []} ->
-        to_cli("\"jocker image rm\" requires at least 1 argument.\n")
-        to_cli(container_rm_help(), :eof)
-
-      {_options, images} ->
-        Enum.map(images, &destroy_image/1)
-        cli_eof()
-
-      :error ->
-        :ok
-    end
-  end
-
-  defp destroy_image(image_id) do
-    case rpc([Jocker.Engine.Image, :destroy, [image_id]]) do
-      :ok ->
-        to_cli("#{image_id}\n")
-
-      :not_found ->
-        to_cli("Error: No such image: #{image_id}\n")
-    end
-  end
-
-  def image_ls(argv) do
-    case process_subcommand(image_ls_help(), "image ls", argv,
-           strict: [
-             help: :boolean
-           ]
-         ) do
-      {_options, []} ->
-        images = rpc([Jocker.Engine.MetaData, :list_images, []])
-        print_image(image(name: "NAME", tag: "TAG", id: "IMAGE ID", created: "CREATED"))
-        Enum.map(images, &print_image/1)
-        cli_eof()
-
-      {_options, _args} ->
-        to_cli("\"jocker image ls\" requires no arguments.")
-        to_cli(image_ls_help(), :eof)
-
-      :error ->
-        :ok
-    end
-  end
-
-  def container_ls(argv) do
-    case process_subcommand(container_ls_help(), "container ls", argv,
-           aliases: [a: :all],
-           strict: [
-             all: :boolean,
-             help: :boolean
-           ]
-         ) do
-      {options, []} ->
-        header = %{
-          id: "CONTAINER ID",
-          image_id: "IMAGE",
-          name: "NAME",
-          command: "COMMAND",
-          running: "STATUS",
-          created: "CREATED"
-        }
-
-        print_container(header)
-        containers_raw = rpc([Jocker.Engine.MetaData, :list_containers, [options]])
-
-        containers =
-          Enum.map(
-            containers_raw,
-            fn %{
-                 running: running_boolean,
-                 command: command_json,
-                 created: created_iso,
-                 image_id: img_id,
-                 image_name: img_name,
-                 image_tag: img_tag
-               } = row ->
-              {:ok, command} = Jason.decode(command_json)
-              command = Enum.join(command, " ")
-
-              created = Jocker.Engine.Utils.human_duration(created_iso)
-
-              image =
-                case img_name do
-                  "" -> img_id
-                  _ -> "#{img_name}:#{img_tag}"
-                end
-
-              running =
-                case running_boolean do
-                  1 -> "running"
-                  0 -> "stopped"
-                end
-
-              %{row | image_id: image, running: running, command: command, created: created}
-            end
-          )
-
-        Enum.map(containers, &print_container/1)
-        cli_eof()
-
-      {_options, _args} ->
-        to_cli("\"jocker container ls\" requires no arguments.")
-        to_cli(container_ls_help(), :eof)
-
-      :error ->
-        :ok
-    end
-  end
-
-  def container_create(argv) do
-    case process_subcommand(container_create_help(), "container create", argv,
-           aliases: [
-             v: :volume
-           ],
-           strict:
-             [
-               name: :string,
-               volume: :keep,
-               help: :boolean
-             ] ++ jail_param_options()
-         ) do
-      {_options, []} ->
-        to_cli("\"jocker container create\" requires at least 1 argument.")
-        to_cli(container_create_help(), :eof)
-
-      {options, [image | cmd]} ->
-        {jail_param, options} = convert_jail_param_options(options)
-
-        opts =
-          case length(cmd) do
-            0 ->
-              [image: image, jail_param: jail_param] ++ options
-
-            _n ->
-              [cmd: cmd, image: image, jail_param: jail_param] ++ options
-          end
-
-        case rpc([Jocker.Engine.Container, :create, [opts]]) do
-          :image_not_found ->
-            to_cli("Unable to find image '#{image}'", :eof)
-
-          {:ok, container(id: id)} ->
-            to_cli("#{id}\n", :eof)
-        end
-
-      :error ->
-        :ok
-    end
-  end
-
-  defp jail_param_options() do
-    ["mount.devfs": :boolean]
-  end
-
-  defp convert_jail_param_options(options) do
-    {jailparam_value, new_options} = Keyword.pop(options, :"mount.devfs", true)
-
-    jail_param =
-      case jailparam_value do
-        false -> "mount.devfs=false"
-        true -> "mount.devfs=true"
-      end
-
-    {[jail_param], new_options}
-  end
-
-  def container_rm(argv) do
-    case process_subcommand(container_rm_help(), "container rm", argv,
-           aliases: [
-             # v: :volumes
-           ],
-           strict: [
-             # volumes: :boolean,
-             help: :boolean
-           ]
-         ) do
-      {_options, []} ->
-        to_cli("\"jocker container rm\" requires at least 1 argument.")
-        to_cli(container_rm_help(), :eof)
-
-      {_options, containers} ->
-        :ok = destroy_containers(containers)
-        cli_eof()
-
-      :error ->
-        :ok
-    end
-  end
-
-  defp destroy_containers([container_id | containers]) do
-    :ok = rpc([Jocker.Engine.Container, :destroy, [container_id]])
-    to_cli("#{container_id}\n")
-
-    destroy_containers(containers)
-  end
-
-  defp destroy_containers([]) do
-    :ok
-  end
-
-  def container_start(argv) do
-    case process_subcommand(container_start_help(), "container start", argv,
-           aliases: [
-             a: :attach
-           ],
-           strict: [
-             attach: :boolean,
-             help: :boolean
-           ]
-         ) do
-      {_options, []} ->
-        to_cli("\"jocker container start\" requires at least 1 argument.")
-        to_cli(container_start_help(), :eof)
-
-      {options, containers} ->
-        case {Keyword.get(options, :attach, false), length(containers)} do
-          {false, _} ->
-            Enum.map(containers, &start_single_container/1)
-            cli_eof()
-
-          {true, 1} ->
-            [id_or_name] = containers
-            start_single_container(id_or_name, true)
-            output_container_messages()
-            cli_eof()
-
-          {true, _n} ->
-            to_cli("jocker: you cannot start and attach multiple containers at once\n", :eof)
-        end
-
-      :error ->
-        :ok
-    end
-  end
-
-  def container_stop(argv) do
-    case process_subcommand(container_stop_help(), "container stop", argv,
-           strict: [
-             help: :boolean
-           ]
-         ) do
-      {_options, []} ->
-        to_cli("\"jocker container rm\" requires at least 1 argument.")
-        to_cli(container_rm_help(), :eof)
-
-      {_options, containers} ->
-        Enum.map(containers, &stop_container/1)
-        cli_eof()
-
-      :error ->
-        :ok
-    end
-  end
-
-  defp stop_container(container_id) do
-    case rpc([Jocker.Engine.Container, :stop, [container_id]]) do
-      {:ok, container(id: id)} ->
-        to_cli("#{id}\n")
-
-      {:error, :not_found} ->
-        to_cli("Error: No such container: #{container_id}\n")
-    end
-  end
-
-  def volume_create(argv) do
-    case process_subcommand(volume_create_help(), "volume create", argv,
-           strict: [
-             help: :boolean
-           ]
-         ) do
-      {_options, args} ->
-        case args do
-          [] ->
-            volume(name: name) = rpc([Jocker.Engine.Volume, :create_volume, []])
-            to_cli(name <> "\n", :eof)
-
-          [name] ->
-            volume(name: name) = rpc([Jocker.Engine.Volume, :create_volume, [name]])
-            to_cli(name <> "\n", :eof)
-
-          _ ->
-            to_cli("\"jocker volume create\" requires at most 1 argument.")
-            to_cli(volume_create_help(), :eof)
-        end
-
-      :error ->
-        :ok
-    end
-  end
-
-  def volume_rm(argv) do
-    case process_subcommand(volume_rm_help(), "volume rm", argv,
-           strict: [
-             help: :boolean
-           ]
-         ) do
-      {_options, args} ->
-        case args do
-          [] ->
-            to_cli("\"jocker volume rm\" requires at least 1 argument.")
-            to_cli(volume_rm_help(), :eof)
-
-          volumes ->
-            Enum.map(volumes, &remove_a_volume/1)
-            cli_eof()
-        end
-
-      :error ->
-        :ok
-    end
-  end
-
-  defp remove_a_volume(name) do
-    case rpc([Jocker.Engine.MetaData, :get_volume, [name]]) do
-      :not_found ->
-        to_cli("Error: No such volume: #{name}\n")
-
-      volume ->
-        :ok = rpc([Jocker.Engine.Volume, :destroy_volume, [volume]])
-        to_cli("#{name}\n")
-    end
-  end
-
-  def volume_ls(argv) do
-    case process_subcommand(volume_ls_help(), "volume ls", argv,
-           aliases: [
-             q: :quiet
-           ],
-           strict: [
-             help: :boolean,
-             quiet: :boolean
-           ]
-         ) do
-      {options, args} ->
-        case args do
-          [] ->
-            volumes = rpc([Jocker.Engine.MetaData, :list_volumes, []])
-
-            case Keyword.get(options, :quiet, false) do
-              false ->
-                print_volume(["VOLUME NAME", "CREATED"])
-
-                Enum.map(volumes, fn volume(name: name, created: created) ->
-                  print_volume([name, created])
-                end)
-
-              true ->
-                Enum.map(volumes, fn volume(name: name) -> to_cli("#{name}\n") end)
-            end
-
-            cli_eof()
-
-          _arguments ->
-            to_cli("\"jocker volume ls\" accepts no arguments.")
-            to_cli(volume_ls_help(), :eof)
-        end
-
-      :error ->
-        :ok
-    end
-  end
-
-  defp print_image(image(name: name_, tag: tag_, id: id_, created: created)) do
-    # TODO we need to have a "SIZE" column as the last column
-    name = cell(name_, 12)
-    tag = cell(tag_, 10)
-    id = cell(id_, 12)
-    timestamp = format_timestamp(created)
-
-    n = 3
-    to_cli("#{name}#{sp(n)}#{tag}#{sp(n)}#{id}#{sp(n)}#{timestamp}\n")
-  end
-
-  defp print_container(c) do
-    line = [
-      cell(c.id, 12),
-      cell(c.image_id, 25),
-      cell(c.command, 23),
-      cell(c.created, 18),
-      cell(c.running, 7),
-      c.name
-    ]
-
-    to_cli(Enum.join(line, sp(3)) <> "\n")
-  end
-
-  defp print_volume([name, created]) do
-    name = cell(name, 14)
-    timestamp = format_timestamp(created)
-    n = 3
-    to_cli("#{name}#{sp(n)}#{timestamp}\n")
-  end
-
-  defp format_timestamp(ts) do
-    case ts do
-      "CREATED" -> cell("CREATED", 18)
-      _ -> cell(Jocker.Engine.Utils.human_duration(ts), 18)
-    end
-  end
-
-  defp cell(content, size) do
-    content_length = String.length(content)
-
-    case content_length < size do
-      true -> content <> sp(size - content_length)
-      false -> String.slice(content, 0, size)
-    end
-  end
-
-  defp sp(n) do
-    String.pad_trailing(" ", n)
-  end
-
-  defp start_single_container(id_or_name, attach \\ false) do
-    if attach do
-      case rpc([Jocker.Engine.Container, :attach, [id_or_name]]) do
-        :ok ->
-          rpc([Jocker.Engine.Container, :start, [id_or_name]])
-
-        {:error, :not_found} ->
-          to_cli("Error: No such container: #{id_or_name}\n")
-      end
-    else
-      case rpc([Jocker.Engine.Container, :start, [id_or_name]]) do
-        {:ok, container(id: id)} ->
-          to_cli("#{id}\n")
-
-        {:error, :not_found} ->
-          to_cli("Error: No such container: #{id_or_name}\n")
-      end
-    end
-  end
-
-  defp output_container_messages() do
-    case fetch_reply() do
-      {:container, _pid, {:shutdown, :end_of_ouput}} ->
-        to_cli(
-          "jocker: primary process terminated but the container is still running in the background\n"
-        )
-
-        :ok
-
-      {:container, _pid, {:shutdown, :jail_stopped}} ->
-        :ok
-
-      {:container, _pid, msg} ->
-        to_cli(msg)
-        output_container_messages()
-
-      :tcp_closed ->
-        :connection_closed
-
-      {:tcp_error, reason} ->
-        to_cli("Error! An error occured while communicating with the backend: #{inspect(reason)}")
-
-      unknown_msg ->
-        Logger.warn(
-          "Unknown message received while waiting for container output #{inspect(unknown_msg)}"
-        )
-    end
-  end
-
-  defp process_subcommand(docs, subcmd, argv, opts) do
+  defp decode_args(docs, subcmd, argv, opts) do
     {options, _, _} = output = OptionParser.parse(argv, opts)
 
     help = Keyword.get(options, :help, false)
@@ -642,39 +195,6 @@ defmodule Jocker.CLI.Main do
         to_cli("See '#{subcmd} --help'", :eof)
         :error
     end
-  end
-
-  def rpc(cmd) do
-    case Process.whereis(EngineClient) do
-      nil -> EngineClient.start_link([])
-      _pid -> :ok
-    end
-
-    :ok = EngineClient.command(cmd)
-    fetch_reply()
-  end
-
-  defp fetch_reply() do
-    receive do
-      {:server_reply, reply} ->
-        reply
-
-      what ->
-        {:error, "ERROR: Unexpected message received from backend: #{inspect(what)}"}
-    end
-  end
-
-  defp to_cli(msg, eof \\ nil) do
-    Process.send(:cli_master, {:msg, msg}, [])
-
-    case eof do
-      :eof -> cli_eof()
-      nil -> :ok
-    end
-  end
-
-  defp cli_eof() do
-    Process.send(:cli_master, {:msg, :eof}, [])
   end
 
   defp print_output() do
