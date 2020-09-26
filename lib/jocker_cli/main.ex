@@ -2,11 +2,18 @@ defmodule Jocker.CLI.Main do
   import Jocker.CLI.Docs
   alias Jocker.CLI.Utils
   import Utils, only: [to_cli: 1, to_cli: 2]
-  alias Jocker.CLI.EngineClient
   alias Jocker.Engine.Config
   require Logger
 
   @cli_version "0.0.0"
+
+  def main(args) do
+    Logger.configure(level: :error)
+    Config.start_link([])
+    Process.register(self(), :cli_master)
+    spawn_link(__MODULE__, :main_, [args])
+    print_output()
+  end
 
   @doc """
 
@@ -25,16 +32,8 @@ defmodule Jocker.CLI.Main do
 
   Run 'jocker COMMAND --help' for more information on a command.
   """
-  def main(args) when args == [] or args == ["--help"] do
+  def main_(args) when args == [] or args == ["--help"] do
     to_cli(@doc, :eof)
-  end
-
-  def main(args) do
-    Logger.configure(level: :error)
-    {:ok, _pid} = Config.start_link([])
-    Process.register(self(), :cli_master)
-    spawn_link(__MODULE__, :main_, [args])
-    print_output()
   end
 
   def main_(argv) do
