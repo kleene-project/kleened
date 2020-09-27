@@ -338,45 +338,36 @@ defmodule CLITest do
     [vol1_n] = jocker_cmd("volume create test1")
     [vol2_n] = jocker_cmd("volume create test2")
     [_vol3_n] = jocker_cmd("volume create test3")
+    mock_volume_creation_time()
     header = "VOLUME NAME      CREATED           \n"
 
-    listing = [
-      header,
-      "test3            Less than a second\n",
-      "test2            Less than a second\n"
-    ]
+    assert jocker_cmd("volume rm test1") == [vol1_n]
 
-    assert [vol1_n] == jocker_cmd("volume rm test1")
-    assert listing == jocker_cmd("volume ls")
+    assert jocker_cmd("volume ls") == [
+             header,
+             "test3            51 years          \n",
+             "test2            51 years          \n"
+           ]
 
-    assert [vol2_n, "Error: No such volume: test5\n", "test3\n"] ==
-             jocker_cmd("volume rm test2 test5 test3")
+    assert jocker_cmd("volume rm test2 test5 test3") ==
+             [vol2_n, "Error: No such volume: test5\n", "test3\n"]
 
-    assert [header] == jocker_cmd("volume ls")
+    assert jocker_cmd("volume ls") == [header]
   end
 
   test "jocker volume ls" do
-    header = "VOLUME NAME      CREATED           \n"
-    less_than_a_second = "1 second          "
-    one_second = "Less than a second"
-
-    output_scenario1 = [
-      header,
-      "test2            #{less_than_a_second}\n",
-      "test1            #{less_than_a_second}\n"
-    ]
-
-    output_scenario2 = [
-      header,
-      "test2            #{one_second}\n",
-      "test1            #{one_second}\n"
-    ]
-
-    assert [header] == jocker_cmd(["volume", "ls"])
+    assert jocker_cmd(["volume", "ls"]) == ["VOLUME NAME      CREATED           \n"]
     jocker_cmd("volume create test1")
     jocker_cmd("volume create test2")
+    mock_volume_creation_time()
     output = jocker_cmd(["volume", "ls"])
-    assert output == output_scenario1 or output == output_scenario2
+
+    assert output == [
+             "VOLUME NAME      CREATED           \n",
+             "test2            51 years          \n",
+             "test1            51 years          \n"
+           ]
+
     assert ["test2\n", "test1\n"] == jocker_cmd(["volume", "ls", "--quiet"])
     assert ["test2\n", "test1\n"] == jocker_cmd(["volume", "ls", "-q"])
   end
@@ -436,6 +427,11 @@ defmodule CLITest do
 
   defp epoch(n) do
     DateTime.to_iso8601(DateTime.from_unix!(n))
+  end
+
+  def mock_volume_creation_time() do
+    volumes = MetaData.list_volumes()
+    Enum.map(volumes, fn vol -> MetaData.add_volume(volume(vol, created: epoch(1))) end)
   end
 
   defp register_as_cli_master() do
