@@ -172,7 +172,7 @@ defmodule Jocker.CLI.Container do
 
   Options:
 
-      -a, --attach               Attach STDOUT/STDERR and forward signals
+      -a, --attach               Attach STDOUT/STDERR
 
   """
   def start(:spec) do

@@ -72,6 +72,7 @@ defmodule ContainerTest do
     container(id: id) = start_attached_container(opts)
 
     assert :already_started == Container.start(id)
+    assert {:ok, container(id: ^id)} = Container.stop(id)
   end
 
   test "start and stop a container with '/etc/rc' (using devfs)" do

@@ -103,9 +103,13 @@ defmodule Jocker.Engine.Image do
   defp execute_cmd(container(id: id), cmd, user) do
     Jocker.Engine.Container.attach(id)
     Jocker.Engine.Container.start(id, cmd: cmd, user: user)
+    receive_shutdown(id)
+  end
 
+  defp receive_shutdown(id) do
     receive do
       {:container, ^id, {:shutdown, :jail_stopped}} -> :ok
+      {:container, ^id, _msg} -> receive_shutdown(id)
     end
   end
 
