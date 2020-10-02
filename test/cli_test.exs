@@ -68,7 +68,7 @@ defmodule CLITest do
   end
 
   test "jocker image ls <irrelevant argument>" do
-    [msg1, _] = jocker_cmd("image ls irrelevant_argument")
+    [msg1, _] = cmd("image ls irrelevant_argument")
     assert "\"jocker image ls\" requires no arguments." == msg1
   end
 
@@ -93,32 +93,29 @@ defmodule CLITest do
 
     # Test list one
     MetaData.add_image(img1)
-    listing = jocker_cmd("image ls")
-    assert [header, row1] == listing
+    assert cmd("image ls") == [header, row1]
 
     # Test list two
     MetaData.add_image(img2)
 
-    assert [header, row2, row1] == jocker_cmd("image ls")
+    assert cmd("image ls") == [header, row2, row1]
   end
 
   test "build and remove an image with a tag" do
     path = "./test/data/test_cli_build_image"
 
-    [msg] = jocker_cmd("image build #{path}")
-    id = String.slice(msg, 34, 12)
+    id = cmd("image build #{path}")
     assert image(name: "<none>", tag: "<none>") = MetaData.get_image(id)
-    assert ["#{id}\n"] == jocker_cmd("image rm #{id}")
+    assert cmd("image rm #{id}") == id
     assert :not_found == MetaData.get_image(id)
   end
 
   test "build and remove a tagged image" do
     path = "./test/data/test_cli_build_image"
 
-    [msg] = jocker_cmd("image build -t lol:test #{path}")
-    id = String.slice(msg, 34, 12)
+    id = cmd("image build -t lol:test #{path}")
     assert image(name: "lol", tag: "test") = MetaData.get_image(id)
-    assert ["#{id}\n"] == jocker_cmd("image rm #{id}")
+    assert cmd("image rm #{id}") == id
     assert :not_found == MetaData.get_image(id)
   end
 
@@ -169,55 +166,51 @@ defmodule CLITest do
     row_base =
       "1339           base                        some_command              51 years             stopped   test3\n"
 
-    assert [header, row_running] == jocker_cmd(["container", "ls"])
+    assert [header, row_running] == jocker_cmd("container ls")
     assert [header, row_base, row_running, row_no_image_name] == jocker_cmd("container ls -a")
   end
 
   test "create and remove a container" do
-    [id_n] = jocker_cmd("container create base")
-    id = String.trim(id_n)
+    id = cmd("container create base")
     assert container(id: ^id, layer_id: layer_id) = MetaData.get_container(id)
     layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
     assert is_directory?(mountpoint)
-    [^id_n] = jocker_cmd("container rm #{id}")
+    assert cmd("container rm #{id}") == id
     assert not is_directory?(mountpoint)
   end
 
+  test "create a container with a specific jail parameter" do
+    id = cmd("container create --jailparam allow.raw_sockets=true base ping -c 1 localhost")
+    assert [<<"PING localhost", _::binary>> | _] = jocker_cmd("container start --attach #{id}")
+  end
+
   test "create a container with devfs disabled" do
-    [id_n] = jocker_cmd("container create --no-mount.devfs base /bin/sleep 100")
-    id = String.trim(id_n)
-    cont = MetaData.get_container(id)
-    assert [id_n] == jocker_cmd("container start #{id}")
-    assert not TestUtils.devfs_mounted(cont)
-    assert [id_n] == jocker_cmd("container stop #{id}")
+    id = cmd("container create --no-mount.devfs base /bin/sleep 100")
+    assert cmd("container start #{id}") == id
+    assert not TestUtils.devfs_mounted(MetaData.get_container(id))
+    assert cmd("container stop #{id}") == id
   end
 
   test "create a container with both ways of setting mount.devfs (testing precedence)" do
-    [id_n] =
-      jocker_cmd(
-        "container create --mount.devfs --jailparam mount.devfs=false base /bin/sleep 100"
-      )
-
-    id = String.trim(id_n)
+    id = cmd("container create --mount.devfs --jailparam mount.devfs=false base /bin/sleep 100")
     cont = MetaData.get_container(id)
-    assert [id_n] == jocker_cmd("container start #{id}")
+    assert cmd("container start #{id}") == id
     assert not TestUtils.devfs_mounted(cont)
-    assert [id_n] == jocker_cmd("container stop #{id}")
+    assert cmd("container stop #{id}") == id
   end
 
   test "create a container with a custom command" do
-    [id_n] = jocker_cmd("container create base /bin/mkdir /loltest")
-    id = String.trim(id_n)
+    id = cmd("container create base /bin/mkdir /loltest")
     assert container(id: ^id, layer_id: layer_id, pid: pid) = cont = MetaData.get_container(id)
 
     # We '--attach' to make sure the jail is done
 
-    [] = jocker_cmd("container start --attach #{id}")
+    assert jocker_cmd("container start --attach #{id}") == []
     layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
     assert not TestUtils.devfs_mounted(cont)
     assert is_directory?(mountpoint)
     assert is_directory?(Path.join(mountpoint, "loltest"))
-    [^id_n] = jocker_cmd("container rm #{id}")
+    assert cmd("container rm #{id}") == id
     assert not is_directory?(mountpoint)
   end
 
@@ -234,14 +227,12 @@ defmodule CLITest do
     assert is_directory?(mountpoint_vol)
     assert touch(Path.join(mountpoint_vol, "testfile"))
 
-    [id_n] =
-      jocker_cmd(
+    id =
+      cmd(
         "container create --volume testvol-1:/testdir1 -v /testdir2 #{image_id} /usr/bin/touch /testdir2/testfile2"
       )
 
-    id = String.trim(id_n)
-    [] = jocker_cmd("container start --attach #{id}")
-
+    assert jocker_cmd("container start --attach #{id}") == []
     container(layer_id: layer_id) = MetaData.get_container(id)
     layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
     assert is_file?(Path.join(mountpoint, "testdir1/testfile"))
@@ -272,12 +263,10 @@ defmodule CLITest do
     assert is_directory?(mountpoint_vol)
     assert touch(Path.join(mountpoint_vol, "testfile_writable_from_mountpoint_vol"))
 
-    [id_n] =
-      jocker_cmd(
+    id =
+      cmd(
         "container create --volume testvol-1:/testdir1:ro -v /testdir2:ro #{image_id} /usr/bin/touch /testdir2/testfile2"
       )
-
-    id = String.trim(id_n)
 
     jocker_cmd("container start --attach #{id}")
 
@@ -302,8 +291,7 @@ defmodule CLITest do
   end
 
   test "starting a long-running container and stopping it" do
-    [id_n] = jocker_cmd("container create base /bin/sleep 10000")
-    id = String.trim(id_n)
+    id = cmd("container create base /bin/sleep 10000")
     container(name: name) = cont = MetaData.get_container(id)
     MetaData.add_container(container(cont, created: epoch(1)))
 
@@ -320,19 +308,17 @@ defmodule CLITest do
         name
       }\n"
 
-    output = jocker_cmd("container ls --all")
-    assert output == [header, row]
-    assert [header] == jocker_cmd("container ls")
-    assert ["#{id}\n"] == jocker_cmd("container start #{id}")
-    assert [header, row_running] == jocker_cmd("container ls --all")
-    assert [id_n] == jocker_cmd("container stop #{id}")
-    assert [header, row] == jocker_cmd("container ls --all")
+    assert cmd("container ls --all") == [header, row]
+    assert cmd("container ls") == [header]
+    assert cmd("container start #{id}") == id
+    assert cmd("container ls --all") == [header, row_running]
+    assert cmd("container stop #{id}") == id
+    assert cmd("container ls --all") == [header, row]
   end
 
   test "start and attach to a container that produces some output" do
-    [id_n] = jocker_cmd("container create base echo lol")
-    id = String.trim(id_n)
-    assert ["lol\n"] == jocker_cmd("container start -a #{id}")
+    id = cmd("container create base echo lol")
+    assert cmd("container start -a #{id}") == "lol"
   end
 
   test "jocker volume create" do
@@ -369,11 +355,11 @@ defmodule CLITest do
   end
 
   test "jocker volume ls" do
-    assert jocker_cmd(["volume", "ls"]) == ["VOLUME NAME      CREATED           \n"]
+    assert jocker_cmd("volume ls") == ["VOLUME NAME      CREATED           \n"]
     jocker_cmd("volume create test1")
     jocker_cmd("volume create test2")
     mock_volume_creation_time()
-    output = jocker_cmd(["volume", "ls"])
+    output = jocker_cmd("volume ls")
 
     assert output == [
              "VOLUME NAME      CREATED           \n",
@@ -381,15 +367,42 @@ defmodule CLITest do
              "test1            51 years          \n"
            ]
 
-    assert ["test2\n", "test1\n"] == jocker_cmd(["volume", "ls", "--quiet"])
-    assert ["test2\n", "test1\n"] == jocker_cmd(["volume", "ls", "-q"])
+    assert ["test2\n", "test1\n"] == jocker_cmd("volume ls --quiet")
+    assert ["test2\n", "test1\n"] == jocker_cmd("volume ls -q")
   end
 
-  defp jocker_cmd(command) when is_binary(command) do
-    jocker_cmd(String.split(command))
+  defp cmd(<<"image build", _::binary>> = command) do
+    [msg] = jocker_cmd(command)
+    id = String.slice(msg, 34, 12)
+    id
+  end
+
+  defp cmd(<<"image rm", _::binary>> = command) do
+    String.trim(List.first(jocker_cmd(command)))
+  end
+
+  defp cmd(<<"container start", _::binary>> = command) do
+    String.trim(List.first(jocker_cmd(command)))
+  end
+
+  defp cmd(<<"container rm", _::binary>> = command) do
+    String.trim(List.first(jocker_cmd(command)))
+  end
+
+  defp cmd(<<"container stop", _::binary>> = command) do
+    String.trim(List.first(jocker_cmd(command)))
+  end
+
+  defp cmd(<<"container create", _::binary>> = command) do
+    String.trim(List.first(jocker_cmd(command)))
+  end
+
+  defp cmd(command) do
+    jocker_cmd(command)
   end
 
   defp jocker_cmd(command) do
+    command = String.split(command)
     Logger.info("Executing cli-command 'jocker #{Enum.join(command, " ")}'")
     spawn_link(Jocker.CLI.Main, :main_, [["--debug" | command]])
     output = collect_output([])
