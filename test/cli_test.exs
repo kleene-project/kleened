@@ -192,6 +192,19 @@ defmodule CLITest do
     assert [id_n] == jocker_cmd("container stop #{id}")
   end
 
+  test "create a container with both ways of setting mount.devfs (testing precedence)" do
+    [id_n] =
+      jocker_cmd(
+        "container create --mount.devfs --jailparam mount.devfs=false base /bin/sleep 100"
+      )
+
+    id = String.trim(id_n)
+    cont = MetaData.get_container(id)
+    assert [id_n] == jocker_cmd("container start #{id}")
+    assert not TestUtils.devfs_mounted(cont)
+    assert [id_n] == jocker_cmd("container stop #{id}")
+  end
+
   test "create a container with a custom command" do
     [id_n] = jocker_cmd("container create base /bin/mkdir /loltest")
     id = String.trim(id_n)

@@ -103,6 +103,7 @@ defmodule Jocker.CLI.Container do
         --name string                    Assign a name to the container
         --mount.devfs/--no-mount.devfs   Toggle devfs mount (default true)
     -v, --volume                         Bind mount a volume
+    -J, --jailparam string               Specify a jail parameter
 
   """
   def create(:spec) do
@@ -110,18 +111,27 @@ defmodule Jocker.CLI.Container do
       name: "container ls",
       docs: @doc,
       arg_spec: "=>1",
-      aliases: [v: :volume],
+      aliases: [v: :volume, J: :jailparam],
       arg_options: [
         name: :string,
         volume: :keep,
         "mount.devfs": :boolean,
+        jailparam: :keep,
         help: :boolean
       ]
     ]
   end
 
   def create({options, [image | cmd]}) do
-    {jail_param, options} = convert_jail_param_options(options)
+    {mountdevfs_jailparam, options} = convert_mountdevfs_option(options)
+
+    jail_param =
+      Enum.reduce(options, [], fn
+        {:jailparam, value}, acc -> [value | acc]
+        _other_option, acc -> acc
+      end)
+
+    jail_param = create_jailparams(mountdevfs_jailparam, jail_param)
 
     opts =
       case length(cmd) do
@@ -296,7 +306,7 @@ defmodule Jocker.CLI.Container do
     :ok
   end
 
-  defp convert_jail_param_options(options) do
+  defp convert_mountdevfs_option(options) do
     {jailparam_value, new_options} = Keyword.pop(options, :"mount.devfs", true)
 
     jail_param =
@@ -305,7 +315,21 @@ defmodule Jocker.CLI.Container do
         true -> "mount.devfs=true"
       end
 
-    {[jail_param], new_options}
+    {jail_param, new_options}
+  end
+
+  defp create_jailparams(mountdevfs_param, jail_param) do
+    if mount_devfs_in(jail_param) do
+      jail_param
+    else
+      [mountdevfs_param | jail_param]
+    end
+  end
+
+  defp mount_devfs_in(jail_param) do
+    Enum.any?(jail_param, fn x ->
+      String.starts_with?(x, "mount.devfs")
+    end)
   end
 
   defp print_container(c) do
