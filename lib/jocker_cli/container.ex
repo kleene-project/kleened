@@ -108,7 +108,7 @@ defmodule Jocker.CLI.Container do
   """
   def create(:spec) do
     [
-      name: "container ls",
+      name: "container create",
       docs: @doc,
       arg_spec: "=>1",
       aliases: [v: :volume, J: :jailparam],

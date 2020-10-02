@@ -177,7 +177,15 @@ defmodule Jocker.CLI.Main do
   end
 
   defp decode_args(docs, subcmd, argv, opts) do
-    {options, _, _} = output = OptionParser.parse(argv, opts)
+    {options, _, _} =
+      output =
+      case subcmd do
+        "container create" ->
+          OptionParser.parse_head(argv, opts)
+
+        _ ->
+          OptionParser.parse(argv, opts)
+      end
 
     help = Keyword.get(options, :help, false)
 
@@ -189,9 +197,14 @@ defmodule Jocker.CLI.Main do
       {options, args, []} ->
         {options, args}
 
+      {_, _, [{flag, nil} | _rest]} ->
+        to_cli("unknown flag: #{inspect(flag)}\n")
+        to_cli("See 'jocker #{subcmd} --help'\n", :eof)
+        :error
+
       {_, _, [unknown_flag | _rest]} ->
-        to_cli("unknown flag: '#{inspect(unknown_flag)}")
-        to_cli("See '#{subcmd} --help'", :eof)
+        to_cli("unknown flag: #{inspect(unknown_flag)}\n")
+        to_cli("See 'jocker #{subcmd} --help'\n", :eof)
         :error
     end
   end
