@@ -290,6 +290,9 @@ defmodule Jocker.CLI.Container do
       {:ok, container(id: id)} ->
         to_cli("#{id}\n")
 
+      {:error, :not_running} ->
+        to_cli("Container '#{container_id}' is not running\n")
+
       {:error, :not_found} ->
         to_cli("Error: No such container: #{container_id}\n")
     end

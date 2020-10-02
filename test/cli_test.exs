@@ -290,6 +290,11 @@ defmodule CLITest do
     assert not is_directory?(mountpoint)
   end
 
+  test "try stopping a container that is already stopped" do
+    id = cmd("container create base echo lol")
+    assert cmd("container stop #{id}") == "Container '#{id}' is not running"
+  end
+
   test "starting a long-running container and stopping it" do
     id = cmd("container create base /bin/sleep 10000")
     container(name: name) = cont = MetaData.get_container(id)

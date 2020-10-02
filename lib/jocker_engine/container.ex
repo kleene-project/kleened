@@ -121,6 +121,9 @@ defmodule Jocker.Engine.Container do
   @spec stop(id_or_name()) :: {:ok, JRecord.container()} | {:error, :not_found}
   def stop(id_or_name) do
     case MetaData.get_container(id_or_name) do
+      container(running: false) ->
+        {:error, :not_running}
+
       container(pid: pid) = cont ->
         :ok = GenServer.call(pid, :shutdown)
         DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, pid)
