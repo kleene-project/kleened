@@ -38,7 +38,7 @@ defmodule ContainerTest do
     ]
 
     {:ok, cont} = Container.create(opts)
-    container(id: id, pid: pid, command: cmd_out) = cont
+    container(id: id, pid: _pid, command: cmd_out) = cont
     :ok = Container.attach(id)
 
     Container.start(id)
