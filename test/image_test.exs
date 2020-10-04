@@ -7,6 +7,9 @@ defmodule ImageTest do
 
   @moduletag :capture_log
 
+  @tmp_dockerfile "tmp_dockerfile"
+  @tmp_context "./"
+
   setup_all do
     Application.stop(:jocker)
     start_supervised(Config)
@@ -28,72 +31,127 @@ defmodule ImageTest do
   end
 
   test "create an image with a 'RUN' instruction" do
-    file_path = "/root/test_1.txt"
+    dockerfile = """
+    FROM scratch
+    RUN echo "lol1" > /root/test_1.txt
+    """
 
-    instructions = [
-      from: "base",
-      run: ["/bin/sh", "-c", "echo 'lol1' > " <> file_path]
-    ]
+    create_tmp_dockerfile(dockerfile)
 
-    {:ok, image(layer_id: layer_id)} = Image.create_image(instructions)
+    image(layer_id: layer_id) =
+      build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
+
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
-    assert File.read(Path.join(mountpoint, file_path)) == {:ok, "lol1\n"}
-    assert [] == MetaData.list_containers(all: true)
+    assert File.read(Path.join(mountpoint, "/root/test_1.txt")) == {:ok, "lol1\n"}
+    assert MetaData.list_containers(all: true) == []
   end
 
   test "create an image with a 'COPY' instruction" do
-    instructions = [
-      from: "base",
-      copy: ["test.txt", "/root/"]
-    ]
+    dockerfile = """
+    FROM scratch
+    COPY test.txt /root/
+    """
 
     context = create_test_context("test_copy_instruction")
-    {:ok, image(layer_id: layer_id)} = Image.create_image(instructions, context)
+    create_tmp_dockerfile(dockerfile, context)
+    image(layer_id: layer_id) = build_and_return_image(context, @tmp_dockerfile, "test:latest")
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert [] == MetaData.list_containers(all: true)
   end
 
   test "create an image with a 'COPY' instruction using symlinks" do
-    instructions = [
-      from: "base",
-      run: ["bin/sh", "-c", "mkdir /etc/testdir"],
-      run: ["bin/sh", "-c", "ln -s /etc/testdir /etc/symbolic_testdir"],
-      copy: ["test.txt", "/etc/symbolic_testdir/"]
-    ]
+    dockerfile = """
+    FROM scratch
+    RUN mkdir /etc/testdir
+    RUN ln -s /etc/testdir /etc/symbolic_testdir
+    COPY test.txt /etc/symbolic_testdir/
+    """
 
     context = create_test_context("test_copy_instruction_symbolic")
-    {:ok, image(layer_id: layer_id)} = Image.create_image(instructions, context)
+    create_tmp_dockerfile(dockerfile, context)
+    image(layer_id: layer_id) = build_and_return_image(context, @tmp_dockerfile, "test:latest")
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     # we cannot check the symbolic link from the host:
     assert File.read(Path.join(mountpoint, "etc/testdir/test.txt")) == {:ok, "lol\n"}
   end
 
   test "create an image with a 'CMD' instruction" do
-    instructions = [
-      from: "base",
-      cmd: ["/bin/sleep", "10"]
-    ]
+    dockerfile = """
+    FROM scratch
+    CMD  /bin/sleep 10
+    """
 
-    {:ok, _image} = Image.create_image(instructions)
-    assert [] == MetaData.list_containers(all: true)
+    create_tmp_dockerfile(dockerfile)
+    _image = build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
+    assert MetaData.list_containers(all: true) == []
   end
 
   test "create an image using three RUN/COPY instructions" do
-    instructions = [
-      from: "base",
-      copy: ["test.txt", "/root/"],
-      run: ["/bin/sh", "-c", "echo 'lol1' > /root/test_1.txt"],
-      run: ["/bin/sh", "-c", "echo 'lol2' > /root/test_2.txt"]
-    ]
+    dockerfile = """
+    FROM scratch
+    COPY test.txt /root/
+    RUN echo 'lol1' > /root/test_1.txt
+    RUN echo 'lol2' > /root/test_2.txt
+    """
 
     context = create_test_context("test_image_builder_three_layers")
-    {:ok, image(layer_id: layer_id)} = Image.create_image(instructions, context)
+    create_tmp_dockerfile(dockerfile, context)
+    image(layer_id: layer_id) = build_and_return_image(context, @tmp_dockerfile, "test:latest")
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test_1.txt")) == {:ok, "lol1\n"}
     assert File.read(Path.join(mountpoint, "root/test_2.txt")) == {:ok, "lol2\n"}
-    assert [] == MetaData.list_containers(all: true)
+    assert MetaData.list_containers(all: true) == []
+  end
+
+  test "receiving of status messages during build" do
+    dockerfile = """
+    FROM scratch
+    COPY test.txt /root/
+    RUN echo \
+      "this should be relayed back to the parent process"
+    USER ntpd
+    CMD /etc/rc
+    """
+
+    context = create_test_context("test_image_builder_three_layers")
+    create_tmp_dockerfile(dockerfile, context)
+    {:ok, pid} = Image.build(context, @tmp_dockerfile, "test:latest", false)
+    {_img, messages} = receive_results(pid, [])
+
+    assert messages == [
+             "Step 1/5 : FROM scratch\n",
+             "Step 2/5 : COPY test.txt /root/\n",
+             "Step 3/5 : RUN echo   \"this should be relayed back to the parent process\"\n",
+             "this should be relayed back to the parent process\n",
+             "Step 4/5 : USER ntpd\n",
+             "Step 5/5 : CMD /etc/rc\n"
+           ]
+  end
+
+  defp build_and_return_image(context, dockerfile, tag) do
+    quiet = true
+    {:ok, pid} = Image.build(context, dockerfile, tag, quiet)
+    {img, _messages} = receive_results(pid, [])
+    img
+  end
+
+  defp receive_results(pid, msg_list) do
+    receive do
+      {:image_builder, ^pid, {:image_finished, img}} ->
+        {img, Enum.reverse(msg_list)}
+
+      {:image_builder, ^pid, msg} ->
+        receive_results(pid, [msg | msg_list])
+
+      other ->
+        IO.puts("\nError! Received unkown message #{inspect(other)}")
+    end
+  end
+
+  def create_tmp_dockerfile(content, context \\ @tmp_context) do
+    :ok = File.write(Path.join(context, @tmp_dockerfile), content, [:write])
   end
 
   defp create_test_context(name) do

@@ -64,6 +64,13 @@ defmodule Jocker.Engine.APIServer do
         updated_buffers = Map.put(state.buffers, socket, new_buffer)
         {:noreply, %State{state | :buffers => updated_buffers}}
 
+      {[Jocker.Engine.Image, :build, _] = command, new_buffer} ->
+        updated_buffers = Map.put(state.buffers, socket, new_buffer)
+        {:ok, pid} = reply = evaluate_command(command)
+        sockets = Map.put(state.sockets, pid, socket)
+        GenTCP.send(socket, Erlang.term_to_binary(reply))
+        {:noreply, %State{state | :buffers => updated_buffers, :sockets => sockets}}
+
       {[Jocker.Engine.Container, :start, _] = command, new_buffer} ->
         reply = evaluate_command(command)
         updated_buffers = Map.put(state.buffers, socket, new_buffer)
@@ -102,6 +109,21 @@ defmodule Jocker.Engine.APIServer do
     Logger.debug("Receiving message from container: #{inspect(container_msg)}")
     socket = state.sockets[id]
     GenTCP.send(socket, Erlang.term_to_binary(container_msg))
+    {:noreply, state}
+  end
+
+  def handle_info({:image_builder, pid, {:image_finished, _img}} = imgbuild_msg, state) do
+    Logger.debug("Image builder done!")
+    socket = state.sockets[pid]
+    GenTCP.send(socket, Erlang.term_to_binary(imgbuild_msg))
+    GenTCP.close(socket)
+    {:noreply, %State{state | :sockets => Map.delete(state.sockets, pid)}}
+  end
+
+  def handle_info({:image_builder, pid, _msg} = imgbuild_msg, state) do
+    Logger.debug("Receiving message from image builder: #{inspect(imgbuild_msg)}")
+    socket = state.sockets[pid]
+    GenTCP.send(socket, Erlang.term_to_binary(imgbuild_msg))
     {:noreply, state}
   end
 

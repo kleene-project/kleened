@@ -9,13 +9,13 @@ defmodule Jocker.Engine.Dockerfile do
 
   defp starts_with_from_instruction([instruction | rest]) do
     case instruction do
-      {:arg, _} ->
+      {_line, {:arg, _}} ->
         starts_with_from_instruction(rest)
 
-      {:from, _} ->
+      {_line, {:from, _}} ->
         :ok
 
-      {:from, _, _} ->
+      {_line, {:from, _, _}} ->
         :ok
     end
   end
@@ -40,41 +40,44 @@ defmodule Jocker.Engine.Dockerfile do
   defp decode_line(instruction_line) do
     [instruction, args] = split(instruction_line, " ", parts: 2)
 
-    case {instruction, args} do
-      {"USER", user} ->
-        {:user, trim(user)}
+    instr =
+      case {instruction, args} do
+        {"USER", user} ->
+          {:user, trim(user)}
 
-      {"RUN", <<"[", _::binary>> = json_cmd} ->
-        {:run, json_decode(json_cmd)}
+        {"RUN", <<"[", _::binary>> = json_cmd} ->
+          {:run, json_decode(json_cmd)}
 
-      {"RUN", shellform} ->
-        {:run, ["/bin/sh", "-c", shellform]}
+        {"RUN", shellform} ->
+          {:run, ["/bin/sh", "-c", shellform]}
 
-      {"CMD", <<"[", _::binary>> = json_cmd} ->
-        {:cmd, json_decode(json_cmd)}
+        {"CMD", <<"[", _::binary>> = json_cmd} ->
+          {:cmd, json_decode(json_cmd)}
 
-      {"CMD", shellform} ->
-        {:cmd, ["/bin/sh", "-c", shellform]}
+        {"CMD", shellform} ->
+          {:cmd, ["/bin/sh", "-c", shellform]}
 
-      {"COPY", <<"[", _::binary>> = json_form} ->
-        {:copy, json_decode(json_form)}
+        {"COPY", <<"[", _::binary>> = json_form} ->
+          {:copy, json_decode(json_form)}
 
-      {"COPY", args} ->
-        {:copy, split(args, " ")}
+        {"COPY", args} ->
+          {:copy, split(args, " ")}
 
-      {"EXPOSE", port} ->
-        {:expose, to_integer(port)}
+        {"EXPOSE", port} ->
+          {:expose, to_integer(port)}
 
-      {"FROM", args} ->
-        decode_from_args(args)
+        {"FROM", args} ->
+          decode_from_args(args)
 
-      {"VOLUME", args} ->
-        {:volume, args}
+        {"VOLUME", args} ->
+          {:volume, args}
 
-      unknown_instruction ->
-        IO.puts("WARNING: Instruction '#{unknown_instruction}' not understood\n")
-        {:unparsed, unknown_instruction}
-    end
+        unknown_instruction ->
+          IO.puts("WARNING: Instruction '#{unknown_instruction}' not understood\n")
+          {:unparsed, unknown_instruction}
+      end
+
+    {instruction_line, instr}
   end
 
   defp decode_from_args(args) do

@@ -104,7 +104,7 @@ defmodule CLITest do
   test "build and remove an image with a tag" do
     path = "./test/data/test_cli_build_image"
 
-    id = cmd("image build #{path}")
+    id = cmd("image build --quiet #{path}")
     assert image(name: "<none>", tag: "<none>") = MetaData.get_image(id)
     assert cmd("image rm #{id}") == id
     assert :not_found == MetaData.get_image(id)
@@ -113,7 +113,7 @@ defmodule CLITest do
   test "build and remove a tagged image" do
     path = "./test/data/test_cli_build_image"
 
-    id = cmd("image build -t lol:test #{path}")
+    id = cmd("image build --quiet -t lol:test #{path}")
     assert image(name: "lol", tag: "test") = MetaData.get_image(id)
     assert cmd("image rm #{id}") == id
     assert :not_found == MetaData.get_image(id)
@@ -215,14 +215,15 @@ defmodule CLITest do
   end
 
   test "jocker adding and removing a container with writable volumes" do
-    instructions = [
-      from: "base",
-      run: ["/bin/sh", "-c", "mkdir /testdir1"],
-      run: ["/bin/sh", "-c", "mkdir /testdir2"],
-      run: ["/usr/bin/touch", "/loltest"]
-    ]
+    dockerfile = """
+    FROM scratch
+    RUN mkdir /testdir1
+    RUN mkdir /testdir2
+    RUN /usr/bin/touch /loltest
+    """
 
-    {:ok, image(id: image_id)} = Image.create_image(instructions)
+    image(id: image_id) = create_image(dockerfile)
+
     volume(name: vol_name, mountpoint: mountpoint_vol) = vol1 = Volume.create_volume("testvol-1")
     assert is_directory?(mountpoint_vol)
     assert touch(Path.join(mountpoint_vol, "testfile"))
@@ -252,13 +253,13 @@ defmodule CLITest do
   end
 
   test "jocker adding and removing a container with read-only volumes" do
-    instructions = [
-      from: "base",
-      run: ["/bin/sh", "-c", "mkdir /testdir1"],
-      run: ["/bin/sh", "-c", "mkdir /testdir2"]
-    ]
+    dockerfile = """
+    FROM scratch
+    RUN mkdir /testdir1
+    RUN mkdir /testdir2
+    """
 
-    {:ok, image(id: image_id)} = Image.create_image(instructions)
+    image(id: image_id) = create_image(dockerfile)
     volume(name: vol_name, mountpoint: mountpoint_vol) = vol1 = Volume.create_volume("testvol-1")
     assert is_directory?(mountpoint_vol)
     assert touch(Path.join(mountpoint_vol, "testfile_writable_from_mountpoint_vol"))
@@ -374,6 +375,15 @@ defmodule CLITest do
 
     assert ["test2\n", "test1\n"] == jocker_cmd("volume ls --quiet")
     assert ["test2\n", "test1\n"] == jocker_cmd("volume ls -q")
+  end
+
+  def create_image(content) do
+    :ok = File.write(Path.join("./", "tmp_dockerfile"), content, [:write])
+    {:ok, pid} = Image.build("./", "tmp_dockerfile", "test:latest", true)
+
+    receive do
+      {:image_builder, ^pid, {:image_finished, img}} -> img
+    end
   end
 
   defp cmd(<<"image build", _::binary>> = command) do

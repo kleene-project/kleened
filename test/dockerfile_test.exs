@@ -7,46 +7,78 @@ defmodule DockerfileTest do
   test "from instruction" do
     test1 = parse("# Testing\nFROM lol\n# One more comment")
     test2 = parse("# Testing\nFROM lol AS maxlol\n# One more comment")
-    assert [{:from, "lol"}] == test1
-    assert [{:from, "lol", "maxlol"}] == test2
+    assert [{"FROM lol", {:from, "lol"}}] == test1
+    assert [{"FROM lol AS maxlol", {:from, "lol", "maxlol"}}] == test2
   end
 
   test "run instruction" do
-    test1 = parse("# Testing\nFROM lol\nRUN cat lol.txt")
-    test2 = parse("# Testing\nFROM lol\nRUN [\"/bin/sh\", \"-c\", \"cat lol.txt\"]")
-    assert [{:from, "lol"}, {:run, ["/bin/sh", "-c", "cat lol.txt"]}] == test1
-    assert [{:from, "lol"}, {:run, ["/bin/sh", "-c", "cat lol.txt"]}] == test2
+    output = parse("# Testing\nFROM lol\nRUN cat lol.txt")
+
+    assert output == [
+             {"FROM lol", {:from, "lol"}},
+             {"RUN cat lol.txt", {:run, ["/bin/sh", "-c", "cat lol.txt"]}}
+           ]
+
+    output = parse("# Testing\nFROM lol\nRUN [\"/bin/sh\", \"-c\", \"cat lol.txt\"]")
+
+    assert output ==
+             [
+               {"FROM lol", {:from, "lol"}},
+               {"RUN [\"/bin/sh\", \"-c\", \"cat lol.txt\"]",
+                {:run, ["/bin/sh", "-c", "cat lol.txt"]}}
+             ]
   end
 
   test "cmd instruction" do
     test1 = parse("# Testing\nFROM lol\nCMD cat lol.txt")
     test2 = parse("# Testing\nFROM lol\nCMD [\"/bin/sh\", \"-c\", \"cat lol.txt\"]")
-    assert [{:from, "lol"}, {:cmd, ["/bin/sh", "-c", "cat lol.txt"]}] == test1
-    assert [{:from, "lol"}, {:cmd, ["/bin/sh", "-c", "cat lol.txt"]}] == test2
+
+    assert test1 == [
+             {"FROM lol", {:from, "lol"}},
+             {"CMD cat lol.txt", {:cmd, ["/bin/sh", "-c", "cat lol.txt"]}}
+           ]
+
+    assert test2 == [
+             {"FROM lol", {:from, "lol"}},
+             {"CMD [\"/bin/sh\", \"-c\", \"cat lol.txt\"]",
+              {:cmd, ["/bin/sh", "-c", "cat lol.txt"]}}
+           ]
   end
 
   test "expose instruction" do
     test1 = parse("# Testing\nFROM lol\nEXPOSE 1337")
-    assert [{:from, "lol"}, {:expose, 1337}] == test1
+
+    assert test1 == [
+             {"FROM lol", {:from, "lol"}},
+             {"EXPOSE 1337", {:expose, 1337}}
+           ]
   end
 
   test "copy instruction" do
     test1 = parse("# Testing\nFROM lol\nCOPY [\"lol1\", \"lol2\", \"lol3\"]")
     test2 = parse("# Testing\nFROM lol\nCOPY lol1 lol2 lol3")
-    assert [{:from, "lol"}, {:copy, ["lol1", "lol2", "lol3"]}] == test1
-    assert [{:from, "lol"}, {:copy, ["lol1", "lol2", "lol3"]}] == test2
+
+    assert test1 == [
+             {"FROM lol", {:from, "lol"}},
+             {"COPY [\"lol1\", \"lol2\", \"lol3\"]", {:copy, ["lol1", "lol2", "lol3"]}}
+           ]
+
+    assert test2 == [
+             {"FROM lol", {:from, "lol"}},
+             {"COPY lol1 lol2 lol3", {:copy, ["lol1", "lol2", "lol3"]}}
+           ]
   end
 
   test "user instruction" do
     test1 = parse("# Testing\nFROM lol\nUSER testuser")
     test2 = parse("# Testing\nFROM lol\nUSER  testuser  ")
-    assert [{:from, "lol"}, {:user, "testuser"}] == test1
-    assert [{:from, "lol"}, {:user, "testuser"}] == test2
+    assert test1 == [{"FROM lol", {:from, "lol"}}, {"USER testuser", {:user, "testuser"}}]
+    assert test2 == [{"FROM lol", {:from, "lol"}}, {"USER  testuser  ", {:user, "testuser"}}]
   end
 
   test "a real dockerfile" do
     {:ok, file} = File.read("./test/data/test_dockerfile/Dockerfile")
     instructions = parse(file)
-    assert [{:from, _} | _] = instructions
+    assert [{_, {:from, _}} | _] = instructions
   end
 end

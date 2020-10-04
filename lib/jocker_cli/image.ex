@@ -26,29 +26,46 @@ defmodule Jocker.CLI.Image do
 
   Options:
   -t, --tag list                Name and optionally a tag in the 'name:tag' format
+  -f, --file string             Name of the Dockerfile (Default is 'PATH/Dockerfile')
+  -q, --quiet                   Suppress the build output and print image ID on success
   """
   def build(:spec) do
     [
       name: "image build",
       docs: @doc,
       arg_spec: "==1",
-      aliases: [t: :tag],
+      aliases: [t: :tag, f: :file, q: :quiet],
       arg_options: [
         tag: :string,
+        file: :string,
+        quiet: :boolean,
         help: :boolean
       ]
     ]
   end
 
   def build({options, [path]}) do
-    context = Path.absname(path)
-    dockerfile_path = Path.join(context, "Dockerfile")
-    tagname = Jocker.Engine.Utils.decode_tagname(Keyword.get(options, :tag, "<none>:<none>"))
-
-    {:ok, image(id: id)} =
-      rpc([Jocker.Engine.Image, :build_image_from_file, [dockerfile_path, tagname, context]])
-
+    path = Path.absname(path)
+    tag = Keyword.get(options, :tag, "<none>:<none>")
+    quiet = Keyword.get(options, :quiet, false)
+    dockerfile = Keyword.get(options, :file, "Dockerfile")
+    {:ok, pid} = rpc([Jocker.Engine.Image, :build, [path, dockerfile, tag, quiet]])
+    image(id: id) = receive_results()
     to_cli("Image succesfully created with id #{id}\n", :eof)
+  end
+
+  defp receive_results() do
+    case Utils.fetch_reply() do
+      {:image_builder, _pid, {:image_finished, img}} ->
+        img
+
+      {:image_builder, _pid, msg} ->
+        to_cli(msg)
+        receive_results()
+
+      other ->
+        IO.puts("\nError! Received unknown message from the jocker daemon: #{inspect(other)}")
+    end
   end
 
   @doc """
