@@ -116,7 +116,6 @@ defmodule Jocker.Engine.APIServer do
     Logger.debug("Image builder done!")
     socket = state.sockets[pid]
     GenTCP.send(socket, Erlang.term_to_binary(imgbuild_msg))
-    GenTCP.close(socket)
     {:noreply, %State{state | :sockets => Map.delete(state.sockets, pid)}}
   end
 

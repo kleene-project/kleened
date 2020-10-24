@@ -49,22 +49,24 @@ defmodule Jocker.CLI.Image do
     tag = Keyword.get(options, :tag, "<none>:<none>")
     quiet = Keyword.get(options, :quiet, false)
     dockerfile = Keyword.get(options, :file, "Dockerfile")
-    {:ok, pid} = rpc([Jocker.Engine.Image, :build, [path, dockerfile, tag, quiet]])
-    image(id: id) = receive_results()
-    to_cli("Image succesfully created with id #{id}\n", :eof)
+    {:ok, _pid} = rpc([Jocker.Engine.Image, :build, [path, dockerfile, tag, quiet]])
+    receive_results()
   end
 
   defp receive_results() do
     case Utils.fetch_reply() do
-      {:image_builder, _pid, {:image_finished, img}} ->
-        img
+      {:image_builder, _pid, {:image_finished, image(id: id)}} ->
+        to_cli("Image succesfully created with id #{id}\n", :eof)
 
       {:image_builder, _pid, msg} ->
         to_cli(msg)
         receive_results()
 
+      :tcp_closed ->
+        to_cli("\nError! Connection to Jocker engine closed unexpectedly\n", :eof)
+
       other ->
-        IO.puts("\nError! Received unknown message from the jocker daemon: #{inspect(other)}")
+        raise "Error: Unexpected error occurred: #{inspect(other)}"
     end
   end
 

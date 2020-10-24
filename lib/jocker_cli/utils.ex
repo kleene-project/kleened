@@ -28,6 +28,9 @@ defmodule Jocker.CLI.Utils do
       {:server_reply, reply} ->
         reply
 
+      :tcp_closed ->
+        :tcp_closed
+
       what ->
         {:error, "ERROR: Unexpected message received from backend: #{inspect(what)}"}
     end
