@@ -452,7 +452,7 @@ defmodule CLITest do
   defp remove_mount(mount) do
     case mount |> String.replace(" on ", " ") |> String.split() do
       [src, dst | _] ->
-        case String.starts_with?(src, "/" <> Config.get(:volume_root)) do
+        case String.starts_with?(src, "/" <> Config.get("volume_root")) do
           true ->
             # Logger.warn("Removing nullfs-mount #{dst}")
             System.cmd("/sbin/umount", [dst])

@@ -2,7 +2,6 @@ defmodule Jocker.CLI.Volume do
   alias Jocker.CLI.Utils
   import Utils, only: [cell: 2, sp: 1, to_cli: 1, to_cli: 2, rpc: 1]
   import Jocker.Engine.Records
-  alias Jocker.CLI.Main
 
   @doc """
 

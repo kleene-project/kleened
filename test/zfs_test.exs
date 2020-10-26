@@ -11,9 +11,9 @@ defmodule ZFSTest do
   end
 
   test "create clone test" do
-    zroot_test = Config.get(:zroot) <> "/create_clone_test"
+    zroot_test = Config.get("zroot") <> "/create_clone_test"
     create(zroot_test)
-    assert 0 == clone(Config.get(:base_layer_snapshot), zroot_test <> "/zfs_test")
+    assert 0 == clone(Config.get("base_layer_snapshot"), zroot_test <> "/zfs_test")
     assert 0 == snapshot(zroot_test <> "/zfs_test@lol")
     assert 0 == destroy(zroot_test <> "/zfs_test@lol")
     assert 0 == destroy(zroot_test <> "/zfs_test")
@@ -21,8 +21,8 @@ defmodule ZFSTest do
   end
 
   test "rename test" do
-    zroot_test = Config.get(:zroot) <> "/rename_test"
-    zroot_test_new = Config.get(:zroot) <> "/rename_test_newname"
+    zroot_test = Config.get("zroot") <> "/rename_test"
+    zroot_test_new = Config.get("zroot") <> "/rename_test_newname"
     assert 0 == create(zroot_test)
     assert 0 == rename(zroot_test, zroot_test_new)
     assert 0 == destroy(zroot_test_new)

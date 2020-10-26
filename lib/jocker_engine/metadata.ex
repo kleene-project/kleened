@@ -106,7 +106,7 @@ defmodule Jocker.Engine.MetaData do
 
   @spec start_link([]) :: Agent.on_start()
   def start_link([]) do
-    filepath = Config.get(:metadata_db)
+    filepath = Config.get("metadata_db")
     {:ok, db} = Sqlitex.open(filepath)
     create_tables(db)
     Agent.start_link(fn -> db end, name: __MODULE__)
@@ -516,8 +516,8 @@ defmodule Jocker.Engine.MetaData do
     base_layer =
       layer(
         id: "base",
-        dataset: Config.get(:base_layer_dataset),
-        snapshot: Config.get(:base_layer_snapshot),
+        dataset: Config.get("base_layer_dataset"),
+        snapshot: Config.get("base_layer_snapshot"),
         mountpoint: :none
       )
 

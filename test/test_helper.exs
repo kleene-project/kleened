@@ -11,9 +11,9 @@ defmodule TestUtils do
   end
 
   def clear_zroot do
-    ZFS.destroy_force(Config.get(:zroot))
-    ZFS.create(Config.get(:zroot))
-    ZFS.create(Config.get(:volume_root))
+    ZFS.destroy_force(Config.get("zroot"))
+    ZFS.create(Config.get("zroot"))
+    ZFS.create(Config.get("volume_root"))
   end
 
   def devfs_mounted(container(layer_id: layer_id)) do

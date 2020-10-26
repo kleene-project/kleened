@@ -34,7 +34,7 @@ defmodule Jocker.Engine.Layer do
 
   defp initialize_(layer(snapshot: parent_snapshot)) do
     id = Jocker.Engine.Utils.uuid()
-    dataset = Path.join(Config.get(:zroot), id)
+    dataset = Path.join(Config.get("zroot"), id)
     0 = Jocker.Engine.ZFS.clone(parent_snapshot, dataset)
 
     new_layer =

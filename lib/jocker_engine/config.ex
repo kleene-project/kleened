@@ -4,17 +4,6 @@ defmodule Jocker.Engine.Config do
 
   @default_config_path "/usr/local/etc/jocker_config.yaml"
 
-  def default_configuration() do
-    %{
-      :zroot => "zroot/jocker",
-      :volume_root => "zroot/jocker/volumes",
-      :metadata_db => "/zroot/jocker/metadata.sqlite",
-      :api_socket => "/var/run/jocker.sock",
-      :base_layer_dataset => "zroot/jocker_basejail",
-      :subnet => "10.20.30.40/24"
-    }
-  end
-
   def start_link([]) do
     Agent.start_link(&initialize/0, name: __MODULE__)
   end
@@ -27,17 +16,35 @@ defmodule Jocker.Engine.Config do
     Agent.update(__MODULE__, fn config -> Map.put(config, key, value) end)
   end
 
-  defp initialize() do
-    config = default_configuration()
-    file_config = open_config_file()
-    cfg = merge(config, file_config)
+  def delete(key) do
+    Agent.update(__MODULE__, fn config -> Map.delete(config, key) end)
+  end
 
-    mountpoint = valid_dataset_or_exit(cfg, :zroot, true)
-    Map.put(cfg, :base_layer_mountpoint, mountpoint)
-    valid_dataset_or_exit(cfg, :volume_root, false)
-    valid_dataset_or_exit(cfg, :base_layer_dataset, false)
-    valid_snapshot_or_create(cfg, :base_layer_dataset)
-    # TODO validate network entries as well
+  defp initialize() do
+    cfg = open_config_file()
+
+    mountpoint = valid_dataset_or_exit(cfg, "zroot", true)
+    Map.put(cfg, "base_layer_mountpoint", mountpoint)
+    valid_dataset_or_exit(cfg, "volume_root", false)
+    valid_dataset_or_exit(cfg, "base_layer_dataset", false)
+    cfg = valid_snapshot_or_create(cfg, "base_layer_dataset")
+    validate_default_subnet(cfg)
+    validate_loopback_name(cfg)
+    cfg
+  end
+
+  defp validate_loopback_name(cfg) do
+    case Jocker.Engine.Network.is_valid_interface_name?(cfg["default_loopback_name"]) do
+      true -> :ok
+      false -> Logger.error("the default loopback if name in the configuration file is not valid")
+    end
+  end
+
+  defp validate_default_subnet(cfg) do
+    case CIDR.is_cidr?(cfg["default_subnet"]) do
+      true -> :ok
+      false -> Logger.error("the default subnet in the configuration file is not valid")
+    end
   end
 
   defp valid_snapshot_or_create(cfg, dataset_type) do
@@ -48,7 +55,7 @@ defmodule Jocker.Engine.Config do
       {_, 1} -> 0 = Jocker.Engine.ZFS.snapshot(snapshot)
     end
 
-    Map.put(cfg, :base_layer_snapshot, snapshot)
+    Map.put(cfg, "base_layer_snapshot", snapshot)
   end
 
   defp valid_dataset_or_exit(cfg, dataset_type, fail_no_mountpoint) do
@@ -103,22 +110,5 @@ defmodule Jocker.Engine.Config do
       true -> :yes
       false -> :no
     end
-  end
-
-  defp merge(config, fconfig) do
-    keys = Map.keys(fconfig)
-    atom_fconfig = atomize_file_config(keys, fconfig, %{})
-    Map.merge(config, atom_fconfig)
-  end
-
-  defp atomize_file_config([key | rest], fconfig, atomized_config) do
-    val = Map.get(fconfig, key)
-    atom_key = String.to_atom(key)
-    upd_atomized_confg = Map.put(atomized_config, atom_key, val)
-    atomize_file_config(rest, fconfig, upd_atomized_confg)
-  end
-
-  defp atomize_file_config([], _fconfig, atomized_config) do
-    atomized_config
   end
 end

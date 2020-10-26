@@ -27,7 +27,7 @@ defmodule Jocker.CLI.EngineClient do
 
   @impl true
   def init([callers_pid]) do
-    api_socket = Config.get(:api_socket)
+    api_socket = Config.get("api_socket")
 
     Logger.info("Connecting to jocker-engine")
 

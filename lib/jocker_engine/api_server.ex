@@ -19,7 +19,7 @@ defmodule Jocker.Engine.APIServer do
   @impl true
   def init([]) do
     Logger.info("jocker-engine: Initating API backed")
-    api_socket = Config.get(:api_socket)
+    api_socket = Config.get("api_socket")
     File.rm(api_socket)
 
     {:ok, listening_socket} =

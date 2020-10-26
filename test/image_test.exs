@@ -155,7 +155,7 @@ defmodule ImageTest do
   end
 
   defp create_test_context(name) do
-    dataset = Path.join(Config.get(:zroot), name)
+    dataset = Path.join(Config.get("zroot"), name)
     mountpoint = Path.join("/", dataset)
     Jocker.Engine.ZFS.create(dataset)
     {"", 0} = System.cmd("sh", ["-c", "echo 'lol' > #{mountpoint}/test.txt"])
@@ -164,6 +164,6 @@ defmodule ImageTest do
 
   defp stop_and_delete_db() do
     # Agent.stop(Jocker.Engine.MetaData)
-    File.rm(Config.get(:metadata_db))
+    File.rm(Config.get("metadata_db"))
   end
 end

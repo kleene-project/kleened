@@ -8,7 +8,8 @@ defmodule Jocker.Engine.Network do
     first: :none,
     last: :none,
     in_use: :none,
-    if_name: :none
+    if_name: :none,
+    default_gw: :none
   )
 
   def start_link([]) do
@@ -20,7 +21,7 @@ defmodule Jocker.Engine.Network do
   def remove(ip), do: GenServer.call(__MODULE__, {:remove, ip})
 
   def add_to_if(ip) do
-    if_name = Config.get(:network_if_name)
+    if_name = Config.get("default_loopback_name")
     add_to_if(ip, if_name)
   end
 
@@ -40,7 +41,7 @@ defmodule Jocker.Engine.Network do
   end
 
   def ip_added?(ip) do
-    if_name = Config.get(:network_if_name)
+    if_name = Config.get("default_loopback_name")
 
     {output, n} =
       System.cmd("/bin/sh", ["-c", "ifconfig #{if_name} | grep \"inet \" | grep \"#{ip}\""],
@@ -52,30 +53,47 @@ defmodule Jocker.Engine.Network do
     {expected_output, 0} == {output, n}
   end
 
-  ### Callback functions
+  def is_valid_interface_name?(if_name) do
+    {:ok, checker} = Regex.compile("^[a-z][a-z0-9]+")
+    Regex.match?(checker, if_name)
+  end
 
+  ### Callback functions
   @impl true
   def init([]) do
     # Internally we convert ip-addresses to integers so they can be easily manipulated
-    case CIDR.parse(Config.get(:subnet)) do
+    case CIDR.parse(Config.get("default_subnet")) do
       %CIDR{first: ip_start, last: ip_end, hosts: _nhosts, mask: _mask} ->
         ip_first = Enum.join(Tuple.to_list(ip_start), ".")
         ip_end = Enum.join(Tuple.to_list(ip_end), ".")
-        if_name = Config.get(:network_if_name)
-        create_network_interface(if_name)
+
+        if_name = Config.get("default_loopback_name")
+        create_loopback_interface(if_name)
+
+        default_gw =
+          case Config.get("default_gateway_if") do
+            nil ->
+              default_gw = detect_gateway_if()
+              Config.put("default_gateway_if", default_gw)
+              default_gw
+
+            default_gw ->
+              default_gw
+          end
 
         state =
           state(
             first: ip2int(ip_first),
             last: ip2int(ip_end),
             in_use: MapSet.new(),
-            if_name: if_name
+            if_name: if_name,
+            default_gw: default_gw
           )
 
         {:ok, state}
 
       {:error, reason} ->
-        Logger.error("Unable to parse 'network_if_name' in configuration file.")
+        Logger.error("Unable to parse 'default_subnet' in configuration file.")
         {:stop, reason}
     end
   end
@@ -100,7 +118,28 @@ defmodule Jocker.Engine.Network do
   end
 
   ### Internal functions
-  defp create_network_interface(jocker_if) do
+  def detect_gateway_if() do
+    {output_json, 0} = System.cmd("netstat", ["--libxo", "json", "-rn"])
+    # IO.puts(Jason.Formatter.pretty_print(output_json))
+    {:ok, output} = Jason.decode(output_json)
+    routing_table = output["statistics"]["route-information"]["route-table"]["rt-family"]
+
+    # Extract the routes for ipv4
+    [%{"rt-entry" => routes}] =
+      Enum.filter(
+        routing_table,
+        # Selecting for "Internet6" gives the ipv6 routes
+        fn %{"address-family" => addr_fam} -> addr_fam == "Internet" end
+      )
+
+    # Extract the interface name of the default gateway
+    %{"interface-name" => if_name} =
+      Enum.find(routes, "", fn %{"destination" => dest} -> dest == "default" end)
+
+    if_name
+  end
+
+  defp create_loopback_interface(jocker_if) do
     if interface_exists(jocker_if) do
       {"", _exitcode} = System.cmd("ifconfig", [jocker_if, "destroy"])
     end
@@ -110,8 +149,12 @@ defmodule Jocker.Engine.Network do
   end
 
   defp interface_exists(jocker_if) do
-    {if_list, 0} = System.cmd("ifconfig", ["-l"])
-    if_list |> String.trim() |> String.split() |> Enum.find_value(fn x -> x == jocker_if end)
+    {json, 0} = System.cmd("netstat", ["--libxo", "json", "-I", jocker_if])
+
+    case Jason.decode(json) do
+      {:ok, %{"statistics" => %{"interface" => []}}} -> false
+      {:ok, %{"statistics" => %{"interface" => _if_stats}}} -> true
+    end
   end
 
   defp remove_from_if(ip, iface) do

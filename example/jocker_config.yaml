@@ -7,8 +7,12 @@ api_socket: "/var/run/jocker.sock"
 
 base_layer_dataset: "zroot/jocker_basejail"
 
-# Name of the interface that jocker creates and uses for its ip-addresses
-network_if_name: "jocker0"
+# Name of the loopback interface used for the default network
+default_loopback_name: "jocker0"
 
 # Allocated block of ip-addresses available to jocker in cidr-format.
-subnet: "10.20.30.40/24"
+default_subnet: "10.20.30.40/24"
+
+# Default interface used as default gateway for containers.
+# If not set Jocker will try to detect it automatically.
+# default_gateway_if: "em0"

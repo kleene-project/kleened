@@ -191,7 +191,7 @@ defmodule MetaDataTest do
   end
 
   defp dbfile() do
-    Config.get(:metadata_db)
+    Config.get("metadata_db")
   end
 
   defp db_exists?() do
