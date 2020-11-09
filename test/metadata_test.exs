@@ -5,6 +5,8 @@ defmodule MetaDataTest do
   import Jocker.Engine.Records
   import TestUtils, only: [now: 0]
 
+  alias Jocker.Structs.Network
+
   @moduletag :capture_log
 
   setup_all do
@@ -25,6 +27,28 @@ defmodule MetaDataTest do
     File.rm(dbfile())
     start_link([])
     assert db_exists?()
+  end
+
+  test "adding and getting networks" do
+    network = %Network{id: "loool", name: "testname"}
+    assert :ok = add_network(network)
+    assert network == get_network("loool")
+    assert network == get_network("lo")
+    assert network == get_network("testname")
+  end
+
+  test "adding, listing and removing networks" do
+    network1 = %Network{id: "test_id1", name: "testname1"}
+    network2 = %Network{id: "test_id2", name: "testname2"}
+    assert [] == list_networks()
+    assert :ok = add_network(network1)
+    assert [network1] == list_networks()
+    assert :ok = add_network(network2)
+    assert [network1, network2] == list_networks()
+    remove_network("test_id1")
+    assert [network2] == list_networks()
+    remove_network("test_id2")
+    assert [] == list_networks()
   end
 
   test "adding and getting layers" do

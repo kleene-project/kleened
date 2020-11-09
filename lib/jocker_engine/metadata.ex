@@ -1,3 +1,15 @@
+defmodule Jocker.Structs.Network do
+  @derive Jason.Encoder
+  defstruct id: nil,
+            name: nil,
+            subnet: nil,
+            if_name: nil,
+            default_gw_if: nil,
+            first: nil,
+            last: nil,
+            in_use: []
+end
+
 defmodule Jocker.Engine.MetaData do
   require Logger
   alias Jocker.Engine.Config
@@ -5,6 +17,8 @@ defmodule Jocker.Engine.MetaData do
   import JockerRecords
 
   use Agent
+
+  @table_network "CREATE TABLE IF NOT EXISTS networks ( network TEXT )"
 
   @table_layers """
   CREATE TABLE IF NOT EXISTS
@@ -116,6 +130,26 @@ defmodule Jocker.Engine.MetaData do
     Agent.stop(__MODULE__)
   end
 
+  @spec add_network(%Jocker.Structs.Network{}) :: :ok
+  def add_network(network) do
+    Agent.get(__MODULE__, fn db -> add_network_(db, network) end)
+  end
+
+  @spec remove_network(String.t()) :: :ok | :not_found
+  def remove_network(network) do
+    Agent.get(__MODULE__, fn db -> remove_network_(db, network) end)
+  end
+
+  @spec get_network(String.t()) :: %Jocker.Structs.Network{} | :not_found
+  def get_network(name_or_id) do
+    Agent.get(__MODULE__, fn db -> get_network_(db, name_or_id) end)
+  end
+
+  @spec list_networks() :: [%Jocker.Structs.Network{}]
+  def list_networks() do
+    Agent.get(__MODULE__, fn db -> list_networks_(db) end)
+  end
+
   @spec add_layer(JockerRecords.layer()) :: :ok
   def add_layer(layer) do
     Agent.get(__MODULE__, fn db -> add_layer_(db, layer) end)
@@ -214,6 +248,41 @@ defmodule Jocker.Engine.MetaData do
   ##########################
   ### Internal functions ###
   ##########################
+  def add_network_(db, network) do
+    json = to_json(:network, network)
+    exec(db, "INSERT OR REPLACE INTO networks VALUES (?)", [json])
+  end
+
+  def get_network_(db, id_or_name) do
+    sql = """
+    SELECT network FROM networks WHERE substr(json_extract(network, '$.id'), 1, ?) = ?
+    UNION
+    SELECT network FROM networks WHERE json_extract(network, '$.name') = ?
+    """
+
+    case fetch_all(db, sql, [String.length(id_or_name), id_or_name, id_or_name]) do
+      {:ok, [[network: json] | _]} ->
+        from_json(:network, json)
+
+      {:ok, []} ->
+        :not_found
+    end
+  end
+
+  def remove_network_(db, network_id) do
+    exec(db, "DELETE FROM networks WHERE json_extract(network, '$.id') = ?", [network_id])
+  end
+
+  @spec list_networks_(db_conn()) :: [%Jocker.Structs.Network{}]
+  def list_networks_(db) do
+    sql = "SELECT * FROM networks"
+
+    # {:ok, statement} = Sqlitex.Statement.prepare(db, sql)
+    # {:ok, rows} = Sqlitex.Statement.fetch_all(statement)
+    {:ok, rows} = fetch_all(db, sql)
+    Enum.map(rows, fn [network: json] -> from_json(:network, json) end)
+  end
+
   def add_layer_(db, layer) do
     row = record2row(layer)
     exec(db, "INSERT OR REPLACE INTO layers VALUES (?, ?, ?, ?, ?)", row)
@@ -392,6 +461,18 @@ defmodule Jocker.Engine.MetaData do
     create_tables(db)
   end
 
+  @spec to_json(:network, %Jocker.Structs.Network{}) :: String.t()
+  def to_json(:network, network) do
+    {:ok, json} = Jason.encode(network)
+    json
+  end
+
+  @spec from_json(:network, String.t()) :: %Jocker.Structs.Network{}
+  def from_json(:network, network) do
+    {:ok, map} = Jason.decode(network, [{:keys, :atoms}])
+    struct(Jocker.Structs.Network, map)
+  end
+
   @spec row2record(record_type(), []) :: jocker_record()
   defp row2record(type, row) do
     # Logger.debug("Converting #{inspect(type)}-row: #{inspect(row)}")
@@ -510,6 +591,7 @@ defmodule Jocker.Engine.MetaData do
     {:ok, []} = Sqlitex.query(db, "DROP TABLE layers")
     {:ok, []} = Sqlitex.query(db, "DROP TABLE volumes")
     {:ok, []} = Sqlitex.query(db, "DROP TABLE mounts")
+    {:ok, []} = Sqlitex.query(db, "DROP TABLE networks")
   end
 
   def create_tables(db) do
@@ -528,6 +610,7 @@ defmodule Jocker.Engine.MetaData do
         layer_id: "base"
       )
 
+    {:ok, []} = Sqlitex.query(db, @table_network)
     {:ok, []} = Sqlitex.query(db, @table_layers)
     {:ok, []} = Sqlitex.query(db, @table_images)
     {:ok, []} = Sqlitex.query(db, @table_containers)
