@@ -2,52 +2,78 @@ defmodule NetworkTest do
   use ExUnit.Case
   alias Jocker.Engine.Network
   alias Jocker.Engine.Config
+  alias Jocker.Engine.Utils
+  alias Jocker.Engine.MetaData
+  alias Jocker.Structs
 
-  test "adding and removing ips from interface" do
+  setup_all do
     Application.stop(:jocker)
-    {:ok, cfg_pid} = Config.start_link([])
-    if_name = "jocker0"
-    Config.put("default_loopback_name", if_name)
-    Config.put("default_subnet", "10.13.37.0/31")
-    {:ok, pid} = Network.start_link([])
-    assert Network.new() == "10.13.37.0"
-    assert Network.new() == "10.13.37.1"
-
-    assert Network.ip_added?("10.13.37.0")
-    assert Network.ip_added?("10.13.37.1")
-
-    :ok = Network.remove("10.13.37.0")
-    :ok = Network.remove("10.13.37.1")
-
-    assert ifconfig_check_if(if_name) == {"", 1}
-
-    GenServer.stop(pid)
-    GenServer.stop(cfg_pid)
-  end
-
-  test "running out of ips" do
-    Application.stop(:jocker)
-    {:ok, cfg_pid} = Config.start_link([])
-    Config.put("default_loopback_name", "jocker0")
-    Config.put("default_subnet", "10.13.37.0/31")
-    {:ok, pid} = Network.start_link([])
-    assert Network.new() == "10.13.37.0"
-    assert Network.new() == "10.13.37.1"
-    assert Network.new() == :out_of_ips
-    GenServer.stop(pid)
-    GenServer.stop(cfg_pid)
-  end
-
-  test "detection of default gateway" do
-    # NOTE specific vm for my testing vm
-    if_name = "em0"
-    assert if_name == Network.detect_gateway_if()
     {:ok, _cfg_pid} = Config.start_link([])
-    {:ok, _network_pid} = Network.start_link([])
-    assert if_name == Config.get("default_gateway_if")
+    {:ok, _metadata_pid} = MetaData.start_link([])
+    :ok
   end
 
-  defp ifconfig_check_if(if_name) do
-    System.cmd("/bin/sh", ["-c", "ifconfig #{if_name} | grep \"inet \""], stderr_to_stdout: true)
+  test "default interface is created at startup" do
+    MetaData.clear_tables()
+    Utils.destroy_interface("jocker0")
+    {:ok, _pid} = Network.start_link([])
+
+    assert Utils.interface_exists("jocker0")
+  end
+
+  test "default interface is not defined at startup" do
+    Utils.destroy_interface("jocker0")
+    Config.delete("default_network_name")
+    {:ok, _pid} = Network.start_link([])
+
+    assert not Utils.interface_exists("jocker0")
+
+    Config.put("default_network_name", "default")
+  end
+
+  test "create a and remove a new network" do
+    Utils.destroy_interface("jocker1")
+    {:ok, _pid} = Network.start_link([])
+
+    assert {:ok, test_network} =
+             Network.create("testnetwork", :loopback, subnet: "172.18.0.0/16", if_name: "jocker1")
+
+    assert Utils.interface_exists("jocker1")
+    assert %Structs.Network{:name => "testnetwork"} = test_network
+
+    assert Network.inspect_("testnetwork") == test_network
+    assert Network.inspect_(String.slice(test_network.id, 0, 4)) == test_network
+    assert Network.remove("testnetwork") == :ok
+    assert not Utils.interface_exists("jocker1")
+    assert MetaData.get_network(test_network.id) == :not_found
+  end
+
+  test "remove a non-existing network" do
+    {:ok, _pid} = Network.start_link([])
+
+    assert {:ok, test_network} =
+             Network.create("testnetwork", :loopback, subnet: "172.18.0.0/16", if_name: "jocker1")
+
+    assert Network.remove("testnetwork") == :ok
+    assert Network.remove("testnetwork") == {:error, "network not found."}
+  end
+
+  test "create a network with same name twice" do
+    {:ok, _pid} = Network.start_link([])
+
+    assert {:ok, test_network} =
+             Network.create("testnetwork", :loopback, subnet: "172.18.0.0/16", if_name: "jocker1")
+
+    assert {:error, "network name is already taken"} =
+             Network.create("testnetwork", :loopback, subnet: "172.19.0.0/16", if_name: "jocker2")
+
+    Network.remove("testnetwork")
+  end
+
+  test "try to create a network with a invalid subnet" do
+    {:ok, _pid} = Network.start_link([])
+
+    assert {:error, "invalid subnet"} =
+             Network.create("testnetwork", :loopback, subnet: "172.18.0.0-16", if_name: "jocker1")
   end
 end

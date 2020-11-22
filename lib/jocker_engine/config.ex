@@ -8,8 +8,8 @@ defmodule Jocker.Engine.Config do
     Agent.start_link(&initialize/0, name: __MODULE__)
   end
 
-  def get(key) do
-    Agent.get(__MODULE__, fn config -> Map.get(config, key) end)
+  def get(key, default \\ nil) do
+    Agent.get(__MODULE__, fn config -> Map.get(config, key, default) end)
   end
 
   def put(key, value) do
@@ -29,15 +29,7 @@ defmodule Jocker.Engine.Config do
     valid_dataset_or_exit(cfg, "base_layer_dataset", false)
     cfg = valid_snapshot_or_create(cfg, "base_layer_dataset")
     validate_default_subnet(cfg)
-    validate_loopback_name(cfg)
     cfg
-  end
-
-  defp validate_loopback_name(cfg) do
-    case Jocker.Engine.Network.is_valid_interface_name?(cfg["default_loopback_name"]) do
-      true -> :ok
-      false -> Logger.error("the default loopback if name in the configuration file is not valid")
-    end
   end
 
   defp validate_default_subnet(cfg) do

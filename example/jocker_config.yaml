@@ -7,12 +7,18 @@ api_socket: "/var/run/jocker.sock"
 
 base_layer_dataset: "zroot/jocker_basejail"
 
+# Name of the default network. If omitted no default network is created.
+default_network_name: "default"
+
 # Name of the loopback interface used for the default network
 default_loopback_name: "jocker0"
 
 # Allocated block of ip-addresses available to jocker in cidr-format.
-default_subnet: "10.20.30.40/24"
+default_subnet: "172.17.0.0/16"
 
 # Default interface used as default gateway for containers.
 # If not set Jocker will try to detect it automatically.
 # default_gateway_if: "em0"
+
+# Where Jocker stores its pf(4) configuration file
+pf_config_path: "/zroot/jocker/pf_jocker.conf"

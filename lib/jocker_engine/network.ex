@@ -1,35 +1,235 @@
 defmodule Jocker.Engine.Network do
   use GenServer
   alias Jocker.Engine.Config
+  alias Jocker.Engine.Utils
+  alias Jocker.Engine.MetaData
+  alias Jocker.Structs.Network
   require Logger
   require Record
+  import Jocker.Engine.Records
 
-  Record.defrecordp(:state,
-    first: :none,
-    last: :none,
-    in_use: :none,
-    if_name: :none,
-    default_gw: :none
-  )
+  @type create_options() :: [create_option()]
+  @type create_option() :: {:subnet, String.t()} | {:if_name, String.t()}
+  @type driver_type() :: :loopback
+
+  @default_pf_configuration """
+  gw_if="<%= gw_if %>" # This should be the interface of your default gateway
+  jocker_loopback_if="<%= loopback_name %>" # This should be your jocker loopback interface
+  jocker_subnet="<%= subnet %>" # This should be the subnet used by jocker
+
+  nat on $gw_if from $jocker_subnet to any -> ($gw_if)
+  """
+
+  defmodule Jocker.Engine.Network.State do
+    defstruct pf_config_path: nil,
+              gateway_interface: nil
+  end
+
+  alias Jocker.Engine.Network.State
 
   def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
 
-  def new(), do: GenServer.call(__MODULE__, :new)
+  ### Docker Engine style API's
+  @spec create(String.t(), driver_type(), create_options()) ::
+          {:ok, %Network{}} | {:error, String.t()}
+  def create(name, driver, options) do
+    GenServer.call(__MODULE__, {:create, name, driver, options})
+  end
 
-  def remove(ip), do: GenServer.call(__MODULE__, {:remove, ip})
+  def connect(container, network_id, options) do
+    GenServer.call(__MODULE__, {:connect, container, network_id, options})
+  end
 
-  def add_to_if(ip) do
+  def disconnect(container, network_id) do
+    GenServer.call(__MODULE__, {:disconnect, container, network_id})
+  end
+
+  def list() do
+    GenServer.call(__MODULE__, :list)
+  end
+
+  def remove(idname) do
+    GenServer.call(__MODULE__, {:remove, idname})
+  end
+
+  def inspect_(network_idname) do
+    GenServer.call(__MODULE__, {:inspect, network_idname})
+  end
+
+  ### Callback functions
+  @impl true
+  def init([]) do
+    pf_conf_path = Config.get("pf_config_path")
+    default_network_name = Config.get("default_network_name")
     if_name = Config.get("default_loopback_name")
-    add_to_if(ip, if_name)
+    subnet = Config.get("default_subnet")
+
+    gateway =
+      case Config.get("default_gateway_if") do
+        nil ->
+          detect_gateway_if()
+
+        gw ->
+          gw
+      end
+
+    if pf_conf_path == nil do
+      Logger.error("Configration file must contain an entry called 'pf_conf_path'")
+    end
+
+    if not Utils.touch(pf_conf_path) do
+      Logger.error("Unable to access Jockers PF configuration file located at #{pf_conf_path}")
+    end
+
+    if default_network_name != nil do
+      case create_network(default_network_name, :loopback, if_name: if_name, subnet: subnet) do
+        {:ok, _} -> :ok
+        {:error, "network name is already taken"} -> :ok
+        {:error, reason} -> Logger.warn("Could not initialize default network: #{reason}")
+      end
+    end
+
+    # FIXME configure_pf(pf_conf_path, gateway)
+    {:ok, %State{:pf_config_path => pf_conf_path, :gateway_interface => gateway}}
   end
 
-  def add_to_if(:out_of_ips, _iface) do
-    :error
+  @impl true
+  def handle_call({:create, name, driver, options}, _from, state) do
+    case create_network(name, driver, options) do
+      {:ok, network} ->
+        {:reply, {:ok, network}, state}
+
+      error ->
+        {:reply, error, state}
+    end
   end
 
-  def add_to_if(ip, iface) do
+  def handle_call(
+        {:connect, container_id_name, network_id_name, _options},
+        _from,
+        state
+      ) do
+    %Network{:name => network_name, :if_name => if_name} = MetaData.get_network(network_id_name)
+
+    cont = MetaData.get_container(container_id_name)
+
+    case cont do
+      container(name: jail_name, running: true, networks: cont_networks) ->
+        %{:ip_addresses => ip_addresses} = network = Map.get(cont_networks, network_name, [])
+        {new_ip, network_upd} = new_ip(network)
+        MetaData.add_network(network_upd)
+
+        ifconfig_alias(if_name, new_ip)
+
+        network = Map.put(network, :ip_addresses, [new_ip | ip_addresses])
+        cont_networks = Map.put(cont_networks, network_name, network)
+
+        jail_modify_ips(jail_name, cont_networks)
+        MetaData.add_container(container(cont, networks: cont_networks))
+        {:reply, :ok, state}
+
+      container(running: false, networks: cont_networks) ->
+        %{:ip_addresses => ip_addresses} = network = Map.get(cont_networks, network_name, [])
+        {new_ip, network_upd} = new_ip(network)
+        MetaData.add_network(network_upd)
+
+        network = Map.put(network, :ip_addresses, [new_ip | ip_addresses])
+        cont_networks = Map.put(cont_networks, network_name, network)
+
+        MetaData.add_container(container(cont, networks: cont_networks))
+        {:reply, :ok, state}
+
+      :not_found ->
+        {:reply, {:error, "container not found"}, state}
+    end
+  end
+
+  def handle_call({:disconnect, container_idname, network_idname}, _from, state) do
+    container(name: jail_name, networks: cont_networks) =
+      cont = MetaData.get_container(container_idname)
+
+    %Network{:id => network_id} = MetaData.get_network(network_idname)
+    cont_networks = Map.delete(cont_networks, network_id)
+    jail_modify_ips(jail_name, cont_networks)
+    MetaData.add_container(container(cont, networks: cont_networks))
+    {:reply, :ok, state}
+  end
+
+  def handle_call(:list, _from, state) do
+    networks = MetaData.list_networks()
+    {:reply, networks, state}
+  end
+
+  def handle_call({:remove, idname}, _from, state) do
+    # FIXME: Deal with pf as well? Atm. the default network is hardcoded. Should be fixed!
+    case MetaData.get_network(idname) do
+      %Network{:id => id, :if_name => if_name} ->
+        System.cmd("ifconfig", [if_name, "destroy"])
+        MetaData.remove_network(id)
+        {:reply, :ok, state}
+
+      :not_found ->
+        {:reply, {:error, "network not found."}, state}
+    end
+  end
+
+  def handle_call({:inspect, idname}, _from, state) do
+    network = MetaData.get_network(idname)
+    {:reply, network, state}
+  end
+
+  @impl true
+  def terminate(_reason, _state) do
+    :ok
+  end
+
+  ##########################
+  ### Internal functions ###
+  ##########################
+  def create_network(name, :loopback, options) do
+    subnet = Keyword.get(options, :subnet)
+    if_name = Keyword.get(options, :if_name)
+    parsed_subnet = CIDR.parse(subnet)
+
+    cond do
+      MetaData.get_network(name) != :not_found ->
+        {:error, "network name is already taken"}
+
+      not is_map(parsed_subnet) or parsed_subnet.__struct__ != CIDR ->
+        {:error, "invalid subnet"}
+
+      true ->
+        create_loopback_network(name, if_name, parsed_subnet)
+    end
+  end
+
+  def create_network(_, _unknown_driver, _) do
+    {:error, "Unknown driver"}
+  end
+
+  def jail_modify_ips(jail_name, networks) do
+    all_ips = Enum.concat(Enum.map(Enum.to_list(networks), fn {_, l} -> l end))
+    jail_modify_ips_(jail_name, all_ips)
+  end
+
+  def jail_modify_ips_(jail_name, ips) do
+    ips = Enum.join(ips, ",")
+
+    case System.cmd("/usr/sbin/jail", ["-m", "name=#{jail_name}", "ip4.addr=#{ips}"],
+           stderr_to_stdout: true
+         ) do
+      {_, 0} ->
+        :ok
+
+      {error, _} ->
+        Logger.error("Some error occured while assigning IPs #{ips} to #{jail_name}: #{error}")
+        :error
+    end
+  end
+
+  def ifconfig_alias(iface, ip) do
     case System.cmd("ifconfig", [iface, "alias", "#{ip}/32"], stderr_to_stdout: true) do
       {_, 0} ->
         :ok
@@ -40,84 +240,74 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  def ip_added?(ip) do
-    if_name = Config.get("default_loopback_name")
+  def ip_added?(ip, iface) do
+    # netstat --libxo json -4 -n -I lo0
+    # {"statistics":
+    #   {"interface": [{"name":"lo0","flags":"0x8049","network":"127.0.0.0/8","address":"127.0.0.1","received-packets":0,"sent-packets":0}, {"name":"lo0","flags":"0x8049","network":"127.0.0.0/8","address":"127.0.0.2","received-packets":0,"sent-packets":0}]}
+    # }
 
-    {output, n} =
-      System.cmd("/bin/sh", ["-c", "ifconfig #{if_name} | grep \"inet \" | grep \"#{ip}\""],
-        stderr_to_stdout: true
+    {output_json, 0} = System.cmd("netstat", ["--libxo", "json", "-4", "-n", "-I", iface])
+    {:ok, output} = Jason.decode(output_json)
+    output = output["statistics"]["interface"]
+    Enum.any?(output, fn entry -> entry["address"] == ip end)
+  end
+
+  def configure_pf(pf_config_path, default_gw) do
+    # FIXME: hardcoded to be "default" at the moment
+    %Network{:if_name => if_name, :subnet => subnet} = MetaData.get_network("default")
+
+    pf_conf =
+      EEx.eval_string(@default_pf_configuration,
+        gw_if: default_gw,
+        loopback_name: if_name,
+        subnet: subnet
       )
 
-    expected_output = "\tinet #{ip} netmask 0xffffffff\n"
+    case File.write(pf_config_path, pf_conf, [:write]) do
+      :ok ->
+        case System.cmd("/sbin/pfctl", ["-f", pf_config_path]) do
+          {_, 0} ->
+            :ok
 
-    {expected_output, 0} == {output, n}
-  end
-
-  def is_valid_interface_name?(if_name) do
-    {:ok, checker} = Regex.compile("^[a-z][a-z0-9]+")
-    Regex.match?(checker, if_name)
-  end
-
-  ### Callback functions
-  @impl true
-  def init([]) do
-    # Internally we convert ip-addresses to integers so they can be easily manipulated
-    case CIDR.parse(Config.get("default_subnet")) do
-      %CIDR{first: ip_start, last: ip_end, hosts: _nhosts, mask: _mask} ->
-        ip_first = Enum.join(Tuple.to_list(ip_start), ".")
-        ip_end = Enum.join(Tuple.to_list(ip_end), ".")
-
-        if_name = Config.get("default_loopback_name")
-        create_loopback_interface(if_name)
-
-        default_gw =
-          case Config.get("default_gateway_if") do
-            nil ->
-              default_gw = detect_gateway_if()
-              Config.put("default_gateway_if", default_gw)
-              default_gw
-
-            default_gw ->
-              default_gw
-          end
-
-        state =
-          state(
-            first: ip2int(ip_first),
-            last: ip2int(ip_end),
-            in_use: MapSet.new(),
-            if_name: if_name,
-            default_gw: default_gw
-          )
-
-        {:ok, state}
+          {error_output, 1} ->
+            Logger.error(
+              "Failed to load PF configuration file. 'pfctl' returned the following error: #{
+                inspect(error_output)
+              }"
+            )
+        end
 
       {:error, reason} ->
-        Logger.error("Unable to parse 'default_subnet' in configuration file.")
-        {:stop, reason}
+        Logger.error("Failed to write PF configuration file with reason: #{inspect(reason)} ")
     end
   end
 
-  @impl true
-  def handle_call(:new, _from, state(first: first, if_name: if_name) = state) do
-    {new_ip, in_use} = new_ip(first, state)
-    add_to_if(new_ip, if_name)
-    {:reply, new_ip, state(state, in_use: in_use)}
+  def create_loopback_network(
+        name,
+        if_name,
+        %CIDR{first: ip_start, last: ip_end, hosts: _nhosts, mask: _mask}
+      ) do
+    ip_first = Enum.join(Tuple.to_list(ip_start), ".")
+    ip_end = Enum.join(Tuple.to_list(ip_end), ".")
+
+    case create_loopback_interface(if_name) do
+      {_, 0} ->
+        network = %Network{
+          id: Utils.uuid(),
+          name: name,
+          first_ip: ip_first,
+          last_ip: ip_end,
+          if_name: if_name
+        }
+
+        MetaData.add_network(network)
+        {:ok, network}
+
+      {error_output, _exitcode} ->
+        {:error, "ifconfig failed with output: #{error_output}"}
+    end
   end
 
-  def handle_call({:remove, ip}, _from, state(if_name: if_name) = state) do
-    remove_from_if(ip, if_name)
-    new_in_use = remove_ip(ip, state)
-    {:reply, :ok, state(state, in_use: new_in_use)}
-  end
-
-  @impl true
-  def terminate(_reason, state(if_name: if_name)) do
-    System.cmd("ifconfig", [if_name, "destroy"])
-    :ok
-  end
-
-  ### Internal functions
   def detect_gateway_if() do
     {output_json, 0} = System.cmd("netstat", ["--libxo", "json", "-rn"])
     # IO.puts(Jason.Formatter.pretty_print(output_json))
@@ -135,26 +325,24 @@ defmodule Jocker.Engine.Network do
     # Extract the interface name of the default gateway
     %{"interface-name" => if_name} =
       Enum.find(routes, "", fn %{"destination" => dest} -> dest == "default" end)
+  end
 
-    if_name
+  def create_pf_conf() do
+    # FIXME: hardcoded to default network.
+    %Network{:if_name => if_name, :subnet => subnet, :default_gw_if => default_gw_if} =
+      MetaData.get_network("default")
+
+    EEx.eval_string(@default_pf_configuration,
+      if_name: if_name,
+      default_subnet: subnet,
+      default_gw_if: default_gw_if
+    )
   end
 
   defp create_loopback_interface(jocker_if) do
-    if interface_exists(jocker_if) do
-      {"", _exitcode} = System.cmd("ifconfig", [jocker_if, "destroy"])
-    end
-
+    Utils.destroy_interface(jocker_if)
     _jocker_if_out = jocker_if <> "\n"
-    {_jocker_if_out, 0} = System.cmd("ifconfig", ["lo", "create", "name", jocker_if])
-  end
-
-  defp interface_exists(jocker_if) do
-    {json, 0} = System.cmd("netstat", ["--libxo", "json", "-I", jocker_if])
-
-    case Jason.decode(json) do
-      {:ok, %{"statistics" => %{"interface" => []}}} -> false
-      {:ok, %{"statistics" => %{"interface" => _if_stats}}} -> true
-    end
+    System.cmd("ifconfig", ["lo", "create", "name", jocker_if])
   end
 
   defp remove_from_if(ip, iface) do
@@ -164,23 +352,38 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  defp remove_ip(ip, state(in_use: in_use)) do
-    ip_int = ip2int(ip)
-    MapSet.delete(in_use, ip_int)
+  defp new_ip(%Network{first_ip: first_ip, last_ip: last_ip, in_use: ips_in_use} = network) do
+    ips_in_use = Enum.map(ips_in_use, fn ip -> ip2int(ip) end)
+    next_ip = Enum.max(ips_in_use)
+    n_ips_used = length(ips_in_use)
+    ips_in_use = MapSet.new(ips_in_use)
+    last_ip = ip2int(last_ip)
+    first_ip = ip2int(first_ip)
+
+    case first_ip - last_ip do
+      n when n > n_ips_used - 1 ->
+        :out_of_ips
+
+      _ ->
+        {new_ip, ips_in_use} = new_ip_(first_ip, last_ip, next_ip, ips_in_use)
+        ips_in_use = Enum.map(ips_in_use, fn ip -> int2ip(ip) end)
+        {int2ip(new_ip), %Network{network | :in_use => ips_in_use}}
+    end
   end
 
-  defp new_ip(next, state(last: last, in_use: ips)) when next > last do
-    {:out_of_ips, ips}
+  defp new_ip_(first_ip, last_ip, next_ip, ips_in_use) when next_ip > last_ip do
+    new_ip_(first_ip, last_ip, first_ip, ips_in_use)
   end
 
-  defp new_ip(next, state(in_use: in_use) = state) do
-    case MapSet.member?(in_use, next) do
+  defp new_ip_(first_ip, last_ip, next_ip, ips_in_use) do
+    case MapSet.member?(ips_in_use, next_ip) do
       true ->
-        new_ip(next + 1, state)
+        new_ip_(first_ip, last_ip, next_ip + 1, ips_in_use)
 
       false ->
-        new_ip = int2ip(next)
-        {new_ip, MapSet.put(in_use, next)}
+        new_ip = int2ip(next_ip)
+        # ips_in_use_str = Enum.map(ips_in_use, fn ip -> ip2int(ip) end)
+        {next_ip, MapSet.put(ips_in_use, new_ip)}
     end
   end
 

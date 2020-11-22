@@ -1,12 +1,34 @@
 defmodule Jocker.Engine.Utils do
   require Logger
 
+  def touch(path) do
+    case System.cmd("/usr/bin/touch", [path], stderr_to_stdout: true) do
+      {"", 0} -> true
+      _ -> false
+    end
+  end
+
   def timestamp_now() do
     DateTime.to_iso8601(DateTime.utc_now())
   end
 
   def mount_nullfs(args) do
     {"", 0} = System.cmd("/sbin/mount_nullfs", args)
+  end
+
+  def destroy_interface(jocker_if) do
+    if interface_exists(jocker_if) do
+      {"", _exitcode} = System.cmd("ifconfig", [jocker_if, "destroy"])
+    end
+  end
+
+  def interface_exists(jocker_if) do
+    {json, 0} = System.cmd("netstat", ["--libxo", "json", "-I", jocker_if])
+
+    case Jason.decode(json) do
+      {:ok, %{"statistics" => %{"interface" => []}}} -> false
+      {:ok, %{"statistics" => %{"interface" => _if_stats}}} -> true
+    end
   end
 
   @spec unmount(String.t()) :: integer()

@@ -5,8 +5,8 @@ defmodule Jocker.Structs.Network do
             subnet: nil,
             if_name: nil,
             default_gw_if: nil,
-            first: nil,
-            last: nil,
+            first_ip: nil,
+            last_ip: nil,
             in_use: []
 end
 
@@ -136,8 +136,8 @@ defmodule Jocker.Engine.MetaData do
   end
 
   @spec remove_network(String.t()) :: :ok | :not_found
-  def remove_network(network) do
-    Agent.get(__MODULE__, fn db -> remove_network_(db, network) end)
+  def remove_network(network_id) do
+    Agent.get(__MODULE__, fn db -> remove_network_(db, network_id) end)
   end
 
   @spec get_network(String.t()) :: %Jocker.Structs.Network{} | :not_found
@@ -483,6 +483,7 @@ defmodule Jocker.Engine.MetaData do
           row_upd = Keyword.update(row, :command, nil, &decode/1)
           row_upd = Keyword.update(row_upd, :parameters, nil, &decode/1)
           row_upd = Keyword.update(row_upd, :running, nil, &int2bool/1)
+          row_upd = Keyword.update(row_upd, :networks, nil, &decode/1)
 
           row_upd = Keyword.update(row_upd, :pid, :none, &str2pid/1)
 
@@ -512,16 +513,25 @@ defmodule Jocker.Engine.MetaData do
     row =
       case type do
         :container ->
-          container(command: cmd, parameters: param, running: running, pid: pid) = rec
+          container(
+            command: cmd,
+            networks: networks,
+            parameters: param,
+            running: running,
+            pid: pid
+          ) = rec
+
           running_integer = bool2int(running)
           cmd_json = encode(cmd)
           param_json = encode(param)
+          networks_json = encode(networks)
           pid_str = pid2str(pid)
 
           [_type | new_values] =
             Tuple.to_list(
               container(rec,
                 command: cmd_json,
+                networks: networks_json,
                 parameters: param_json,
                 running: running_integer,
                 pid: pid_str
