@@ -5,6 +5,7 @@ defmodule CLITest do
   alias Jocker.Engine.MetaData
   alias Jocker.Engine.Volume
   alias Jocker.Engine.Config
+  alias Jocker.Engine.Utils
   import Jocker.Engine.Records
   require Logger
 
@@ -18,7 +19,6 @@ defmodule CLITest do
     Jocker.Engine.Volume.create_volume_dataset()
     start_supervised(MetaData)
     start_supervised(Jocker.Engine.Layer)
-    start_supervised(Jocker.Engine.Network)
 
     start_supervised(
       {DynamicSupervisor,
@@ -32,6 +32,7 @@ defmodule CLITest do
   setup do
     register_as_cli_master()
     MetaData.clear_tables()
+    start_supervised(Jocker.Engine.Network)
     :ok
   end
 
@@ -226,7 +227,7 @@ defmodule CLITest do
 
     volume(name: vol_name, mountpoint: mountpoint_vol) = vol1 = Volume.create_volume("testvol-1")
     assert is_directory?(mountpoint_vol)
-    assert touch(Path.join(mountpoint_vol, "testfile"))
+    assert Utils.touch(Path.join(mountpoint_vol, "testfile"))
 
     id =
       cmd(
@@ -262,7 +263,7 @@ defmodule CLITest do
     image(id: image_id) = create_image(dockerfile)
     volume(name: vol_name, mountpoint: mountpoint_vol) = vol1 = Volume.create_volume("testvol-1")
     assert is_directory?(mountpoint_vol)
-    assert touch(Path.join(mountpoint_vol, "testfile_writable_from_mountpoint_vol"))
+    assert Utils.touch(Path.join(mountpoint_vol, "testfile_writable_from_mountpoint_vol"))
 
     id =
       cmd(
@@ -276,8 +277,8 @@ defmodule CLITest do
 
     assert is_file?(Path.join(mountpoint, "testdir1/testfile_writable_from_mountpoint_vol"))
     assert not is_file?(Path.join(mountpoint, "/testdir2/testfile2"))
-    assert not touch(Path.join(mountpoint, "/testdir2/testfile2"))
-    assert not touch(Path.join(mountpoint, "/testdir1/testfile1"))
+    assert not Utils.touch(Path.join(mountpoint, "/testdir2/testfile2"))
+    assert not Utils.touch(Path.join(mountpoint, "/testdir1/testfile1"))
 
     [vol2] =
       Enum.reject(MetaData.list_volumes([]), fn
@@ -481,13 +482,6 @@ defmodule CLITest do
     case Process.whereis(:cli_master) do
       nil -> Process.register(self(), :cli_master)
       _ -> register_as_cli_master()
-    end
-  end
-
-  defp touch(path) do
-    case System.cmd("/usr/bin/touch", [path], stderr_to_stdout: true) do
-      {"", 0} -> true
-      _ -> false
     end
   end
 

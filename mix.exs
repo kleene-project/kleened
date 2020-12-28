@@ -41,6 +41,13 @@ defmodule Jocker.MixProject do
   defp deps do
     [
       {:jason, "~> 1.2"},
+      {:esqlite, "0.4.1",
+       override: true,
+       system_env: [
+         #   {"ESQLITE_USE_SYSTEM", "yes"},
+         {"ESQLITE_CFLAGS",
+          "$CFLAGS -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_JSON1 -DSQLITE_USE_URI -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS3_PARENTHESIS"}
+       ]},
       {:sqlitex, "~> 1.7"},
       {:yaml_elixir, "~> 2.4"},
       {:cidr, "~> 1.1"},

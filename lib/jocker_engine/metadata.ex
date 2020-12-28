@@ -4,10 +4,7 @@ defmodule Jocker.Structs.Network do
             name: nil,
             subnet: nil,
             if_name: nil,
-            default_gw_if: nil,
-            first_ip: nil,
-            last_ip: nil,
-            in_use: []
+            default_gw_if: nil
 end
 
 defmodule Jocker.Engine.MetaData do
@@ -52,8 +49,8 @@ defmodule Jocker.Engine.MetaData do
     running  INTEGER,
     pid      TEXT,
     command  TEXT, --[string]
+    networking_config TEXT,
     layer_id TEXT,
-    ip       TEXT,
     image_id TEXT,
     user     TEXT,
     parameters TEXT, --[string]
@@ -71,7 +68,6 @@ defmodule Jocker.Engine.MetaData do
     containers.pid,
     containers.command, --[string]
     containers.layer_id,
-    containers.ip,
     containers.image_id,
     containers.user,
     containers.parameters, --[string]
@@ -276,9 +272,6 @@ defmodule Jocker.Engine.MetaData do
   @spec list_networks_(db_conn()) :: [%Jocker.Structs.Network{}]
   def list_networks_(db) do
     sql = "SELECT * FROM networks"
-
-    # {:ok, statement} = Sqlitex.Statement.prepare(db, sql)
-    # {:ok, rows} = Sqlitex.Statement.fetch_all(statement)
     {:ok, rows} = fetch_all(db, sql)
     Enum.map(rows, fn [network: json] -> from_json(:network, json) end)
   end
@@ -475,15 +468,13 @@ defmodule Jocker.Engine.MetaData do
 
   @spec row2record(record_type(), []) :: jocker_record()
   defp row2record(type, row) do
-    # Logger.debug("Converting #{inspect(type)}-row: #{inspect(row)}")
-
     record =
       case type do
         :container ->
           row_upd = Keyword.update(row, :command, nil, &decode/1)
           row_upd = Keyword.update(row_upd, :parameters, nil, &decode/1)
           row_upd = Keyword.update(row_upd, :running, nil, &int2bool/1)
-          row_upd = Keyword.update(row_upd, :networks, nil, &decode/1)
+          row_upd = Keyword.update(row_upd, :networking_config, %{}, &decode/1)
 
           row_upd = Keyword.update(row_upd, :pid, :none, &str2pid/1)
 
@@ -501,13 +492,11 @@ defmodule Jocker.Engine.MetaData do
           List.to_tuple([type | Keyword.values(row)])
       end
 
-    # Logger.debug("Converted #{inspect(type)}-row: #{inspect(record)}")
     record
   end
 
   @spec record2row(jocker_record()) :: [term()]
   def record2row(rec) do
-    # Logger.debug("Converting record: #{inspect(rec)}")
     [type | values] = Tuple.to_list(rec)
 
     row =
@@ -515,7 +504,7 @@ defmodule Jocker.Engine.MetaData do
         :container ->
           container(
             command: cmd,
-            networks: networks,
+            networking_config: networking_config,
             parameters: param,
             running: running,
             pid: pid
@@ -524,14 +513,14 @@ defmodule Jocker.Engine.MetaData do
           running_integer = bool2int(running)
           cmd_json = encode(cmd)
           param_json = encode(param)
-          networks_json = encode(networks)
+          networking_config_json = encode(networking_config)
           pid_str = pid2str(pid)
 
           [_type | new_values] =
             Tuple.to_list(
               container(rec,
                 command: cmd_json,
-                networks: networks_json,
+                networking_config: networking_config_json,
                 parameters: param_json,
                 running: running_integer,
                 pid: pid_str
@@ -573,7 +562,7 @@ defmodule Jocker.Engine.MetaData do
   def str2pid(pidstr), do: :erlang.list_to_pid(String.to_charlist(pidstr))
 
   defp decode(json) do
-    {:ok, term} = Jason.decode(json)
+    {:ok, term} = Jason.decode(json, [{:keys, :atoms}])
     term
   end
 

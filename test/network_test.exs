@@ -4,13 +4,45 @@ defmodule NetworkTest do
   alias Jocker.Engine.Config
   alias Jocker.Engine.Utils
   alias Jocker.Engine.MetaData
+  alias Jocker.Engine.Container
   alias Jocker.Structs
+  import Jocker.Engine.Records
 
   setup_all do
     Application.stop(:jocker)
     {:ok, _cfg_pid} = Config.start_link([])
+    :ok
+  end
+
+  setup do
+    TestUtils.clear_zroot()
     {:ok, _metadata_pid} = MetaData.start_link([])
     :ok
+  end
+
+  test "test connectivity using default interface" do
+    {:ok, _pid} = Jocker.Engine.Layer.start_link([])
+    {:ok, _pid} = Network.start_link([])
+
+    start_supervised(
+      {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
+    )
+
+    opts = [
+      cmd: ["/usr/bin/host", "-t", "A", "ip.tyk.nu", "91.239.100.100"]
+    ]
+
+    {:ok, container(id: id)} = Container.create(opts)
+    :ok = Container.attach(id)
+    Container.start(id)
+
+    output =
+      receive do
+        {:container, ^id, msg} -> msg
+      end
+
+    assert output ==
+             "Using domain server:\nName: 91.239.100.100\nAddress: 91.239.100.100#53\nAliases: \n\nip.tyk.nu has address 95.216.101.209\n"
   end
 
   test "default interface is created at startup" do
@@ -22,6 +54,7 @@ defmodule NetworkTest do
   end
 
   test "default interface is not defined at startup" do
+    MetaData.clear_tables()
     Utils.destroy_interface("jocker0")
     Config.delete("default_network_name")
     {:ok, _pid} = Network.start_link([])
@@ -31,7 +64,7 @@ defmodule NetworkTest do
     Config.put("default_network_name", "default")
   end
 
-  test "create a and remove a new network" do
+  test "create and remove a new network" do
     Utils.destroy_interface("jocker1")
     {:ok, _pid} = Network.start_link([])
 

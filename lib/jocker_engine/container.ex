@@ -20,6 +20,7 @@ defmodule Jocker.Engine.Container do
           | {:name, String.t()}
           | {:cmd, [String.t()]}
           | {:user, String.t()}
+          | {:networks, [String.t()]}
           | {:jail_param, [String.t()]}
         ]
 
@@ -57,17 +58,20 @@ defmodule Jocker.Engine.Container do
         jail_param = Keyword.get(opts, :jail_param, [])
         name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
 
+        networks =
+          Keyword.get(opts, :networking_config, [Jocker.Engine.Config.get("default_network_name")])
+
+        container_id = Jocker.Engine.Utils.uuid()
+
         cont =
           container(
-            id: Jocker.Engine.Utils.uuid(),
+            id: container_id,
             name: name,
-            ip: Network.new(),
             command: command,
             layer_id: layer_id,
             image_id: image_id,
             user: user,
             running: false,
-            # parameters: ["exec.jail_user=" <> user | jail_param],
             parameters: jail_param,
             created: DateTime.to_iso8601(DateTime.utc_now())
           )
@@ -75,9 +79,10 @@ defmodule Jocker.Engine.Container do
         # Mount volumes into container (if any have been provided)
         bind_volumes(opts, cont)
 
-        # Store new container
+        # Store new container and connect to the networks
         MetaData.add_container(cont)
-        {:ok, cont}
+        Enum.map(networks, &Network.connect(container_id, &1))
+        {:ok, MetaData.get_container(container_id)}
     end
   end
 
@@ -297,19 +302,21 @@ defmodule Jocker.Engine.Container do
            id: id,
            layer_id: layer_id,
            command: [cmd | cmd_args],
-           ip: ip,
+           networking_config: networking_config,
            user: user,
            parameters: parameters
          )
        ) do
-    if not Network.ip_added?(ip) do
-      Network.add_to_if(ip)
-    end
+    ip_list_as_string =
+      Map.values(networking_config)
+      |> Enum.map(& &1[:ip_addresses])
+      |> Enum.concat()
+      |> Enum.join(",")
 
     layer(mountpoint: path) = Jocker.Engine.MetaData.get_layer(layer_id)
 
     args =
-      ~w"-c path=#{path} name=#{id} ip4.addr=#{ip}" ++
+      ~w"-c path=#{path} name=#{id} ip4.addr=#{ip_list_as_string}" ++
         parameters ++ ["exec.jail_user=" <> user, "command=#{cmd}"] ++ cmd_args
 
     Logger.debug("Executing /usr/sbin/jail #{Enum.join(args, " ")}")
