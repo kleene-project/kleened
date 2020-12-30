@@ -46,7 +46,7 @@ defmodule Jocker.MixProject do
        system_env: [
          #   {"ESQLITE_USE_SYSTEM", "yes"},
          {"ESQLITE_CFLAGS",
-          "$CFLAGS -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_JSON1 -DSQLITE_USE_URI -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS3_PARENTHESIS"}
+          "$CFLAGS -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_JSON1 -DSQLITE_USE_URI -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS3_PARENTHESIS -I./c_src/sqlite3"}
        ]},
       {:sqlitex, "~> 1.7"},
       {:yaml_elixir, "~> 2.4"},
