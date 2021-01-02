@@ -63,7 +63,7 @@ defmodule CLITest do
     )
 
     {:ok, _pid} = Jocker.CLI.EngineClient.start_link([])
-    rpc = [MetaData, :list_containers, [[all: true]]]
+    rpc = [Container, :list, [[all: true]]]
     :ok = Jocker.CLI.EngineClient.command(rpc)
     assert_receive {:server_reply, _containers}, 1_000
   end
@@ -137,7 +137,6 @@ defmodule CLITest do
     MetaData.add_container(
       container(
         id: "1338",
-        running: true,
         image_id: "lel",
         name: "test2",
         command: ["some_command"],
@@ -161,14 +160,14 @@ defmodule CLITest do
     row_no_image_name =
       "1337           img_id                      some_command              51 years             stopped   test1\n"
 
-    row_running =
-      "1338           img_name:latest             some_command              51 years             running   test2\n"
+    row_with_tag =
+      "1338           img_name:latest             some_command              51 years             stopped   test2\n"
 
     row_base =
       "1339           base                        some_command              51 years             stopped   test3\n"
 
-    assert [header, row_running] == jocker_cmd("container ls")
-    assert [header, row_base, row_running, row_no_image_name] == jocker_cmd("container ls -a")
+    assert [header] == jocker_cmd("container ls")
+    assert [header, row_base, row_with_tag, row_no_image_name] == jocker_cmd("container ls -a")
   end
 
   test "create and remove a container" do

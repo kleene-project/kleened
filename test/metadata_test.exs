@@ -113,28 +113,13 @@ defmodule MetaDataTest do
     add_container(container(id: "1337", image_id: "lol", name: "test1", created: now()))
     add_container(container(id: "1338", image_id: "lel", name: "test2", created: now()))
     add_container(container(id: "1339", image_id: "base", name: "test3", created: now()))
-    containers = list_containers(all: true)
+    containers = list_containers()
 
     assert [
              %{id: "1339", image_id: "base", name: "test3"},
              %{id: "1338", image_id: "lel", name: "test2"},
              %{id: "1337", image_id: "lol", name: "test1"}
            ] = containers
-  end
-
-  test "list running containers" do
-    add_image(image(id: "lol", created: now()))
-    add_container(container(id: "1", image_id: "lol", name: "test1", created: now()))
-
-    add_container(
-      container(id: "2", image_id: "lol", name: "test2", running: true, created: now())
-    )
-
-    containers = list_containers()
-    containers2 = list_containers(all: false)
-
-    assert [%{id: "2"}] = containers
-    assert containers == containers2
   end
 
   test "adding and listing volumes" do

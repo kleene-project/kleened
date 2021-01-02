@@ -43,7 +43,7 @@ defmodule ImageTest do
 
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "/root/test_1.txt")) == {:ok, "lol1\n"}
-    assert MetaData.list_containers(all: true) == []
+    assert MetaData.list_containers() == []
   end
 
   test "create an image with a 'COPY' instruction" do
@@ -57,7 +57,7 @@ defmodule ImageTest do
     image(layer_id: layer_id) = build_and_return_image(context, @tmp_dockerfile, "test:latest")
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
-    assert [] == MetaData.list_containers(all: true)
+    assert [] == MetaData.list_containers()
   end
 
   test "create an image with a 'COPY' instruction using symlinks" do
@@ -84,7 +84,7 @@ defmodule ImageTest do
 
     create_tmp_dockerfile(dockerfile)
     _image = build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
-    assert MetaData.list_containers(all: true) == []
+    assert MetaData.list_containers() == []
   end
 
   test "create an image using three RUN/COPY instructions" do
@@ -102,7 +102,7 @@ defmodule ImageTest do
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test_1.txt")) == {:ok, "lol1\n"}
     assert File.read(Path.join(mountpoint, "root/test_2.txt")) == {:ok, "lol2\n"}
-    assert MetaData.list_containers(all: true) == []
+    assert MetaData.list_containers() == []
   end
 
   test "receiving of status messages during build" do

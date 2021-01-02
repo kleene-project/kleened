@@ -1,3 +1,12 @@
+defmodule Jocker.Structs.Network do
+  @derive Jason.Encoder
+  defstruct id: nil,
+            name: nil,
+            subnet: nil,
+            if_name: nil,
+            default_gw_if: nil
+end
+
 defmodule Jocker.Structs.EndPointConfig do
   @derive Jason.Encoder
   defstruct id: nil,
@@ -11,6 +20,7 @@ end
 defmodule Jocker.Engine.Network do
   use GenServer
   alias Jocker.Engine.Config
+  alias Jocker.Engine.Container
   alias Jocker.Engine.Utils
   alias Jocker.Engine.MetaData
   alias Jocker.Structs.EndPointConfig
@@ -212,7 +222,7 @@ defmodule Jocker.Engine.Network do
 
   defp connect_container(
          %Network{:id => network_id, :if_name => if_name} = network,
-         container(name: name, running: running, networking_config: networking_config) = cont
+         container(id: id, networking_config: networking_config) = cont
        ) do
     case Map.get(networking_config, network_id, :did_not_exist) do
       :did_not_exist ->
@@ -222,15 +232,15 @@ defmodule Jocker.Engine.Network do
         new_networking_config =
           Map.put(networking_config, network_id, %EndPointConfig{ip_addresses: [ip]})
 
-        if running do
-          jail_modify_ips(name, new_networking_config)
+        if Container.is_running?(cont) do
+          jail_modify_ips(id, new_networking_config)
         end
 
         MetaData.add_container(container(cont, networking_config: new_networking_config))
         {:reply, :ok}
 
       %EndPointConfig{} ->
-        {:reply, {:error, "Endpoint configuration already exists for #{name}"}}
+        {:reply, {:error, "Endpoint configuration already exists for #{id}"}}
     end
   end
 
@@ -248,6 +258,8 @@ defmodule Jocker.Engine.Network do
     Logger.warn(
       "No matches for network '#{inspect(network)}' and container '#{inspect(container)}'"
     )
+
+    {:reply, {:error, "unknown input"}}
   end
 
   def configure_pf(pf_config_path, default_gw) do

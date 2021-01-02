@@ -1,12 +1,3 @@
-defmodule Jocker.Structs.Network do
-  @derive Jason.Encoder
-  defstruct id: nil,
-            name: nil,
-            subnet: nil,
-            if_name: nil,
-            default_gw_if: nil
-end
-
 defmodule Jocker.Engine.MetaData do
   require Logger
   alias Jocker.Engine.Config
@@ -46,7 +37,6 @@ defmodule Jocker.Engine.MetaData do
   containers (
     id       TEXT PRIMARY KEY,
     name     TEXT,
-    running  INTEGER,
     pid      TEXT,
     command  TEXT, --[string]
     networking_config TEXT,
@@ -64,7 +54,6 @@ defmodule Jocker.Engine.MetaData do
   SELECT
     containers.id,
     containers.name,
-    containers.running,
     containers.pid,
     containers.command, --[string]
     containers.layer_id,
@@ -98,10 +87,6 @@ defmodule Jocker.Engine.MetaData do
     read_only    INTEGER
     )
   """
-
-  @type list_containers_opts :: [
-          {:all, boolean()}
-        ]
 
   @type jocker_record() ::
           JockerRecords.layer()
@@ -191,9 +176,9 @@ defmodule Jocker.Engine.MetaData do
     Agent.get(__MODULE__, fn db -> get_container_(db, id_or_name) end)
   end
 
-  @spec list_containers(list_containers_opts()) :: [JockerRecords.container()]
-  def list_containers(opts \\ []) do
-    Agent.get(__MODULE__, fn db -> list_containers_(db, opts) end)
+  @spec list_containers() :: [JockerRecords.container()]
+  def list_containers() do
+    Agent.get(__MODULE__, fn db -> list_containers_(db) end)
   end
 
   @spec add_volume(JockerRecords.volume()) :: :ok
@@ -349,8 +334,7 @@ defmodule Jocker.Engine.MetaData do
   def add_container_(db, container) do
     row = record2row(container)
 
-    :ok =
-      exec(db, "INSERT OR REPLACE INTO containers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
+    :ok = exec(db, "INSERT OR REPLACE INTO containers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
   end
 
   @spec delete_container_(db_conn(), JockerRecords.container()) :: db_conn()
@@ -372,17 +356,9 @@ defmodule Jocker.Engine.MetaData do
     end
   end
 
-  @spec list_containers_(db_conn(), String.t()) :: [term()]
-  def list_containers_(db, opts) do
-    sql =
-      case Keyword.get(opts, :all, false) do
-        false ->
-          "SELECT * FROM api_list_containers WHERE id != 'base' AND running = 1 ORDER BY created DESC"
-
-        true ->
-          "SELECT * FROM api_list_containers WHERE id != 'base' ORDER BY created DESC"
-      end
-
+  @spec list_containers_(db_conn()) :: [term()]
+  def list_containers_(db) do
+    sql = "SELECT * FROM api_list_containers WHERE id != 'base' ORDER BY created DESC"
     {:ok, statement} = Sqlitex.Statement.prepare(db, sql)
     {:ok, rows} = Sqlitex.Statement.fetch_all(statement, into: %{})
     rows
@@ -473,7 +449,6 @@ defmodule Jocker.Engine.MetaData do
         :container ->
           row_upd = Keyword.update(row, :command, nil, &decode/1)
           row_upd = Keyword.update(row_upd, :parameters, nil, &decode/1)
-          row_upd = Keyword.update(row_upd, :running, nil, &int2bool/1)
           row_upd = Keyword.update(row_upd, :networking_config, %{}, &decode/1)
 
           row_upd = Keyword.update(row_upd, :pid, :none, &str2pid/1)
@@ -506,11 +481,9 @@ defmodule Jocker.Engine.MetaData do
             command: cmd,
             networking_config: networking_config,
             parameters: param,
-            running: running,
             pid: pid
           ) = rec
 
-          running_integer = bool2int(running)
           cmd_json = encode(cmd)
           param_json = encode(param)
           networking_config_json = encode(networking_config)
@@ -522,7 +495,6 @@ defmodule Jocker.Engine.MetaData do
                 command: cmd_json,
                 networking_config: networking_config_json,
                 parameters: param_json,
-                running: running_integer,
                 pid: pid_str
               )
             )

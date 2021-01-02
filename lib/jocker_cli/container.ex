@@ -55,7 +55,7 @@ defmodule Jocker.CLI.Container do
     }
 
     print_container(header)
-    containers_raw = rpc([Jocker.Engine.MetaData, :list_containers, [options]])
+    containers_raw = rpc([Jocker.Engine.Container, :list, [options]])
 
     containers =
       Enum.map(
@@ -81,8 +81,8 @@ defmodule Jocker.CLI.Container do
 
           running =
             case running_boolean do
-              1 -> "running"
-              0 -> "stopped"
+              true -> "running"
+              false -> "stopped"
             end
 
           %{row | image_id: image, running: running, command: command, created: created}
@@ -148,6 +148,9 @@ defmodule Jocker.CLI.Container do
 
       {:ok, container(id: id)} ->
         to_cli("#{id}\n", :eof)
+
+      :tcp_closed ->
+        to_cli("Connection closed unexpectedly\n", :eof)
     end
   end
 

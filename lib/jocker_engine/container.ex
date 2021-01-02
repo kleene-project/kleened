@@ -23,7 +23,10 @@ defmodule Jocker.Engine.Container do
           | {:networks, [String.t()]}
           | {:jail_param, [String.t()]}
         ]
-
+  @type list_containers_opts :: [
+          {:all, boolean()}
+        ]
+  @type container_id() :: String.t()
   @type id_or_name() :: String.t()
 
   ### ===================================================================
@@ -59,7 +62,7 @@ defmodule Jocker.Engine.Container do
         name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
 
         networks =
-          Keyword.get(opts, :networking_config, [Jocker.Engine.Config.get("default_network_name")])
+          Keyword.get(opts, :networks, [Jocker.Engine.Config.get("default_network_name")])
 
         container_id = Jocker.Engine.Utils.uuid()
 
@@ -71,7 +74,6 @@ defmodule Jocker.Engine.Container do
             layer_id: layer_id,
             image_id: image_id,
             user: user,
-            running: false,
             parameters: jail_param,
             created: DateTime.to_iso8601(DateTime.utc_now())
           )
@@ -84,6 +86,25 @@ defmodule Jocker.Engine.Container do
         Enum.map(networks, &Network.connect(container_id, &1))
         {:ok, MetaData.get_container(container_id)}
     end
+  end
+
+  @spec list([list_containers_opts()]) :: [%{}]
+  def list(options \\ []) do
+    active_jails = MapSet.new(running_jails())
+
+    containers =
+      Enum.map(
+        MetaData.list_containers(),
+        &Map.put(&1, :running, MapSet.member?(active_jails, &1[:id]))
+      )
+
+    containers =
+      case Keyword.get(options, :all, false) do
+        true -> containers
+        false -> Enum.filter(containers, & &1[:running])
+      end
+
+    containers
   end
 
   @spec attach(id_or_name()) :: :ok | {:error, :not_found}
@@ -105,13 +126,16 @@ defmodule Jocker.Engine.Container do
   @spec destroy(id_or_name()) :: :ok
   def destroy(id_or_name) do
     case MetaData.get_container(id_or_name) do
-      container(pid: pid, layer_id: layer_id) = cont ->
+      container(id: container_id, pid: pid, layer_id: layer_id, networking_config: networks) =
+          cont ->
         layer(dataset: dataset) = MetaData.get_layer(layer_id)
 
         case pid do
           :none -> :ok
           _ -> stop(pid)
         end
+
+        Enum.map(Map.keys(networks, &Network.disconnect(container_id, &1)))
 
         Volume.destroy_mounts(cont)
         MetaData.delete_container(cont)
@@ -125,54 +149,53 @@ defmodule Jocker.Engine.Container do
 
   @spec stop(id_or_name()) :: {:ok, JRecord.container()} | {:error, :not_found}
   def stop(id_or_name) do
-    case MetaData.get_container(id_or_name) do
-      container(running: false) ->
+    cont = MetaData.get_container(id_or_name)
+
+    cond do
+      cont == :not_found ->
+        {:error, :not_found}
+
+      not is_running?(cont) ->
         {:error, :not_running}
 
-      container(pid: pid) = cont ->
+      true ->
+        pid = container(cont, :pid)
         :ok = GenServer.call(pid, :shutdown)
         DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, pid)
         {:ok, cont}
-
-      other ->
-        {:error, other}
     end
   end
 
   defp spawn_container(id_or_name) do
-    case MetaData.get_container(id_or_name) do
-      container(running: true, pid: :none) = cont ->
+    cont = MetaData.get_container(id_or_name)
+
+    cond do
+      cont == :not_found ->
+        :not_found
+
+      is_running?(cont) and container(cont, :pid) == :none ->
         {:ok, pid} =
           DynamicSupervisor.start_child(
             Jocker.Engine.ContainerPool,
-            {Jocker.Engine.Container,
-             [
-               cont
-             ]}
+            {Jocker.Engine.Container, [cont]}
           )
 
         {:ok, :jail_running, pid}
 
-      container(running: true, pid: pid) ->
-        {:ok, :jail_running, pid}
+      is_running?(cont) ->
+        {:ok, :jail_running, container(cont, :pid)}
 
-      container(running: false, pid: :none) = cont ->
+      not is_running?(cont) and container(cont, :pid) == :none ->
         {:ok, pid} =
           DynamicSupervisor.start_child(
             Jocker.Engine.ContainerPool,
-            {Jocker.Engine.Container,
-             [
-               cont
-             ]}
+            {Jocker.Engine.Container, [cont]}
           )
 
         {:ok, :no_jail_running, pid}
 
-      container(running: false, pid: pid) ->
-        {:ok, :no_jail_running, pid}
-
-      :not_found ->
-        :container_not_found
+      not is_running?(cont) ->
+        {:ok, :no_jail_running, container(cont, :pid)}
     end
   end
 
@@ -201,22 +224,23 @@ defmodule Jocker.Engine.Container do
     {:reply, container, state}
   end
 
-  def handle_call({:start, _}, _from, %State{:container => container(running: true)} = state) do
-    {:reply, :already_started, state}
-  end
-
   def handle_call({:start, opts}, _from, %State{:container => cont} = state) do
-    container(command: default_cmd, user: default_user) = cont
+    case is_running?(cont) do
+      true ->
+        {:reply, :already_started, state}
 
-    command = Keyword.get(opts, :cmd, default_cmd)
-    user = Keyword.get(opts, :user, default_user)
+      false ->
+        container(command: default_cmd, user: default_user) = cont
 
-    cont = container(cont, command: command, user: user)
-    port = start_(cont)
-    Logger.info("Succesfully started jail-port: #{inspect(port)}")
-    upd_cont = container(cont, running: true)
-    MetaData.add_container(upd_cont)
-    {:reply, {:ok, upd_cont}, %State{state | :container => upd_cont, :starting_port => port}}
+        command = Keyword.get(opts, :cmd, default_cmd)
+        user = Keyword.get(opts, :user, default_user)
+
+        cont = container(cont, command: command, user: user)
+        port = start_(cont)
+        Logger.info("Succesfully started jail-port: #{inspect(port)}")
+        MetaData.add_container(cont)
+        {:reply, {:ok, cont}, %State{state | :container => cont, :starting_port => port}}
+    end
   end
 
   @impl true
@@ -229,7 +253,7 @@ defmodule Jocker.Engine.Container do
   def handle_info({port, {:exit_status, _}}, %State{:starting_port => port} = state) do
     Logger.debug("Jail-starting process exited succesfully.")
 
-    case is_jail_running?(state.container) do
+    case is_running?(state.container) do
       false ->
         shutdown_container(state)
         DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, self())
@@ -334,28 +358,29 @@ defmodule Jocker.Engine.Container do
     container(id: id) = state.container
     Logger.debug("Shutting down jail #{id}")
 
-    if is_jail_running?(state.container) do
+    if is_running?(state.container) do
       {output, exitcode} = System.cmd("/usr/sbin/jail", ["-r", id], stderr_to_stdout: true)
       Logger.info("Stopped jail #{id} with exitcode #{exitcode}: #{output}")
     end
 
     jail_cleanup(state.container)
-
-    updated_container =
-      container(state.container,
-        running: false,
-        pid: :none
-      )
-
+    updated_container = container(state.container, pid: :none)
     MetaData.add_container(updated_container)
     relay_msg({:shutdown, :jail_stopped}, state)
   end
 
-  defp is_jail_running?(container(id: id)) do
+  def is_running?(container(id: id)) do
     case System.cmd("jls", ["--libxo=json", "-j", id], stderr_to_stdout: true) do
       {_json, 1} -> false
       {_json, 0} -> true
     end
+  end
+
+  def running_jails() do
+    {jails_json, 0} = System.cmd("jls", ["-v", "--libxo=json"], stderr_to_stdout: true)
+    {:ok, jails} = Jason.decode(jails_json)
+    jails = Enum.map(jails["jail-information"]["jail"], & &1["name"])
+    jails
   end
 
   defp jail_cleanup(container(layer_id: layer_id)) do
