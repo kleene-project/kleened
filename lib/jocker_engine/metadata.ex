@@ -442,6 +442,20 @@ defmodule Jocker.Engine.MetaData do
     struct(Jocker.Structs.Network, map)
   end
 
+  def decode_networking_config(json) do
+    networking_cfg_list = Enum.map(Map.to_list(decode(json)), &decode_networking_config_/1)
+    Map.new(networking_cfg_list)
+  end
+
+  def decode_networking_config_({endpointkey, endpointcfg_map}) do
+    endpointcfg_with_atom_keys =
+      for {key, val} <- endpointcfg_map, into: %{} do
+        {String.to_existing_atom(key), val}
+      end
+
+    {endpointkey, struct(Jocker.Structs.EndPointConfig, endpointcfg_with_atom_keys)}
+  end
+
   @spec row2record(record_type(), []) :: jocker_record()
   defp row2record(type, row) do
     record =
@@ -449,8 +463,7 @@ defmodule Jocker.Engine.MetaData do
         :container ->
           row_upd = Keyword.update(row, :command, nil, &decode/1)
           row_upd = Keyword.update(row_upd, :parameters, nil, &decode/1)
-          row_upd = Keyword.update(row_upd, :networking_config, %{}, &decode/1)
-
+          row_upd = Keyword.update(row_upd, :networking_config, %{}, &decode_networking_config/1)
           row_upd = Keyword.update(row_upd, :pid, :none, &str2pid/1)
 
           List.to_tuple([type | Keyword.values(row_upd)])
@@ -533,8 +546,8 @@ defmodule Jocker.Engine.MetaData do
   def str2pid(""), do: :none
   def str2pid(pidstr), do: :erlang.list_to_pid(String.to_charlist(pidstr))
 
-  defp decode(json) do
-    {:ok, term} = Jason.decode(json, [{:keys, :atoms}])
+  defp decode(json, opts \\ []) do
+    {:ok, term} = Jason.decode(json, opts)
     term
   end
 

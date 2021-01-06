@@ -95,7 +95,7 @@ defmodule ContainerTest do
   end
 
   test "create container from non-existing id" do
-    assert {:error, :container_not_found} ==
+    assert {:error, :not_found} ==
              Jocker.Engine.Container.start("nonexisting_id")
   end
 

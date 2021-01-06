@@ -1,6 +1,6 @@
 defmodule Jocker.Engine.Container do
   defmodule State do
-    defstruct container: nil,
+    defstruct container_id: nil,
               subscribers: nil,
               starting_port: nil
   end
@@ -27,7 +27,7 @@ defmodule Jocker.Engine.Container do
           {:all, boolean()}
         ]
   @type container_id() :: String.t()
-  @type id_or_name() :: String.t()
+  @type id_or_name() :: container_id() | String.t()
 
   ### ===================================================================
   ### API
@@ -37,209 +37,86 @@ defmodule Jocker.Engine.Container do
   end
 
   @spec create(create_opts) :: {:ok, JRecord.container()} | :image_not_found
-  def create(opts) do
-    Logger.debug("Creating container with opts: #{inspect(opts)}")
-    image_name = Keyword.get(opts, :image, "base")
-
-    case MetaData.get_image(image_name) do
-      :not_found ->
-        :image_not_found
-
-      # Extract default values from image:
-      image(
-        id: image_id,
-        user: default_user,
-        command: default_cmd,
-        layer_id: parent_layer_id
-      ) ->
-        parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
-        layer(id: layer_id) = Layer.initialize(parent_layer)
-
-        # Extract values from options:
-        command = Keyword.get(opts, :cmd, default_cmd)
-        user = Keyword.get(opts, :user, default_user)
-        jail_param = Keyword.get(opts, :jail_param, [])
-        name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
-
-        networks =
-          Keyword.get(opts, :networks, [Jocker.Engine.Config.get("default_network_name")])
-
-        container_id = Jocker.Engine.Utils.uuid()
-
-        cont =
-          container(
-            id: container_id,
-            name: name,
-            command: command,
-            layer_id: layer_id,
-            image_id: image_id,
-            user: user,
-            parameters: jail_param,
-            created: DateTime.to_iso8601(DateTime.utc_now())
-          )
-
-        # Mount volumes into container (if any have been provided)
-        bind_volumes(opts, cont)
-
-        # Store new container and connect to the networks
-        MetaData.add_container(cont)
-        Enum.map(networks, &Network.connect(container_id, &1))
-        {:ok, MetaData.get_container(container_id)}
-    end
-  end
-
-  @spec list([list_containers_opts()]) :: [%{}]
-  def list(options \\ []) do
-    active_jails = MapSet.new(running_jails())
-
-    containers =
-      Enum.map(
-        MetaData.list_containers(),
-        &Map.put(&1, :running, MapSet.member?(active_jails, &1[:id]))
-      )
-
-    containers =
-      case Keyword.get(options, :all, false) do
-        true -> containers
-        false -> Enum.filter(containers, & &1[:running])
-      end
-
-    containers
-  end
-
-  @spec attach(id_or_name()) :: :ok | {:error, :not_found}
-  def attach(id_or_name) do
-    case spawn_container(id_or_name) do
-      {:ok, _, pid} -> GenServer.call(pid, {:attach, self()})
-      other -> {:error, other}
-    end
+  def create(options) do
+    Logger.debug("Creating container with opts: #{inspect(options)}")
+    image = MetaData.get_image(Keyword.get(options, :image, "base"))
+    create_(image, options)
   end
 
   @spec start(id_or_name()) :: {:ok, JRecord.container()} | {:error, :not_found}
   def start(id_or_name, opts \\ []) do
-    case spawn_container(id_or_name) do
-      {:ok, _, pid} -> GenServer.call(pid, {:start, opts})
-      other -> {:error, other}
+    cont = MetaData.get_container(id_or_name)
+
+    case spawn_container(cont) do
+      {:ok, pid} -> GenServer.call(pid, {:start, cont, opts})
+      other -> other
     end
   end
 
-  @spec destroy(id_or_name()) :: :ok
-  def destroy(id_or_name) do
-    case MetaData.get_container(id_or_name) do
-      container(id: container_id, pid: pid, layer_id: layer_id, networking_config: networks) =
-          cont ->
-        layer(dataset: dataset) = MetaData.get_layer(layer_id)
-
-        case pid do
-          :none -> :ok
-          _ -> stop(pid)
-        end
-
-        Enum.map(Map.keys(networks, &Network.disconnect(container_id, &1)))
-
-        Volume.destroy_mounts(cont)
-        MetaData.delete_container(cont)
-        0 = Jocker.Engine.ZFS.destroy(dataset)
-        :ok
-
-      other ->
-        {:error, other}
-    end
-  end
-
-  @spec stop(id_or_name()) :: {:ok, JRecord.container()} | {:error, :not_found}
+  @spec stop(id_or_name()) ::
+          {:ok, JRecord.container()} | {:error, :not_found} | {:error, :not_running}
   def stop(id_or_name) do
     cont = MetaData.get_container(id_or_name)
 
-    cond do
-      cont == :not_found ->
-        {:error, :not_found}
-
-      not is_running?(cont) ->
-        {:error, :not_running}
-
-      true ->
-        pid = container(cont, :pid)
-        :ok = GenServer.call(pid, :shutdown)
+    case spawn_container(cont) do
+      {:ok, pid} ->
+        reply = GenServer.call(pid, {:stop, cont})
         DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, pid)
-        {:ok, cont}
+        reply
+
+      other ->
+        other
     end
   end
 
-  defp spawn_container(id_or_name) do
+  @spec destroy(id_or_name()) :: :ok | {:error, :not_found}
+  def destroy(id_or_name) do
+    cont = MetaData.get_container(id_or_name)
+    destroy_(cont)
+  end
+
+  @spec list([list_containers_opts()]) :: [%{}]
+  def list(options \\ []) do
+    list_(options)
+  end
+
+  @spec attach(id_or_name()) :: :ok | {:error, :not_found}
+  def attach(id_or_name) do
     cont = MetaData.get_container(id_or_name)
 
-    cond do
-      cont == :not_found ->
-        :not_found
-
-      is_running?(cont) and container(cont, :pid) == :none ->
-        {:ok, pid} =
-          DynamicSupervisor.start_child(
-            Jocker.Engine.ContainerPool,
-            {Jocker.Engine.Container, [cont]}
-          )
-
-        {:ok, :jail_running, pid}
-
-      is_running?(cont) ->
-        {:ok, :jail_running, container(cont, :pid)}
-
-      not is_running?(cont) and container(cont, :pid) == :none ->
-        {:ok, pid} =
-          DynamicSupervisor.start_child(
-            Jocker.Engine.ContainerPool,
-            {Jocker.Engine.Container, [cont]}
-          )
-
-        {:ok, :no_jail_running, pid}
-
-      not is_running?(cont) ->
-        {:ok, :no_jail_running, container(cont, :pid)}
+    case spawn_container(cont) do
+      {:ok, pid} -> GenServer.call(pid, {:attach, self()})
+      other -> other
     end
   end
 
   ### ===================================================================
   ### gen_server callbacks
   ### ===================================================================
-
   @impl true
-  def init([cont]) do
+  def init([container(id: id) = cont]) do
     updated_cont = container(cont, pid: self())
     MetaData.add_container(updated_cont)
-    {:ok, %State{container: updated_cont, subscribers: []}}
+    {:ok, %State{container_id: id, subscribers: []}}
   end
 
   @impl true
-  def handle_call(:shutdown, _from, state) do
-    shutdown_container(state)
-    {:reply, :ok, %State{}}
+  def handle_call({:stop, cont}, _from, state) do
+    {:reply, stop_(cont, state), state}
   end
 
   def handle_call({:attach, pid}, _from, %State{subscribers: subscribers} = state) do
     {:reply, :ok, %State{state | subscribers: Enum.uniq([pid | subscribers])}}
   end
 
-  def handle_call(:metadata, _from, %State{container: container} = state) do
-    {:reply, container, state}
-  end
-
-  def handle_call({:start, opts}, _from, %State{:container => cont} = state) do
+  def handle_call({:start, cont, options}, _from, state) do
     case is_running?(cont) do
       true ->
         {:reply, :already_started, state}
 
       false ->
-        container(command: default_cmd, user: default_user) = cont
-
-        command = Keyword.get(opts, :cmd, default_cmd)
-        user = Keyword.get(opts, :user, default_user)
-
-        cont = container(cont, command: command, user: user)
-        port = start_(cont)
-        Logger.info("Succesfully started jail-port: #{inspect(port)}")
-        MetaData.add_container(cont)
-        {:reply, {:ok, cont}, %State{state | :container => cont, :starting_port => port}}
+        port = start_(options, cont)
+        {:reply, {:ok, cont}, %State{state | :starting_port => port}}
     end
   end
 
@@ -253,9 +130,11 @@ defmodule Jocker.Engine.Container do
   def handle_info({port, {:exit_status, _}}, %State{:starting_port => port} = state) do
     Logger.debug("Jail-starting process exited succesfully.")
 
-    case is_running?(state.container) do
+    cont = MetaData.get_container(state.container_id)
+
+    case is_running?(cont) do
       false ->
-        shutdown_container(state)
+        shutdown_container(state, cont)
         DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, self())
         {:noreply, %State{}}
 
@@ -275,6 +154,175 @@ defmodule Jocker.Engine.Container do
   ### ===================================================================
   ### Internal functions
   ### ===================================================================
+  defp create_(:not_found, _), do: :image_not_found
+
+  defp create_(
+         image(
+           id: image_id,
+           user: default_user,
+           command: default_cmd,
+           layer_id: parent_layer_id
+         ),
+         opts
+       ) do
+    parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
+    layer(id: layer_id) = Layer.initialize(parent_layer)
+
+    # Extract values from options:
+    command = Keyword.get(opts, :cmd, default_cmd)
+    user = Keyword.get(opts, :user, default_user)
+    jail_param = Keyword.get(opts, :jail_param, [])
+    name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
+
+    networks = Keyword.get(opts, :networks, [Jocker.Engine.Config.get("default_network_name")])
+
+    container_id = Jocker.Engine.Utils.uuid()
+
+    cont =
+      container(
+        id: container_id,
+        name: name,
+        command: command,
+        layer_id: layer_id,
+        image_id: image_id,
+        user: user,
+        parameters: jail_param,
+        created: DateTime.to_iso8601(DateTime.utc_now())
+      )
+
+    # Mount volumes into container (if any have been provided)
+    bind_volumes(opts, cont)
+
+    # Store new container and connect to the networks
+    MetaData.add_container(cont)
+    Enum.map(networks, &Network.connect(container_id, &1))
+    {:ok, MetaData.get_container(container_id)}
+  end
+
+  defp start_(
+         options,
+         container(
+           id: id,
+           layer_id: layer_id,
+           command: default_cmd,
+           networking_config: networking_config,
+           user: default_user,
+           parameters: parameters
+         ) = cont
+       ) do
+    [cmd | cmd_args] = command = Keyword.get(options, :cmd, default_cmd)
+    user = Keyword.get(options, :user, default_user)
+    MetaData.add_container(container(cont, user: user, command: command))
+
+    ip_list_as_string =
+      Map.values(networking_config)
+      |> Enum.map(& &1.ip_addresses)
+      |> Enum.concat()
+      |> Enum.join(",")
+
+    layer(mountpoint: path) = Jocker.Engine.MetaData.get_layer(layer_id)
+
+    args =
+      ~w"-c path=#{path} name=#{id} ip4.addr=#{ip_list_as_string}" ++
+        parameters ++ ["exec.jail_user=" <> user, "command=#{cmd}"] ++ cmd_args
+
+    Logger.debug("Executing /usr/sbin/jail #{Enum.join(args, " ")}")
+
+    port =
+      Port.open(
+        {:spawn_executable, '/usr/sbin/jail'},
+        [:stderr_to_stdout, :binary, :exit_status, {:args, args}]
+      )
+
+    Logger.info("Succesfully started jail-port: #{inspect(port)}")
+    port
+  end
+
+  defp stop_(:not_found, _state), do: {:error, :not_found}
+
+  defp stop_(cont, state) do
+    case is_running?(cont) do
+      true ->
+        shutdown_container(state, cont)
+        {:ok, cont}
+
+      false ->
+        {:error, :not_running}
+    end
+  end
+
+  defp destroy_(:not_found), do: {:error, :not_found}
+
+  defp destroy_(
+         container(id: container_id, pid: pid, layer_id: layer_id, networking_config: networks) =
+           cont
+       ) do
+    layer(dataset: dataset) = MetaData.get_layer(layer_id)
+
+    case pid do
+      :none -> :ok
+      _ -> stop(container_id)
+    end
+
+    Enum.map(Map.keys(networks), &Network.disconnect(container_id, &1))
+
+    Volume.destroy_mounts(cont)
+    MetaData.delete_container(cont)
+    0 = Jocker.Engine.ZFS.destroy(dataset)
+    :ok
+  end
+
+  @spec list_([list_containers_opts()]) :: [%{}]
+  defp list_(options) do
+    active_jails = MapSet.new(running_jails())
+
+    containers =
+      Enum.map(
+        MetaData.list_containers(),
+        &Map.put(&1, :running, MapSet.member?(active_jails, &1[:id]))
+      )
+
+    case Keyword.get(options, :all, false) do
+      true -> containers
+      false -> Enum.filter(containers, & &1[:running])
+    end
+  end
+
+  @spec spawn_container(JRecord.container() | :not_found) :: {:ok, pid()} | {:error, :not_found}
+  defp spawn_container(:not_found), do: {:error, :not_found}
+
+  defp spawn_container(container(pid: :none) = cont) do
+    DynamicSupervisor.start_child(
+      Jocker.Engine.ContainerPool,
+      {Jocker.Engine.Container, [cont]}
+    )
+  end
+
+  defp spawn_container(container(pid: pid)) do
+    {:ok, pid}
+  end
+
+  defp shutdown_container(state, container(id: id) = cont) do
+    Logger.debug("Shutting down jail #{id}")
+
+    if is_running?(cont) do
+      {output, exitcode} = System.cmd("/usr/sbin/jail", ["-r", id], stderr_to_stdout: true)
+      Logger.info("Stopped jail #{id} with exitcode #{exitcode}: #{output}")
+    end
+
+    jail_cleanup(cont)
+    updated_container = container(cont, pid: :none)
+    MetaData.add_container(updated_container)
+    relay_msg({:shutdown, :jail_stopped}, state)
+  end
+
+  def is_running?(container(id: id)) do
+    case System.cmd("jls", ["--libxo=json", "-j", id], stderr_to_stdout: true) do
+      {_json, 1} -> false
+      {_json, 0} -> true
+    end
+  end
+
   defp bind_volumes(options, container) do
     Enum.map(options, fn vol -> bind_volumes_(vol, container) end)
   end
@@ -316,64 +364,8 @@ defmodule Jocker.Engine.Container do
 
   defp relay_msg(msg, state) do
     # Logger.debug("relaying msg: #{inspect(msg)}")
-    container(id: id) = state.container
-    wrapped_msg = {:container, id, msg}
+    wrapped_msg = {:container, state.container_id, msg}
     Enum.map(state.subscribers, fn x -> Process.send(x, wrapped_msg, []) end)
-  end
-
-  defp start_(
-         container(
-           id: id,
-           layer_id: layer_id,
-           command: [cmd | cmd_args],
-           networking_config: networking_config,
-           user: user,
-           parameters: parameters
-         )
-       ) do
-    ip_list_as_string =
-      Map.values(networking_config)
-      |> Enum.map(& &1[:ip_addresses])
-      |> Enum.concat()
-      |> Enum.join(",")
-
-    layer(mountpoint: path) = Jocker.Engine.MetaData.get_layer(layer_id)
-
-    args =
-      ~w"-c path=#{path} name=#{id} ip4.addr=#{ip_list_as_string}" ++
-        parameters ++ ["exec.jail_user=" <> user, "command=#{cmd}"] ++ cmd_args
-
-    Logger.debug("Executing /usr/sbin/jail #{Enum.join(args, " ")}")
-
-    port =
-      Port.open(
-        {:spawn_executable, '/usr/sbin/jail'},
-        [:stderr_to_stdout, :binary, :exit_status, {:args, args}]
-      )
-
-    port
-  end
-
-  defp shutdown_container(state) do
-    container(id: id) = state.container
-    Logger.debug("Shutting down jail #{id}")
-
-    if is_running?(state.container) do
-      {output, exitcode} = System.cmd("/usr/sbin/jail", ["-r", id], stderr_to_stdout: true)
-      Logger.info("Stopped jail #{id} with exitcode #{exitcode}: #{output}")
-    end
-
-    jail_cleanup(state.container)
-    updated_container = container(state.container, pid: :none)
-    MetaData.add_container(updated_container)
-    relay_msg({:shutdown, :jail_stopped}, state)
-  end
-
-  def is_running?(container(id: id)) do
-    case System.cmd("jls", ["--libxo=json", "-j", id], stderr_to_stdout: true) do
-      {_json, 1} -> false
-      {_json, 0} -> true
-    end
   end
 
   def running_jails() do
