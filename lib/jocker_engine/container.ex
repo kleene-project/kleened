@@ -165,8 +165,10 @@ defmodule Jocker.Engine.Container do
          ),
          opts
        ) do
+    container_id = Jocker.Engine.Utils.uuid()
+
     parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
-    layer(id: layer_id) = Layer.initialize(parent_layer)
+    layer(id: layer_id) = Layer.initialize(parent_layer, container_id)
 
     # Extract values from options:
     command = Keyword.get(opts, :cmd, default_cmd)
@@ -175,8 +177,6 @@ defmodule Jocker.Engine.Container do
     name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
 
     networks = Keyword.get(opts, :networks, [Jocker.Engine.Config.get("default_network_name")])
-
-    container_id = Jocker.Engine.Utils.uuid()
 
     cont =
       container(

@@ -7,8 +7,8 @@ defmodule Jocker.Engine.Layer do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
 
-  def initialize(parent_layer) do
-    GenServer.call(__MODULE__, {:initialize, parent_layer})
+  def initialize(parent_layer, container_id) do
+    GenServer.call(__MODULE__, {:initialize, parent_layer, container_id})
   end
 
   def finalize(layer) do
@@ -21,8 +21,8 @@ defmodule Jocker.Engine.Layer do
   end
 
   @impl true
-  def handle_call({:initialize, parent_layer}, _from, nil) do
-    new_layer = initialize_(parent_layer)
+  def handle_call({:initialize, parent_layer, container_id}, _from, nil) do
+    new_layer = initialize_(parent_layer, container_id)
     {:reply, new_layer, nil}
   end
 
@@ -32,9 +32,9 @@ defmodule Jocker.Engine.Layer do
     {:reply, updated_layer, nil}
   end
 
-  defp initialize_(layer(snapshot: parent_snapshot)) do
+  defp initialize_(layer(snapshot: parent_snapshot), container_id) do
     id = Jocker.Engine.Utils.uuid()
-    dataset = Path.join(Config.get("zroot"), id)
+    dataset = Path.join(Config.get("zroot"), container_id)
     0 = Jocker.Engine.ZFS.clone(parent_snapshot, dataset)
 
     new_layer =
