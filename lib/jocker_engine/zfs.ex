@@ -35,6 +35,21 @@ defmodule Jocker.Engine.ZFS do
     cmd(["rename", dataset, new_dataset])
   end
 
+  @spec info(String.t()) :: %{:exists? => boolean(), :mountpoint => String.t() | nil}
+  def info(filesystem_or_snapshot) do
+    case System.cmd("zfs", ["list", "-H", "-o", "mountpoint", filesystem_or_snapshot]) do
+      {"none\n", 0} ->
+        %{:exists? => true, :mountpoint => nil}
+
+      {mountpoint_n, 0} ->
+        mountpoint = String.trim(mountpoint_n)
+        %{:exists? => true, :mountpoint => mountpoint}
+
+      {_, 1} ->
+        %{:exists? => false, :mountpoint => nil}
+    end
+  end
+
   @spec cmd([String.t()]) :: integer()
   def cmd(cmd) do
     {stdout, exit_code} = System.cmd("/sbin/zfs", cmd, stderr_to_stdout: true)

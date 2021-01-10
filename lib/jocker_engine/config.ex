@@ -1,4 +1,5 @@
 defmodule Jocker.Engine.Config do
+  alias Jocker.Engine.ZFS
   require Logger
   use Agent
 
@@ -22,58 +23,83 @@ defmodule Jocker.Engine.Config do
 
   defp initialize() do
     cfg = open_config_file()
-
-    mountpoint = valid_dataset_or_exit(cfg, "zroot", true)
-    Map.put(cfg, "base_layer_mountpoint", mountpoint)
-    valid_dataset_or_exit(cfg, "volume_root", false)
-    valid_dataset_or_exit(cfg, "base_layer_dataset", false)
-    cfg = valid_snapshot_or_create(cfg, "base_layer_dataset")
-    validate_default_subnet(cfg)
-    cfg
+    exit_if_not_defined(cfg, "zroot")
+    exit_if_not_defined(cfg, "api_socket")
+    exit_if_not_defined(cfg, "base_layer_dataset")
+    exit_if_not_defined(cfg, "default_subnet")
+    cfg = initialize_jocker_root(cfg)
+    cfg = initialize_baselayer(cfg)
+    valid_subnet_or_exit(cfg["default_subnet"])
+    cfg = Map.put(cfg, "metadata_db", Path.join(["/", cfg["zroot"], "metadata.sqlite"]))
+    Map.put(cfg, "pf_config_path", Path.join(["/", cfg["zroot"], "pf_jocker.conf"]))
   end
 
-  defp validate_default_subnet(cfg) do
-    case CIDR.is_cidr?(cfg["default_subnet"]) do
-      true -> :ok
-      false -> Logger.error("the default subnet in the configuration file is not valid")
+  def exit_if_not_defined(cfg, key) do
+    case Map.get(cfg, key) do
+      nil -> config_error("'#{key}' key not set in configuration file. Exiting.")
+      _ -> :ok
     end
   end
 
-  defp valid_snapshot_or_create(cfg, dataset_type) do
-    snapshot = Map.get(cfg, dataset_type) <> "@jocker"
+  defp initialize_jocker_root(cfg) do
+    root = Map.get(cfg, "zroot")
+    root_status = ZFS.info(root)
 
-    case zfs_list_mountpoint(snapshot) do
-      {_, 0} -> :ok
-      {_, 1} -> 0 = Jocker.Engine.ZFS.snapshot(snapshot)
+    case root_status do
+      %{"exists?" => false} ->
+        config_error("jockers root zfs filesystem #{root} does not seem to exist. Exiting.")
+
+      %{"mountpoint" => nil} ->
+        config_error("jockers root zfs filesystem #{root} does not have any mountpoint. Exiting.")
+
+      _ ->
+        :ok
+    end
+
+    create_dataset_if_not_exist(Path.join([root, "images"]))
+    create_dataset_if_not_exist(Path.join([root, "containers"]))
+    create_dataset_if_not_exist(Path.join([root, "volumes"]))
+    cfg = Map.put(cfg, "volume_root", Path.join([root, "volumes"]))
+    Map.put(cfg, "base_layer_mountpoint", root_status[:mountpoint])
+  end
+
+  defp initialize_baselayer(cfg) do
+    dataset = cfg["base_layer_dataset"]
+    snapshot = cfg["base_layer_dataset"] <> "@jocker"
+    info = ZFS.info(cfg["base_layer_dataset"])
+    snapshot_info = ZFS.info(snapshot)
+
+    cond do
+      info[:exists?] == false ->
+        config_error("jockers root zfs filesystem #{dataset} does not seem to exist. Exiting.")
+
+      snapshot_info[:exists?] == false ->
+        Jocker.Engine.ZFS.snapshot(snapshot)
+
+      true ->
+        :ok
     end
 
     Map.put(cfg, "base_layer_snapshot", snapshot)
   end
 
-  defp valid_dataset_or_exit(cfg, dataset_type, fail_no_mountpoint) do
-    path = Map.get(cfg, dataset_type)
-
-    case zfs_list_mountpoint(path) do
-      {"none\n", 0} ->
-        if fail_no_mountpoint do
-          Logger.error(
-            "the configured zroot-dataset '#{path}' did not have any mountpoint which is needed, exiting."
-          )
-
-          exit(:normal)
-        end
-
-      {mountpoint_n, 0} ->
-        String.trim(mountpoint_n)
-
-      {_, 1} ->
-        Logger.error("the configured zroot-dataset '#{path}' could not be found, exiting")
-        exit(:normal)
+  defp create_dataset_if_not_exist(dataset) do
+    case ZFS.info(dataset) do
+      %{:exists? => true} -> :ok
+      %{:exists? => false} -> ZFS.create(dataset)
     end
   end
 
-  defp zfs_list_mountpoint(path) do
-    System.cmd("zfs", ["list", "-H", "-o", "mountpoint", path], stderr_to_stdout: true)
+  defp valid_subnet_or_exit(subnet) do
+    case CIDR.is_cidr?(subnet) do
+      true -> :ok
+      false -> config_error("Invalid 'default_subnet' in the configuration file.")
+    end
+  end
+
+  defp config_error(msg) do
+    Logger.error("configuration error: #{msg}")
+    exit(:normal)
   end
 
   defp open_config_file() do

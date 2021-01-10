@@ -2,14 +2,12 @@ defmodule Jocker.CLI.Main do
   import Jocker.CLI.Docs
   alias Jocker.CLI.Utils
   import Utils, only: [to_cli: 1, to_cli: 2]
-  alias Jocker.Engine.Config
   require Logger
 
   @cli_version "0.0.0"
 
   def main(args) do
     Logger.configure(level: :error)
-    Config.start_link([])
     Process.register(self(), :cli_master)
     spawn_link(__MODULE__, :main_, [args])
     print_output()

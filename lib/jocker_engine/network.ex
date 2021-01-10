@@ -110,10 +110,6 @@ defmodule Jocker.Engine.Network do
           gw
       end
 
-    if pf_conf_path == nil do
-      Logger.error("Configration file must contain an entry called 'pf_conf_path'")
-    end
-
     if not Utils.touch(pf_conf_path) do
       Logger.error("Unable to access Jockers PF configuration file located at #{pf_conf_path}")
     end
