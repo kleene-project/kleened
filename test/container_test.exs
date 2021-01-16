@@ -8,8 +8,8 @@ defmodule ContainerTest do
 
   setup_all do
     Application.stop(:jocker)
-    start_supervised(Config)
     TestUtils.clear_zroot()
+    start_supervised(Config)
 
     start_supervised(
       {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}

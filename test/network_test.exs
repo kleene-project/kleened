@@ -10,13 +10,14 @@ defmodule NetworkTest do
 
   setup_all do
     Application.stop(:jocker)
-    {:ok, _cfg_pid} = Config.start_link([])
+    TestUtils.clear_zroot()
+    start_supervised(Config)
+    start_supervised(MetaData)
     :ok
   end
 
   setup do
-    TestUtils.clear_zroot()
-    {:ok, _metadata_pid} = MetaData.start_link([])
+    MetaData.clear_tables()
     :ok
   end
 

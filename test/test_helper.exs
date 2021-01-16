@@ -10,10 +10,12 @@ defmodule TestUtils do
     DateTime.to_iso8601(DateTime.utc_now())
   end
 
-  def clear_zroot do
-    ZFS.destroy_force(Config.get("zroot"))
-    ZFS.create(Config.get("zroot"))
-    ZFS.create(Config.get("volume_root"))
+  def clear_zroot() do
+    Config.start_link([])
+    zroot = Config.get("zroot")
+    Agent.stop(Config)
+    ZFS.destroy_force(zroot)
+    ZFS.create(zroot)
   end
 
   def devfs_mounted(container(layer_id: layer_id)) do

@@ -58,7 +58,7 @@ defmodule Jocker.Engine.Image do
     container(id: image_id, layer_id: layer_id, user: user, command: cmd) = cont
     MetaData.delete_container(cont)
     layer = MetaData.get_layer(layer_id)
-    Jocker.Engine.Layer.finalize(layer)
+    Jocker.Engine.Layer.to_image(layer, image_id)
 
     img =
       image(

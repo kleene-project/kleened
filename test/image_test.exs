@@ -12,8 +12,8 @@ defmodule ImageTest do
 
   setup_all do
     Application.stop(:jocker)
-    start_supervised(Config)
     TestUtils.clear_zroot()
+    start_supervised(Config)
     :ok
   end
 

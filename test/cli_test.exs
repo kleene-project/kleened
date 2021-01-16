@@ -13,10 +13,9 @@ defmodule CLITest do
 
   setup_all do
     Application.stop(:jocker)
+    TestUtils.clear_zroot()
     start_supervised(Config)
     remove_volume_mounts()
-    TestUtils.clear_zroot()
-    Jocker.Engine.Volume.create_volume_dataset()
     start_supervised(MetaData)
     start_supervised(Jocker.Engine.Layer)
 

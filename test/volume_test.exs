@@ -8,18 +8,16 @@ defmodule VolumeTest do
 
   setup_all do
     Application.stop(:jocker)
-    start_supervised(Config)
     TestUtils.clear_zroot()
+    start_supervised(Config)
     start_supervised(Jocker.Engine.MetaData)
     start_supervised(Jocker.Engine.Layer)
-
     start_supervised(Jocker.Engine.Network)
 
     start_supervised(
       {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
     )
 
-    create_volume_dataset()
     :ok
   end
 

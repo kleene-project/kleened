@@ -7,12 +7,12 @@ defmodule Jocker.Engine.Layer do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
 
-  def initialize(parent_layer, container_id) do
-    GenServer.call(__MODULE__, {:initialize, parent_layer, container_id})
+  def new(parent_layer, container_id) do
+    GenServer.call(__MODULE__, {:new, parent_layer, container_id})
   end
 
-  def finalize(layer) do
-    GenServer.call(__MODULE__, {:finalize, layer})
+  def to_image(layer, image_id) do
+    GenServer.call(__MODULE__, {:to_image, layer, image_id})
   end
 
   @impl true
@@ -21,20 +21,20 @@ defmodule Jocker.Engine.Layer do
   end
 
   @impl true
-  def handle_call({:initialize, parent_layer, container_id}, _from, nil) do
-    new_layer = initialize_(parent_layer, container_id)
+  def handle_call({:new, parent_layer, container_id}, _from, nil) do
+    new_layer = new_(parent_layer, container_id)
     {:reply, new_layer, nil}
   end
 
   @impl true
-  def handle_call({:finalize, layer}, _from, nil) do
-    updated_layer = finalize_(layer)
+  def handle_call({:to_image, layer, image_id}, _from, nil) do
+    updated_layer = to_image_(layer, image_id)
     {:reply, updated_layer, nil}
   end
 
-  defp initialize_(layer(snapshot: parent_snapshot), container_id) do
+  defp new_(layer(snapshot: parent_snapshot), container_id) do
     id = Jocker.Engine.Utils.uuid()
-    dataset = Path.join(Config.get("zroot"), container_id)
+    dataset = Path.join([Config.get("zroot"), "container", container_id])
     0 = Jocker.Engine.ZFS.clone(parent_snapshot, dataset)
 
     new_layer =
@@ -48,10 +48,14 @@ defmodule Jocker.Engine.Layer do
     new_layer
   end
 
-  defp finalize_(layer(dataset: dataset) = layer) do
-    snapshot = dataset <> "@layer"
+  defp to_image_(layer(dataset: dataset) = layer, image_id) do
+    new_dataset = Path.join([Config.get("zroot"), "image", image_id])
+    Jocker.Engine.ZFS.rename(dataset, new_dataset)
+
+    snapshot = new_dataset <> "@layer"
+    mountpoint = "/" <> new_dataset
     0 = Jocker.Engine.ZFS.snapshot(snapshot)
-    updated_layer = layer(layer, snapshot: snapshot)
+    updated_layer = layer(layer, snapshot: snapshot, dataset: new_dataset, mountpoint: mountpoint)
     Jocker.Engine.MetaData.add_layer(updated_layer)
     updated_layer
   end

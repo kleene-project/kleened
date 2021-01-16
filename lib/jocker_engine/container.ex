@@ -168,7 +168,7 @@ defmodule Jocker.Engine.Container do
     container_id = Jocker.Engine.Utils.uuid()
 
     parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
-    layer(id: layer_id) = Layer.initialize(parent_layer, container_id)
+    layer(id: layer_id) = Layer.new(parent_layer, container_id)
 
     # Extract values from options:
     command = Keyword.get(opts, :cmd, default_cmd)

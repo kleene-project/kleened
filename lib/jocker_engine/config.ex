@@ -56,8 +56,8 @@ defmodule Jocker.Engine.Config do
         :ok
     end
 
-    create_dataset_if_not_exist(Path.join([root, "images"]))
-    create_dataset_if_not_exist(Path.join([root, "containers"]))
+    create_dataset_if_not_exist(Path.join([root, "image"]))
+    create_dataset_if_not_exist(Path.join([root, "container"]))
     create_dataset_if_not_exist(Path.join([root, "volumes"]))
     cfg = Map.put(cfg, "volume_root", Path.join([root, "volumes"]))
     Map.put(cfg, "base_layer_mountpoint", root_status[:mountpoint])
