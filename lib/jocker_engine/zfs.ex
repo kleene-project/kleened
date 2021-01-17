@@ -53,7 +53,11 @@ defmodule Jocker.Engine.ZFS do
   @spec cmd([String.t()]) :: integer()
   def cmd(cmd) do
     {stdout, exit_code} = System.cmd("/sbin/zfs", cmd, stderr_to_stdout: true)
-    Logger.debug("zfs command exited with code #{exit_code} and reason: #{stdout}")
+
+    Logger.debug(
+      "'zfs #{Enum.join(cmd, " ")}' exited with code #{exit_code} and reason: #{stdout}"
+    )
+
     exit_code
   end
 end

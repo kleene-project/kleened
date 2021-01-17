@@ -1,6 +1,7 @@
 defmodule Jocker.Engine.MetaData do
   require Logger
   alias Jocker.Engine.Config
+  alias Jocker.Engine.Container
   alias Jocker.Engine.Records, as: JockerRecords
   import JockerRecords
 
@@ -166,9 +167,9 @@ defmodule Jocker.Engine.MetaData do
     Agent.get(__MODULE__, fn db -> add_container_(db, container) end)
   end
 
-  @spec delete_container(JockerRecords.container()) :: :ok
-  def delete_container(container) do
-    Agent.get(__MODULE__, fn db -> delete_container_(db, container) end)
+  @spec delete_container(Container.container_id()) :: :ok
+  def delete_container(id) do
+    Agent.get(__MODULE__, fn db -> delete_container_(db, id) end)
   end
 
   @spec get_container(String.t()) :: JockerRecords.container() | :not_found
@@ -337,8 +338,8 @@ defmodule Jocker.Engine.MetaData do
     :ok = exec(db, "INSERT OR REPLACE INTO containers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
   end
 
-  @spec delete_container_(db_conn(), JockerRecords.container()) :: db_conn()
-  def delete_container_(db, container(id: id)) do
+  @spec delete_container_(db_conn(), Container.container_id()) :: db_conn()
+  def delete_container_(db, id) do
     exec(db, "DELETE FROM containers WHERE id = ?", [id])
   end
 

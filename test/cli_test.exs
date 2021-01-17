@@ -25,13 +25,22 @@ defmodule CLITest do
     )
 
     start_supervised(Jocker.Engine.APIServer)
+    start_supervised(Jocker.Engine.Network)
     :ok
   end
 
   setup do
     register_as_cli_master()
-    MetaData.clear_tables()
-    start_supervised(Jocker.Engine.Network)
+
+    on_exit(fn ->
+      MetaData.list_containers()
+      |> Enum.map(fn %{:id => id} -> Container.destroy(id) end)
+    end)
+
+    on_exit(fn ->
+      MetaData.list_images() |> Enum.map(fn image(id: id) -> Image.destroy(id) end)
+    end)
+
     :ok
   end
 
@@ -99,6 +108,8 @@ defmodule CLITest do
     MetaData.add_image(img2)
 
     assert cmd("image ls") == [header, row2, row1]
+    MetaData.delete_image(img_id1)
+    MetaData.delete_image(img_id2)
   end
 
   test "build and remove an image with a tag" do
@@ -167,6 +178,12 @@ defmodule CLITest do
 
     assert [header] == jocker_cmd("container ls")
     assert [header, row_base, row_with_tag, row_no_image_name] == jocker_cmd("container ls -a")
+
+    MetaData.delete_image("img_id")
+    MetaData.delete_image("lel")
+    MetaData.delete_container("1337")
+    MetaData.delete_container("1338")
+    MetaData.delete_container("1339")
   end
 
   test "create and remove a container" do
@@ -336,6 +353,7 @@ defmodule CLITest do
 
     assert {:ok, %File.Stat{:type => :directory}} = File.stat(mountpoint)
     assert {"#{dataset}\n", 0} == System.cmd("/sbin/zfs", ["list", "-H", "-o", "name", dataset])
+    cmd("volume rm testvol")
   end
 
   test "jocker volume rm" do

@@ -56,7 +56,7 @@ defmodule Jocker.Engine.Image do
   def create_image(instructions, state) do
     %State{:container => cont} = Enum.reduce(instructions, state, &process_instructions/2)
     container(id: image_id, layer_id: layer_id, user: user, command: cmd) = cont
-    MetaData.delete_container(cont)
+    MetaData.delete_container(image_id)
     layer = MetaData.get_layer(layer_id)
     Jocker.Engine.Layer.to_image(layer, image_id)
 

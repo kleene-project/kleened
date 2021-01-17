@@ -74,7 +74,7 @@ defmodule Jocker.Engine.Network do
   end
 
   def connect(container, network_id) do
-    GenServer.call(__MODULE__, {:connect, container, network_id})
+    GenServer.call(__MODULE__, {:connect, container, network_id}, 10_000)
   end
 
   def disconnect(container, network_id) do

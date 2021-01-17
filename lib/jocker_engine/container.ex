@@ -58,14 +58,20 @@ defmodule Jocker.Engine.Container do
   def stop(id_or_name) do
     cont = MetaData.get_container(id_or_name)
 
-    case spawn_container(cont) do
-      {:ok, pid} ->
-        reply = GenServer.call(pid, {:stop, cont})
-        DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, pid)
-        reply
+    case is_running?(cont) do
+      false ->
+        {:error, :not_running}
 
-      other ->
-        other
+      true ->
+        case spawn_container(cont) do
+          {:ok, pid} ->
+            reply = GenServer.call(pid, {:stop, cont})
+            DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, pid)
+            reply
+
+          other ->
+            other
+        end
     end
   end
 
@@ -267,7 +273,7 @@ defmodule Jocker.Engine.Container do
     Enum.map(Map.keys(networks), &Network.disconnect(container_id, &1))
 
     Volume.destroy_mounts(cont)
-    MetaData.delete_container(cont)
+    MetaData.delete_container(container_id)
     0 = Jocker.Engine.ZFS.destroy(dataset)
     :ok
   end
@@ -377,8 +383,11 @@ defmodule Jocker.Engine.Container do
 
   defp jail_cleanup(container(layer_id: layer_id)) do
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
-    # remove any devfs mounts of the jail
-    {output, _exitcode} = System.cmd("mount", [], stderr_to_stdout: true)
+
+    # remove any devfs mounts of the jail. If it was closed with 'jail -r <jailname>' devfs should be removed automatically.
+    # If the jail stops because there jailed process stops (i.e. 'jail -c <etc> /bin/sleep 10') then devfs is NOT removed.
+    # A race condition can also occur such that "jail -r" does not unmount before this call to mount.
+    {output, _exitcode} = System.cmd("mount", ["-t", "devfs"], stderr_to_stdout: true)
     output |> String.split("\n") |> Enum.map(&umount_container_devfs(&1, mountpoint))
   end
 
@@ -387,8 +396,8 @@ defmodule Jocker.Engine.Container do
 
     case String.split(line, " ") do
       ["devfs", "on", ^devfs_path | _rest] ->
-        Logger.info("unmounting #{devfs_path}")
-        {"", 0} = System.cmd("/sbin/umount", [devfs_path], stderr_to_stdout: true)
+        {msg, n} = System.cmd("/sbin/umount", [devfs_path], stderr_to_stdout: true)
+        Logger.info("unmounting #{devfs_path} with status code #{n} and msg #{msg}")
 
       _ ->
         :ok
