@@ -30,3 +30,6 @@ jocker
 
 # Ignore sqlite database files
 *.sqlite
+
+# Ignore vagrant directory
+/.vagrant/
