@@ -125,6 +125,7 @@ defmodule Jocker.Engine.Network do
       end
     end
 
+    enable_pf()
     configure_pf(pf_conf_path, gateway)
     {:ok, state}
   end
@@ -299,6 +300,10 @@ defmodule Jocker.Engine.Network do
       jocker_translation: Enum.join(translation, "\n"),
       jocker_filtering: Enum.join(filtering, "\n")
     )
+  end
+
+  def enable_pf() do
+    System.cmd("/sbin/pfctl", ["-e"])
   end
 
   def load_pf_config(pf_config_path, config) do

@@ -68,7 +68,6 @@ Vagrant.configure("2") do |config|
     sysrc -f /boot/loader.conf pf_load="YES"
     sysrc pf_enable="YES"
     sysrc pflog_enable="YES"
-    pfctl -e
 
     ## Inititalize zfs
     kldload zfs
