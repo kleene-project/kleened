@@ -3,6 +3,7 @@ defmodule Jocker.Engine.Layer do
   import Jocker.Engine.Records
   alias Jocker.Engine.Config
   alias Jocker.Engine.MetaData
+  require Logger
 
   def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
@@ -58,9 +59,14 @@ defmodule Jocker.Engine.Layer do
   end
 
   defp destroy_(layer_id) do
-    layer(dataset: dataset) = MetaData.get_layer(layer_id)
-    0 = Jocker.Engine.ZFS.destroy(dataset)
-    MetaData.remove_layer(layer_id)
+    case MetaData.get_layer(layer_id) do
+      layer(dataset: dataset) ->
+        0 = Jocker.Engine.ZFS.destroy(dataset)
+        MetaData.remove_layer(layer_id)
+
+      :not_found ->
+        Logger.warn("layer with id #{layer_id} could not be found.")
+    end
   end
 
   defp to_image_(layer(dataset: dataset) = layer, image_id) do
