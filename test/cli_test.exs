@@ -333,6 +333,8 @@ defmodule CLITest do
     assert cmd("container ls --all") == [header, row]
     assert cmd("container ls") == [header]
     assert cmd("container start #{id}") == id
+    # It does take some time from the OS to return jail -c and to the jail is actually running:
+    :timer.sleep(500)
     assert cmd("container ls --all") == [header, row_running]
     assert cmd("container stop #{id}") == id
     assert cmd("container ls --all") == [header, row]

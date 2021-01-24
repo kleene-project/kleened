@@ -56,9 +56,9 @@ defmodule Jocker.Engine.Container do
   @spec stop(id_or_name()) ::
           {:ok, JRecord.container()} | {:error, :not_found} | {:error, :not_running}
   def stop(id_or_name) do
-    cont = MetaData.get_container(id_or_name)
+    container(id: contaier_id) = cont = MetaData.get_container(id_or_name)
 
-    case is_running?(cont) do
+    case is_running?(contaier_id) do
       false ->
         {:error, :not_running}
 
@@ -116,7 +116,7 @@ defmodule Jocker.Engine.Container do
   end
 
   def handle_call({:start, cont, options}, _from, state) do
-    case is_running?(cont) do
+    case is_running?(state.container_id) do
       true ->
         {:reply, :already_started, state}
 
@@ -138,9 +138,9 @@ defmodule Jocker.Engine.Container do
 
     cont = MetaData.get_container(state.container_id)
 
-    case is_running?(cont) do
+    case is_running?(state.container_id) do
       false ->
-        shutdown_container(state, cont)
+        shutdown_container(cont, state)
         DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, self())
         {:noreply, %State{}}
 
@@ -211,7 +211,6 @@ defmodule Jocker.Engine.Container do
            id: id,
            layer_id: layer_id,
            command: default_cmd,
-           networking_config: networking_config,
            user: default_user,
            parameters: parameters
          ) = cont
@@ -220,16 +219,14 @@ defmodule Jocker.Engine.Container do
     user = Keyword.get(options, :user, default_user)
     MetaData.add_container(container(cont, user: user, command: command))
 
-    ip_list_as_string =
-      Map.values(networking_config)
-      |> Enum.map(& &1.ip_addresses)
-      |> Enum.concat()
-      |> Enum.join(",")
+    network_ids = MetaData.connected_networks(id)
+    ips = Enum.reduce(network_ids, [], &extract_ips(id, &1, &2))
+    ips_as_string = Enum.join(ips, ",")
 
     layer(mountpoint: path) = Jocker.Engine.MetaData.get_layer(layer_id)
 
     args =
-      ~w"-c path=#{path} name=#{id} ip4.addr=#{ip_list_as_string}" ++
+      ~w"-c path=#{path} name=#{id} ip4.addr=#{ips_as_string}" ++
         parameters ++ ["exec.jail_user=" <> user, "command=#{cmd}"] ++ cmd_args
 
     Logger.debug("Executing /usr/sbin/jail #{Enum.join(args, " ")}")
@@ -247,9 +244,9 @@ defmodule Jocker.Engine.Container do
   defp stop_(:not_found, _state), do: {:error, :not_found}
 
   defp stop_(cont, state) do
-    case is_running?(cont) do
+    case is_running?(state.container_id) do
       true ->
-        shutdown_container(state, cont)
+        shutdown_container(cont, state)
         {:ok, cont}
 
       false ->
@@ -259,22 +256,16 @@ defmodule Jocker.Engine.Container do
 
   defp destroy_(:not_found), do: {:error, :not_found}
 
-  defp destroy_(
-         container(id: container_id, pid: pid, layer_id: layer_id, networking_config: networks) =
-           cont
-       ) do
-    layer(dataset: dataset) = MetaData.get_layer(layer_id)
-
+  defp destroy_(container(id: container_id, pid: pid, layer_id: layer_id) = cont) do
     case pid do
       :none -> :ok
       _ -> stop(container_id)
     end
 
-    Enum.map(Map.keys(networks), &Network.disconnect(container_id, &1))
-
+    Network.disconnect_all(container_id)
     Volume.destroy_mounts(cont)
     MetaData.delete_container(container_id)
-    0 = Jocker.Engine.ZFS.destroy(dataset)
+    Layer.destroy(layer_id)
     :ok
   end
 
@@ -308,10 +299,10 @@ defmodule Jocker.Engine.Container do
     {:ok, pid}
   end
 
-  defp shutdown_container(state, container(id: id) = cont) do
+  defp shutdown_container(container(id: id) = cont, state) do
     Logger.debug("Shutting down jail #{id}")
 
-    if is_running?(cont) do
+    if is_running?(id) do
       {output, exitcode} = System.cmd("/usr/sbin/jail", ["-r", id], stderr_to_stdout: true)
       Logger.info("Stopped jail #{id} with exitcode #{exitcode}: #{output}")
     end
@@ -322,8 +313,13 @@ defmodule Jocker.Engine.Container do
     relay_msg({:shutdown, :jail_stopped}, state)
   end
 
-  def is_running?(container(id: id)) do
-    case System.cmd("jls", ["--libxo=json", "-j", id], stderr_to_stdout: true) do
+  def extract_ips(container_id, network_id, ip_list) do
+    [config] = MetaData.get_endpoint_config(container_id, network_id)
+    Enum.concat(config.ip_addresses, ip_list)
+  end
+
+  def is_running?(container_id) do
+    case System.cmd("jls", ["--libxo=json", "-j", container_id], stderr_to_stdout: true) do
       {_json, 1} -> false
       {_json, 0} -> true
     end

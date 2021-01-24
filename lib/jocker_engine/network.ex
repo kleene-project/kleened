@@ -42,17 +42,17 @@ defmodule Jocker.Engine.Network do
   # The resulting configuration file that is loaded into pf is defined at the 'pf_config_path'
   # entry in the jocker engine configuration file (jocker_config.yaml).
 
-  # Jockers macros STARTS here
+  ### JOCKER MACROS START ###
   <%= jocker_macros %>
-  # Jockers macros ENDS here
+  ### JOCKER MACROS END #####
 
-  # Jockers translation rules STARTS here
+  ### JOCKER TRANSLATION RULES START ###
   <%= jocker_translation %>
-  # Jockers translation rules END here
+  ### JOCKER TRANSLATION RULES END #####
 
-  # Jockers filtering rules STARTS here
+  ### JOCKER FILTERING RULES START #####
   <%= jocker_filtering %>
-  # Jockers filtering rules ENDS here
+  ### JOCKER FILTERING RULES END #######
   """
 
   defmodule Jocker.Engine.Network.State do
@@ -79,6 +79,10 @@ defmodule Jocker.Engine.Network do
 
   def disconnect(container, network_id) do
     GenServer.call(__MODULE__, {:disconnect, container, network_id})
+  end
+
+  def disconnect_all(container_id) do
+    GenServer.call(__MODULE__, {:disconnect_all, container_id})
   end
 
   def list() do
@@ -118,7 +122,7 @@ defmodule Jocker.Engine.Network do
     state = %State{:pf_config_path => pf_conf_path, :gateway_interface => gateway}
 
     if default_network_name != nil do
-      case create_network(default_network_name, :loopback, state, if_name: if_name, subnet: subnet) do
+      case create_(default_network_name, :loopback, state, if_name: if_name, subnet: subnet) do
         {:ok, _} -> :ok
         {:error, "network name is already taken"} -> :ok
         {:error, reason} -> Logger.warn("Could not initialize default network: #{reason}")
@@ -132,34 +136,31 @@ defmodule Jocker.Engine.Network do
 
   @impl true
   def handle_call({:create, name, driver, options}, _from, state) do
-    reply = create_network(name, driver, state, options)
+    reply = create_(name, driver, state, options)
     {:reply, reply, state}
   end
 
   def handle_call(
-        {:connect, container_id_name, network_id_name},
+        {:connect, container_idname, network_idname},
         _from,
         state
       ) do
-    network = MetaData.get_network(network_id_name)
-    cont = MetaData.get_container(container_id_name)
-    {:reply, reply} = connect_container(network, cont)
+    network = MetaData.get_network(network_idname)
+    cont = MetaData.get_container(container_idname)
+    {:reply, reply} = connect_(network, cont)
     {:reply, reply, state}
   end
 
+  def handle_call({:disconnect_all, container_id}, _from, state) do
+    network_ids = MetaData.connected_networks(container_id)
+    Enum.map(network_ids, &disconnect_(container_id, &1))
+    {:reply, :ok, state}
+  end
+
   def handle_call({:disconnect, container_idname, network_idname}, _from, state) do
-    container(name: jail_name, networking_config: networking_config) =
-      cont = MetaData.get_container(container_idname)
-
-    # Remove ip-addresses from the network interface
-    %Network{:id => network_id, :if_name => if_name} = MetaData.get_network(network_idname)
-    %{:ip_addresses => ip_addresses} = Map.get(networking_config, network_id)
-    Enum.map(ip_addresses, &ifconfig_remove_alias(&1, if_name))
-
-    # Delete the containers endpoint-config entry in its networking config
-    networking_config = Map.delete(networking_config, network_id)
-    jail_modify_ips(jail_name, networking_config)
-    MetaData.add_container(container(cont, networking_config: networking_config))
+    container(id: container_id) = MetaData.get_container(container_idname)
+    network = MetaData.get_network(network_idname)
+    disconnect_(container_id, network.id)
     {:reply, :ok, state}
   end
 
@@ -171,6 +172,8 @@ defmodule Jocker.Engine.Network do
   def handle_call({:remove, idname}, _from, state) do
     case MetaData.get_network(idname) do
       %Network{:id => id, :if_name => if_name} ->
+        container_ids = MetaData.connected_containers(id)
+        Enum.map(container_ids, &disconnect_(&1, id))
         Utils.destroy_interface(if_name)
         MetaData.remove_network(id)
         configure_pf(state.pf_config_path, state.gateway_interface)
@@ -194,7 +197,7 @@ defmodule Jocker.Engine.Network do
   ##########################
   ### Internal functions ###
   ##########################
-  def create_network(name, :loopback, state, options) do
+  def create_(name, :loopback, state, options) do
     subnet = Keyword.get(options, :subnet)
     if_name = Keyword.get(options, :if_name)
     parsed_subnet = CIDR.parse(subnet)
@@ -213,50 +216,58 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  def create_network(_, _unknown_driver, _, _) do
+  def create_(_, _unknown_driver, _, _) do
     {:error, "Unknown driver"}
   end
 
-  defp connect_container(
-         %Network{:id => network_id, :if_name => if_name} = network,
-         container(id: id, networking_config: networking_config) = cont
+  defp connect_(
+         network,
+         container(id: container_id) = cont
        ) do
-    case Map.get(networking_config, network_id, :did_not_exist) do
-      :did_not_exist ->
-        ip = new_ip(network)
-        ifconfig_alias(if_name, ip)
+    ip = new_ip(network)
 
-        new_networking_config =
-          Map.put(networking_config, network_id, %EndPointConfig{ip_addresses: [ip]})
+    config = %EndPointConfig{ip_addresses: [ip]}
+    MetaData.add_endpoint_config(container_id, network.id, config)
 
-        if Container.is_running?(cont) do
-          jail_modify_ips(id, new_networking_config)
-        end
+    ifconfig_alias(network.if_name, ip)
 
-        MetaData.add_container(container(cont, networking_config: new_networking_config))
-        {:reply, :ok}
-
-      %EndPointConfig{} ->
-        {:reply, {:error, "Endpoint configuration already exists for #{id}"}}
+    if Container.is_running?(container_id) do
+      add_jail_ip(container_id, ip)
     end
+
+    {:reply, :ok}
   end
 
-  defp connect_container(_network, :not_found) do
+  defp connect_(_network, :not_found) do
     Logger.warn("Could not connect container to network: container not found")
     {:reply, {:error, "container not found"}}
   end
 
-  defp connect_container(:not_found, _container) do
+  defp connect_(:not_found, _container) do
     Logger.warn("Could not connect container to network: network not found")
     {:reply, {:error, "network not found"}}
   end
 
-  defp connect_container(network, container) do
+  defp connect_(network, container) do
     Logger.warn(
       "No matches for network '#{inspect(network)}' and container '#{inspect(container)}'"
     )
 
     {:reply, {:error, "unknown input"}}
+  end
+
+  def disconnect_(container_id, network_id) do
+    [config] = MetaData.get_endpoint_config(container_id, network_id)
+    network = MetaData.get_network(network_id)
+
+    # Remove ip-addresses from the jail, network interface, and database
+    Enum.map(config.ip_addresses, &ifconfig_remove_alias(&1, network.if_name))
+
+    if Container.is_running?(container_id) do
+      remove_jail_ips(container_id, config.ip_addresses)
+    end
+
+    MetaData.remove_endpoint_config(container_id, network.id)
   end
 
   def configure_pf(pf_config_path, default_gw) do
@@ -303,7 +314,7 @@ defmodule Jocker.Engine.Network do
   end
 
   def enable_pf() do
-    System.cmd("/sbin/pfctl", ["-e"])
+    System.cmd("/sbin/pfctl", ["-e"], stderr_to_stdout: true)
   end
 
   def load_pf_config(pf_config_path, config) do
@@ -388,16 +399,36 @@ defmodule Jocker.Engine.Network do
     if_name
   end
 
-  def jail_modify_ips(jail_name, networking_config) do
-    all_ips =
-      Map.values(networking_config)
-      |> Enum.map(& &1[:ip_addresses])
-      |> Enum.concat()
-
-    jail_modify_ips_(jail_name, all_ips)
+  def add_jail_ip(container_id, ip) do
+    ips = get_jail_ips(container_id)
+    jail_modify_ips(container_id, [ip | ips])
   end
 
-  def jail_modify_ips_(jail_name, ips) do
+  def remove_jail_ips(container_id, ips) do
+    ips = MapSet.new(ips)
+    ips_old = MapSet.new(get_jail_ips(container_id))
+    ips_new = MapSet.to_list(MapSet.difference(ips_old, ips))
+    jail_modify_ips(container_id, ips_new)
+  end
+
+  defp get_jail_ips(container_id) do
+    # jls --libxo json -v -j 83 produceres
+    # {"__version": "2",
+    #  "jail-information": {"jail": [{"jid":83,"hostname":"","path":"/zroot/jocker_basejail","name":"83","state":"ACTIVE","cpusetid":4, "ipv4_addrs": ["172.17.0.1","172.17.0.2"], "ipv6_addrs": []}]}
+    # }
+    case System.cmd("/usr/sbin/jls", ["--libxo", "json", "-v", "-j", container_id]) do
+      {output_json, 0} ->
+        {:ok, jail_info} = Jason.decode(output_json)
+        [%{"ipv4_addrs" => ip_addrs}] = jail_info["jail-information"]["jail"]
+        ip_addrs
+
+      {error_msg, _error_code} ->
+        Logger.warn("Could not retrieve jail-info on jail #{container_id}: '#{error_msg}'")
+        []
+    end
+  end
+
+  def jail_modify_ips(jail_name, ips) do
     ips = Enum.join(ips, ",")
 
     case System.cmd("/usr/sbin/jail", ["-m", "name=#{jail_name}", "ip4.addr=#{ips}"],

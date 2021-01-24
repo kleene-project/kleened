@@ -2,6 +2,7 @@ defmodule Jocker.Engine.Layer do
   use GenServer
   import Jocker.Engine.Records
   alias Jocker.Engine.Config
+  alias Jocker.Engine.MetaData
 
   def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
@@ -15,6 +16,10 @@ defmodule Jocker.Engine.Layer do
     GenServer.call(__MODULE__, {:to_image, layer, image_id})
   end
 
+  def destroy(layer_id) do
+    GenServer.call(__MODULE__, {:destroy, layer_id})
+  end
+
   @impl true
   def init([]) do
     {:ok, nil}
@@ -26,7 +31,11 @@ defmodule Jocker.Engine.Layer do
     {:reply, new_layer, nil}
   end
 
-  @impl true
+  def handle_call({:destroy, layer_id}, _from, nil) do
+    destroy_(layer_id)
+    {:reply, :ok, nil}
+  end
+
   def handle_call({:to_image, layer, image_id}, _from, nil) do
     updated_layer = to_image_(layer, image_id)
     {:reply, updated_layer, nil}
@@ -46,6 +55,12 @@ defmodule Jocker.Engine.Layer do
 
     Jocker.Engine.MetaData.add_layer(new_layer)
     new_layer
+  end
+
+  defp destroy_(layer_id) do
+    layer(dataset: dataset) = MetaData.get_layer(layer_id)
+    0 = Jocker.Engine.ZFS.destroy(dataset)
+    MetaData.remove_layer(layer_id)
   end
 
   defp to_image_(layer(dataset: dataset) = layer, image_id) do

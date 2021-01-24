@@ -2,12 +2,27 @@ defmodule Jocker.Engine.MetaData do
   require Logger
   alias Jocker.Engine.Config
   alias Jocker.Engine.Container
+  alias Jocker.Engine.Network
   alias Jocker.Engine.Records, as: JockerRecords
   import JockerRecords
 
   use Agent
 
-  @table_network "CREATE TABLE IF NOT EXISTS networks ( network TEXT )"
+  @table_network """
+  CREATE TABLE IF NOT EXISTS
+  networks (
+    network TEXT
+  )
+  """
+
+  @table_endpoint_configs """
+  CREATE TABLE IF NOT EXISTS
+  endpoint_configs (
+    container_id TEXT,
+    network_id   TEXT,
+    config       TEXT
+  )
+  """
 
   @table_layers """
   CREATE TABLE IF NOT EXISTS
@@ -40,7 +55,6 @@ defmodule Jocker.Engine.MetaData do
     name     TEXT,
     pid      TEXT,
     command  TEXT, --[string]
-    networking_config TEXT,
     layer_id TEXT,
     image_id TEXT,
     user     TEXT,
@@ -132,6 +146,38 @@ defmodule Jocker.Engine.MetaData do
     Agent.get(__MODULE__, fn db -> list_networks_(db) end)
   end
 
+  @spec add_endpoint_config(
+          Container.container_id(),
+          Network.network_id(),
+          %Jocker.Structs.EndPointConfig{}
+        ) :: :ok
+  def add_endpoint_config(container_id, network_id, endpoint_config) do
+    Agent.get(__MODULE__, fn db ->
+      add_endpoint_config_(db, container_id, network_id, endpoint_config)
+    end)
+  end
+
+  @spec get_endpoint_config(Container.container_id(), Network.network_id()) ::
+          %Jocker.Structs.EndPointConfig{} | :not_found
+  def get_endpoint_config(container_id, network_id) do
+    Agent.get(__MODULE__, fn db -> get_endpoint_config_(db, container_id, network_id) end)
+  end
+
+  @spec remove_endpoint_config(Container.container_id(), Network.network_id()) :: :ok
+  def remove_endpoint_config(container_id, network_id) do
+    Agent.get(__MODULE__, fn db -> remove_endpoint_config_(db, container_id, network_id) end)
+  end
+
+  @spec connected_containers(Network.network_id()) :: [Container.container_id()]
+  def connected_containers(network_id) do
+    Agent.get(__MODULE__, fn db -> connected_containers_(db, network_id) end)
+  end
+
+  @spec connected_networks(Container.container_id()) :: [Network.network_id()]
+  def connected_networks(container_id) do
+    Agent.get(__MODULE__, fn db -> connected_networks_(db, container_id) end)
+  end
+
   @spec add_layer(JockerRecords.layer()) :: :ok
   def add_layer(layer) do
     Agent.get(__MODULE__, fn db -> add_layer_(db, layer) end)
@@ -140,6 +186,11 @@ defmodule Jocker.Engine.MetaData do
   @spec get_layer(String.t()) :: JockerRecords.layer() | :not_found
   def get_layer(layer_id) do
     Agent.get(__MODULE__, fn db -> get_layer_(db, layer_id) end)
+  end
+
+  @spec remove_layer(String.t()) :: :ok
+  def remove_layer(layer_id) do
+    Agent.get(__MODULE__, fn db -> remove_layer_(db, layer_id) end)
   end
 
   @spec add_image(JockerRecords.image()) :: :ok
@@ -231,7 +282,7 @@ defmodule Jocker.Engine.MetaData do
   ### Internal functions ###
   ##########################
   def add_network_(db, network) do
-    json = to_json(:network, network)
+    json = to_json(network)
     exec(db, "INSERT OR REPLACE INTO networks VALUES (?)", [json])
   end
 
@@ -262,6 +313,38 @@ defmodule Jocker.Engine.MetaData do
     Enum.map(rows, fn [network: json] -> from_json(:network, json) end)
   end
 
+  def add_endpoint_config_(db, container_id, network_id, endpoint_config) do
+    sql =
+      "INSERT OR REPLACE INTO endpoint_configs(container_id, network_id, config) VALUES (?, ?, ?)"
+
+    exec(db, sql, [container_id, network_id, to_json(endpoint_config)])
+  end
+
+  def get_endpoint_config_(db, container_id, network_id) do
+    sql = "SELECT config FROM endpoint_configs WHERE container_id = ? AND network_id = ?"
+    param = [container_id, network_id]
+    {:ok, rows} = fetch_all(db, sql, param)
+    rows = Enum.map(rows, fn [config: json] -> from_json(:endpoint_config, json) end)
+    rows
+  end
+
+  def remove_endpoint_config_(db, container_id, network_id) do
+    sql = "DELETE FROM endpoint_configs WHERE container_id = ? AND network_id = ?"
+    exec(db, sql, [container_id, network_id])
+  end
+
+  def connected_containers_(db, network_id) do
+    sql = "SELECT container_id FROM endpoint_configs WHERE network_id = ?"
+    {:ok, rows} = fetch_all(db, sql, [network_id])
+    Enum.map(rows, fn [container_id: id] -> id end)
+  end
+
+  def connected_networks_(db, container_id) do
+    sql = "SELECT network_id FROM endpoint_configs WHERE container_id = ?"
+    {:ok, rows} = fetch_all(db, sql, [container_id])
+    Enum.map(rows, fn [network_id: id] -> id end)
+  end
+
   def add_layer_(db, layer) do
     row = record2row(layer)
     exec(db, "INSERT OR REPLACE INTO layers VALUES (?, ?, ?, ?, ?)", row)
@@ -272,6 +355,10 @@ defmodule Jocker.Engine.MetaData do
       {:ok, [row]} -> row2record(:layer, row)
       {:ok, []} -> :not_found
     end
+  end
+
+  def remove_layer_(db, layer_id) do
+    exec(db, "DELETE FROM layers WHERE id = ?", [layer_id])
   end
 
   def add_image_(db, image(name: new_name, tag: new_tag) = image) do
@@ -335,7 +422,7 @@ defmodule Jocker.Engine.MetaData do
   def add_container_(db, container) do
     row = record2row(container)
 
-    :ok = exec(db, "INSERT OR REPLACE INTO containers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
+    :ok = exec(db, "INSERT OR REPLACE INTO containers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
   end
 
   @spec delete_container_(db_conn(), Container.container_id()) :: db_conn()
@@ -431,24 +518,29 @@ defmodule Jocker.Engine.MetaData do
     create_tables(db)
   end
 
-  @spec to_json(:network, %Jocker.Structs.Network{}) :: String.t()
-  def to_json(:network, network) do
-    {:ok, json} = Jason.encode(network)
+  @spec to_json(%Jocker.Structs.Network{}) :: String.t()
+  def to_json(struct) do
+    {:ok, json} = Jason.encode(struct)
     json
   end
 
-  @spec from_json(:network, String.t()) :: %Jocker.Structs.Network{}
+  @spec from_json(:network | :endpoint_config, String.t()) :: %Jocker.Structs.Network{}
   def from_json(:network, network) do
     {:ok, map} = Jason.decode(network, [{:keys, :atoms}])
     struct(Jocker.Structs.Network, map)
   end
 
-  def decode_networking_config(json) do
-    networking_cfg_list = Enum.map(Map.to_list(decode(json)), &decode_networking_config_/1)
+  def from_json(:endpoint_config, config) do
+    {:ok, map} = Jason.decode(config, [{:keys, :atoms}])
+    struct(Jocker.Structs.EndPointConfig, map)
+  end
+
+  def decode_endpoint_configs(json) do
+    networking_cfg_list = Enum.map(Map.to_list(decode(json)), &decode_endpoint_configs_/1)
     Map.new(networking_cfg_list)
   end
 
-  def decode_networking_config_({endpointkey, endpointcfg_map}) do
+  def decode_endpoint_configs_({endpointkey, endpointcfg_map}) do
     endpointcfg_with_atom_keys =
       for {key, val} <- endpointcfg_map, into: %{} do
         {String.to_existing_atom(key), val}
@@ -464,7 +556,6 @@ defmodule Jocker.Engine.MetaData do
         :container ->
           row_upd = Keyword.update(row, :command, nil, &decode/1)
           row_upd = Keyword.update(row_upd, :parameters, nil, &decode/1)
-          row_upd = Keyword.update(row_upd, :networking_config, %{}, &decode_networking_config/1)
           row_upd = Keyword.update(row_upd, :pid, :none, &str2pid/1)
 
           List.to_tuple([type | Keyword.values(row_upd)])
@@ -493,21 +584,18 @@ defmodule Jocker.Engine.MetaData do
         :container ->
           container(
             command: cmd,
-            networking_config: networking_config,
             parameters: param,
             pid: pid
           ) = rec
 
           cmd_json = encode(cmd)
           param_json = encode(param)
-          networking_config_json = encode(networking_config)
           pid_str = pid2str(pid)
 
           [_type | new_values] =
             Tuple.to_list(
               container(rec,
                 command: cmd_json,
-                networking_config: networking_config_json,
                 parameters: param_json,
                 pid: pid_str
               )
@@ -577,6 +665,7 @@ defmodule Jocker.Engine.MetaData do
     {:ok, []} = Sqlitex.query(db, "DROP TABLE volumes")
     {:ok, []} = Sqlitex.query(db, "DROP TABLE mounts")
     {:ok, []} = Sqlitex.query(db, "DROP TABLE networks")
+    {:ok, []} = Sqlitex.query(db, "DROP TABLE endpoint_configs")
   end
 
   def create_tables(db) do
@@ -596,6 +685,7 @@ defmodule Jocker.Engine.MetaData do
       )
 
     {:ok, []} = Sqlitex.query(db, @table_network)
+    {:ok, []} = Sqlitex.query(db, @table_endpoint_configs)
     {:ok, []} = Sqlitex.query(db, @table_layers)
     {:ok, []} = Sqlitex.query(db, @table_images)
     {:ok, []} = Sqlitex.query(db, @table_containers)

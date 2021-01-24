@@ -1,5 +1,4 @@
 defmodule Jocker.Engine.Records do
-  alias Jocker.Engine.Network
   require Record
 
   Record.defrecord(:layer,
@@ -44,7 +43,6 @@ defmodule Jocker.Engine.Records do
     name: :none,
     pid: :none,
     command: :none,
-    networking_config: %{},
     layer_id: :none,
     image_id: :none,
     user: :none,
@@ -58,7 +56,6 @@ defmodule Jocker.Engine.Records do
             name: String.t() | :none,
             pid: pid() | :none,
             command: [String.t()],
-            networking_config: %{Network.network_id() => %{}},
             layer_id: String.t(),
             image_id: String.t(),
             user: String.t(),

@@ -21,11 +21,6 @@ defmodule VolumeTest do
     :ok
   end
 
-  setup do
-    on_exit(fn -> MetaData.clear_tables() end)
-    :ok
-  end
-
   test "test filesystem operations when creating and deleting volumes" do
     volume(dataset: dataset, mountpoint: mountpoint) = vol = create_volume("test")
     assert {:ok, %File.Stat{:type => :directory}} = File.stat(mountpoint)
@@ -44,6 +39,7 @@ defmodule VolumeTest do
     assert [vol1_new_created, vol2] == MetaData.list_volumes()
     destroy_volume(vol1)
     assert [vol2] == MetaData.list_volumes()
+    destroy_volume(vol2)
   end
 
   test "verify volume binding" do
@@ -63,5 +59,6 @@ defmodule VolumeTest do
     end
 
     assert {:ok, %File.Stat{:type => :regular}} = File.stat(Path.join(mountpoint, "test"))
+    destroy_volume(vol)
   end
 end
