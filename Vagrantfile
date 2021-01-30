@@ -10,6 +10,7 @@ Vagrant.configure("2") do |config|
   # boxes at https://vagrantcloud.com/search.
   #config.vm.box = "freebsd/FreeBSD-12.2-STABLE"
   config.vm.box = "freebsd/FreeBSD-12.2-RELEASE"
+  config.vm.box_check_update = false
 
   # Disable automatic box update checking. If you disable this, then
   # boxes will only be checked for updates when the user runs
@@ -61,7 +62,7 @@ Vagrant.configure("2") do |config|
   # documentation for more information about their specific syntax and use.
   config.vm.provision "shell", inline: <<-SHELL
     # Install packages
-    pkg install -y zsh bash tmux git-lite vim-console elixir elixir-hex
+    pkg install -y zsh bash tmux git-lite vim-console elixir elixir-hex jq
 
     ## Initialize firewall
     kldload pf
