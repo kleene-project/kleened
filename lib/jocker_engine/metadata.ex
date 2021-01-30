@@ -141,9 +141,9 @@ defmodule Jocker.Engine.MetaData do
     Agent.get(__MODULE__, fn db -> get_network_(db, name_or_id) end)
   end
 
-  @spec list_networks() :: [%Jocker.Structs.Network{}]
-  def list_networks() do
-    Agent.get(__MODULE__, fn db -> list_networks_(db) end)
+  @spec list_networks(:include_host | :exclude_host) :: [%Jocker.Structs.Network{}]
+  def list_networks(mode \\ :include_host) do
+    Agent.get(__MODULE__, fn db -> list_networks_(db, mode) end)
   end
 
   @spec add_endpoint_config(
@@ -306,9 +306,17 @@ defmodule Jocker.Engine.MetaData do
     exec(db, "DELETE FROM networks WHERE json_extract(network, '$.id') = ?", [network_id])
   end
 
-  @spec list_networks_(db_conn()) :: [%Jocker.Structs.Network{}]
-  def list_networks_(db) do
-    sql = "SELECT * FROM networks"
+  @spec list_networks_(db_conn(), :include_host | :exclude_host) :: [%Jocker.Structs.Network{}]
+  def list_networks_(db, mode) do
+    sql =
+      case mode do
+        :include_host ->
+          "SELECT network FROM networks"
+
+        :exclude_host ->
+          "SELECT network FROM networks WHERE json_extract(network, '$.id') != 'host'"
+      end
+
     {:ok, rows} = fetch_all(db, sql)
     Enum.map(rows, fn [network: json] -> from_json(:network, json) end)
   end

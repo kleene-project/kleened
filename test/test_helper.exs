@@ -10,6 +10,26 @@ defmodule TestUtils do
     DateTime.to_iso8601(DateTime.utc_now())
   end
 
+  def collect_container_output(id) do
+    output = collect_container_output_(id, [])
+    output |> Enum.reverse() |> Enum.join("")
+  end
+
+  defp collect_container_output_(id, output) do
+    receive do
+      {:container, ^id, {:shutdown, :jail_stopped}} ->
+        output
+
+      {:container, ^id, msg} ->
+        collect_container_output_(id, [msg | output])
+
+      unknown ->
+        IO.puts(
+          "\nUnknown message received while collecting container output: #{inspect(unknown)}"
+        )
+    end
+  end
+
   def clear_zroot() do
     Config.start_link([])
     zroot = Config.get("zroot")

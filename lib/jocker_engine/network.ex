@@ -73,8 +73,8 @@ defmodule Jocker.Engine.Network do
     GenServer.call(__MODULE__, {:create, name, driver, options})
   end
 
-  def connect(container, network_id) do
-    GenServer.call(__MODULE__, {:connect, container, network_id}, 10_000)
+  def connect(container_idname, network_idname) do
+    GenServer.call(__MODULE__, {:connect, container_idname, network_idname}, 10_000)
   end
 
   def disconnect(container, network_id) do
@@ -121,6 +121,9 @@ defmodule Jocker.Engine.Network do
     create_interfaces()
     state = %State{:pf_config_path => pf_conf_path, :gateway_interface => gateway}
 
+    # Adding the special 'host' network (meaning use ip4=inherit when jails are connected to it)
+    MetaData.add_network(%Network{id: "host", name: "host"})
+
     if default_network_name != nil do
       case create_(default_network_name, :loopback, state, if_name: if_name, subnet: subnet) do
         {:ok, _} -> :ok
@@ -140,21 +143,11 @@ defmodule Jocker.Engine.Network do
     {:reply, reply, state}
   end
 
-  def handle_call(
-        {:connect, container_idname, network_idname},
-        _from,
-        state
-      ) do
+  def handle_call({:connect, container_idname, network_idname}, _from, state) do
+    container = MetaData.get_container(container_idname)
     network = MetaData.get_network(network_idname)
-    cont = MetaData.get_container(container_idname)
-    {:reply, reply} = connect_(network, cont)
+    reply = connect_(container, network)
     {:reply, reply, state}
-  end
-
-  def handle_call({:disconnect_all, container_id}, _from, state) do
-    network_ids = MetaData.connected_networks(container_id)
-    Enum.map(network_ids, &disconnect_(container_id, &1))
-    {:reply, :ok, state}
   end
 
   def handle_call({:disconnect, container_idname, network_idname}, _from, state) do
@@ -164,8 +157,14 @@ defmodule Jocker.Engine.Network do
     {:reply, :ok, state}
   end
 
+  def handle_call({:disconnect_all, container_id}, _from, state) do
+    network_ids = MetaData.connected_networks(container_id)
+    Enum.map(network_ids, &disconnect_(container_id, &1))
+    {:reply, :ok, state}
+  end
+
   def handle_call(:list, _from, state) do
-    networks = MetaData.list_networks()
+    networks = MetaData.list_networks(:include_host)
     {:reply, networks, state}
   end
 
@@ -197,6 +196,10 @@ defmodule Jocker.Engine.Network do
   ##########################
   ### Internal functions ###
   ##########################
+  def create_("host", _type, _state, _options) do
+    {:error, "network name 'host' is reserved and cannot be used"}
+  end
+
   def create_(name, :loopback, state, options) do
     subnet = Keyword.get(options, :subnet)
     if_name = Keyword.get(options, :if_name)
@@ -210,9 +213,7 @@ defmodule Jocker.Engine.Network do
         {:error, "invalid subnet"}
 
       true ->
-        {:ok, network} = create_loopback_network(name, if_name, subnet)
-        configure_pf(state.pf_config_path, state.gateway_interface)
-        {:ok, network}
+        create_loopback_network(name, if_name, subnet, state)
     end
   end
 
@@ -220,22 +221,42 @@ defmodule Jocker.Engine.Network do
     {:error, "Unknown driver"}
   end
 
-  defp connect_(
-         network,
-         container(id: container_id) = cont
-       ) do
-    ip = new_ip(network)
+  defp connect_(container(id: container_id), %Network{id: "host"} = network) do
+    cond do
+      Container.is_running?(container_id) ->
+        # A jail with 'ip="new"' (or using a VNET) cannot be modified to use 'ip="inherit"'
+        {:error, "cannot connect a running container to the hosts network"}
 
-    config = %EndPointConfig{ip_addresses: [ip]}
-    MetaData.add_endpoint_config(container_id, network.id, config)
+      true ->
+        case MetaData.connected_networks(container_id) do
+          [] ->
+            config = %EndPointConfig{ip_addresses: []}
+            MetaData.add_endpoint_config(container_id, network.id, config)
+            :ok
 
-    ifconfig_alias(network.if_name, ip)
-
-    if Container.is_running?(container_id) do
-      add_jail_ip(container_id, ip)
+          _ ->
+            {:error, "already connected to other networks"}
+        end
     end
+  end
 
-    {:reply, :ok}
+  defp connect_(container(id: container_id), network) do
+    case MetaData.connected_networks(container_id) do
+      [%Network{id: "host"}] ->
+        {:error, "connected to host network"}
+
+      _ ->
+        ip = new_ip(network)
+        config = %EndPointConfig{ip_addresses: [ip]}
+        MetaData.add_endpoint_config(container_id, network.id, config)
+        ifconfig_alias(network.if_name, ip)
+
+        if Container.is_running?(container_id) do
+          add_jail_ip(container_id, ip)
+        end
+
+        :ok
+    end
   end
 
   defp connect_(_network, :not_found) do
@@ -271,7 +292,7 @@ defmodule Jocker.Engine.Network do
   end
 
   def configure_pf(pf_config_path, default_gw) do
-    networks = MetaData.list_networks()
+    networks = MetaData.list_networks(:exclude_host)
 
     state = %{
       :macros => [
@@ -338,27 +359,24 @@ defmodule Jocker.Engine.Network do
   end
 
   defp create_interfaces() do
-    MetaData.list_networks()
+    MetaData.list_networks(:exclude_host)
     |> Enum.map(fn %Network{:if_name => if_name} ->
-      create_loopback_interface(if_name, :overwrite)
+      ifconfig_loopback_create(if_name)
     end)
   end
 
-  def create_loopback_network(
-        name,
-        if_name,
-        subnet
-      ) do
-    case create_loopback_interface(if_name, :no_overwrite) do
-      {_, 0} ->
-        network = %Network{
-          id: Utils.uuid(),
-          name: name,
-          subnet: subnet,
-          if_name: if_name
-        }
+  def create_loopback_network(name, if_name, subnet, state) do
+    network = %Network{
+      id: Utils.uuid(),
+      name: name,
+      subnet: subnet,
+      if_name: if_name
+    }
 
+    case ifconfig_loopback_create(if_name) do
+      {_, 0} ->
         MetaData.add_network(network)
+        configure_pf(state.pf_config_path, state.gateway_interface)
         {:ok, network}
 
       {error_output, _exitcode} ->
@@ -366,16 +384,12 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  defp create_loopback_interface(jocker_if, mode \\ :no_overwrite) do
-    if mode == :overwrite do
-      Utils.destroy_interface(jocker_if)
+  defp ifconfig_loopback_create(if_name) do
+    if Utils.interface_exists(if_name) do
+      Utils.destroy_interface(if_name)
     end
 
-    if not Utils.interface_exists(jocker_if) do
-      System.cmd("ifconfig", ["lo", "create", "name", jocker_if])
-    else
-      {"", 0}
-    end
+    System.cmd("ifconfig", ["lo", "create", "name", if_name])
   end
 
   def detect_gateway_if() do

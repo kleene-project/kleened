@@ -182,7 +182,8 @@ defmodule Jocker.Engine.Container do
     jail_param = Keyword.get(opts, :jail_param, [])
     name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
 
-    networks = Keyword.get(opts, :networks, [Jocker.Engine.Config.get("default_network_name")])
+    network_idnames =
+      Keyword.get(opts, :networks, [Jocker.Engine.Config.get("default_network_name")])
 
     cont =
       container(
@@ -201,7 +202,7 @@ defmodule Jocker.Engine.Container do
 
     # Store new container and connect to the networks
     MetaData.add_container(cont)
-    Enum.map(networks, &Network.connect(container_id, &1))
+    Enum.map(network_idnames, &Network.connect(container_id, &1))
     {:ok, MetaData.get_container(container_id)}
   end
 
@@ -219,14 +220,21 @@ defmodule Jocker.Engine.Container do
     user = Keyword.get(options, :user, default_user)
     MetaData.add_container(container(cont, user: user, command: command))
 
-    network_ids = MetaData.connected_networks(id)
-    ips = Enum.reduce(network_ids, [], &extract_ips(id, &1, &2))
-    ips_as_string = Enum.join(ips, ",")
+    network_config =
+      case MetaData.connected_networks(id) do
+        ["host"] ->
+          "ip4=inherit"
+
+        network_ids ->
+          ips = Enum.reduce(network_ids, [], &extract_ips(id, &1, &2))
+          ips_as_string = Enum.join(ips, ",")
+          "ip4.addr=#{ips_as_string}"
+      end
 
     layer(mountpoint: path) = Jocker.Engine.MetaData.get_layer(layer_id)
 
     args =
-      ~w"-c path=#{path} name=#{id} ip4.addr=#{ips_as_string}" ++
+      ~w"-c path=#{path} name=#{id} #{network_config}" ++
         parameters ++ ["exec.jail_user=" <> user, "command=#{cmd}"] ++ cmd_args
 
     Logger.debug("Executing /usr/sbin/jail #{Enum.join(args, " ")}")
