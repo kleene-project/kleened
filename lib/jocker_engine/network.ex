@@ -30,7 +30,8 @@ defmodule Jocker.Engine.Network do
   import Jocker.Engine.Records
 
   @type create_options() :: [create_option()]
-  @type create_option() :: {:subnet, String.t()} | {:if_name, String.t()}
+  @type create_option() ::
+          {:subnet, String.t()} | {:if_name, String.t()} | {:driver, driver_type()}
   @type driver_type() :: :loopback
   @type network_id() :: String.t()
   @type endpoint_config() :: %EndPointConfig{}
@@ -67,16 +68,18 @@ defmodule Jocker.Engine.Network do
   end
 
   ### Docker Engine style API's
-  @spec create(String.t(), driver_type(), create_options()) ::
+  @spec create(String.t(), create_options()) ::
           {:ok, %Network{}} | {:error, String.t()}
-  def create(name, driver, options) do
-    GenServer.call(__MODULE__, {:create, name, driver, options})
+  def create(name, options) do
+    GenServer.call(__MODULE__, {:create, name, options})
   end
 
+  @spec connect(String.t(), String.t()) :: :ok | {:error, String.t()}
   def connect(container_idname, network_idname) do
     GenServer.call(__MODULE__, {:connect, container_idname, network_idname}, 10_000)
   end
 
+  @spec connect(String.t(), String.t()) :: :ok | {:error, String.t()}
   def disconnect(container, network_id) do
     GenServer.call(__MODULE__, {:disconnect, container, network_id})
   end
@@ -89,6 +92,7 @@ defmodule Jocker.Engine.Network do
     GenServer.call(__MODULE__, :list)
   end
 
+  @spec remove(String.t()) :: {:ok, Network.network_id()} | {:error, String.t()}
   def remove(idname) do
     GenServer.call(__MODULE__, {:remove, idname})
   end
@@ -138,8 +142,8 @@ defmodule Jocker.Engine.Network do
   end
 
   @impl true
-  def handle_call({:create, name, driver, options}, _from, state) do
-    reply = create_(name, driver, state, options)
+  def handle_call({:create, name, options}, _from, state) do
+    reply = create_(name, :loopback, state, options)
     {:reply, reply, state}
   end
 
@@ -151,10 +155,8 @@ defmodule Jocker.Engine.Network do
   end
 
   def handle_call({:disconnect, container_idname, network_idname}, _from, state) do
-    container(id: container_id) = MetaData.get_container(container_idname)
-    network = MetaData.get_network(network_idname)
-    disconnect_(container_id, network.id)
-    {:reply, :ok, state}
+    reply = disconnect_(container_idname, network_idname)
+    {:reply, reply, state}
   end
 
   def handle_call({:disconnect_all, container_id}, _from, state) do
@@ -176,7 +178,7 @@ defmodule Jocker.Engine.Network do
         Utils.destroy_interface(if_name)
         MetaData.remove_network(id)
         configure_pf(state.pf_config_path, state.gateway_interface)
-        {:reply, :ok, state}
+        {:reply, {:ok, id}, state}
 
       :not_found ->
         {:reply, {:error, "network not found."}, state}
@@ -224,18 +226,20 @@ defmodule Jocker.Engine.Network do
   defp connect_(container(id: container_id), %Network{id: "host"} = network) do
     cond do
       Container.is_running?(container_id) ->
-        # A jail with 'ip="new"' (or using a VNET) cannot be modified to use 'ip="inherit"'
+        # A jail with 'ip4="new"' (or using a VNET) cannot be modified to use 'ip="inherit"'
         {:error, "cannot connect a running container to the hosts network"}
 
       true ->
         case MetaData.connected_networks(container_id) do
+          # A jail with 'ip4=inherit' cannot use VNET's or impose restrictions on ip-addresses
+          # using ip4.addr
           [] ->
             config = %EndPointConfig{ip_addresses: []}
             MetaData.add_endpoint_config(container_id, network.id, config)
             :ok
 
           _ ->
-            {:error, "already connected to other networks"}
+            {:error, "cannot connect to host network simultaneously with other networks"}
         end
     end
   end
@@ -277,18 +281,31 @@ defmodule Jocker.Engine.Network do
     {:reply, {:error, "unknown input"}}
   end
 
-  def disconnect_(container_id, network_id) do
-    [config] = MetaData.get_endpoint_config(container_id, network_id)
-    network = MetaData.get_network(network_id)
+  def disconnect_(container_idname, network_idname) do
+    cont = container(id: container_id) = MetaData.get_container(container_idname)
+    network = MetaData.get_network(network_idname)
+    config = MetaData.get_endpoint_config(container_id, network.id)
 
-    # Remove ip-addresses from the jail, network interface, and database
-    Enum.map(config.ip_addresses, &ifconfig_remove_alias(&1, network.if_name))
+    cond do
+      cont == :not_found ->
+        {:error, "container not found"}
 
-    if Container.is_running?(container_id) do
-      remove_jail_ips(container_id, config.ip_addresses)
+      network == :not_found ->
+        {:error, "network not found"}
+
+      config == :not_found ->
+        {:error, "endpoint configuration not found"}
+
+      true ->
+        # Remove ip-addresses from the jail, network interface, and database
+        Enum.map(config.ip_addresses, &ifconfig_remove_alias(&1, network.if_name))
+
+        if Container.is_running?(container_id) do
+          remove_jail_ips(container_id, config.ip_addresses)
+        end
+
+        MetaData.remove_endpoint_config(container_id, network.id)
     end
-
-    MetaData.remove_endpoint_config(container_id, network.id)
   end
 
   def configure_pf(pf_config_path, default_gw) do

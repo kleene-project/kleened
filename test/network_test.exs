@@ -43,12 +43,12 @@ defmodule NetworkTest do
     {:ok, _pid} = Network.start_link([])
 
     assert {:ok, %Structs.Network{name: "testnetwork"} = test_network} =
-             Network.create("testnetwork", :loopback, subnet: "172.18.0.0/16", if_name: "jocker1")
+             Network.create("testnetwork", subnet: "172.18.0.0/16", if_name: "jocker1")
 
     assert Utils.interface_exists("jocker1")
     assert Network.inspect_("testnetwork") == test_network
     assert Network.inspect_(String.slice(test_network.id, 0, 4)) == test_network
-    assert Network.remove("testnetwork") == :ok
+    assert Network.remove("testnetwork") == {:ok, test_network.id}
     assert not Utils.interface_exists("jocker1")
     assert MetaData.get_network(test_network.id) == :not_found
   end
@@ -59,8 +59,7 @@ defmodule NetworkTest do
 
     assert [%Structs.Network{id: "host"}, %Structs.Network{name: "default"}] = Network.list()
 
-    {:ok, network} =
-      Network.create("testnetwork", :loopback, subnet: "172.18.0.0/16", if_name: "jocker1")
+    {:ok, network} = Network.create("testnetwork", subnet: "172.18.0.0/16", if_name: "jocker1")
 
     assert [
              %Structs.Network{id: "host"},
@@ -73,9 +72,9 @@ defmodule NetworkTest do
     {:ok, _pid} = Network.start_link([])
 
     assert {:ok, test_network} =
-             Network.create("testnetwork", :loopback, subnet: "172.18.0.0/16", if_name: "jocker1")
+             Network.create("testnetwork", subnet: "172.18.0.0/16", if_name: "jocker1")
 
-    assert Network.remove("testnetwork") == :ok
+    assert Network.remove("testnetwork") == {:ok, test_network.id}
     assert Network.remove("testnetwork") == {:error, "network not found."}
   end
 
@@ -83,10 +82,10 @@ defmodule NetworkTest do
     {:ok, _pid} = Network.start_link([])
 
     assert {:ok, test_network} =
-             Network.create("testnetwork", :loopback, subnet: "172.18.0.0/16", if_name: "jocker1")
+             Network.create("testnetwork", subnet: "172.18.0.0/16", if_name: "jocker1")
 
     assert {:error, "network name is already taken"} =
-             Network.create("testnetwork", :loopback, subnet: "172.19.0.0/16", if_name: "jocker2")
+             Network.create("testnetwork", subnet: "172.19.0.0/16", if_name: "jocker2")
 
     Network.remove("testnetwork")
   end
@@ -95,7 +94,32 @@ defmodule NetworkTest do
     {:ok, _pid} = Network.start_link([])
 
     assert {:error, "invalid subnet"} =
-             Network.create("testnetwork", :loopback, subnet: "172.18.0.0-16", if_name: "jocker1")
+             Network.create("testnetwork", subnet: "172.18.0.0-16", if_name: "jocker1")
+  end
+
+  test "connect and disconnect a container to a network" do
+    {:ok, _pid} = Jocker.Engine.Layer.start_link([])
+    {:ok, _pid} = Network.start_link([])
+
+    start_supervised(
+      {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
+    )
+
+    network_if = "jocker1"
+    Network.create("testnet", subnet: "172.19.0.0/24", if_name: network_if)
+
+    opts = [
+      cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network_if]
+    ]
+
+    {:ok, container(id: id)} = Container.create(opts)
+
+    Network.connect(id, "testnet")
+    :ok = Container.attach(id)
+    Container.start(id)
+    {:ok, output} = Jason.decode(TestUtils.collect_container_output(id))
+    assert %{"statistics" => %{"interface" => [%{"address" => "172.19.0.0"}]}} = output
+    Network.remove("testnetwork")
   end
 
   test "using 'host' network instead of 'default'" do
