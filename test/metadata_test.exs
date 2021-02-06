@@ -3,7 +3,7 @@ defmodule MetaDataTest do
   alias Jocker.Engine.Config
   import Jocker.Engine.MetaData
   import Jocker.Engine.Records
-  import TestUtils, only: [now: 0]
+  import TestHelper, only: [now: 0]
 
   alias Jocker.Structs.Network
 

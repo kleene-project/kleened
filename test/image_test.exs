@@ -12,7 +12,7 @@ defmodule ImageTest do
 
   setup_all do
     Application.stop(:jocker)
-    TestUtils.clear_zroot()
+    TestHelper.clear_zroot()
     start_supervised(Config)
     :ok
   end

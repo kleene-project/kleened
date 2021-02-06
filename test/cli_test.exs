@@ -13,7 +13,7 @@ defmodule CLITest do
 
   setup_all do
     Application.stop(:jocker)
-    TestUtils.clear_zroot()
+    TestHelper.clear_zroot()
     start_supervised(Config)
     remove_volume_mounts()
     start_supervised(MetaData)
@@ -203,7 +203,7 @@ defmodule CLITest do
   test "create a container with devfs disabled" do
     id = cmd("container create --no-mount.devfs base /bin/sleep 100")
     assert cmd("container start #{id}") == id
-    assert not TestUtils.devfs_mounted(MetaData.get_container(id))
+    assert not TestHelper.devfs_mounted(MetaData.get_container(id))
     assert cmd("container stop #{id}") == id
   end
 
@@ -211,7 +211,7 @@ defmodule CLITest do
     id = cmd("container create --mount.devfs --jailparam mount.devfs=false base /bin/sleep 100")
     cont = MetaData.get_container(id)
     assert cmd("container start #{id}") == id
-    assert not TestUtils.devfs_mounted(cont)
+    assert not TestHelper.devfs_mounted(cont)
     assert cmd("container stop #{id}") == id
   end
 
@@ -223,7 +223,7 @@ defmodule CLITest do
 
     assert jocker_cmd("container start --attach #{id}") == []
     layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
-    assert not TestUtils.devfs_mounted(cont)
+    assert not TestHelper.devfs_mounted(cont)
     assert is_directory?(mountpoint)
     assert is_directory?(Path.join(mountpoint, "loltest"))
     assert cmd("container rm #{id}") == id
@@ -266,6 +266,7 @@ defmodule CLITest do
     Volume.destroy_volume(vol1)
     Volume.destroy_volume(vol2)
     assert not is_directory?(mountpoint)
+    System.cmd("rm", ["./tmp_dockerfile"])
   end
 
   test "jocker adding and removing a container with read-only volumes" do
@@ -305,6 +306,7 @@ defmodule CLITest do
     Volume.destroy_volume(vol1)
     Volume.destroy_volume(vol2)
     assert not is_directory?(mountpoint)
+    System.cmd("rm", ["./tmp_dockerfile"])
   end
 
   test "try stopping a container that is already stopped" do

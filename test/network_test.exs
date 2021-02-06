@@ -10,7 +10,7 @@ defmodule NetworkTest do
 
   setup_all do
     Application.stop(:jocker)
-    TestUtils.clear_zroot()
+    TestHelper.clear_zroot()
     start_supervised(Config)
     start_supervised(MetaData)
     :ok
@@ -117,7 +117,7 @@ defmodule NetworkTest do
     Network.connect(id, "testnet")
     :ok = Container.attach(id)
     Container.start(id)
-    {:ok, output} = Jason.decode(TestUtils.collect_container_output(id))
+    {:ok, output} = Jason.decode(TestHelper.collect_container_output(id))
     assert %{"statistics" => %{"interface" => [%{"address" => "172.19.0.0"}]}} = output
     Network.remove("testnetwork")
   end
@@ -142,7 +142,7 @@ defmodule NetworkTest do
 
     :ok = Container.attach(id)
     Container.start(id)
-    output_json = TestUtils.collect_container_output(id)
+    output_json = TestHelper.collect_container_output(id)
 
     ips_after = ips_on_all_interfaces(output_json)
 

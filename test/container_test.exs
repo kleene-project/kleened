@@ -8,7 +8,7 @@ defmodule ContainerTest do
 
   setup_all do
     Application.stop(:jocker)
-    TestUtils.clear_zroot()
+    TestHelper.clear_zroot()
     start_supervised(Config)
 
     start_supervised(
@@ -46,7 +46,7 @@ defmodule ContainerTest do
     assert opts[:cmd] == cmd_out
     assert_receive {:container, ^id, "test test\n"}
     assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
-    assert not TestUtils.devfs_mounted(cont)
+    assert not TestHelper.devfs_mounted(cont)
   end
 
   test "start and stop a container (using devfs)" do
@@ -57,10 +57,10 @@ defmodule ContainerTest do
 
     container(id: id) = cont = start_attached_container(opts)
 
-    assert TestUtils.devfs_mounted(cont)
+    assert TestHelper.devfs_mounted(cont)
     assert {:ok, container(id: ^id)} = Container.stop(id)
     assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
-    assert not TestUtils.devfs_mounted(cont)
+    assert not TestHelper.devfs_mounted(cont)
   end
 
   test "try to start a running container" do
@@ -84,10 +84,10 @@ defmodule ContainerTest do
 
     container(id: id) = cont = start_attached_container(opts)
 
-    assert TestUtils.devfs_mounted(cont)
+    assert TestHelper.devfs_mounted(cont)
     assert {:ok, container(id: ^id)} = Container.stop(id)
     assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
-    assert not TestUtils.devfs_mounted(cont)
+    assert not TestHelper.devfs_mounted(cont)
   end
 
   test "create container from non-existing image" do
