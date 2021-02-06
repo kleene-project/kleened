@@ -26,6 +26,7 @@ defmodule Jocker.CLI.Main do
   Management Commands:
   container   Manage containers
   image       Manage images
+  network     Manage networks
   volume      Manage volumes
 
   Run 'jocker COMMAND --help' for more information on a command.
@@ -112,6 +113,28 @@ defmodule Jocker.CLI.Main do
         to_cli("jocker: 'container #{unknown_subcmd}' is not a jocker command.\n")
         to_cli(Jocker.CLI.Container.main_docs(), :eof)
 
+      ["network" | subcmd] when subcmd == [] or subcmd == ["--help"] ->
+        to_cli(Jocker.CLI.Network.main_docs(), :eof)
+
+      ["network", "ls" | opts] ->
+        process_subcommand(&Jocker.CLI.Network.ls/1, opts)
+
+      ["network", "create" | opts] ->
+        process_subcommand(&Jocker.CLI.Network.create/1, opts)
+
+      ["network", "rm" | opts] ->
+        process_subcommand(&Jocker.CLI.Network.rm/1, opts)
+
+      ["network", "connect" | opts] ->
+        process_subcommand(&Jocker.CLI.Network.connect/1, opts)
+
+      ["network", "disconnect" | opts] ->
+        process_subcommand(&Jocker.CLI.Network.disconnect/1, opts)
+
+      ["network", unknown_subcmd | _opts] ->
+        to_cli("jocker: 'network #{unknown_subcmd}' is not a jocker command.\n")
+        to_cli(Jocker.CLI.Network.main_docs(), :eof)
+
       ["volume" | subcmd] when subcmd == [] or subcmd == ["--help"] ->
         to_cli(Jocker.CLI.Volume.main_docs(), :eof)
 
@@ -157,6 +180,11 @@ defmodule Jocker.CLI.Main do
 
       {"==1", {_opts, args}} when length(args) != 1 ->
         to_cli("\"jocker #{cmd_name}\" requires exactly 1 argument.\n")
+        to_cli(docs, :eof)
+        :error
+
+      {"==2", {_opts, args}} when length(args) != 2 ->
+        to_cli("\"jocker #{cmd_name}\" requires exactly 2 arguments.\n")
         to_cli(docs, :eof)
         :error
 

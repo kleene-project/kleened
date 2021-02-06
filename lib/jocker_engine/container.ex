@@ -322,7 +322,7 @@ defmodule Jocker.Engine.Container do
   end
 
   def extract_ips(container_id, network_id, ip_list) do
-    [config] = MetaData.get_endpoint_config(container_id, network_id)
+    config = MetaData.get_endpoint_config(container_id, network_id)
     Enum.concat(config.ip_addresses, ip_list)
   end
 

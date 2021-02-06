@@ -43,7 +43,7 @@ defmodule NetworkTest do
     {:ok, _pid} = Network.start_link([])
 
     assert {:ok, %Structs.Network{name: "testnetwork"} = test_network} =
-             Network.create("testnetwork", subnet: "172.18.0.0/16", if_name: "jocker1")
+             Network.create("testnetwork", subnet: "172.18.0.0/16", ifname: "jocker1")
 
     assert Utils.interface_exists("jocker1")
     assert Network.inspect_("testnetwork") == test_network
@@ -59,7 +59,7 @@ defmodule NetworkTest do
 
     assert [%Structs.Network{id: "host"}, %Structs.Network{name: "default"}] = Network.list()
 
-    {:ok, network} = Network.create("testnetwork", subnet: "172.18.0.0/16", if_name: "jocker1")
+    {:ok, network} = Network.create("testnetwork", subnet: "172.18.0.0/16", ifname: "jocker1")
 
     assert [
              %Structs.Network{id: "host"},
@@ -72,7 +72,7 @@ defmodule NetworkTest do
     {:ok, _pid} = Network.start_link([])
 
     assert {:ok, test_network} =
-             Network.create("testnetwork", subnet: "172.18.0.0/16", if_name: "jocker1")
+             Network.create("testnetwork", subnet: "172.18.0.0/16", ifname: "jocker1")
 
     assert Network.remove("testnetwork") == {:ok, test_network.id}
     assert Network.remove("testnetwork") == {:error, "network not found."}
@@ -82,10 +82,10 @@ defmodule NetworkTest do
     {:ok, _pid} = Network.start_link([])
 
     assert {:ok, test_network} =
-             Network.create("testnetwork", subnet: "172.18.0.0/16", if_name: "jocker1")
+             Network.create("testnetwork", subnet: "172.18.0.0/16", ifname: "jocker1")
 
     assert {:error, "network name is already taken"} =
-             Network.create("testnetwork", subnet: "172.19.0.0/16", if_name: "jocker2")
+             Network.create("testnetwork", subnet: "172.19.0.0/16", ifname: "jocker2")
 
     Network.remove("testnetwork")
   end
@@ -94,7 +94,7 @@ defmodule NetworkTest do
     {:ok, _pid} = Network.start_link([])
 
     assert {:error, "invalid subnet"} =
-             Network.create("testnetwork", subnet: "172.18.0.0-16", if_name: "jocker1")
+             Network.create("testnetwork", subnet: "172.18.0.0-16", ifname: "jocker1")
   end
 
   test "connect and disconnect a container to a network" do
@@ -106,7 +106,7 @@ defmodule NetworkTest do
     )
 
     network_if = "jocker1"
-    Network.create("testnet", subnet: "172.19.0.0/24", if_name: network_if)
+    Network.create("testnet", subnet: "172.19.0.0/24", ifname: network_if)
 
     opts = [
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network_if]

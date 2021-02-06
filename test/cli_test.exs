@@ -345,6 +345,62 @@ defmodule CLITest do
     assert cmd("container start -a #{id}") == "lol"
   end
 
+  test "basic creation, removal and listing of networks" do
+    network = MetaData.get_network("default")
+
+    expected_output = """
+    NETWORK ID     NAME                        DRIVER
+    host           host                        host
+    #{network.id}   default                     loopback
+    """
+
+    output = cmd("network ls")
+    assert expected_output == Enum.join(output, "")
+
+    network_id = cmd("network create --ifname jocker1 --subnet 172.19.0.0/24 testnet")
+    network = MetaData.get_network("testnet")
+    assert network_id == network.id
+
+    expected_output_testnet =
+      expected_output <>
+        """
+        #{network.id}   testnet                     loopback
+        """
+
+    output = cmd("network ls")
+    assert expected_output_testnet == Enum.join(output, "")
+
+    network_id = cmd("network rm testnet")
+    assert network_id == network.id
+
+    output = cmd("network ls")
+    assert expected_output == Enum.join(output, "")
+  end
+
+  test "connecting a container to a custom network at creation time" do
+    cmd("network create --ifname jocker1 --subnet 172.19.0.0/24 testnet")
+    id = cmd("container create --network testnet base netstat --libxo json -4 -i")
+    interfaces = cmd("container start -a #{id}") |> decode_netstat_interface_status()
+    assert interfaces["jocker1"]["address"] == "172.19.0.0"
+    assert [] == cmd("network disconnect testnet #{id}")
+    interfaces = cmd("container start -a #{id}") |> decode_netstat_interface_status()
+    assert interfaces == %{}
+    cmd("network rm testnet")
+  end
+
+  test "connect a container to a custom network after it has been created with the default network" do
+    network_id = cmd("network create --ifname jocker1 --subnet 172.19.0.0/24 testnet")
+    id = cmd("container create base netstat --libxo json -4 -i")
+    cmd("network connect testnet #{id}")
+    interfaces = cmd("container start -a #{id}") |> decode_netstat_interface_status()
+    assert interfaces["jocker1"]["address"] == "172.19.0.0"
+    assert interfaces["jocker0"]["address"] == "172.17.0.0"
+    cmd("network rm testnet")
+    interfaces = cmd("container start -a #{id}") |> decode_netstat_interface_status()
+    assert interfaces["jocker0"]["address"] == "172.17.0.0"
+    assert length(Map.keys(interfaces)) == 1
+  end
+
   test "jocker volume create" do
     assert ["testvol\n"] == jocker_cmd("volume create testvol")
     # Check for idempotency:
@@ -431,6 +487,14 @@ defmodule CLITest do
     String.trim(List.first(jocker_cmd(command)))
   end
 
+  defp cmd(<<"network create", _::binary>> = command) do
+    String.trim(List.first(jocker_cmd(command)))
+  end
+
+  defp cmd(<<"network rm", _::binary>> = command) do
+    String.trim(List.first(jocker_cmd(command)))
+  end
+
   defp cmd(command) do
     jocker_cmd(command)
   end
@@ -448,6 +512,12 @@ defmodule CLITest do
     if is_client_alive?() do
       GenServer.stop(Jocker.CLI.EngineClient)
     end
+  end
+
+  def decode_netstat_interface_status(output_json) do
+    {:ok, output} = Jason.decode(output_json)
+    interface_list = output["statistics"]["interface"]
+    Enum.reduce(interface_list, %{}, &Map.put(&2, &1["name"], &1))
   end
 
   defp is_client_alive?() do

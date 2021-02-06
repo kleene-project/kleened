@@ -100,10 +100,11 @@ defmodule Jocker.CLI.Container do
   Create a new container
 
   Options:
-        --name string                    Assign a name to the container
         --mount.devfs/--no-mount.devfs   Toggle devfs mount (default true)
+        --name string                    Assign a name to the container
+        --network string                 Connect a container to a network
     -v, --volume                         Bind mount a volume
-    -J, --jailparam string               Specify a jail parameter
+    -J, --jailparam string               Specify a jail parameter (see jail(8) for details)
 
   """
   def create(:spec) do
@@ -113,9 +114,10 @@ defmodule Jocker.CLI.Container do
       arg_spec: "=>1",
       aliases: [v: :volume, J: :jailparam],
       arg_options: [
-        name: :string,
-        volume: :keep,
         "mount.devfs": :boolean,
+        name: :string,
+        network: :string,
+        volume: :keep,
         jailparam: :keep,
         help: :boolean
       ]
@@ -123,6 +125,7 @@ defmodule Jocker.CLI.Container do
   end
 
   def create({options, [image | cmd]}) do
+    options = convert_network_option(options)
     {mountdevfs_jailparam, options} = convert_mountdevfs_option(options)
 
     jail_param =
@@ -310,6 +313,11 @@ defmodule Jocker.CLI.Container do
 
   defp destroy_containers([]) do
     :ok
+  end
+
+  defp convert_network_option(options) do
+    {network, new_options} = Keyword.pop(options, :network, "default")
+    Keyword.put(new_options, :networks, [network])
   end
 
   defp convert_mountdevfs_option(options) do

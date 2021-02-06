@@ -31,7 +31,7 @@ defmodule Jocker.Engine.Network do
 
   @type create_options() :: [create_option()]
   @type create_option() ::
-          {:subnet, String.t()} | {:if_name, String.t()} | {:driver, driver_type()}
+          {:subnet, String.t()} | {:ifname, String.t()} | {:driver, driver_type()}
   @type driver_type() :: :loopback
   @type network_id() :: String.t()
   @type endpoint_config() :: %EndPointConfig{}
@@ -129,7 +129,7 @@ defmodule Jocker.Engine.Network do
     MetaData.add_network(%Network{id: "host", name: "host"})
 
     if default_network_name != nil do
-      case create_(default_network_name, :loopback, state, if_name: if_name, subnet: subnet) do
+      case create_(default_network_name, :loopback, state, ifname: if_name, subnet: subnet) do
         {:ok, _} -> :ok
         {:error, "network name is already taken"} -> :ok
         {:error, reason} -> Logger.warn("Could not initialize default network: #{reason}")
@@ -204,7 +204,7 @@ defmodule Jocker.Engine.Network do
 
   def create_(name, :loopback, state, options) do
     subnet = Keyword.get(options, :subnet)
-    if_name = Keyword.get(options, :if_name)
+    if_name = Keyword.get(options, :ifname)
     parsed_subnet = CIDR.parse(subnet)
 
     cond do

@@ -332,8 +332,8 @@ defmodule Jocker.Engine.MetaData do
     sql = "SELECT config FROM endpoint_configs WHERE container_id = ? AND network_id = ?"
     param = [container_id, network_id]
     {:ok, rows} = fetch_all(db, sql, param)
-    rows = Enum.map(rows, fn [config: json] -> from_json(:endpoint_config, json) end)
-    rows
+    [row] = Enum.map(rows, fn [config: json] -> from_json(:endpoint_config, json) end)
+    row
   end
 
   def remove_endpoint_config_(db, container_id, network_id) do
