@@ -69,19 +69,16 @@ Vagrant.configure("2") do |config|
     sysrc -f /boot/loader.conf pf_load="YES"
     sysrc pf_enable="YES"
     sysrc pflog_enable="YES"
+    sysrc gateway_enable="YES"
 
     ## Inititalize zfs
     kldload zfs
     sysrc -f /boot/loader.conf zfs_load="YES"
+    sysrc zfs_enable="YES"
     truncate -s 2560M /home/vagrant/zpool.disk
     zpool create -f zroot /home/vagrant/zpool.disk
     zfs create -o compression=gzip-9 -o mountpoint=/zroot/jocker zroot/jocker
     zfs create zroot/jocker_basejail
-
-    ## Configure /etc/rc.conf
-    sysrc pf_enable="YES"
-    sysrc zfs_enable="YES"
-    sysrc gateway_enable="YES"
 
     ## Initialize base-jail
     ## fetched from: ftp://ftp.dk.freebsd.org/pub/FreeBSD/releases/amd64/12.2-RELEASE/base.txz

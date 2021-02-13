@@ -1,10 +1,20 @@
 defmodule Jocker.CLI.Utils do
   alias Jocker.CLI.EngineClient
+  require Logger
 
   def rpc(cmd) do
     case Process.whereis(EngineClient) do
-      nil -> EngineClient.start_link([])
-      _pid -> :ok
+      nil ->
+        case EngineClient.start_link([]) do
+          {:ok, _pid} ->
+            :ok
+
+          {:error, reason} ->
+            Logger.warn("Error connecting to jocker engine: #{reason}")
+        end
+
+      _pid ->
+        :ok
     end
 
     :ok = EngineClient.command(cmd)

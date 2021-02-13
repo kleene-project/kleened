@@ -7,6 +7,7 @@ defmodule Jocker.CLI.Main do
   @cli_version "0.0.0"
 
   def main(args) do
+    {:ok, _pid} = Jocker.Engine.Config.start_link([])
     Logger.configure(level: :error)
     Process.register(self(), :cli_master)
     spawn_link(__MODULE__, :main_, [args])
