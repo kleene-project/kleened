@@ -4,7 +4,7 @@ defmodule Jocker.MixProject do
   def project do
     [
       app: :jocker,
-      version: "0.0.0",
+      version: "0.0.1",
       elixir: "~> 1.9",
       start_permanent: Mix.env() == :prod,
       escript: [
@@ -12,6 +12,9 @@ defmodule Jocker.MixProject do
         name: "jocker",
         app: :logger,
         embed_elixir: true
+      ],
+      releases: [
+        jockerd: [include_executables_for: [:unix]]
       ],
       dialyzer: [
         # plt_ignore_apps: [:amnesia],
