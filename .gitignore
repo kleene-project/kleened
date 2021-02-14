@@ -26,7 +26,7 @@ jocker-*.tar
 vim_*
 
 # Ignore cli-binary
-jocker
+/jocker
 
 # Ignore sqlite database files
 *.sqlite
