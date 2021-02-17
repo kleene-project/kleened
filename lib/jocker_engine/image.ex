@@ -55,14 +55,15 @@ defmodule Jocker.Engine.Image do
 
   def create_image(instructions, state) do
     %State{:container => cont} = Enum.reduce(instructions, state, &process_instructions/2)
-    container(id: image_id, layer_id: layer_id, user: user, command: cmd) = cont
-    MetaData.delete_container(image_id)
+    container(id: container_id, layer_id: layer_id, user: user, command: cmd) = cont
+    Jocker.Engine.Network.disconnect(container_id, "default")
+    MetaData.delete_container(container_id)
     layer = MetaData.get_layer(layer_id)
-    Jocker.Engine.Layer.to_image(layer, image_id)
+    Jocker.Engine.Layer.to_image(layer, container_id)
 
     img =
       image(
-        id: image_id,
+        id: container_id,
         layer_id: layer_id,
         user: user,
         name: state.image_name,
