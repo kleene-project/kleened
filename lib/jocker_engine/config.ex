@@ -22,19 +22,74 @@ defmodule Jocker.Engine.Config do
   end
 
   defp initialize() do
+    initialize_system()
     cfg = open_config_file()
-    exit_if_not_defined(cfg, "zroot")
-    exit_if_not_defined(cfg, "api_socket")
-    exit_if_not_defined(cfg, "base_layer_dataset")
-    exit_if_not_defined(cfg, "default_subnet")
+    error_if_not_defined(cfg, "zroot")
+    error_if_not_defined(cfg, "api_socket")
+    error_if_not_defined(cfg, "base_layer_dataset")
+    error_if_not_defined(cfg, "default_subnet")
+    valid_subnet_or_exit(cfg["default_subnet"])
     cfg = initialize_jocker_root(cfg)
     cfg = initialize_baselayer(cfg)
-    valid_subnet_or_exit(cfg["default_subnet"])
     cfg = Map.put(cfg, "metadata_db", Path.join(["/", cfg["zroot"], "metadata.sqlite"]))
     Map.put(cfg, "pf_config_path", Path.join(["/", cfg["zroot"], "pf_jocker.conf"]))
   end
 
-  def exit_if_not_defined(cfg, key) do
+  def initialize_system() do
+    loader_conf = "/boot/loader.conf"
+
+    if not kmod_loaded?("zfs") do
+      {:error, "zfs module not loaded"}
+    end
+
+    if not kmod_loaded?("pf") do
+      kmod_load_or_error("pf")
+    end
+
+    if not sysrc_enabled?("pf_load", loader_conf) do
+      sysrc_enable_or_error("pf_load", loader_conf)
+    end
+
+    if not sysrc_enabled?("pf_enable") do
+      sysrc_enable_or_error("pf_enable")
+    end
+
+    if not sysrc_enabled?("pflog_enable") do
+      sysrc_enable_or_error("pflog_enable")
+    end
+  end
+
+  defp kmod_loaded?(module) do
+    case System.cmd("/sbin/kldstat", ["-m", module], stderr_to_stdout: true) do
+      {_, 0} -> true
+      {_, 1} -> false
+    end
+  end
+
+  def kmod_load_or_error(module) do
+    case System.cmd("/sbin/kldload", [module], stderr_to_stdout: true) do
+      {_, 0} -> :ok
+      {reason, _} -> init_error(reason)
+    end
+  end
+
+  defp sysrc_enabled?(service, file \\ "/etc/rc.conf") do
+    case System.cmd("/usr/sbin/sysrc", ["-n", "-f", file, service], stderr_to_stdout: true) do
+      {"YES\n", 0} -> true
+      _ -> false
+    end
+  end
+
+  defp sysrc_enable_or_error(service, file \\ "/etc/rc.conf") do
+    case System.cmd("/usr/sbin/sysrc", ["-n", "-f", file, "#{service}=\"YES\""],
+           stderr_to_stdout: true
+         ) do
+      {_, 0} -> :ok
+      {reason, _} -> init_error(reason)
+    end
+  end
+
+  def error_if_not_defined(cfg, key) do
     case Map.get(cfg, key) do
       nil -> config_error("'#{key}' key not set in configuration file. Exiting.")
       _ -> :ok
@@ -99,7 +154,12 @@ defmodule Jocker.Engine.Config do
 
   defp config_error(msg) do
     Logger.error("configuration error: #{msg}")
-    exit(:normal)
+    raise "failed to configure jockerd"
+  end
+
+  defp init_error(msg) do
+    Logger.error("initialization error: #{msg}")
+    raise "failed to initialize jockerd"
   end
 
   defp open_config_file() do

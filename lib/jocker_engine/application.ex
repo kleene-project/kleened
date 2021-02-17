@@ -24,6 +24,20 @@ defmodule Jocker.Engine.Application do
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: Jocker.Engine.Supervisor]
-    Supervisor.start_link(children, opts)
+
+    case Supervisor.start_link(children, opts) do
+      {:ok, pid} ->
+        {:ok, pid}
+
+      {:error,
+       {:shutdown,
+        {:failed_to_start_child, Jocker.Engine.Config, {%RuntimeError{message: msg}, _}}}} ->
+        {:error, "could not start dockerd: #{msg}"}
+
+      unknown_return ->
+        msg = "could not start jockerd: #{inspect(unknown_return)}"
+        Logger.error(msg)
+        {:error, msg}
+    end
   end
 end
