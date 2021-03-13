@@ -1,0 +1,27 @@
+#!/bin/sh
+
+# $FreeBSD$
+#
+# PROVIDE: jockerd
+# REQUIRE: LOGIN
+# KEYWORD: shutdown
+#
+# Add this line to /etc/rc.conf.local or /etc/rc.conf
+# to enable this service:
+#
+# jocker_enable (bool):	Set to NO by default.
+#				Set it to YES to enable doormand.
+
+. /etc/rc.subr
+
+name=jockerd
+rcvar=jockerd_enable 
+
+start_cmd="/usr/bin/env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 /usr/local/lib/jockerd/bin/jockerd daemon"
+stop_cmd="/usr/bin/env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 /usr/local/lib/jockerd/bin/jockerd stop"
+stop_status=":"
+
+load_rc_config $name 
+: ${jockerd_enable:=no} 
+
+run_rc_command "$1"
