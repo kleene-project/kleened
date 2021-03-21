@@ -24,7 +24,7 @@ defmodule CLITest do
        name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0}
     )
 
-    start_supervised(Jocker.Engine.APIServer)
+    {:ok, _pid} = start_supervised(Jocker.Engine.APIServer)
     start_supervised(Jocker.Engine.Network)
     :ok
   end
@@ -58,6 +58,7 @@ defmodule CLITest do
   end
 
   test "api_server MetaData.list_images()" do
+    {:ok, _pid} = Jocker.CLI.Config.start_link([:default])
     {:ok, _pid} = Jocker.CLI.EngineClient.start_link([])
     rpc = [MetaData, :list_images, []]
     :ok = Jocker.CLI.EngineClient.command(rpc)
@@ -70,6 +71,7 @@ defmodule CLITest do
       fn n -> Jocker.Engine.Container.create(name: "testcontainer#{n}", cmd: "bin/ls") end
     )
 
+    {:ok, _pid} = Jocker.CLI.Config.start_link([:default])
     {:ok, _pid} = Jocker.CLI.EngineClient.start_link([])
     rpc = [Container, :list, [[all: true]]]
     :ok = Jocker.CLI.EngineClient.command(rpc)
@@ -391,7 +393,7 @@ defmodule CLITest do
   end
 
   test "connect a container to a custom network after it has been created with the default network" do
-    network_id = cmd("network create --ifname jocker1 --subnet 172.19.0.0/24 testnet")
+    _network_id = cmd("network create --ifname jocker1 --subnet 172.19.0.0/24 testnet")
     id = cmd("container create base netstat --libxo json -4 -i")
     cmd("network connect testnet #{id}")
     interfaces = cmd("container start -a #{id}") |> decode_netstat_interface_status()

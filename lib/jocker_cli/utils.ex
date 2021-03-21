@@ -10,7 +10,7 @@ defmodule Jocker.CLI.Utils do
             :ok
 
           {:error, reason} ->
-            Logger.warn("Error connecting to jocker engine: #{reason}")
+            Logger.error("jocker-cli: Error connecting to backend: #{reason}")
         end
 
       _pid ->

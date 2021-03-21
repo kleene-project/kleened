@@ -4,6 +4,12 @@ import Jocker.Engine.Records
 
 ExUnit.start()
 
+ExUnit.configure(
+  seed: 0,
+  trace: true,
+  max_failures: 1
+)
+
 defmodule TestHelper do
   def now() do
     :timer.sleep(10)
@@ -31,7 +37,7 @@ defmodule TestHelper do
   end
 
   def clear_zroot() do
-    Config.start_link([])
+    {:ok, _pid} = Config.start_link([])
     zroot = Config.get("zroot")
     Agent.stop(Config)
     ZFS.destroy_force(zroot)

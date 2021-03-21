@@ -7,7 +7,7 @@ defmodule Jocker.CLI.EngineClient do
 
   use GenServer
   require Logger
-  alias Jocker.Engine.Config
+  alias Jocker.CLI.Config
   alias :gen_tcp, as: GenTCP
   alias :erlang, as: Erlang
 
@@ -18,8 +18,9 @@ defmodule Jocker.CLI.EngineClient do
     GenServer.start_link(__MODULE__, [self()], name: __MODULE__)
   end
 
-  def command(cmd),
-    do: GenServer.call(__MODULE__, {:command, cmd})
+  def command(cmd) do
+    GenServer.call(__MODULE__, {:command, cmd})
+  end
 
   ### ===================================================================
   ### gen_server callbacks
@@ -27,17 +28,16 @@ defmodule Jocker.CLI.EngineClient do
 
   @impl true
   def init([callers_pid]) do
-    api_socket = Config.get("api_socket")
-
     Logger.info("Connecting to jocker-engine")
 
-    case GenTCP.connect({:local, api_socket}, 0, [:binary, {:packet, :raw}, {:active, true}]) do
+    {port, address} = server_location()
+
+    case GenTCP.connect(address, port, [:binary, {:packet, :raw}, {:active, true}]) do
       {:ok, socket} ->
         Logger.info("Connection succesfully established")
         {:ok, %State{:socket => socket, :caller => callers_pid, :buffer => ""}}
 
       {:error, reason} ->
-        Logger.error("jocker-cli: Error connecting to backend: #{reason}")
         {:stop, reason}
     end
   end
@@ -78,6 +78,16 @@ defmodule Jocker.CLI.EngineClient do
         Logger.debug("Receiving reply from server: #{inspect(reply)}")
         Process.send(pid, {:server_reply, reply}, [])
         {:noreply, %State{state | :buffer => new_buffer}}
+    end
+  end
+
+  defp server_location() do
+    case Config.get(:host) do
+      {:unix, path, port} ->
+        {port, {:local, path}}
+
+      {_iptype, address, port} ->
+        {port, address}
     end
   end
 end

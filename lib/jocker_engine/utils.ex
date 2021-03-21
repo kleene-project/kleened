@@ -1,6 +1,45 @@
 defmodule Jocker.Engine.Utils do
   require Logger
 
+  def decode_socket_address(<<"unix://", unix_socket::binary>>) do
+    {:unix, unix_socket, 0}
+  end
+
+  def decode_socket_address(<<"tcp://", address::binary>>) do
+    try do
+      case String.split(address, ":") do
+        [ipv4_or_host_str, port_str] ->
+          port = String.to_integer(port_str)
+
+          result =
+            ipv4_or_host_str
+            |> String.to_charlist()
+            |> :inet.parse_ipv4_address()
+
+          case result do
+            {:ok, address} -> {:ipv4, address, port}
+            # We assume that if it is ipv4-address it is probably a hostname instead:
+            {:error, _} -> {:hostname, ipv4_or_host_str, port}
+          end
+
+        ipv6_addressport ->
+          {port_str, ipv6address_splitup} = List.pop_at(ipv6_addressport, -1)
+
+          {:ok, address} =
+            ipv6address_splitup
+            |> Enum.join(":")
+            |> String.to_charlist()
+            |> :inet.parse_ipv6_address()
+
+          port = String.to_integer(port_str)
+          port = {:ipv6, address, port}
+      end
+    rescue
+      error_msg ->
+        {:error, error_msg}
+    end
+  end
+
   def touch(path) do
     case System.cmd("/usr/bin/touch", [path], stderr_to_stdout: true) do
       {"", 0} -> true

@@ -362,6 +362,9 @@ defmodule Jocker.Engine.Network do
           {_, 0} ->
             :ok
 
+          {"", 1} ->
+            Logger.error("Failed to load PF configuration file. 'pfctl' returned with an error.")
+
           {error_output, 1} ->
             Logger.error(
               "Failed to load PF configuration file. 'pfctl' returned the following error: #{

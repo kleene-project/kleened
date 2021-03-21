@@ -4,10 +4,8 @@ defmodule Jocker.CLI.Main do
   import Utils, only: [to_cli: 1, to_cli: 2]
   require Logger
 
-  @cli_version "0.0.0"
-
+  @cli_version "0.0.1"
   def main(args) do
-    {:ok, _pid} = Jocker.Engine.Config.start_link([])
     Logger.configure(level: :error)
     Process.register(self(), :cli_master)
     spawn_link(__MODULE__, :main_, [args])
@@ -23,6 +21,7 @@ defmodule Jocker.CLI.Main do
   Options:
   -v, --version            Print version information and quit
   -D, --debug              Enable debug mode
+  -H, --host string        Daemon socket to connect to: tcp://[host]:[port][path] or unix://[/path/to/socket]
 
   Management Commands:
   container   Manage containers
@@ -41,36 +40,39 @@ defmodule Jocker.CLI.Main do
       OptionParser.parse_head(argv,
         aliases: [
           v: :version,
+          H: :host,
           D: :debug
         ],
         strict: [
           debug: :boolean,
           version: :boolean,
+          host: :string,
           help: :boolean
         ]
       )
 
     case {options, args, invalid} do
       {opts, [], []} ->
-        case Keyword.get(opts, :version) do
-          true -> to_cli("Jocker version #{@cli_version}", :eof)
-          _ -> to_cli(nil, :eof)
-        end
+        perhaps_print_version(opts)
 
       {[], rest, []} ->
+        Jocker.CLI.Config.start_link([:default])
         parse_subcommand(rest)
 
       {opts, rest, []} ->
-        case Keyword.get(opts, :debug) do
-          true -> Logger.configure(level: :debug)
-          _ -> :ok
-        end
-
+        Jocker.CLI.Config.start_link(opts)
         parse_subcommand(rest)
 
       {_, _, [unknown_flag | _rest]} ->
-        to_cli("unknown flag: '#{unknown_flag}")
+        to_cli("unknown flag: '#{unknown_flag}'")
         to_cli("See 'jocker --help'", :eof)
+    end
+  end
+
+  defp perhaps_print_version(opts) do
+    case Keyword.get(opts, :version) do
+      true -> to_cli("Jocker version #{@cli_version}", :eof)
+      _ -> to_cli(nil, :eof)
     end
   end
 
@@ -149,7 +151,7 @@ defmodule Jocker.CLI.Main do
         process_subcommand(&Jocker.CLI.Volume.rm/1, opts)
 
       [unknown_cmd | _opts] ->
-        to_cli("jocker: '#{unknown_cmd}' is not a jocker command.", :eof)
+        to_cli("jocker: '#{unknown_cmd}' is not a jocker command.\n", :eof)
 
       _unexpected ->
         to_cli("Unexpected error occured.", :eof)

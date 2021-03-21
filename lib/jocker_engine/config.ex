@@ -29,6 +29,7 @@ defmodule Jocker.Engine.Config do
     error_if_not_defined(cfg, "base_layer_dataset")
     error_if_not_defined(cfg, "default_subnet")
     valid_subnet_or_exit(cfg["default_subnet"])
+    cfg = valid_api_socket(cfg)
     cfg = initialize_jocker_root(cfg)
     cfg = initialize_baselayer(cfg)
     cfg = Map.put(cfg, "metadata_db", Path.join(["/", cfg["zroot"], "metadata.sqlite"]))
@@ -142,6 +143,19 @@ defmodule Jocker.Engine.Config do
     case ZFS.info(dataset) do
       %{:exists? => true} -> :ok
       %{:exists? => false} -> ZFS.create(dataset)
+    end
+  end
+
+  defp valid_api_socket(%{"api_socket" => api_socket} = config) do
+    case Jocker.Engine.Utils.decode_socket_address(api_socket) do
+      {:error, error} ->
+        config_error("failed to decode 'api_socket': #{inspect(error)}")
+
+      {:hostname, _, _} ->
+        config_error("failed to decode 'api_socket': #{api_socket}")
+
+      {_type, _ipv4_address, _port} = socket ->
+        Map.put(config, "api_socket", socket)
     end
   end
 

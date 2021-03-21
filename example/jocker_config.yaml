@@ -2,8 +2,8 @@
 # Root ZFS dataset where Jocker stores the images, containers and volumes. Must be set.
 zroot: "zroot/jocker"
 
-# Where jocker listens for commands. Must be set.
-api_socket: "/var/run/jocker.sock"
+# Where jocker listens for commands. Must be set: tcp://[host]:[port][path] or unix://[/path/to/socket]
+api_socket: "unix:///var/run/jocker.sock"
 
 # Dataset containg the userland that is used to build images. Must be set.
 base_layer_dataset: "zroot/jocker_basejail"

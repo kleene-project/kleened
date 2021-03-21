@@ -7,6 +7,7 @@ defmodule Jocker.Engine.APIServer do
 
   import Jocker.Engine.Records
   alias Jocker.Engine.Config
+  alias Jocker.Engine.Utils
   require Logger
   use GenServer
   alias :gen_tcp, as: GenTCP
@@ -18,19 +19,10 @@ defmodule Jocker.Engine.APIServer do
 
   @impl true
   def init([]) do
-    Logger.info("jocker-engine: Initating API backed")
-    api_socket = Config.get("api_socket")
-    File.rm(api_socket)
-
-    {:ok, listening_socket} =
-      GenTCP.listen(0, [
-        :binary,
-        {:packet, :raw},
-        {:active, false},
-        {:ip, {:local, api_socket}}
-      ])
-
-    Logger.info("jocker-engine: Listening on #{api_socket}")
+    Logger.info("jocker-engine: Initating API backend")
+    {port, options} = create_socket_options(Config.get("api_socket"))
+    {:ok, listening_socket} = GenTCP.listen(port, options)
+    Logger.info("jocker-engine: listening on #{address} port #{port}")
     server_pid = self()
     _listener_pid = Process.spawn(fn -> listen(server_pid, listening_socket) end, [:link])
 
@@ -129,6 +121,23 @@ defmodule Jocker.Engine.APIServer do
   def handle_info(msg, state) do
     Logger.warn("Unknown message received #{inspect(msg)}")
     {:noreply, state}
+  end
+
+  defp create_socket_options(api_socket) do
+    options = [
+      :binary,
+      {:packet, :raw},
+      {:active, false}
+    ]
+
+    case api_socket do
+      {:unix, path, port} ->
+        File.rm(path)
+        {port, [{:ip, {:local, path}} | options]}
+
+      {_iptype, address, port} ->
+        {port, [{:ip, address} | options]}
+    end
   end
 
   defp evaluate_command([module, function, args]) do

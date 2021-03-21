@@ -160,7 +160,7 @@ defmodule NetworkTest do
     )
 
     opts = [
-      cmd: ["/usr/bin/host", "-t", "A", "ip.tyk.nu", "91.239.100.100"]
+      cmd: ["/usr/bin/host", "-t", "A", "freebsd.org", "1.1.1.1"]
     ]
 
     {:ok, container(id: id)} = Container.create(opts)
@@ -173,7 +173,7 @@ defmodule NetworkTest do
       end
 
     assert output ==
-             "Using domain server:\nName: 91.239.100.100\nAddress: 91.239.100.100#53\nAliases: \n\nip.tyk.nu has address 95.216.101.209\n"
+             "Using domain server:\nName: 1.1.1.1\nAddress: 1.1.1.1#53\nAliases: \n\nfreebsd.org has address 96.47.72.84\n"
 
     Container.destroy(id)
   end
