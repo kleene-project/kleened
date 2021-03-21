@@ -7,7 +7,6 @@ defmodule Jocker.Engine.APIServer do
 
   import Jocker.Engine.Records
   alias Jocker.Engine.Config
-  alias Jocker.Engine.Utils
   require Logger
   use GenServer
   alias :gen_tcp, as: GenTCP
@@ -22,7 +21,8 @@ defmodule Jocker.Engine.APIServer do
     Logger.info("jocker-engine: Initating API backend")
     {port, options} = create_socket_options(Config.get("api_socket"))
     {:ok, listening_socket} = GenTCP.listen(port, options)
-    Logger.info("jocker-engine: listening on #{address} port #{port}")
+    address = Keyword.get(options, :ip)
+    Logger.info("jocker-engine: listening on #{inspect(address)} port #{port}")
     server_pid = self()
     _listener_pid = Process.spawn(fn -> listen(server_pid, listening_socket) end, [:link])
 

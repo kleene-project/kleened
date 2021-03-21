@@ -59,7 +59,7 @@ defmodule NetworkTest do
 
     assert [%Structs.Network{id: "host"}, %Structs.Network{name: "default"}] = Network.list()
 
-    {:ok, network} = Network.create("testnetwork", subnet: "172.18.0.0/16", ifname: "jocker1")
+    {:ok, _network} = Network.create("testnetwork", subnet: "172.18.0.0/16", ifname: "jocker1")
 
     assert [
              %Structs.Network{id: "host"},

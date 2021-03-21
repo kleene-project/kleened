@@ -32,6 +32,6 @@ defmodule Jocker.CLI.Config do
 
     host = Keyword.get(opts, :host, @default_socket)
     host = Jocker.Engine.Utils.decode_socket_address(host)
-    config = %{:host => host, :debug => debug}
+    %{:host => host, :debug => debug}
   end
 end

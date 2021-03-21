@@ -32,7 +32,7 @@ defmodule Jocker.Engine.Utils do
             |> :inet.parse_ipv6_address()
 
           port = String.to_integer(port_str)
-          port = {:ipv6, address, port}
+          {:ipv6, address, port}
       end
     rescue
       error_msg ->
