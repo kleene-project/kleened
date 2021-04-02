@@ -5,7 +5,7 @@ defmodule MetaDataTest do
   import Jocker.Engine.Records
   import TestHelper, only: [now: 0]
 
-  alias Jocker.Structs.Network
+  alias Jocker.Engine.Network
 
   @moduletag :capture_log
 

@@ -5,7 +5,6 @@ defmodule NetworkTest do
   alias Jocker.Engine.Utils
   alias Jocker.Engine.MetaData
   alias Jocker.Engine.Container
-  alias Jocker.Structs
   import Jocker.Engine.Records
 
   setup_all do
@@ -42,7 +41,7 @@ defmodule NetworkTest do
     Utils.destroy_interface("jocker1")
     {:ok, _pid} = Network.start_link([])
 
-    assert {:ok, %Structs.Network{name: "testnetwork"} = test_network} =
+    assert {:ok, %Network{name: "testnetwork"} = test_network} =
              Network.create("testnetwork", subnet: "172.18.0.0/16", ifname: "jocker1")
 
     assert Utils.interface_exists("jocker1")
@@ -57,14 +56,14 @@ defmodule NetworkTest do
     Utils.destroy_interface("jocker1")
     {:ok, _pid} = Network.start_link([])
 
-    assert [%Structs.Network{id: "host"}, %Structs.Network{name: "default"}] = Network.list()
+    assert [%Network{id: "host"}, %Network{name: "default"}] = Network.list()
 
     {:ok, _network} = Network.create("testnetwork", subnet: "172.18.0.0/16", ifname: "jocker1")
 
     assert [
-             %Structs.Network{id: "host"},
-             %Structs.Network{name: "default"},
-             %Structs.Network{name: "testnetwork"}
+             %Network{id: "host"},
+             %Network{name: "default"},
+             %Network{name: "testnetwork"}
            ] = Network.list()
   end
 

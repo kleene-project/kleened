@@ -1,33 +1,36 @@
-defmodule Jocker.Structs.Network do
-  @derive Jason.Encoder
-  defstruct id: nil,
-            name: nil,
-            subnet: nil,
-            if_name: nil,
-            default_gw_if: nil
-end
-
-defmodule Jocker.Structs.EndPointConfig do
-  @derive Jason.Encoder
-  defstruct id: nil,
-            name: nil,
-            subnet: nil,
-            if_name: nil,
-            ip_addresses: [],
-            default_gw_if: nil
-end
-
 defmodule Jocker.Engine.Network do
   use GenServer
   alias Jocker.Engine.Config
   alias Jocker.Engine.Container
   alias Jocker.Engine.Utils
   alias Jocker.Engine.MetaData
-  alias Jocker.Structs.EndPointConfig
-  alias Jocker.Structs.Network
   require Logger
   require Record
   import Jocker.Engine.Records
+
+  @derive Jason.Encoder
+  defstruct id: nil,
+            name: nil,
+            subnet: nil,
+            if_name: nil,
+            default_gw_if: nil
+
+  alias __MODULE__, as: Network
+
+  defmodule EndPointConfig do
+    @derive Jason.Encoder
+    defstruct id: nil,
+              name: nil,
+              subnet: nil,
+              if_name: nil,
+              ip_addresses: [],
+              default_gw_if: nil
+  end
+
+  defmodule State do
+    defstruct pf_config_path: nil,
+              gateway_interface: nil
+  end
 
   @type create_options() :: [create_option()]
   @type create_option() ::
@@ -55,13 +58,6 @@ defmodule Jocker.Engine.Network do
   <%= jocker_filtering %>
   ### JOCKER FILTERING RULES END #######
   """
-
-  defmodule Jocker.Engine.Network.State do
-    defstruct pf_config_path: nil,
-              gateway_interface: nil
-  end
-
-  alias Jocker.Engine.Network.State
 
   def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)

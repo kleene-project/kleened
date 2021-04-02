@@ -1,6 +1,6 @@
 defmodule Jocker.CLI.Network do
   alias Jocker.CLI.Utils
-  alias Jocker.Structs
+  alias Jocker.Engine.Network
   import Utils, only: [cell: 2, sp: 1, to_cli: 1, to_cli: 2, rpc: 1]
   require Logger
 
@@ -46,10 +46,10 @@ defmodule Jocker.CLI.Network do
     }
 
     print_network(header)
-    networks_raw = rpc([Jocker.Engine.Network, :list, []])
+    networks_raw = rpc([Network, :list, []])
 
     networks =
-      Enum.map(networks_raw, fn %Structs.Network{id: id, name: name} ->
+      Enum.map(networks_raw, fn %Network{id: id, name: name} ->
         driver =
           case id do
             "host" -> "host"
@@ -102,8 +102,8 @@ defmodule Jocker.CLI.Network do
         to_cli("missing option 'subnet'", :eof)
 
       true ->
-        case rpc([Jocker.Engine.Network, :create, [name, options]]) do
-          {:ok, %Structs.Network{id: id}} ->
+        case rpc([Network, :create, [name, options]]) do
+          {:ok, %Network{id: id}} ->
             to_cli(id, :eof)
 
           {:error, reason} ->
@@ -136,7 +136,7 @@ defmodule Jocker.CLI.Network do
   end
 
   defp destroy_networks([network_idname | networks]) do
-    case rpc([Jocker.Engine.Network, :remove, [network_idname]]) do
+    case rpc([Network, :remove, [network_idname]]) do
       {:ok, network_id} ->
         to_cli("#{network_id}\n")
 
@@ -169,7 +169,7 @@ defmodule Jocker.CLI.Network do
   end
 
   def connect({[], [network_idname, container_idname]}) do
-    case(rpc([Jocker.Engine.Network, :connect, [container_idname, network_idname]])) do
+    case(rpc([Network, :connect, [container_idname, network_idname]])) do
       :ok -> to_cli(:eof)
       {:error, reason} -> to_cli("error: #{reason}", :eof)
     end
@@ -193,7 +193,7 @@ defmodule Jocker.CLI.Network do
   end
 
   def disconnect({[], [network_idname, container_idname]}) do
-    case(rpc([Jocker.Engine.Network, :disconnect, [container_idname, network_idname]])) do
+    case(rpc([Network, :disconnect, [container_idname, network_idname]])) do
       :ok -> to_cli(:eof)
       {:error, reason} -> to_cli("error: #{reason}", :eof)
     end

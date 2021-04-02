@@ -3,6 +3,7 @@ defmodule Jocker.Engine.MetaData do
   alias Jocker.Engine.Config
   alias Jocker.Engine.Container
   alias Jocker.Engine.Network
+  alias Jocker.Engine.Network.EndPointConfig
   alias Jocker.Engine.Records, as: JockerRecords
   import JockerRecords
 
@@ -126,7 +127,7 @@ defmodule Jocker.Engine.MetaData do
     Agent.stop(__MODULE__)
   end
 
-  @spec add_network(%Jocker.Structs.Network{}) :: :ok
+  @spec add_network(%Network{}) :: :ok
   def add_network(network) do
     Agent.get(__MODULE__, fn db -> add_network_(db, network) end)
   end
@@ -136,12 +137,12 @@ defmodule Jocker.Engine.MetaData do
     Agent.get(__MODULE__, fn db -> remove_network_(db, network_id) end)
   end
 
-  @spec get_network(String.t()) :: %Jocker.Structs.Network{} | :not_found
+  @spec get_network(String.t()) :: %Network{} | :not_found
   def get_network(name_or_id) do
     Agent.get(__MODULE__, fn db -> get_network_(db, name_or_id) end)
   end
 
-  @spec list_networks(:include_host | :exclude_host) :: [%Jocker.Structs.Network{}]
+  @spec list_networks(:include_host | :exclude_host) :: [%Network{}]
   def list_networks(mode \\ :include_host) do
     Agent.get(__MODULE__, fn db -> list_networks_(db, mode) end)
   end
@@ -149,7 +150,7 @@ defmodule Jocker.Engine.MetaData do
   @spec add_endpoint_config(
           Container.container_id(),
           Network.network_id(),
-          %Jocker.Structs.EndPointConfig{}
+          %EndPointConfig{}
         ) :: :ok
   def add_endpoint_config(container_id, network_id, endpoint_config) do
     Agent.get(__MODULE__, fn db ->
@@ -158,7 +159,7 @@ defmodule Jocker.Engine.MetaData do
   end
 
   @spec get_endpoint_config(Container.container_id(), Network.network_id()) ::
-          %Jocker.Structs.EndPointConfig{} | :not_found
+          %EndPointConfig{} | :not_found
   def get_endpoint_config(container_id, network_id) do
     Agent.get(__MODULE__, fn db -> get_endpoint_config_(db, container_id, network_id) end)
   end
@@ -306,7 +307,7 @@ defmodule Jocker.Engine.MetaData do
     exec(db, "DELETE FROM networks WHERE json_extract(network, '$.id') = ?", [network_id])
   end
 
-  @spec list_networks_(db_conn(), :include_host | :exclude_host) :: [%Jocker.Structs.Network{}]
+  @spec list_networks_(db_conn(), :include_host | :exclude_host) :: [%Network{}]
   def list_networks_(db, mode) do
     sql =
       case mode do
@@ -526,21 +527,21 @@ defmodule Jocker.Engine.MetaData do
     create_tables(db)
   end
 
-  @spec to_json(%Jocker.Structs.Network{}) :: String.t()
+  @spec to_json(%Network{}) :: String.t()
   def to_json(struct) do
     {:ok, json} = Jason.encode(struct)
     json
   end
 
-  @spec from_json(:network | :endpoint_config, String.t()) :: %Jocker.Structs.Network{}
+  @spec from_json(:network | :endpoint_config, String.t()) :: %Network{}
   def from_json(:network, network) do
     {:ok, map} = Jason.decode(network, [{:keys, :atoms}])
-    struct(Jocker.Structs.Network, map)
+    struct(Network, map)
   end
 
   def from_json(:endpoint_config, config) do
     {:ok, map} = Jason.decode(config, [{:keys, :atoms}])
-    struct(Jocker.Structs.EndPointConfig, map)
+    struct(EndPointConfig, map)
   end
 
   def decode_endpoint_configs(json) do
@@ -554,7 +555,7 @@ defmodule Jocker.Engine.MetaData do
         {String.to_existing_atom(key), val}
       end
 
-    {endpointkey, struct(Jocker.Structs.EndPointConfig, endpointcfg_with_atom_keys)}
+    {endpointkey, struct(EndPointConfig, endpointcfg_with_atom_keys)}
   end
 
   @spec row2record(record_type(), []) :: jocker_record()
