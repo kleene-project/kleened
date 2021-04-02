@@ -418,6 +418,7 @@ lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.CLI.Main.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.CLI.Network.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.CLI.Utils.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.CLI.Volume.beam
+lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.CLI.Config.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.Engine.APIServer.State.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.Engine.APIServer.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.Engine.Application.beam
