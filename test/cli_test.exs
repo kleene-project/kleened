@@ -38,7 +38,7 @@ defmodule CLITest do
     end)
 
     on_exit(fn ->
-      MetaData.list_images() |> Enum.map(fn image(id: id) -> Image.destroy(id) end)
+      MetaData.list_images() |> Enum.map(fn %Image{id: id} -> Image.destroy(id) end)
     end)
 
     :ok
@@ -84,32 +84,18 @@ defmodule CLITest do
   end
 
   test "jocker image ls" do
-    img_id1 = "test-img-id1"
-    img_id2 = "test-img-id2"
-
-    img1 =
-      image(
-        id: img_id1,
-        name: "test-image",
-        tag: "latest",
-        command: "/bin/ls",
-        created: epoch(1)
-      )
-
-    img2 = image(img1, created: epoch(2), id: img_id2, name: "lol")
-
     header = "NAME           TAG          IMAGE ID       CREATED           \n"
-    row1 = "test-image     latest       #{img_id1}   51 years          \n"
-    row2 = "lol            latest       #{img_id2}   51 years          \n"
 
     # Test list one
-    MetaData.add_image(img1)
+    img_id1 = create_image_at_timestamp("test-image:latest", epoch(1))
+    row1 = "test-image     latest       #{img_id1}   51 years          \n"
     assert cmd("image ls") == [header, row1]
 
     # Test list two
-    MetaData.add_image(img2)
-
+    img_id2 = create_image_at_timestamp("lol:latest", epoch(2))
+    row2 = "lol            latest       #{img_id2}   51 years          \n"
     assert cmd("image ls") == [header, row2, row1]
+
     MetaData.delete_image(img_id1)
     MetaData.delete_image(img_id2)
   end
@@ -118,7 +104,7 @@ defmodule CLITest do
     path = "./test/data/test_cli_build_image"
 
     id = cmd("image build --quiet #{path}")
-    assert image(name: "<none>", tag: "<none>") = MetaData.get_image(id)
+    assert %Image{name: "<none>", tag: "<none>"} = MetaData.get_image(id)
     assert cmd("image rm #{id}") == id
     assert :not_found == MetaData.get_image(id)
   end
@@ -127,19 +113,21 @@ defmodule CLITest do
     path = "./test/data/test_cli_build_image"
 
     id = cmd("image build --quiet -t lol:test #{path}")
-    assert image(name: "lol", tag: "test") = MetaData.get_image(id)
+    assert %Image{name: "lol", tag: "test"} = MetaData.get_image(id)
     assert cmd("image rm #{id}") == id
     assert :not_found == MetaData.get_image(id)
   end
 
   test "jocker container ls" do
-    MetaData.add_image(image(id: "img_id", name: "", tag: "latest", created: epoch(1)))
-    MetaData.add_image(image(id: "lel", name: "img_name", tag: "latest", created: epoch(2)))
+    img_id1_tag = "lol1:latest"
+    img_id2_tag = "lol2:latest"
+    img_id1 = create_image_at_timestamp(img_id1_tag, epoch(1))
+    img_id2 = create_image_at_timestamp(img_id2_tag, epoch(2))
 
     MetaData.add_container(
       container(
         id: "1337",
-        image_id: "img_id",
+        image_id: img_id1,
         name: "test1",
         command: ["some_command"],
         created: epoch(10)
@@ -149,7 +137,7 @@ defmodule CLITest do
     MetaData.add_container(
       container(
         id: "1338",
-        image_id: "lel",
+        image_id: img_id2,
         name: "test2",
         command: ["some_command"],
         created: epoch(11)
@@ -170,10 +158,10 @@ defmodule CLITest do
       "CONTAINER ID   IMAGE                       COMMAND                   CREATED              STATUS    NAME\n"
 
     row_no_image_name =
-      "1337           img_id                      some_command              51 years             stopped   test1\n"
+      "1337           #{img_id1_tag}                 some_command              51 years             stopped   test1\n"
 
     row_with_tag =
-      "1338           img_name:latest             some_command              51 years             stopped   test2\n"
+      "1338           #{img_id2_tag}                 some_command              51 years             stopped   test2\n"
 
     row_base =
       "1339           base                        some_command              51 years             stopped   test3\n"
@@ -240,7 +228,7 @@ defmodule CLITest do
     RUN /usr/bin/touch /loltest
     """
 
-    image(id: image_id) = create_image(dockerfile)
+    %Image{id: image_id} = create_image(dockerfile)
 
     volume(name: vol_name, mountpoint: mountpoint_vol) = vol1 = Volume.create_volume("testvol-1")
     assert is_directory?(mountpoint_vol)
@@ -278,7 +266,7 @@ defmodule CLITest do
     RUN mkdir /testdir2
     """
 
-    image(id: image_id) = create_image(dockerfile)
+    %Image{id: image_id} = create_image(dockerfile)
     volume(name: vol_name, mountpoint: mountpoint_vol) = vol1 = Volume.create_volume("testvol-1")
     assert is_directory?(mountpoint_vol)
     assert Utils.touch(Path.join(mountpoint_vol, "testfile_writable_from_mountpoint_vol"))
@@ -454,6 +442,14 @@ defmodule CLITest do
 
     assert ["test2\n", "test1\n"] == jocker_cmd("volume ls --quiet")
     assert ["test2\n", "test1\n"] == jocker_cmd("volume ls -q")
+  end
+
+  defp create_image_at_timestamp(name_tag, timestamp) do
+    path = "./test/data/test_cli_build_image"
+    img_id2 = cmd("image build -t #{name_tag} --quiet #{path}")
+    img2 = MetaData.get_image(img_id2)
+    MetaData.add_image(%Image{img2 | created: timestamp})
+    img_id2
   end
 
   def create_image(content) do

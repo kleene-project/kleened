@@ -1,7 +1,6 @@
 defmodule ContainerTest do
   use ExUnit.Case
-  alias Jocker.Engine.Config
-  alias Jocker.Engine.Container
+  alias Jocker.Engine.{Config, Container, Image}
   import Jocker.Engine.Records
 
   @moduletag :capture_log
@@ -26,7 +25,7 @@ defmodule ContainerTest do
   end
 
   test "create container and fetch metadata" do
-    image(id: id) = Jocker.Engine.MetaData.get_image("base")
+    %Image{id: id} = Jocker.Engine.MetaData.get_image("base")
     {:ok, container(image_id: img_id)} = Container.create([])
     assert id == img_id
   end
@@ -109,6 +108,20 @@ defmodule ContainerTest do
 
     assert_receive {:container, ^id, "uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"}
     assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
+  end
+
+  test "start a container with environment variables set" do
+    # FIXME WIP
+    opts = [
+      cmd: ["/usr/bin/env"],
+      user: "root"
+    ]
+
+    start_attached_container(opts)
+
+    receive do
+      msg -> IO.puts("WIP #{inspect(msg)}")
+    end
   end
 
   defp start_attached_container(opts) do

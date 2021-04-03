@@ -17,27 +17,6 @@ defmodule Jocker.Engine.Records do
             mountpoint: String.t() | :none
           )
 
-  Record.defrecord(:image,
-    id: "",
-    name: "",
-    tag: "",
-    layer_id: "",
-    command: [],
-    user: "root",
-    created: ""
-  )
-
-  @type image() ::
-          record(:image,
-            id: String.t(),
-            name: String.t(),
-            tag: String.t(),
-            layer_id: String.t(),
-            command: [String.t()],
-            user: String.t(),
-            created: String.t()
-          )
-
   Record.defrecord(:container,
     id: :none,
     name: :none,

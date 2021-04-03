@@ -38,7 +38,7 @@ defmodule ImageTest do
 
     create_tmp_dockerfile(dockerfile)
 
-    image(layer_id: layer_id) =
+    %Image{layer_id: layer_id} =
       build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
 
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
@@ -54,7 +54,7 @@ defmodule ImageTest do
 
     context = create_test_context("test_copy_instruction")
     create_tmp_dockerfile(dockerfile, context)
-    image(layer_id: layer_id) = build_and_return_image(context, @tmp_dockerfile, "test:latest")
+    %Image{layer_id: layer_id} = build_and_return_image(context, @tmp_dockerfile, "test:latest")
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert [] == MetaData.list_containers()
@@ -70,7 +70,7 @@ defmodule ImageTest do
 
     context = create_test_context("test_copy_instruction_symbolic")
     create_tmp_dockerfile(dockerfile, context)
-    image(layer_id: layer_id) = build_and_return_image(context, @tmp_dockerfile, "test:latest")
+    %Image{layer_id: layer_id} = build_and_return_image(context, @tmp_dockerfile, "test:latest")
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     # we cannot check the symbolic link from the host:
     assert File.read(Path.join(mountpoint, "etc/testdir/test.txt")) == {:ok, "lol\n"}
@@ -97,7 +97,7 @@ defmodule ImageTest do
 
     context = create_test_context("test_image_builder_three_layers")
     create_tmp_dockerfile(dockerfile, context)
-    image(layer_id: layer_id) = build_and_return_image(context, @tmp_dockerfile, "test:latest")
+    %Image{layer_id: layer_id} = build_and_return_image(context, @tmp_dockerfile, "test:latest")
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test_1.txt")) == {:ok, "lol1\n"}

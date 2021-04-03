@@ -1,7 +1,7 @@
 defmodule Jocker.CLI.Image do
   alias Jocker.CLI.Utils
+  alias Jocker.Engine.Image
   import Utils, only: [cell: 2, sp: 1, to_cli: 1, to_cli: 2, rpc: 1]
-  import Jocker.Engine.Records
 
   @doc """
 
@@ -25,7 +25,7 @@ defmodule Jocker.CLI.Image do
   Build an image from a Dockerfile
 
   Options:
-  -t, --tag list                Name and optionally a tag in the 'name:tag' format
+  -t, --tag string              Name and optionally a tag in the 'name:tag' format
   -f, --file string             Name of the Dockerfile (Default is 'PATH/Dockerfile')
   -q, --quiet                   Suppress the build output and print image ID on success
   """
@@ -55,7 +55,7 @@ defmodule Jocker.CLI.Image do
 
   defp receive_results() do
     case Utils.fetch_reply() do
-      {:image_builder, _pid, {:image_finished, image(id: id)}} ->
+      {:image_builder, _pid, {:image_finished, %Image{id: id}}} ->
         to_cli("Image succesfully created with id #{id}\n", :eof)
 
       {:image_builder, _pid, msg} ->
@@ -90,7 +90,7 @@ defmodule Jocker.CLI.Image do
 
   def ls({_options, []}) do
     images = rpc([Jocker.Engine.MetaData, :list_images, []])
-    print_image(image(name: "NAME", tag: "TAG", id: "IMAGE ID", created: "CREATED"))
+    print_image(%Image{name: "NAME", tag: "TAG", id: "IMAGE ID", created: "CREATED"})
     Enum.map(images, &print_image/1)
     to_cli(nil, :eof)
   end
@@ -124,7 +124,7 @@ defmodule Jocker.CLI.Image do
     to_cli(nil, :eof)
   end
 
-  defp print_image(image(name: name_, tag: tag_, id: id_, created: created)) do
+  defp print_image(%Image{name: name_, tag: tag_, id: id_, created: created}) do
     # TODO we need to have a "SIZE" column as the last column
     name = cell(name_, 12)
     tag = cell(tag_, 10)

@@ -1,6 +1,7 @@
 defmodule Jocker.Engine.MetaData do
   require Logger
   alias Jocker.Engine.Config
+  alias Jocker.Engine.Image
   alias Jocker.Engine.Container
   alias Jocker.Engine.Network
   alias Jocker.Engine.Network.EndPointConfig
@@ -39,14 +40,9 @@ defmodule Jocker.Engine.MetaData do
   @table_images """
   CREATE TABLE IF NOT EXISTS
   images (
-    id       TEXT PRIMARY KEY,
-    name     TEXT,
-    tag      TEXT, -- {String.t(), String.t()},
-    layer_id TEXT,
-    command  TEXT, --[string]
-    user     TEXT,
-    created  TEXT
-  )
+    id    TEXT PRIMARY KEY,
+    image TEXT
+    )
   """
 
   @table_containers """
@@ -77,8 +73,8 @@ defmodule Jocker.Engine.MetaData do
     containers.user,
     containers.parameters, --[string]
     containers.created,
-    images.name AS image_name,
-    images.tag AS image_tag
+    json_extract(images.image, '$.name') AS image_name,
+    json_extract(images.image, '$.tag') AS image_tag
   FROM
     containers
   INNER JOIN images ON containers.image_id = images.id;
@@ -194,7 +190,7 @@ defmodule Jocker.Engine.MetaData do
     Agent.get(__MODULE__, fn db -> remove_layer_(db, layer_id) end)
   end
 
-  @spec add_image(JockerRecords.image()) :: :ok
+  @spec add_image(%Image{}) :: :ok
   def add_image(image) do
     Agent.get(__MODULE__, fn db -> add_image_(db, image) end)
   end
@@ -370,45 +366,56 @@ defmodule Jocker.Engine.MetaData do
     exec(db, "DELETE FROM layers WHERE id = ?", [layer_id])
   end
 
-  def add_image_(db, image(name: new_name, tag: new_tag) = image) do
-    result =
-      fetch_all(
-        db,
-        "SELECT * FROM images WHERE name != '' AND tag != '' AND name = ? AND tag = ?",
-        [new_name, new_tag]
-      )
+  def add_image_(db, %Image{name: new_name, tag: new_tag} = image) do
+    sql = """
+    SELECT id, image FROM images
+      WHERE json_extract(image, '$.name') != ''
+        AND json_extract(image, '$.tag') != ''
+        AND json_extract(image, '$.name') = ?
+        AND json_extract(image, '$.tag') = ?
+    """
+
+    result = fetch_all(db, sql, [new_name, new_tag])
 
     case result do
       {:ok, []} ->
         :ok
 
-      {:ok, [row]} ->
-        img = row2record(:image, row)
-        existing_image = image(img, name: "", tag: "")
-        row = record2row(existing_image)
-        :ok = exec(db, "INSERT OR REPLACE INTO images VALUES (?, ?, ?, ?, ?, ? ,?)", row)
+      {:ok, rows} ->
+        [img] = from_db(rows)
+        existing_image = %{img | name: "", tag: ""}
+        {id, json} = to_db(existing_image)
+        :ok = exec(db, "INSERT OR REPLACE INTO images(id, image) VALUES (?, ?)", [id, json])
     end
 
-    row = record2row(image)
-    :ok = exec(db, "INSERT OR REPLACE INTO images VALUES (?, ?, ?, ?, ?, ? ,?)", row)
+    {id, json} = to_db(image)
+    :ok = exec(db, "INSERT OR REPLACE INTO images(id, image) VALUES (?, ?)", [id, json])
     db
   end
 
   def get_image_(db, id_or_nametag) do
+    select_by_id = "SELECT id, image FROM images WHERE id = ?"
+
+    select_by_nametag =
+      "SELECT id, image FROM images WHERE json_extract(image, '$.name') = ? AND json_extract(image, '$.tag') = ?"
+
     result =
-      case fetch_all(db, "SELECT * FROM images WHERE id=?", [id_or_nametag]) do
+      case fetch_all(db, select_by_id, [id_or_nametag]) do
         {:ok, []} ->
           {name, tag} = Jocker.Engine.Utils.decode_tagname(id_or_nametag)
-          {:ok, rows} = fetch_all(db, "SELECT * FROM images WHERE name=? AND tag=?", [name, tag])
-          rows
+          fetch_all(db, select_by_nametag, [name, tag])
 
         {:ok, rows} ->
-          rows
+          {:ok, rows}
       end
 
     case result do
-      [image_row] -> row2record(:image, image_row)
-      [] -> :not_found
+      {:ok, []} ->
+        :not_found
+
+      {:ok, rows} ->
+        [image] = from_db(rows)
+        image
     end
   end
 
@@ -417,13 +424,12 @@ defmodule Jocker.Engine.MetaData do
     exec(db, "DELETE FROM images WHERE id = ?", [id])
   end
 
-  @spec list_images_(db_conn()) :: [JockerRecords.image()]
+  @spec list_images_(db_conn()) :: [%Image{}]
   def list_images_(db) do
-    {:ok, rows} =
-      fetch_all(db, "SELECT * FROM images WHERE id != 'base' ORDER BY created DESC", [])
+    query =
+      "SELECT id, image FROM images WHERE id != 'base' ORDER BY json_extract(image, '$.created') DESC"
 
-    images = Enum.map(rows, fn row -> row2record(:image, row) end)
-    images
+    fetch_all(db, query, []) |> from_db
   end
 
   @spec add_container_(db_conn(), JockerRecords.container()) ::
@@ -527,7 +533,32 @@ defmodule Jocker.Engine.MetaData do
     create_tables(db)
   end
 
-  @spec to_json(%Network{}) :: String.t()
+  @spec to_db(%Image{}) :: String.t()
+  def to_db(struct) do
+    map = Map.from_struct(struct)
+    {id, map} = Map.pop(map, :id)
+    {:ok, json} = Jason.encode(map)
+    {id, json}
+  end
+
+  @spec from_db(keyword() | {:ok, keyword()}) :: [%Image{}]
+  def from_db({:ok, rows}) do
+    from_db(rows)
+  end
+
+  def from_db(rows) do
+    rows |> Enum.map(&from_db_(&1))
+  end
+
+  @spec from_db_(List.t()) :: %Image{}
+  def from_db_(row) do
+    image = Keyword.get(row, :image)
+    id = Keyword.get(row, :id)
+    {:ok, map} = Jason.decode(image, [{:keys, :atoms}])
+    struct(Image, Map.put(map, :id, id))
+  end
+
+  @spec to_json(%Network{} | %EndPointConfig{}) :: String.t()
   def to_json(struct) do
     {:ok, json} = Jason.encode(struct)
     json
@@ -569,10 +600,6 @@ defmodule Jocker.Engine.MetaData do
 
           List.to_tuple([type | Keyword.values(row_upd)])
 
-        :image ->
-          row_upd = Keyword.update(row, :command, nil, &decode/1)
-          List.to_tuple([type | Keyword.values(row_upd)])
-
         :mount ->
           row_upd = Keyword.update(row, :read_only, nil, &int2bool/1)
           List.to_tuple([type | Keyword.values(row_upd)])
@@ -610,12 +637,6 @@ defmodule Jocker.Engine.MetaData do
               )
             )
 
-          new_values
-
-        :image ->
-          image(command: cmd) = rec
-          cmd_json = encode(cmd)
-          [_type | new_values] = Tuple.to_list(image(rec, command: cmd_json))
           new_values
 
         :mount ->
@@ -686,12 +707,13 @@ defmodule Jocker.Engine.MetaData do
         mountpoint: :none
       )
 
-    base_image =
-      image(
-        id: "base",
-        tag: "base",
-        layer_id: "base"
-      )
+    base_image = %Image{
+      id: "base",
+      layer_id: "base",
+      name: "",
+      tag: "",
+      user: "root"
+    }
 
     {:ok, []} = Sqlitex.query(db, @table_network)
     {:ok, []} = Sqlitex.query(db, @table_endpoint_configs)

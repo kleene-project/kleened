@@ -1,6 +1,7 @@
 defmodule MetaDataTest do
   use ExUnit.Case
   alias Jocker.Engine.Config
+  alias Jocker.Engine.Image
   import Jocker.Engine.MetaData
   import Jocker.Engine.Records
   import TestHelper, only: [now: 0]
@@ -62,26 +63,26 @@ defmodule MetaDataTest do
   end
 
   test "adding and getting images" do
-    img1 = image(id: "lol", name: "test", tag: "oldest", created: now())
-    img2 = image(id: "lel", name: "test", tag: "latest", created: now())
+    img1 = %Image{id: "lol", name: "test", tag: "oldest", created: now()}
+    img2 = %Image{id: "lel", name: "test", tag: "latest", created: now()}
     add_image(img1)
     add_image(img2)
-    assert img1 == get_image(image(img1, :id))
+    assert img1 == get_image(img1.id)
     assert img1 == get_image("test:oldest")
     assert img2 == get_image("test")
     assert [img2, img1] == list_images()
 
     # Test that name/tag will be removed from existing image if a new image is added with conflicting nametag
-    img3 = image(id: "lel2", name: "test", tag: "latest", created: now())
-    img2_nametag_removed = image(img2, name: "", tag: "")
+    img3 = %Image{id: "lel2", name: "test", tag: "latest", created: now()}
+    img2_nametag_removed = %{img2 | name: "", tag: ""}
     add_image(img3)
     assert img2_nametag_removed == get_image("lel")
   end
 
   test "empty nametags are avoided in overwrite logic" do
-    img1 = image(id: "lol1", name: "", tag: "", created: now())
-    img2 = image(id: "lol2", name: "", tag: "", created: now())
-    img3 = image(id: "lol3", name: "", tag: "", created: now())
+    img1 = %Image{id: "lol1", name: "", tag: "", created: now()}
+    img2 = %Image{id: "lol2", name: "", tag: "", created: now()}
+    img3 = %Image{id: "lol3", name: "", tag: "", created: now()}
     add_image(img1)
     add_image(img2)
     add_image(img3)
@@ -90,8 +91,8 @@ defmodule MetaDataTest do
 
   test "fetching images that is not there" do
     assert [] = list_images()
-    img1 = image(id: "lol", name: "test", tag: "oldest", created: now())
-    img2 = image(id: "lel", name: "test", tag: "latest", created: now())
+    img1 = %Image{id: "lol", name: "test", tag: "oldest", created: now()}
+    img2 = %Image{id: "lel", name: "test", tag: "latest", created: now()}
     add_image(img1)
     add_image(img2)
     assert :not_found = get_image("not_here")
@@ -108,8 +109,8 @@ defmodule MetaDataTest do
   end
 
   test "list all containers" do
-    add_image(image(id: "lol", created: now()))
-    add_image(image(id: "lel", name: "test", tag: "latest", created: now()))
+    add_image(%Image{id: "lol", created: now()})
+    add_image(%Image{id: "lel", name: "test", tag: "latest", created: now()})
     add_container(container(id: "1337", image_id: "lol", name: "test1", created: now()))
     add_container(container(id: "1338", image_id: "lel", name: "test2", created: now()))
     add_container(container(id: "1339", image_id: "base", name: "test3", created: now()))

@@ -1,10 +1,20 @@
 defmodule Jocker.Engine.Image do
-  # TODO: Need support for volumes
   import Jocker.Engine.Records
   alias Jocker.Engine.ZFS
   alias Jocker.Engine.MetaData
   alias Jocker.Engine.Utils
   require Logger
+
+  @derive Jason.Encoder
+  defstruct id: nil,
+            name: nil,
+            tag: nil,
+            layer_id: nil,
+            command: nil,
+            user: nil,
+            created: nil
+
+  alias __MODULE__, as: Image
 
   defmodule State do
     defstruct context: nil,
@@ -46,7 +56,7 @@ defmodule Jocker.Engine.Image do
       :not_found ->
         :not_found
 
-      image(id: id, layer_id: layer_id) ->
+      %Image{id: id, layer_id: layer_id} ->
         layer(dataset: dataset) = MetaData.get_layer(layer_id)
         0 = ZFS.destroy_force(dataset)
         MetaData.delete_image(id)
@@ -61,16 +71,15 @@ defmodule Jocker.Engine.Image do
     layer = MetaData.get_layer(layer_id)
     Jocker.Engine.Layer.to_image(layer, container_id)
 
-    img =
-      image(
-        id: container_id,
-        layer_id: layer_id,
-        user: user,
-        name: state.image_name,
-        tag: state.image_tag,
-        command: cmd,
-        created: DateTime.to_iso8601(DateTime.utc_now())
-      )
+    img = %Image{
+      id: container_id,
+      layer_id: layer_id,
+      user: user,
+      name: state.image_name,
+      tag: state.image_tag,
+      command: cmd,
+      created: DateTime.to_iso8601(DateTime.utc_now())
+    }
 
     Jocker.Engine.MetaData.add_image(img)
     send_msg(state.msg_receiver, {:image_finished, img})
@@ -79,7 +88,7 @@ defmodule Jocker.Engine.Image do
   defp process_instructions({line, {:from, image_reference}}, state) do
     Logger.info("Processing instruction: FROM #{image_reference}")
     state = send_status(line, state)
-    image(id: image_id, user: user) = Jocker.Engine.MetaData.get_image(image_reference)
+    %Image{id: image_id, user: user} = Jocker.Engine.MetaData.get_image(image_reference)
 
     opts = [
       jail_param: ["mount.devfs=true"],

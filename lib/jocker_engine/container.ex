@@ -6,10 +6,7 @@ defmodule Jocker.Engine.Container do
   end
 
   require Logger
-  alias Jocker.Engine.MetaData
-  alias Jocker.Engine.Volume
-  alias Jocker.Engine.Layer
-  alias Jocker.Engine.Network
+  alias Jocker.Engine.{MetaData, Volume, Layer, Network, Image}
   alias Jocker.Engine.Records, as: JRecord
   import JRecord
   use GenServer
@@ -20,6 +17,7 @@ defmodule Jocker.Engine.Container do
           | {:name, String.t()}
           | {:cmd, [String.t()]}
           | {:user, String.t()}
+          | {:env, [String.t()]}
           | {:networks, [String.t()]}
           | {:jail_param, [String.t()]}
         ]
@@ -163,12 +161,12 @@ defmodule Jocker.Engine.Container do
   defp create_(:not_found, _), do: :image_not_found
 
   defp create_(
-         image(
+         %Image{
            id: image_id,
            user: default_user,
            command: default_cmd,
            layer_id: parent_layer_id
-         ),
+         },
          opts
        ) do
     container_id = Jocker.Engine.Utils.uuid()

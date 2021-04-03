@@ -73,7 +73,7 @@ defmodule Jocker.Engine.Dockerfile do
           {:volume, args}
 
         unknown_instruction ->
-          IO.puts("WARNING: Instruction '#{unknown_instruction}' not understood\n")
+          IO.puts("WARNING: Instruction '#{instruction_line}' not understood\n")
           {:unparsed, unknown_instruction}
       end
 
