@@ -1,17 +1,12 @@
 defmodule NetworkTest do
   use ExUnit.Case
-  alias Jocker.Engine.Network
-  alias Jocker.Engine.Config
-  alias Jocker.Engine.Utils
-  alias Jocker.Engine.MetaData
-  alias Jocker.Engine.Container
-  import Jocker.Engine.Records
+  alias Jocker.Engine.{Network, Config, Utils, MetaData, Container}
 
   setup_all do
     Application.stop(:jocker)
     TestHelper.clear_zroot()
-    start_supervised(Config)
-    start_supervised(MetaData)
+    {:ok, _pid} = start_supervised(Config)
+    {:ok, _pid} = start_supervised(MetaData)
     :ok
   end
 
@@ -111,7 +106,7 @@ defmodule NetworkTest do
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network_if]
     ]
 
-    {:ok, container(id: id)} = Container.create(opts)
+    {:ok, %Container{id: id}} = Container.create(opts)
 
     Network.connect(id, "testnet")
     :ok = Container.attach(id)
@@ -125,16 +120,17 @@ defmodule NetworkTest do
     {:ok, _pid} = Jocker.Engine.Layer.start_link([])
     {:ok, _pid} = Network.start_link([])
 
-    start_supervised(
-      {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
-    )
+    {:ok, _pid} =
+      start_supervised(
+        {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
+      )
 
     opts = [
       networks: ["host"],
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-i", "-4"]
     ]
 
-    {:ok, container(id: id)} = Container.create(opts)
+    {:ok, %Container{id: id}} = Container.create(opts)
 
     {output_json, 0} = System.cmd("/usr/bin/netstat", ["--libxo", "json", "-i", "-4"])
     ips_before = ips_on_all_interfaces(output_json)
@@ -162,7 +158,7 @@ defmodule NetworkTest do
       cmd: ["/usr/bin/host", "-t", "A", "freebsd.org", "1.1.1.1"]
     ]
 
-    {:ok, container(id: id)} = Container.create(opts)
+    {:ok, %Container{id: id}} = Container.create(opts)
     :ok = Container.attach(id)
     Container.start(id)
 

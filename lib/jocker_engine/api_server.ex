@@ -5,12 +5,11 @@ defmodule Jocker.Engine.APIServer do
               buffers: nil
   end
 
-  import Jocker.Engine.Records
-  alias Jocker.Engine.Config
-  require Logger
-  use GenServer
+  alias Jocker.Engine.{Config, Container}
   alias :gen_tcp, as: GenTCP
   alias :erlang, as: Erlang
+  require Logger
+  use GenServer
 
   def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
@@ -69,7 +68,7 @@ defmodule Jocker.Engine.APIServer do
 
         new_state =
           case reply do
-            {:ok, container(id: id)} ->
+            {:ok, %Container{id: id}} ->
               sockets = Map.put(state.sockets, id, socket)
               %State{state | :buffers => updated_buffers, :sockets => sockets}
 

@@ -1,32 +1,32 @@
 defmodule ContainerTest do
   use ExUnit.Case
   alias Jocker.Engine.{Config, Container, Image}
-  import Jocker.Engine.Records
 
   @moduletag :capture_log
 
   setup_all do
     Application.stop(:jocker)
     TestHelper.clear_zroot()
-    start_supervised(Config)
+    {:ok, _pid} = start_supervised(Config)
 
-    start_supervised(
-      {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
-    )
+    {:ok, _pid} =
+      start_supervised(
+        {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
+      )
 
     :ok
   end
 
   setup do
-    start_supervised(Jocker.Engine.MetaData)
-    start_supervised(Jocker.Engine.Layer)
-    start_supervised(Jocker.Engine.Network)
+    {:ok, _pid} = start_supervised(Jocker.Engine.MetaData)
+    {:ok, _pid} = start_supervised(Jocker.Engine.Layer)
+    {:ok, _pid} = start_supervised(Jocker.Engine.Network)
     :ok
   end
 
   test "create container and fetch metadata" do
     %Image{id: id} = Jocker.Engine.MetaData.get_image("base")
-    {:ok, container(image_id: img_id)} = Container.create([])
+    {:ok, %Container{image_id: img_id}} = Container.create([])
     assert id == img_id
   end
 
@@ -37,7 +37,7 @@ defmodule ContainerTest do
     ]
 
     {:ok, cont} = Container.create(opts)
-    container(id: id, pid: _pid, command: cmd_out) = cont
+    %Container{id: id, pid: _pid, command: cmd_out} = cont
     :ok = Container.attach(id)
 
     Container.start(id)
@@ -54,10 +54,10 @@ defmodule ContainerTest do
       jail_param: ["mount.devfs"]
     ]
 
-    container(id: id) = cont = start_attached_container(opts)
+    %Container{id: id} = cont = start_attached_container(opts)
 
     assert TestHelper.devfs_mounted(cont)
-    assert {:ok, container(id: ^id)} = Container.stop(id)
+    assert {:ok, %Container{id: ^id}} = Container.stop(id)
     assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
     assert not TestHelper.devfs_mounted(cont)
   end
@@ -68,10 +68,10 @@ defmodule ContainerTest do
       jail_param: ["mount.devfs"]
     ]
 
-    container(id: id) = start_attached_container(opts)
+    %Container{id: id} = start_attached_container(opts)
 
     assert :already_started == Container.start(id)
-    assert {:ok, container(id: ^id)} = Container.stop(id)
+    assert {:ok, %Container{id: ^id}} = Container.stop(id)
   end
 
   test "start and stop a container with '/etc/rc' (using devfs)" do
@@ -81,10 +81,10 @@ defmodule ContainerTest do
       user: "root"
     ]
 
-    container(id: id) = cont = start_attached_container(opts)
+    %Container{id: id} = cont = start_attached_container(opts)
 
     assert TestHelper.devfs_mounted(cont)
-    assert {:ok, container(id: ^id)} = Container.stop(id)
+    assert {:ok, %Container{id: ^id}} = Container.stop(id)
     assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
     assert not TestHelper.devfs_mounted(cont)
   end
@@ -104,7 +104,7 @@ defmodule ContainerTest do
       user: "ntpd"
     ]
 
-    container(id: id) = start_attached_container(opts)
+    %Container{id: id} = start_attached_container(opts)
 
     assert_receive {:container, ^id, "uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"}
     assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
@@ -125,7 +125,7 @@ defmodule ContainerTest do
   end
 
   defp start_attached_container(opts) do
-    {:ok, container(id: id) = cont} = Container.create(opts)
+    {:ok, %Container{id: id} = cont} = Container.create(opts)
     :ok = Container.attach(id)
     Container.start(id)
     cont

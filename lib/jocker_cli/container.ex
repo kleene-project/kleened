@@ -1,7 +1,7 @@
 defmodule Jocker.CLI.Container do
   alias Jocker.CLI.Utils
+  alias Jocker.Engine.Container
   import Utils, only: [cell: 2, sp: 1, to_cli: 1, to_cli: 2, rpc: 1]
-  import Jocker.Engine.Records
   require Logger
 
   @doc """
@@ -149,7 +149,7 @@ defmodule Jocker.CLI.Container do
       :image_not_found ->
         to_cli("Unable to find image '#{image}'", :eof)
 
-      {:ok, container(id: id)} ->
+      {:ok, %Container{id: id}} ->
         to_cli("#{id}\n", :eof)
 
       :tcp_closed ->
@@ -253,7 +253,7 @@ defmodule Jocker.CLI.Container do
       end
     else
       case rpc([Jocker.Engine.Container, :start, [id_or_name]]) do
-        {:ok, container(id: id)} ->
+        {:ok, %Container{id: id}} ->
           to_cli("#{id}\n")
 
         {:error, :not_found} ->
@@ -293,7 +293,7 @@ defmodule Jocker.CLI.Container do
 
   defp stop_container(container_id) do
     case rpc([Jocker.Engine.Container, :stop, [container_id]]) do
-      {:ok, container(id: id)} ->
+      {:ok, %Container{id: id}} ->
         to_cli("#{id}\n")
 
       {:error, :not_running} ->

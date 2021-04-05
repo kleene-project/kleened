@@ -1,9 +1,6 @@
 defmodule Jocker.Engine.MetaData do
   require Logger
-  alias Jocker.Engine.Config
-  alias Jocker.Engine.Image
-  alias Jocker.Engine.Container
-  alias Jocker.Engine.Network
+  alias Jocker.Engine.{Config, Image, Container, Network}
   alias Jocker.Engine.Network.EndPointConfig
   alias Jocker.Engine.Records, as: JockerRecords
   import JockerRecords
@@ -48,15 +45,8 @@ defmodule Jocker.Engine.MetaData do
   @table_containers """
   CREATE TABLE IF NOT EXISTS
   containers (
-    id       TEXT PRIMARY KEY,
-    name     TEXT,
-    pid      TEXT,
-    command  TEXT, --[string]
-    layer_id TEXT,
-    image_id TEXT,
-    user     TEXT,
-    parameters TEXT, --[string]
-    created  TEXT
+    id        TEXT PRIMARY KEY,
+    container TEXT
     )
   """
 
@@ -65,19 +55,15 @@ defmodule Jocker.Engine.MetaData do
   AS
   SELECT
     containers.id,
-    containers.name,
-    containers.pid,
-    containers.command, --[string]
-    containers.layer_id,
-    containers.image_id,
-    containers.user,
-    containers.parameters, --[string]
-    containers.created,
+    json_extract(containers.container, '$.name') AS name,
+    json_extract(containers.container, '$.command') AS command,
+    json_extract(containers.container, '$.image_id') AS image_id,
+    json_extract(containers.container, '$.created') AS created,
     json_extract(images.image, '$.name') AS image_name,
     json_extract(images.image, '$.tag') AS image_tag
   FROM
     containers
-  INNER JOIN images ON containers.image_id = images.id;
+  INNER JOIN images ON json_extract(containers.container, '$.image_id') = images.id;
   """
 
   @table_volumes """
@@ -432,30 +418,30 @@ defmodule Jocker.Engine.MetaData do
     fetch_all(db, query, []) |> from_db
   end
 
-  @spec add_container_(db_conn(), JockerRecords.container()) ::
-          db_conn()
+  @spec add_container_(db_conn(), %Container{}) :: :ok
   def add_container_(db, container) do
-    row = record2row(container)
-
-    :ok = exec(db, "INSERT OR REPLACE INTO containers VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", row)
+    {id, json} = to_db(container)
+    exec(db, "INSERT OR REPLACE INTO containers(id, container) VALUES (?, ?)", [id, json])
   end
 
-  @spec delete_container_(db_conn(), Container.container_id()) :: db_conn()
+  @spec delete_container_(db_conn(), %Container{}) :: db_conn()
   def delete_container_(db, id) do
     exec(db, "DELETE FROM containers WHERE id = ?", [id])
   end
 
-  @spec get_container_(db_conn(), String.t()) :: JockerRecords.container() | :not_found
+  @spec get_container_(db_conn(), String.t()) :: %Container{} | :not_found
   def get_container_(db, id_or_name) do
     sql = """
-    SELECT * FROM containers WHERE id=?
+    SELECT id, container FROM containers WHERE id=?
     UNION
-    SELECT * FROM containers WHERE name=?
+    SELECT id, container FROM containers WHERE json_extract(container, '$.name')=?
     """
 
-    case fetch_all(db, sql, [id_or_name, id_or_name]) do
-      {:ok, [row | _]} -> row2record(:container, row)
-      {:ok, []} -> :not_found
+    result = fetch_all(db, sql, [id_or_name, id_or_name]) |> from_db()
+
+    case result do
+      [] -> :not_found
+      [row | _rest] -> row
     end
   end
 
@@ -505,9 +491,9 @@ defmodule Jocker.Engine.MetaData do
 
   @spec remove_mounts_(
           db_conn(),
-          JockerRecords.volume() | JockerRecords.container()
+          JockerRecords.volume() | %Container{}
         ) :: :ok
-  def remove_mounts_(db, container(id: id)) do
+  def remove_mounts_(db, %Container{id: id}) do
     {:ok, rows} = fetch_all(db, "SELECT * FROM mounts WHERE container_id=?", [id])
     :ok = exec(db, "DELETE FROM mounts WHERE container_id = ?;", [id])
     Enum.map(rows, fn row -> row2record(:mount, row) end)
@@ -537,6 +523,16 @@ defmodule Jocker.Engine.MetaData do
   def to_db(struct) do
     map = Map.from_struct(struct)
     {id, map} = Map.pop(map, :id)
+
+    map =
+      case struct.__struct__ do
+        Container ->
+          %{map | pid: pid2str(map[:pid])}
+
+        _rest ->
+          map
+      end
+
     {:ok, json} = Jason.encode(map)
     {id, json}
   end
@@ -547,15 +543,27 @@ defmodule Jocker.Engine.MetaData do
   end
 
   def from_db(rows) do
-    rows |> Enum.map(&from_db_(&1))
+    rows |> Enum.map(&transform_row(&1))
   end
 
-  @spec from_db_(List.t()) :: %Image{}
-  def from_db_(row) do
-    image = Keyword.get(row, :image)
+  @spec transform_row(List.t()) :: %Image{}
+  def transform_row(row) do
     id = Keyword.get(row, :id)
-    {:ok, map} = Jason.decode(image, [{:keys, :atoms}])
-    struct(Image, Map.put(map, :id, id))
+
+    {struct_type, map} =
+      cond do
+        Keyword.has_key?(row, :image) ->
+          image = Keyword.get(row, :image)
+          {:ok, map} = Jason.decode(image, [{:keys, :atoms}])
+          {Image, map}
+
+        Keyword.has_key?(row, :container) ->
+          image = Keyword.get(row, :container)
+          {:ok, %{pid: pid_str} = map} = Jason.decode(image, [{:keys, :atoms}])
+          {Container, %{map | pid: str2pid(pid_str)}}
+      end
+
+    struct(struct_type, Map.put(map, :id, id))
   end
 
   @spec to_json(%Network{} | %EndPointConfig{}) :: String.t()
@@ -617,28 +625,6 @@ defmodule Jocker.Engine.MetaData do
 
     row =
       case type do
-        :container ->
-          container(
-            command: cmd,
-            parameters: param,
-            pid: pid
-          ) = rec
-
-          cmd_json = encode(cmd)
-          param_json = encode(param)
-          pid_str = pid2str(pid)
-
-          [_type | new_values] =
-            Tuple.to_list(
-              container(rec,
-                command: cmd_json,
-                parameters: param_json,
-                pid: pid_str
-              )
-            )
-
-          new_values
-
         :mount ->
           mount(read_only: ro) = rec
           ro_integer = bool2int(ro)
@@ -659,20 +645,15 @@ defmodule Jocker.Engine.MetaData do
   def int2bool(1), do: true
   def int2bool(0), do: false
 
-  def pid2str(:none), do: ""
+  def pid2str(""), do: ""
   def pid2str(pid), do: List.to_string(:erlang.pid_to_list(pid))
 
-  def str2pid(""), do: :none
+  def str2pid(""), do: ""
   def str2pid(pidstr), do: :erlang.list_to_pid(String.to_charlist(pidstr))
 
   defp decode(json, opts \\ []) do
     {:ok, term} = Jason.decode(json, opts)
     term
-  end
-
-  defp encode(term) do
-    {:ok, cmd_json} = Jason.encode(term)
-    cmd_json
   end
 
   def fetch_all(db, sql, values \\ []) do

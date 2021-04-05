@@ -2,8 +2,7 @@ defmodule VolumeTest do
   use ExUnit.Case
   import Jocker.Engine.Records
   import Jocker.Engine.Volume
-  alias Jocker.Engine.MetaData
-  alias Jocker.Engine.Config
+  alias Jocker.Engine.{MetaData, Config, Container}
   @moduletag :capture_log
 
   setup_all do
@@ -48,7 +47,8 @@ defmodule VolumeTest do
     file = "/mnt/test"
     volume(mountpoint: mountpoint) = vol = create_volume("testvol")
 
-    {:ok, container(id: id) = con} = Jocker.Engine.Container.create(cmd: ["/usr/bin/touch", file])
+    {:ok, %Container{id: id} = con} =
+      Jocker.Engine.Container.create(cmd: ["/usr/bin/touch", file])
 
     Jocker.Engine.Container.attach(id)
     :ok = bind_volume(con, vol, location)

@@ -1,12 +1,9 @@
 defmodule MetaDataTest do
   use ExUnit.Case
-  alias Jocker.Engine.Config
-  alias Jocker.Engine.Image
+  alias Jocker.Engine.{Config, Image, Container, Network}
   import Jocker.Engine.MetaData
   import Jocker.Engine.Records
   import TestHelper, only: [now: 0]
-
-  alias Jocker.Engine.Network
 
   @moduletag :capture_log
 
@@ -100,20 +97,20 @@ defmodule MetaDataTest do
   end
 
   test "get containers" do
-    add_container(container(id: "1337", name: "test1", created: now()))
-    add_container(container(id: "1338", name: "1337", created: now()))
-    add_container(container(id: "1339", name: "1337", created: now()))
-    assert container(id: "1337") = get_container("1337")
-    assert container(id: "1337") = get_container("test1")
+    add_container(%Container{id: "1337", name: "test1", created: now()})
+    add_container(%Container{id: "1338", name: "1337", created: now()})
+    add_container(%Container{id: "1339", name: "1337", created: now()})
+    assert %Container{id: "1337"} = get_container("1337")
+    assert %Container{id: "1337"} = get_container("test1")
     assert :not_found == get_container("lol")
   end
 
   test "list all containers" do
     add_image(%Image{id: "lol", created: now()})
     add_image(%Image{id: "lel", name: "test", tag: "latest", created: now()})
-    add_container(container(id: "1337", image_id: "lol", name: "test1", created: now()))
-    add_container(container(id: "1338", image_id: "lel", name: "test2", created: now()))
-    add_container(container(id: "1339", image_id: "base", name: "test3", created: now()))
+    add_container(%Container{id: "1337", image_id: "lol", name: "test1", created: now()})
+    add_container(%Container{id: "1338", image_id: "lel", name: "test2", created: now()})
+    add_container(%Container{id: "1339", image_id: "base", name: "test3", created: now()})
     containers = list_containers()
 
     assert [

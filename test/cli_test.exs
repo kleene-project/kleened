@@ -14,18 +14,19 @@ defmodule CLITest do
   setup_all do
     Application.stop(:jocker)
     TestHelper.clear_zroot()
-    start_supervised(Config)
+    {:ok, _pid} = start_supervised(Config)
     remove_volume_mounts()
-    start_supervised(MetaData)
-    start_supervised(Jocker.Engine.Layer)
+    {:ok, _pid} = start_supervised(MetaData)
+    {:ok, _pid} = start_supervised(Jocker.Engine.Layer)
 
-    start_supervised(
-      {DynamicSupervisor,
-       name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0}
-    )
+    {:ok, _pid} =
+      start_supervised(
+        {DynamicSupervisor,
+         name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0}
+      )
 
     {:ok, _pid} = start_supervised(Jocker.Engine.APIServer)
-    start_supervised(Jocker.Engine.Network)
+    {:ok, _pid} = start_supervised(Jocker.Engine.Network)
     :ok
   end
 
@@ -124,35 +125,29 @@ defmodule CLITest do
     img_id1 = create_image_at_timestamp(img_id1_tag, epoch(1))
     img_id2 = create_image_at_timestamp(img_id2_tag, epoch(2))
 
-    MetaData.add_container(
-      container(
-        id: "1337",
-        image_id: img_id1,
-        name: "test1",
-        command: ["some_command"],
-        created: epoch(10)
-      )
-    )
+    MetaData.add_container(%Container{
+      id: "1337",
+      image_id: img_id1,
+      name: "test1",
+      command: ["some_command"],
+      created: epoch(10)
+    })
 
-    MetaData.add_container(
-      container(
-        id: "1338",
-        image_id: img_id2,
-        name: "test2",
-        command: ["some_command"],
-        created: epoch(11)
-      )
-    )
+    MetaData.add_container(%Container{
+      id: "1338",
+      image_id: img_id2,
+      name: "test2",
+      command: ["some_command"],
+      created: epoch(11)
+    })
 
-    MetaData.add_container(
-      container(
-        id: "1339",
-        image_id: "base",
-        name: "test3",
-        command: ["some_command"],
-        created: epoch(12)
-      )
-    )
+    MetaData.add_container(%Container{
+      id: "1339",
+      image_id: "base",
+      name: "test3",
+      command: ["some_command"],
+      created: epoch(12)
+    })
 
     header =
       "CONTAINER ID   IMAGE                       COMMAND                   CREATED              STATUS    NAME\n"
@@ -178,7 +173,7 @@ defmodule CLITest do
 
   test "create and remove a container" do
     id = cmd("container create base")
-    assert container(id: ^id, layer_id: layer_id) = MetaData.get_container(id)
+    assert %Container{id: ^id, layer_id: layer_id} = MetaData.get_container(id)
     layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
     assert is_directory?(mountpoint)
     assert cmd("container rm #{id}") == id
@@ -207,7 +202,7 @@ defmodule CLITest do
 
   test "create a container with a custom command" do
     id = cmd("container create base /bin/mkdir /loltest")
-    assert container(id: ^id, layer_id: layer_id, pid: pid) = cont = MetaData.get_container(id)
+    assert %Container{id: ^id, layer_id: layer_id, pid: pid} = cont = MetaData.get_container(id)
 
     # We '--attach' to make sure the jail is done
 
@@ -240,7 +235,7 @@ defmodule CLITest do
       )
 
     assert jocker_cmd("container start --attach #{id}") == []
-    container(layer_id: layer_id) = MetaData.get_container(id)
+    %Container{layer_id: layer_id} = MetaData.get_container(id)
     layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
     assert is_file?(Path.join(mountpoint, "testdir1/testfile"))
     assert is_file?(Path.join(mountpoint, "/loltest"))
@@ -278,7 +273,7 @@ defmodule CLITest do
 
     jocker_cmd("container start --attach #{id}")
 
-    container(layer_id: layer_id) = MetaData.get_container(id)
+    %Container{layer_id: layer_id} = MetaData.get_container(id)
     layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
 
     assert is_file?(Path.join(mountpoint, "testdir1/testfile_writable_from_mountpoint_vol"))
@@ -306,8 +301,8 @@ defmodule CLITest do
 
   test "starting a long-running container and stopping it" do
     id = cmd("container create base /bin/sleep 10000")
-    container(name: name) = cont = MetaData.get_container(id)
-    MetaData.add_container(container(cont, created: epoch(1)))
+    %Container{name: name} = cont = MetaData.get_container(id)
+    MetaData.add_container(%Container{cont | created: epoch(1)})
 
     header =
       "CONTAINER ID   IMAGE                       COMMAND                   CREATED              STATUS    NAME\n"

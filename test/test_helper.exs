@@ -1,5 +1,4 @@
-alias Jocker.Engine.ZFS
-alias Jocker.Engine.Config
+alias Jocker.Engine.{ZFS, Config, Container}
 import Jocker.Engine.Records
 
 ExUnit.start()
@@ -44,7 +43,7 @@ defmodule TestHelper do
     ZFS.create(zroot)
   end
 
-  def devfs_mounted(container(layer_id: layer_id)) do
+  def devfs_mounted(%Container{layer_id: layer_id}) do
     layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
     devfs_path = Path.join(mountpoint, "dev")
 

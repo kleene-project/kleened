@@ -17,31 +17,6 @@ defmodule Jocker.Engine.Records do
             mountpoint: String.t() | :none
           )
 
-  Record.defrecord(:container,
-    id: :none,
-    name: :none,
-    pid: :none,
-    command: :none,
-    layer_id: :none,
-    image_id: :none,
-    user: :none,
-    parameters: [],
-    created: :none
-  )
-
-  @type container() ::
-          record(:container,
-            id: String.t() | :none,
-            name: String.t() | :none,
-            pid: pid() | :none,
-            command: [String.t()],
-            layer_id: String.t(),
-            image_id: String.t(),
-            user: String.t(),
-            parameters: [String.t()],
-            created: String.t() | :none
-          )
-
   Record.defrecord(:volume,
     name: "",
     dataset: :none,
