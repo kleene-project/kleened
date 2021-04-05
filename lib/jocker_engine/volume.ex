@@ -1,6 +1,5 @@
 defmodule Jocker.Engine.Volume do
-  alias Jocker.Engine.{ZFS, Config, Utils, MetaData, Container}
-  import Jocker.Engine.Records
+  alias Jocker.Engine.{ZFS, Config, Utils, Layer, MetaData, Container}
   require Config
   require Logger
 
@@ -79,7 +78,7 @@ defmodule Jocker.Engine.Volume do
         location,
         opts \\ []
       ) do
-    layer(mountpoint: container_mountpoint) = MetaData.get_layer(layer_id)
+    %Layer{mountpoint: container_mountpoint} = MetaData.get_layer(layer_id)
     absolute_location = Path.join(container_mountpoint, location)
     read_only = Keyword.get(opts, :ro, false)
 

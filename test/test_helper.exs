@@ -1,5 +1,4 @@
-alias Jocker.Engine.{ZFS, Config, Container}
-import Jocker.Engine.Records
+alias Jocker.Engine.{ZFS, Config, Container, Layer}
 
 ExUnit.start()
 
@@ -44,7 +43,7 @@ defmodule TestHelper do
   end
 
   def devfs_mounted(%Container{layer_id: layer_id}) do
-    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     devfs_path = Path.join(mountpoint, "dev")
 
     case System.cmd("sh", ["-c", "mount | grep \"devfs on #{devfs_path}\""]) do

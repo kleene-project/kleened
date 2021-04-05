@@ -1,9 +1,25 @@
 defmodule Jocker.Engine.Layer do
   use GenServer
   import Jocker.Engine.Records
-  alias Jocker.Engine.Config
-  alias Jocker.Engine.MetaData
+  alias Jocker.Engine.{Config, MetaData}
   require Logger
+
+  @derive Jason.Encoder
+  defstruct id: "",
+            parent_id: "",
+            dataset: "",
+            snapshot: "",
+            mountpoint: ""
+
+  alias __MODULE__, as: Layer
+
+  @type t() :: %Layer{
+          id: String.t(),
+          parent_id: String.t(),
+          dataset: String.t(),
+          snapshot: String.t(),
+          mountpoint: String.t()
+        }
 
   def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
@@ -42,17 +58,16 @@ defmodule Jocker.Engine.Layer do
     {:reply, updated_layer, nil}
   end
 
-  defp new_(layer(snapshot: parent_snapshot), container_id) do
+  defp new_(%Layer{snapshot: parent_snapshot}, container_id) do
     id = Jocker.Engine.Utils.uuid()
     dataset = Path.join([Config.get("zroot"), "container", container_id])
     0 = Jocker.Engine.ZFS.clone(parent_snapshot, dataset)
 
-    new_layer =
-      layer(
-        id: id,
-        dataset: dataset,
-        mountpoint: Path.join("/", dataset)
-      )
+    new_layer = %Layer{
+      id: id,
+      dataset: dataset,
+      mountpoint: Path.join("/", dataset)
+    }
 
     Jocker.Engine.MetaData.add_layer(new_layer)
     new_layer
@@ -60,7 +75,7 @@ defmodule Jocker.Engine.Layer do
 
   defp destroy_(layer_id) do
     case MetaData.get_layer(layer_id) do
-      layer(dataset: dataset) ->
+      %Layer{dataset: dataset} ->
         0 = Jocker.Engine.ZFS.destroy(dataset)
         MetaData.remove_layer(layer_id)
 
@@ -69,14 +84,21 @@ defmodule Jocker.Engine.Layer do
     end
   end
 
-  defp to_image_(layer(dataset: dataset) = layer, image_id) do
+  defp to_image_(%Layer{dataset: dataset} = layer, image_id) do
     new_dataset = Path.join([Config.get("zroot"), "image", image_id])
     Jocker.Engine.ZFS.rename(dataset, new_dataset)
 
     snapshot = new_dataset <> "@layer"
     mountpoint = "/" <> new_dataset
     0 = Jocker.Engine.ZFS.snapshot(snapshot)
-    updated_layer = layer(layer, snapshot: snapshot, dataset: new_dataset, mountpoint: mountpoint)
+
+    updated_layer = %Layer{
+      layer
+      | snapshot: snapshot,
+        dataset: new_dataset,
+        mountpoint: mountpoint
+    }
+
     Jocker.Engine.MetaData.add_layer(updated_layer)
     updated_layer
   end

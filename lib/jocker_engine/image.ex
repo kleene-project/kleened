@@ -1,6 +1,6 @@
 defmodule Jocker.Engine.Image do
   import Jocker.Engine.Records
-  alias Jocker.Engine.{ZFS, MetaData, Utils, Container}
+  alias Jocker.Engine.{ZFS, MetaData, Utils, Container, Layer}
   require Logger
 
   @derive Jason.Encoder
@@ -60,7 +60,7 @@ defmodule Jocker.Engine.Image do
         :not_found
 
       %Image{id: id, layer_id: layer_id} ->
-        layer(dataset: dataset) = MetaData.get_layer(layer_id)
+        %Layer{dataset: dataset} = MetaData.get_layer(layer_id)
         0 = ZFS.destroy_force(dataset)
         MetaData.delete_image(id)
     end
@@ -175,7 +175,7 @@ defmodule Jocker.Engine.Image do
   end
 
   defp create_context_dir_in_jail(context, %Container{layer_id: layer_id}) do
-    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     context_in_jail = Path.join(mountpoint, "/jocker_temporary_context_store")
     {_output, 0} = System.cmd("/bin/mkdir", [context_in_jail], stderr_to_stdout: true)
     Utils.mount_nullfs([context, context_in_jail])

@@ -20,8 +20,6 @@ defmodule Jocker.Engine.Container do
 
   require Logger
   alias Jocker.Engine.{MetaData, Volume, Layer, Network, Image}
-  alias Jocker.Engine.Records, as: JRecord
-  import JRecord
   use GenServer
 
   @type t() ::
@@ -198,7 +196,7 @@ defmodule Jocker.Engine.Container do
     container_id = Jocker.Engine.Utils.uuid()
 
     parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
-    layer(id: layer_id) = Layer.new(parent_layer, container_id)
+    %Layer{id: layer_id} = Layer.new(parent_layer, container_id)
 
     # Extract values from options:
     command = Keyword.get(opts, :cmd, default_cmd)
@@ -254,7 +252,7 @@ defmodule Jocker.Engine.Container do
           "ip4.addr=#{ips_as_string}"
       end
 
-    layer(mountpoint: path) = Jocker.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: path} = Jocker.Engine.MetaData.get_layer(layer_id)
 
     args =
       ~w"-c path=#{path} name=#{id} #{network_config}" ++
@@ -409,7 +407,7 @@ defmodule Jocker.Engine.Container do
   end
 
   defp jail_cleanup(%Container{layer_id: layer_id}) do
-    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
 
     # remove any devfs mounts of the jail. If it was closed with 'jail -r <jailname>' devfs should be removed automatically.
     # If the jail stops because there jailed process stops (i.e. 'jail -c <etc> /bin/sleep 10') then devfs is NOT removed.

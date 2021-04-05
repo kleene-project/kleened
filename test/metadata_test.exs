@@ -1,8 +1,7 @@
 defmodule MetaDataTest do
   use ExUnit.Case
-  alias Jocker.Engine.{Config, Image, Container, Network, Volume, Volume.Mount}
+  alias Jocker.Engine.{Config, Image, Container, Network, Volume, Volume.Mount, Layer}
   import Jocker.Engine.MetaData
-  import Jocker.Engine.Records
   import TestHelper, only: [now: 0]
 
   @moduletag :capture_log
@@ -50,8 +49,8 @@ defmodule MetaDataTest do
   end
 
   test "adding and getting layers" do
-    layer1 = layer(id: "lol", dataset: "tank/test", mountpoint: "/tank/test/")
-    layer2 = layer(layer1, snapshot: "/tank/test@testing")
+    layer1 = %Layer{id: "lol", dataset: "tank/test", mountpoint: "/tank/test/"}
+    layer2 = %Layer{layer1 | snapshot: "/tank/test@testing"}
     add_layer(layer1)
     assert layer1 = get_layer("lol")
     add_layer(layer2)

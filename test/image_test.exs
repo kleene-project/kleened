@@ -1,9 +1,6 @@
 defmodule ImageTest do
   use ExUnit.Case
-  alias Jocker.Engine.Config
-  alias Jocker.Engine.Image
-  alias Jocker.Engine.MetaData
-  import Jocker.Engine.Records
+  alias Jocker.Engine.{Config, Image, MetaData, Layer, Network}
 
   @moduletag :capture_log
 
@@ -18,9 +15,9 @@ defmodule ImageTest do
   end
 
   setup do
-    start_supervised(Jocker.Engine.MetaData)
-    start_supervised(Jocker.Engine.Layer)
-    start_supervised(Jocker.Engine.Network)
+    start_supervised(MetaData)
+    start_supervised(Layer)
+    start_supervised(Network)
 
     start_supervised(
       {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
@@ -41,7 +38,7 @@ defmodule ImageTest do
     %Image{layer_id: layer_id} =
       build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
 
-    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "/root/test_1.txt")) == {:ok, "lol1\n"}
     assert MetaData.list_containers() == []
   end
@@ -55,7 +52,7 @@ defmodule ImageTest do
     context = create_test_context("test_copy_instruction")
     create_tmp_dockerfile(dockerfile, context)
     %Image{layer_id: layer_id} = build_and_return_image(context, @tmp_dockerfile, "test:latest")
-    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert [] == MetaData.list_containers()
   end
@@ -71,7 +68,7 @@ defmodule ImageTest do
     context = create_test_context("test_copy_instruction_symbolic")
     create_tmp_dockerfile(dockerfile, context)
     %Image{layer_id: layer_id} = build_and_return_image(context, @tmp_dockerfile, "test:latest")
-    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     # we cannot check the symbolic link from the host:
     assert File.read(Path.join(mountpoint, "etc/testdir/test.txt")) == {:ok, "lol\n"}
   end
@@ -98,7 +95,7 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     create_tmp_dockerfile(dockerfile, context)
     %Image{layer_id: layer_id} = build_and_return_image(context, @tmp_dockerfile, "test:latest")
-    layer(mountpoint: mountpoint) = Jocker.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test_1.txt")) == {:ok, "lol1\n"}
     assert File.read(Path.join(mountpoint, "root/test_2.txt")) == {:ok, "lol2\n"}

@@ -1,9 +1,7 @@
 defmodule Jocker.Engine.MetaData do
   require Logger
-  alias Jocker.Engine.{Config, Image, Container, Network, Volume, Volume.Mount}
+  alias Jocker.Engine.{Config, Layer, Image, Container, Network, Volume, Volume.Mount}
   alias Jocker.Engine.Network.EndPointConfig
-  alias Jocker.Engine.Records, as: JockerRecords
-  import JockerRecords
 
   use Agent
 
@@ -26,11 +24,8 @@ defmodule Jocker.Engine.MetaData do
   @table_layers """
   CREATE TABLE IF NOT EXISTS
   layers (
-    id         TEXT PRIMARY KEY,
-    parent_id  TEXT,
-    dataset    TEXT,
-    snapshot   TEXT,
-    mountpoint TEXT
+    id    TEXT PRIMARY KEY,
+    layer TEXT
   )
   """
 
@@ -50,6 +45,16 @@ defmodule Jocker.Engine.MetaData do
     )
   """
 
+  @table_volumes """
+  CREATE TABLE IF NOT EXISTS
+  volumes ( name TEXT PRIMARY KEY, volume TEXT )
+  """
+
+  @table_mounts """
+  CREATE TABLE IF NOT EXISTS
+  mounts ( mount TEXT )
+  """
+
   @view_api_list_containers """
   CREATE VIEW IF NOT EXISTS api_list_containers
   AS
@@ -66,22 +71,12 @@ defmodule Jocker.Engine.MetaData do
   INNER JOIN images ON json_extract(containers.container, '$.image_id') = images.id;
   """
 
-  @table_volumes """
-  CREATE TABLE IF NOT EXISTS
-  volumes ( name TEXT PRIMARY KEY, volume TEXT )
-  """
-
-  @table_mounts """
-  CREATE TABLE IF NOT EXISTS
-  mounts ( mount TEXT )
-  """
-
   @type jocker_record() ::
-          JockerRecords.layer()
-          | JockerRecords.container()
-          | JockerRecords.image()
-          | JockerRecords.volume()
-          | JockerRecords.mount()
+          Layer.t()
+          | Container.container()
+          | Image.image()
+          | Volume.volume()
+          | Mount.mount()
 
   @type record_type() :: :image | :layer | :container
 
@@ -327,14 +322,16 @@ defmodule Jocker.Engine.MetaData do
   end
 
   def add_layer_(db, layer) do
-    row = record2row(layer)
-    exec(db, "INSERT OR REPLACE INTO layers VALUES (?, ?, ?, ?, ?)", row)
+    {id, json} = to_db(layer)
+    exec(db, "INSERT OR REPLACE INTO layers(id, layer) VALUES (?, ?)", [id, json])
   end
 
   def get_layer_(db, layer_id) do
-    case fetch_all(db, "SELECT * FROM layers WHERE id=?", [layer_id]) do
-      {:ok, [row]} -> row2record(:layer, row)
-      {:ok, []} -> :not_found
+    result = fetch_all(db, "SELECT id, layer FROM layers WHERE id=?", [layer_id]) |> from_db
+
+    case result do
+      [layer] -> layer
+      [] -> :not_found
     end
   end
 
@@ -525,6 +522,11 @@ defmodule Jocker.Engine.MetaData do
         {:ok, json} = Jason.encode(map)
         {id, json}
 
+      Layer ->
+        {id, map} = Map.pop(map, :id)
+        {:ok, json} = Jason.encode(map)
+        {id, json}
+
       Container ->
         map = %{map | pid: pid2str(map[:pid])}
         {id, map} = Map.pop(map, :id)
@@ -543,11 +545,11 @@ defmodule Jocker.Engine.MetaData do
   end
 
   @spec from_db(keyword() | {:ok, keyword()}) :: [%Image{}]
-  def from_db({:ok, rows}) do
+  defp from_db({:ok, rows}) do
     from_db(rows)
   end
 
-  def from_db(rows) do
+  defp from_db(rows) do
     rows |> Enum.map(&transform_row(&1))
   end
 
@@ -560,6 +562,12 @@ defmodule Jocker.Engine.MetaData do
           id = Keyword.get(row, :id)
           {:ok, map} = Jason.decode(image, [{:keys, :atoms}])
           {Image, Map.put(map, :id, id)}
+
+        Keyword.has_key?(row, :layer) ->
+          layer = Keyword.get(row, :layer)
+          id = Keyword.get(row, :id)
+          {:ok, map} = Jason.decode(layer, [{:keys, :atoms}])
+          {Layer, Map.put(map, :id, id)}
 
         Keyword.has_key?(row, :container) ->
           container = Keyword.get(row, :container)
@@ -614,34 +622,6 @@ defmodule Jocker.Engine.MetaData do
     {endpointkey, struct(EndPointConfig, endpointcfg_with_atom_keys)}
   end
 
-  @spec row2record(record_type(), []) :: jocker_record()
-  defp row2record(type, row) do
-    record =
-      case type do
-        :container ->
-          row_upd = Keyword.update(row, :command, nil, &decode/1)
-          row_upd = Keyword.update(row_upd, :parameters, nil, &decode/1)
-          row_upd = Keyword.update(row_upd, :pid, :none, &str2pid/1)
-
-          List.to_tuple([type | Keyword.values(row_upd)])
-
-        :mount ->
-          row_upd = Keyword.update(row, :read_only, nil, &int2bool/1)
-          List.to_tuple([type | Keyword.values(row_upd)])
-
-        type ->
-          List.to_tuple([type | Keyword.values(row)])
-      end
-
-    record
-  end
-
-  @spec record2row(jocker_record()) :: [term()]
-  def record2row(rec) do
-    [_type | values] = Tuple.to_list(rec)
-    values
-  end
-
   def bool2int(true), do: 1
   def bool2int(false), do: 0
 
@@ -683,13 +663,12 @@ defmodule Jocker.Engine.MetaData do
   end
 
   def create_tables(db) do
-    base_layer =
-      layer(
-        id: "base",
-        dataset: Config.get("base_layer_dataset"),
-        snapshot: Config.get("base_layer_snapshot"),
-        mountpoint: :none
-      )
+    base_layer = %Layer{
+      id: "base",
+      dataset: Config.get("base_layer_dataset"),
+      snapshot: Config.get("base_layer_snapshot"),
+      mountpoint: ""
+    }
 
     base_image = %Image{
       id: "base",

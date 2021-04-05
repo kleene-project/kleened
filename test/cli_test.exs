@@ -1,7 +1,18 @@
 defmodule CLITest do
   use ExUnit.Case
-  alias Jocker.Engine.{Container, Image, MetaData, Volume, Config, Utils}
-  import Jocker.Engine.Records
+
+  alias Jocker.Engine.{
+    Container,
+    Image,
+    MetaData,
+    Volume,
+    Config,
+    Utils,
+    Layer,
+    APIServer,
+    Network
+  }
+
   require Logger
 
   @moduletag :capture_log
@@ -12,7 +23,7 @@ defmodule CLITest do
     {:ok, _pid} = start_supervised(Config)
     remove_volume_mounts()
     {:ok, _pid} = start_supervised(MetaData)
-    {:ok, _pid} = start_supervised(Jocker.Engine.Layer)
+    {:ok, _pid} = start_supervised(Layer)
 
     {:ok, _pid} =
       start_supervised(
@@ -20,8 +31,8 @@ defmodule CLITest do
          name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0}
       )
 
-    {:ok, _pid} = start_supervised(Jocker.Engine.APIServer)
-    {:ok, _pid} = start_supervised(Jocker.Engine.Network)
+    {:ok, _pid} = start_supervised(APIServer)
+    {:ok, _pid} = start_supervised(Network)
     :ok
   end
 
@@ -169,7 +180,7 @@ defmodule CLITest do
   test "create and remove a container" do
     id = cmd("container create base")
     assert %Container{id: ^id, layer_id: layer_id} = MetaData.get_container(id)
-    layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = MetaData.get_layer(layer_id)
     assert is_directory?(mountpoint)
     assert cmd("container rm #{id}") == id
     assert not is_directory?(mountpoint)
@@ -202,7 +213,7 @@ defmodule CLITest do
     # We '--attach' to make sure the jail is done
 
     assert jocker_cmd("container start --attach #{id}") == []
-    layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = MetaData.get_layer(layer_id)
     assert not TestHelper.devfs_mounted(cont)
     assert is_directory?(mountpoint)
     assert is_directory?(Path.join(mountpoint, "loltest"))
@@ -231,7 +242,7 @@ defmodule CLITest do
 
     assert jocker_cmd("container start --attach #{id}") == []
     %Container{layer_id: layer_id} = MetaData.get_container(id)
-    layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = MetaData.get_layer(layer_id)
     assert is_file?(Path.join(mountpoint, "testdir1/testfile"))
     assert is_file?(Path.join(mountpoint, "/loltest"))
     assert is_file?(Path.join(mountpoint, "/testdir2/testfile2"))
@@ -269,7 +280,7 @@ defmodule CLITest do
     jocker_cmd("container start --attach #{id}")
 
     %Container{layer_id: layer_id} = MetaData.get_container(id)
-    layer(mountpoint: mountpoint) = MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = MetaData.get_layer(layer_id)
 
     assert is_file?(Path.join(mountpoint, "testdir1/testfile_writable_from_mountpoint_vol"))
     assert not is_file?(Path.join(mountpoint, "/testdir2/testfile2"))
