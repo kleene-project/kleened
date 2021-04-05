@@ -1,6 +1,5 @@
 defmodule Jocker.Engine.Layer do
   use GenServer
-  import Jocker.Engine.Records
   alias Jocker.Engine.{Config, MetaData}
   require Logger
 

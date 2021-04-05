@@ -1,5 +1,4 @@
 defmodule Jocker.Engine.Image do
-  import Jocker.Engine.Records
   alias Jocker.Engine.{ZFS, MetaData, Utils, Container, Layer}
   require Logger
 
