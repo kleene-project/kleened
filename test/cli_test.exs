@@ -1,11 +1,6 @@
 defmodule CLITest do
   use ExUnit.Case
-  alias Jocker.Engine.Container
-  alias Jocker.Engine.Image
-  alias Jocker.Engine.MetaData
-  alias Jocker.Engine.Volume
-  alias Jocker.Engine.Config
-  alias Jocker.Engine.Utils
+  alias Jocker.Engine.{Container, Image, MetaData, Volume, Config, Utils}
   import Jocker.Engine.Records
   require Logger
 
@@ -225,7 +220,7 @@ defmodule CLITest do
 
     %Image{id: image_id} = create_image(dockerfile)
 
-    volume(name: vol_name, mountpoint: mountpoint_vol) = vol1 = Volume.create_volume("testvol-1")
+    %Volume{name: vol_name, mountpoint: mountpoint_vol} = vol1 = Volume.create_volume("testvol-1")
     assert is_directory?(mountpoint_vol)
     assert Utils.touch(Path.join(mountpoint_vol, "testfile"))
 
@@ -243,7 +238,7 @@ defmodule CLITest do
 
     [vol2] =
       Enum.reject(MetaData.list_volumes([]), fn
-        volume(name: ^vol_name) -> true
+        %Volume{name: ^vol_name} -> true
         _ -> false
       end)
 
@@ -262,7 +257,7 @@ defmodule CLITest do
     """
 
     %Image{id: image_id} = create_image(dockerfile)
-    volume(name: vol_name, mountpoint: mountpoint_vol) = vol1 = Volume.create_volume("testvol-1")
+    %Volume{name: vol_name, mountpoint: mountpoint_vol} = vol1 = Volume.create_volume("testvol-1")
     assert is_directory?(mountpoint_vol)
     assert Utils.touch(Path.join(mountpoint_vol, "testfile_writable_from_mountpoint_vol"))
 
@@ -283,7 +278,7 @@ defmodule CLITest do
 
     [vol2] =
       Enum.reject(MetaData.list_volumes([]), fn
-        volume(name: ^vol_name) -> true
+        %Volume{name: ^vol_name} -> true
         _ -> false
       end)
 
@@ -393,7 +388,7 @@ defmodule CLITest do
     # Check for idempotency:
     assert ["testvol\n"] == jocker_cmd("volume create testvol")
 
-    volume(name: "testvol", dataset: dataset, mountpoint: mountpoint) =
+    %Volume{name: "testvol", dataset: dataset, mountpoint: mountpoint} =
       MetaData.get_volume("testvol")
 
     assert {:ok, %File.Stat{:type => :directory}} = File.stat(mountpoint)
@@ -556,7 +551,7 @@ defmodule CLITest do
 
   def mock_volume_creation_time() do
     volumes = MetaData.list_volumes()
-    Enum.map(volumes, fn vol -> MetaData.add_volume(volume(vol, created: epoch(1))) end)
+    Enum.map(volumes, fn vol -> MetaData.add_volume(%Volume{vol | created: epoch(1)}) end)
   end
 
   defp register_as_cli_master() do

@@ -1,6 +1,6 @@
 defmodule Jocker.Engine.MetaData do
   require Logger
-  alias Jocker.Engine.{Config, Image, Container, Network}
+  alias Jocker.Engine.{Config, Image, Container, Network, Volume, Volume.Mount}
   alias Jocker.Engine.Network.EndPointConfig
   alias Jocker.Engine.Records, as: JockerRecords
   import JockerRecords
@@ -68,22 +68,12 @@ defmodule Jocker.Engine.MetaData do
 
   @table_volumes """
   CREATE TABLE IF NOT EXISTS
-  volumes (
-    name       TEXT PRIMARY KEY,
-    dataset    TEXT,
-    mountpoint TEXT,
-    created    TEXT
-    )
+  volumes ( name TEXT PRIMARY KEY, volume TEXT )
   """
 
   @table_mounts """
   CREATE TABLE IF NOT EXISTS
-  mounts (
-    container_id TEXT,
-    volume_name  TEXT,
-    location     TEXT,
-    read_only    INTEGER
-    )
+  mounts ( mount TEXT )
   """
 
   @type jocker_record() ::
@@ -236,22 +226,22 @@ defmodule Jocker.Engine.MetaData do
     Agent.get(__MODULE__, fn db -> list_volumes_(db, opts) end)
   end
 
-  @spec add_mount(JockerRecords.mount()) :: :ok
+  @spec add_mount(Mount.t()) :: :ok
   def add_mount(mount) do
     Agent.get(__MODULE__, fn db -> add_mount_(db, mount) end)
   end
 
-  @spec remove_mounts_by_container(JockerRecords.container()) :: :ok | :not_found
+  @spec remove_mounts_by_container(Container.t()) :: :ok | :not_found
   def remove_mounts_by_container(container) do
     Agent.get(__MODULE__, fn db -> remove_mounts_(db, container) end)
   end
 
-  @spec remove_mounts_by_volume(JockerRecords.volume()) :: :ok | :not_found
+  @spec remove_mounts_by_volume(Volume.t()) :: :ok | :not_found
   def remove_mounts_by_volume(volume) do
     Agent.get(__MODULE__, fn db -> remove_mounts_(db, volume) end)
   end
 
-  @spec list_mounts(JockerRecords.volume()) :: [JockerRecords.mount()]
+  @spec list_mounts(Volume.t()) :: [Mount.t()]
   def list_mounts(volume) do
     Agent.get(__MODULE__, fn db -> list_mounts_(db, volume) end)
   end
@@ -437,7 +427,7 @@ defmodule Jocker.Engine.MetaData do
     SELECT id, container FROM containers WHERE json_extract(container, '$.name')=?
     """
 
-    result = fetch_all(db, sql, [id_or_name, id_or_name]) |> from_db()
+    result = fetch_all(db, sql, [id_or_name, id_or_name]) |> from_db
 
     case result do
       [] -> :not_found
@@ -453,64 +443,70 @@ defmodule Jocker.Engine.MetaData do
     rows
   end
 
-  @spec add_volume_(db_conn(), JockerRecords.volume()) :: :ok
+  @spec add_volume_(db_conn(), Volume.t()) :: :ok
   def add_volume_(db, volume) do
-    row = record2row(volume)
-    exec(db, "INSERT OR REPLACE INTO volumes VALUES (?, ?, ?, ?)", row)
+    {name, volume} = to_db(volume)
+    exec(db, "INSERT OR REPLACE INTO volumes(name, volume) VALUES (?, ?)", [name, volume])
   end
 
-  @spec get_volume_(db_conn(), String.t()) :: JockerRecords.volume()
+  @spec get_volume_(db_conn(), String.t()) :: Volume.t()
   def get_volume_(db, name) do
-    sql = "SELECT * FROM volumes WHERE name = ?"
+    sql = "SELECT name, volume FROM volumes WHERE name = ?"
+    result = fetch_all(db, sql, [name]) |> from_db
 
-    case fetch_all(db, sql, [name]) do
-      {:ok, []} -> :not_found
-      {:ok, [row]} -> row2record(:volume, row)
+    case result do
+      [] -> :not_found
+      [row] -> row
     end
   end
 
-  @spec remove_volume_(db_conn(), JockerRecords.volume()) :: :ok
-  def remove_volume_(db, volume(name: name)) do
-    sql = "DELETE FROM volumes WHERE name = ?;"
+  @spec remove_volume_(db_conn(), Volume.t()) :: :ok
+  def remove_volume_(db, %Volume{name: name}) do
+    sql = "DELETE FROM volumes WHERE name = ?"
     :ok = exec(db, sql, [name])
   end
 
   @spec list_volumes_(db_conn(), String.t()) ::
           [JockerRecords.volume()]
   def list_volumes_(db, _opts) do
-    sql = "SELECT * FROM volumes ORDER BY created DESC"
-    {:ok, rows} = fetch_all(db, sql, [])
-    Enum.map(rows, fn row -> row2record(:volume, row) end)
+    sql = "SELECT name, volume FROM volumes ORDER BY json_extract(volume, '$.created') DESC"
+    fetch_all(db, sql, []) |> from_db
   end
 
-  @spec add_mount_(db_conn(), JockerRecords.mount()) :: :ok
+  @spec add_mount_(db_conn(), Mount.t()) :: :ok
   def add_mount_(db, mount) do
-    row = record2row(mount)
-    exec(db, "INSERT OR REPLACE INTO mounts VALUES (?, ?, ?, ?)", row)
+    row = to_db(mount)
+    exec(db, "INSERT OR REPLACE INTO mounts VALUES (?)", [row])
   end
 
   @spec remove_mounts_(
           db_conn(),
-          JockerRecords.volume() | %Container{}
+          Volume.t() | Container.t()
         ) :: :ok
   def remove_mounts_(db, %Container{id: id}) do
-    {:ok, rows} = fetch_all(db, "SELECT * FROM mounts WHERE container_id=?", [id])
-    :ok = exec(db, "DELETE FROM mounts WHERE container_id = ?;", [id])
-    Enum.map(rows, fn row -> row2record(:mount, row) end)
+    result =
+      fetch_all(db, "SELECT mount FROM mounts WHERE json_extract(mount, '$.container_id') = ?", [
+        id
+      ])
+
+    :ok = exec(db, "DELETE FROM mounts WHERE json_extract(mount, '$.container_id') = ?;", [id])
+    from_db(result)
   end
 
-  def remove_mounts_(db, volume(name: name)) do
-    {:ok, rows} = fetch_all(db, "SELECT * FROM mounts WHERE volume_name=?", [name])
-    :ok = exec(db, "DELETE FROM mounts WHERE volume_name=?;", [name])
-    Enum.map(rows, fn row -> row2record(:mount, row) end)
+  def remove_mounts_(db, %Volume{name: name}) do
+    result =
+      fetch_all(db, "SELECT mount FROM mounts WHERE json_extract(mount, '$.volume_name') = ?", [
+        name
+      ])
+
+    :ok = exec(db, "DELETE FROM mounts WHERE json_extract(mount, '$.volume_name') = ?;", [name])
+    from_db(result)
   end
 
-  @spec list_mounts_(db_conn(), JockerRecords.volume()) ::
-          [JockerRecords.mount()]
-  def list_mounts_(db, volume(name: name)) do
-    sql = "SELECT * FROM mounts WHERE volume_name = ?"
-    {:ok, rows} = fetch_all(db, sql, [name])
-    Enum.map(rows, fn row -> row2record(:mount, row) end)
+  @spec list_mounts_(db_conn(), Volume.t()) :: [Mount.t()]
+  def list_mounts_(db, %Volume{name: name}) do
+    sql = "SELECT mount FROM mounts WHERE json_extract(mount, '$.volume_name') = ?"
+    fetch_all(db, sql, [name]) |> from_db
   end
 
   @spec clear_tables_(db_conn()) :: db_conn()
@@ -519,22 +515,31 @@ defmodule Jocker.Engine.MetaData do
     create_tables(db)
   end
 
-  @spec to_db(%Image{}) :: String.t()
+  @spec to_db(Image.t() | Container.t() | %Volume{} | %Mount{}) :: String.t()
   def to_db(struct) do
     map = Map.from_struct(struct)
-    {id, map} = Map.pop(map, :id)
 
-    map =
-      case struct.__struct__ do
-        Container ->
-          %{map | pid: pid2str(map[:pid])}
+    case struct.__struct__ do
+      Image ->
+        {id, map} = Map.pop(map, :id)
+        {:ok, json} = Jason.encode(map)
+        {id, json}
 
-        _rest ->
-          map
-      end
+      Container ->
+        map = %{map | pid: pid2str(map[:pid])}
+        {id, map} = Map.pop(map, :id)
+        {:ok, json} = Jason.encode(map)
+        {id, json}
 
-    {:ok, json} = Jason.encode(map)
-    {id, json}
+      Volume ->
+        {name, map} = Map.pop(map, :name)
+        {:ok, json} = Jason.encode(map)
+        {name, json}
+
+      Mount ->
+        {:ok, json} = Jason.encode(map)
+        json
+    end
   end
 
   @spec from_db(keyword() | {:ok, keyword()}) :: [%Image{}]
@@ -548,22 +553,34 @@ defmodule Jocker.Engine.MetaData do
 
   @spec transform_row(List.t()) :: %Image{}
   def transform_row(row) do
-    id = Keyword.get(row, :id)
-
     {struct_type, map} =
       cond do
         Keyword.has_key?(row, :image) ->
           image = Keyword.get(row, :image)
+          id = Keyword.get(row, :id)
           {:ok, map} = Jason.decode(image, [{:keys, :atoms}])
-          {Image, map}
+          {Image, Map.put(map, :id, id)}
 
         Keyword.has_key?(row, :container) ->
-          image = Keyword.get(row, :container)
-          {:ok, %{pid: pid_str} = map} = Jason.decode(image, [{:keys, :atoms}])
+          container = Keyword.get(row, :container)
+          id = Keyword.get(row, :id)
+          {:ok, %{pid: pid_str} = map} = Jason.decode(container, [{:keys, :atoms}])
+          map = Map.put(map, :id, id)
           {Container, %{map | pid: str2pid(pid_str)}}
+
+        Keyword.has_key?(row, :volume) ->
+          volume = Keyword.get(row, :volume)
+          name = Keyword.get(row, :name)
+          {:ok, map} = Jason.decode(volume, [{:keys, :atoms}])
+          {Volume, Map.put(map, :name, name)}
+
+        Keyword.has_key?(row, :mount) ->
+          mount = Keyword.get(row, :mount)
+          {:ok, map} = Jason.decode(mount, [{:keys, :atoms}])
+          {Mount, map}
       end
 
-    struct(struct_type, Map.put(map, :id, id))
+    struct(struct_type, map)
   end
 
   @spec to_json(%Network{} | %EndPointConfig{}) :: String.t()
@@ -621,22 +638,8 @@ defmodule Jocker.Engine.MetaData do
 
   @spec record2row(jocker_record()) :: [term()]
   def record2row(rec) do
-    [type | values] = Tuple.to_list(rec)
-
-    row =
-      case type do
-        :mount ->
-          mount(read_only: ro) = rec
-          ro_integer = bool2int(ro)
-          [_type | new_values] = Tuple.to_list(mount(rec, read_only: ro_integer))
-          new_values
-
-        _type ->
-          values
-      end
-
-    # Logger.debug("Converted record: #{inspect(row)}")
-    row
+    [_type | values] = Tuple.to_list(rec)
+    values
   end
 
   def bool2int(true), do: 1

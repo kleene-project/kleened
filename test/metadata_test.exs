@@ -1,6 +1,6 @@
 defmodule MetaDataTest do
   use ExUnit.Case
-  alias Jocker.Engine.{Config, Image, Container, Network}
+  alias Jocker.Engine.{Config, Image, Container, Network, Volume, Volume.Mount}
   import Jocker.Engine.MetaData
   import Jocker.Engine.Records
   import TestHelper, only: [now: 0]
@@ -123,23 +123,21 @@ defmodule MetaDataTest do
   test "adding and listing volumes" do
     [] = list_volumes()
 
-    vol1 =
-      volume(
-        name: "test1",
-        dataset: "dataset/location",
-        mountpoint: "mountpoint/location",
-        created: now()
-      )
+    vol1 = %Volume{
+      name: "test1",
+      dataset: "dataset/location",
+      mountpoint: "mountpoint/location",
+      created: now()
+    }
 
-    vol1_modified = volume(vol1, dataset: "dataset/new_location")
+    vol1_modified = %Volume{vol1 | dataset: "dataset/new_location"}
 
-    vol2 =
-      volume(
-        name: "test2",
-        dataset: "dataset/location",
-        mountpoint: "mountpoint/location",
-        created: now()
-      )
+    vol2 = %Volume{
+      name: "test2",
+      dataset: "dataset/location",
+      mountpoint: "mountpoint/location",
+      created: now()
+    }
 
     add_volume(vol1)
     assert vol1 == get_volume("test1")
@@ -151,13 +149,12 @@ defmodule MetaDataTest do
   end
 
   test "removing volumes" do
-    vol1 =
-      volume(
-        name: "test1",
-        dataset: "dataset/location",
-        mountpoint: "mountpoint/location",
-        created: now()
-      )
+    vol1 = %Volume{
+      name: "test1",
+      dataset: "dataset/location",
+      mountpoint: "mountpoint/location",
+      created: now()
+    }
 
     add_volume(vol1)
     assert [vol1] == list_volumes()
@@ -168,26 +165,24 @@ defmodule MetaDataTest do
   test "adding and listing mounts" do
     vol_name = "testvol"
 
-    vol =
-      volume(
-        name: vol_name,
-        dataset: "dataset/location",
-        mountpoint: "mountpoint/location",
-        created: now()
-      )
+    vol = %Volume{
+      name: vol_name,
+      dataset: "dataset/location",
+      mountpoint: "mountpoint/location",
+      created: now()
+    }
 
     assert [] == list_mounts(vol)
 
-    mnt1 =
-      mount(
-        container_id: "contestid",
-        volume_name: vol_name,
-        location: "location1",
-        read_only: false
-      )
+    mnt1 = %Mount{
+      container_id: "contestid",
+      volume_name: vol_name,
+      location: "location1",
+      read_only: false
+    }
 
-    mnt2 = mount(mnt1, read_only: true)
-    mnt3 = mount(volume_name: "some_other_name")
+    mnt2 = %Mount{mnt1 | read_only: true}
+    mnt3 = %Mount{volume_name: "some_other_name"}
 
     add_mount(mnt1)
     assert [mnt1] == list_mounts(vol)

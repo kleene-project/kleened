@@ -1,7 +1,7 @@
 defmodule Jocker.CLI.Volume do
   alias Jocker.CLI.Utils
+  alias Jocker.Engine.Volume
   import Utils, only: [cell: 2, sp: 1, to_cli: 1, to_cli: 2, rpc: 1]
-  import Jocker.Engine.Records
 
   @doc """
 
@@ -35,7 +35,7 @@ defmodule Jocker.CLI.Volume do
   end
 
   def create({_options, args}) do
-    volume(name: name) = rpc([Jocker.Engine.Volume, :create_volume, args])
+    %Volume{name: name} = rpc([Volume, :create_volume, args])
     to_cli(name <> "\n", :eof)
   end
 
@@ -88,12 +88,12 @@ defmodule Jocker.CLI.Volume do
       false ->
         print_volume(["VOLUME NAME", "CREATED"])
 
-        Enum.map(volumes, fn volume(name: name, created: created) ->
+        Enum.map(volumes, fn %Volume{name: name, created: created} ->
           print_volume([name, created])
         end)
 
       true ->
-        Enum.map(volumes, fn volume(name: name) -> to_cli("#{name}\n") end)
+        Enum.map(volumes, fn %Volume{name: name} -> to_cli("#{name}\n") end)
     end
 
     to_cli(nil, :eof)
