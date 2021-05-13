@@ -37,15 +37,15 @@ defmodule MetaDataTest do
   test "adding, listing and removing networks" do
     network1 = %Network{id: "test_id1", name: "testname1"}
     network2 = %Network{id: "test_id2", name: "testname2"}
-    assert [] == list_networks()
+    assert [] == list_networks(:include_host)
     assert :ok = add_network(network1)
-    assert [network1] == list_networks()
+    assert [network1] == list_networks(:include_host)
     assert :ok = add_network(network2)
-    assert [network1, network2] == list_networks()
+    assert [network1, network2] == list_networks(:include_host)
     remove_network("test_id1")
-    assert [network2] == list_networks()
+    assert [network2] == list_networks(:include_host)
     remove_network("test_id2")
-    assert [] == list_networks()
+    assert [] == list_networks(:include_host)
   end
 
   test "adding and getting layers" do

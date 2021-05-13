@@ -53,7 +53,7 @@ defmodule Jocker.Engine.Volume do
 
   @spec destroy_volume(Volume.t()) :: :ok
   def destroy_volume(%Volume{dataset: dataset} = vol) do
-    mounts = MetaData.remove_mounts_by_volume(vol)
+    mounts = MetaData.remove_mounts(vol)
     Enum.map(mounts, fn %Mount{location: location} -> 0 = Utils.unmount(location) end)
     ZFS.destroy(dataset)
     MetaData.remove_volume(vol)
@@ -62,7 +62,7 @@ defmodule Jocker.Engine.Volume do
 
   @spec destroy_mounts(%Container{}) :: :ok
   def destroy_mounts(container) do
-    mounts = MetaData.remove_mounts_by_container(container)
+    mounts = MetaData.remove_mounts(container)
     Enum.map(mounts, fn %Mount{location: location} -> 0 = Utils.unmount(location) end)
   end
 

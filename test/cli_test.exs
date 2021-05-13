@@ -248,7 +248,7 @@ defmodule CLITest do
     assert is_file?(Path.join(mountpoint, "/testdir2/testfile2"))
 
     [vol2] =
-      Enum.reject(MetaData.list_volumes([]), fn
+      Enum.reject(MetaData.list_volumes(), fn
         %Volume{name: ^vol_name} -> true
         _ -> false
       end)
@@ -288,7 +288,7 @@ defmodule CLITest do
     assert not Utils.touch(Path.join(mountpoint, "/testdir1/testfile1"))
 
     [vol2] =
-      Enum.reject(MetaData.list_volumes([]), fn
+      Enum.reject(MetaData.list_volumes(), fn
         %Volume{name: ^vol_name} -> true
         _ -> false
       end)
