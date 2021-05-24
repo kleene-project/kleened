@@ -45,6 +45,7 @@ defmodule CLITest do
     end)
 
     on_exit(fn ->
+      # To ensure that all containers have been destroyed (apparantly it is async)
       MetaData.list_images() |> Enum.map(fn %Image{id: id} -> Image.destroy(id) end)
     end)
 
@@ -219,6 +220,25 @@ defmodule CLITest do
     assert is_directory?(Path.join(mountpoint, "loltest"))
     assert cmd("container rm #{id}") == id
     assert not is_directory?(mountpoint)
+  end
+
+  test "create a container with custom environment variables" do
+    dockerfile = """
+    FROM scratch
+    ENV TESTVARIABLE1="some test content"
+    ENV TESTVARIABLE2=some other test content
+    CMD printenv
+    """
+
+    %Image{id: image_id} = create_image(dockerfile)
+    id = cmd("container create #{image_id}")
+
+    output = cmd("container start --attach #{id}")
+
+    assert output ==
+             "PWD=/\nTESTVARIABLE1=some test content\nTESTVARIABLE2=some other test content"
+
+    cmd("container rm #{id}")
   end
 
   test "jocker adding and removing a container with writable volumes" do
