@@ -111,17 +111,25 @@ defmodule ContainerTest do
   end
 
   test "start a container with environment variables set" do
-    # FIXME WIP
     opts = [
-      cmd: ["/usr/bin/env"],
+      cmd: ["/bin/sh", "-c", "printenv"],
+      env: ["LOL=test", "LOOL=test2"],
       user: "root"
     ]
 
-    start_attached_container(opts)
+    %Container{id: id} = start_attached_container(opts)
 
-    receive do
-      msg -> IO.puts("WIP #{inspect(msg)}")
-    end
+    right_messsage_received =
+      receive do
+        {:container, ^id, "PWD=/\nLOOL=test2\nLOL=test\n"} ->
+          true
+
+        msg ->
+          IO.puts("\nUnknown message received: #{inspect(msg)}")
+          false
+      end
+
+    assert right_messsage_received
   end
 
   defp start_attached_container(opts) do

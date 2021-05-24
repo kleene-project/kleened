@@ -45,6 +45,9 @@ defmodule Jocker.Engine.Dockerfile do
         {"USER", user} ->
           {:user, trim(user)}
 
+        {"ENV", env_var} ->
+          {:env, String.trim(env_var, "\"")}
+
         {"RUN", <<"[", _::binary>> = json_cmd} ->
           {:run, json_decode(json_cmd)}
 

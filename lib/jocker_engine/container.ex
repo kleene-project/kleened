@@ -14,6 +14,7 @@ defmodule Jocker.Engine.Container do
             image_id: "",
             user: "",
             parameters: [],
+            env_vars: [],
             created: ""
 
   alias __MODULE__, as: Container
@@ -32,6 +33,7 @@ defmodule Jocker.Engine.Container do
             image_id: String.t(),
             user: String.t(),
             parameters: [String.t()],
+            env_vars: [String.t()],
             created: String.t()
           }
 
@@ -45,10 +47,13 @@ defmodule Jocker.Engine.Container do
           | {:networks, [String.t()]}
           | {:jail_param, [String.t()]}
         ]
+
   @type list_containers_opts :: [
           {:all, boolean()}
         ]
+
   @type container_id() :: String.t()
+
   @type id_or_name() :: container_id() | String.t()
 
   ### ===================================================================
@@ -203,6 +208,7 @@ defmodule Jocker.Engine.Container do
     user = Keyword.get(opts, :user, default_user)
     jail_param = Keyword.get(opts, :jail_param, [])
     name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
+    env_vars = Keyword.get(opts, :env, [])
 
     network_idnames =
       Keyword.get(opts, :networks, [Jocker.Engine.Config.get("default_network_name")])
@@ -215,6 +221,7 @@ defmodule Jocker.Engine.Container do
       image_id: image_id,
       user: user,
       parameters: jail_param,
+      env_vars: env_vars,
       created: DateTime.to_iso8601(DateTime.utc_now())
     }
 
@@ -234,10 +241,11 @@ defmodule Jocker.Engine.Container do
            layer_id: layer_id,
            command: default_cmd,
            user: default_user,
-           parameters: parameters
+           parameters: parameters,
+           env_vars: env_vars
          } = cont
        ) do
-    [cmd | cmd_args] = command = Keyword.get(options, :cmd, default_cmd)
+    command = Keyword.get(options, :cmd, default_cmd)
     user = Keyword.get(options, :user, default_user)
     MetaData.add_container(%Container{cont | user: user, command: command})
 
@@ -256,7 +264,8 @@ defmodule Jocker.Engine.Container do
 
     args =
       ~w"-c path=#{path} name=#{id} #{network_config}" ++
-        parameters ++ ["exec.jail_user=" <> user, "command=#{cmd}"] ++ cmd_args
+        parameters ++
+        ~w"exec.jail_user=#{user} command=/usr/bin/env -i" ++ env_vars ++ command
 
     Logger.debug("Executing /usr/sbin/jail #{Enum.join(args, " ")}")
 
