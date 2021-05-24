@@ -194,7 +194,8 @@ defmodule Jocker.Engine.Container do
            id: image_id,
            user: default_user,
            command: default_cmd,
-           layer_id: parent_layer_id
+           layer_id: parent_layer_id,
+           env_vars: img_env_vars
          },
          opts
        ) do
@@ -208,7 +209,7 @@ defmodule Jocker.Engine.Container do
     user = Keyword.get(opts, :user, default_user)
     jail_param = Keyword.get(opts, :jail_param, [])
     name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
-    env_vars = Keyword.get(opts, :env, [])
+    env_vars = Keyword.get(opts, :env, []) ++ img_env_vars
 
     network_idnames =
       Keyword.get(opts, :networks, [Jocker.Engine.Config.get("default_network_name")])

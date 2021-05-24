@@ -3,7 +3,14 @@ defmodule Jocker.Engine.Image do
   require Logger
 
   @derive Jason.Encoder
-  defstruct id: "", name: "", tag: "", layer_id: "", command: [], user: "", created: ""
+  defstruct id: "",
+            name: "",
+            tag: "",
+            command: [],
+            env_vars: [],
+            layer_id: "",
+            user: "",
+            created: ""
 
   alias __MODULE__, as: Image
 
@@ -25,6 +32,7 @@ defmodule Jocker.Engine.Image do
             name: String.t(),
             tag: String.t(),
             command: [String.t()],
+            env_vars: [String.t()],
             layer_id: String.t(),
             user: String.t(),
             created: String.t()
@@ -66,8 +74,16 @@ defmodule Jocker.Engine.Image do
   end
 
   def create_image(instructions, state) do
-    %State{:container => cont} = Enum.reduce(instructions, state, &process_instructions/2)
-    %Container{id: container_id, layer_id: layer_id, user: user, command: cmd} = cont
+    %State{
+      :container => %Container{
+        id: container_id,
+        layer_id: layer_id,
+        user: user,
+        env_vars: env_vars,
+        command: cmd
+      }
+    } = Enum.reduce(instructions, state, &process_instructions/2)
+
     Jocker.Engine.Network.disconnect(container_id, "default")
     MetaData.delete_container(container_id)
     layer = MetaData.get_layer(layer_id)
@@ -80,6 +96,7 @@ defmodule Jocker.Engine.Image do
       name: state.image_name,
       tag: state.image_tag,
       command: cmd,
+      env_vars: env_vars,
       created: DateTime.to_iso8601(DateTime.utc_now())
     }
 
@@ -124,6 +141,12 @@ defmodule Jocker.Engine.Image do
     Logger.info("Processing instruction: CMD #{inspect(cmd)}")
     state = send_status(line, state)
     %State{state | :container => %Container{cont | command: cmd}}
+  end
+
+  defp process_instructions({line, {:env, env_var}}, %State{:container => cont} = state) do
+    Logger.info("Processing instruction: ENV #{inspect(env_var)}")
+    state = send_status(line, state)
+    %State{state | :container => %Container{cont | env_vars: [env_var | cont.env_vars]}}
   end
 
   defp process_instructions({line, {:run, cmd}}, state) do

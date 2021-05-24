@@ -132,6 +132,38 @@ defmodule ContainerTest do
     assert right_messsage_received
   end
 
+  test "start a container with environment variables" do
+    dockerfile = """
+    FROM scratch
+    ENV TEST=lol
+    ENV TEST2="lool test"
+    CMD /bin/sh -c "printenv"
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
+    image = TestHelper.build_and_return_image("./", "tmp_dockerfile", "test:latest")
+
+    opts = [
+      image: image.id,
+      env: ["TEST3=loool"],
+      cmd: ["/bin/sh", "-c", "printenv"]
+    ]
+
+    %Container{id: id} = start_attached_container(opts)
+
+    right_messsage_received =
+      receive do
+        {:container, ^id, "PWD=/\nTEST2=lool test\nTEST=lol\nTEST3=loool\n"} ->
+          true
+
+        msg ->
+          IO.puts("\nUnknown message received: #{inspect(msg)}")
+          false
+      end
+
+    assert right_messsage_received
+  end
+
   defp start_attached_container(opts) do
     {:ok, %Container{id: id} = cont} = Container.create(opts)
     :ok = Container.attach(id)

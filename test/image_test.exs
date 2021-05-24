@@ -33,10 +33,10 @@ defmodule ImageTest do
     RUN echo "lol1" > /root/test_1.txt
     """
 
-    create_tmp_dockerfile(dockerfile)
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
     %Image{layer_id: layer_id} =
-      build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
+      TestHelper.build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
 
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "/root/test_1.txt")) == {:ok, "lol1\n"}
@@ -50,8 +50,11 @@ defmodule ImageTest do
     """
 
     context = create_test_context("test_copy_instruction")
-    create_tmp_dockerfile(dockerfile, context)
-    %Image{layer_id: layer_id} = build_and_return_image(context, @tmp_dockerfile, "test:latest")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    %Image{layer_id: layer_id} =
+      TestHelper.build_and_return_image(context, @tmp_dockerfile, "test:latest")
+
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert [] == MetaData.list_containers()
@@ -66,8 +69,11 @@ defmodule ImageTest do
     """
 
     context = create_test_context("test_copy_instruction_symbolic")
-    create_tmp_dockerfile(dockerfile, context)
-    %Image{layer_id: layer_id} = build_and_return_image(context, @tmp_dockerfile, "test:latest")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    %Image{layer_id: layer_id} =
+      TestHelper.build_and_return_image(context, @tmp_dockerfile, "test:latest")
+
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     # we cannot check the symbolic link from the host:
     assert File.read(Path.join(mountpoint, "etc/testdir/test.txt")) == {:ok, "lol\n"}
@@ -79,9 +85,22 @@ defmodule ImageTest do
     CMD  /bin/sleep 10
     """
 
-    create_tmp_dockerfile(dockerfile)
-    _image = build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+    _image = TestHelper.build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
     assert MetaData.list_containers() == []
+  end
+
+  test "create an image with 'ENV' instructions" do
+    dockerfile = """
+    FROM scratch
+    ENV TEST=lol
+    ENV TEST2="lool test"
+    CMD  /bin/ls
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+    image = TestHelper.build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
+    assert image.env_vars == ["TEST2=lool test", "TEST=lol"]
   end
 
   test "create an image using three RUN/COPY instructions" do
@@ -93,8 +112,11 @@ defmodule ImageTest do
     """
 
     context = create_test_context("test_image_builder_three_layers")
-    create_tmp_dockerfile(dockerfile, context)
-    %Image{layer_id: layer_id} = build_and_return_image(context, @tmp_dockerfile, "test:latest")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    %Image{layer_id: layer_id} =
+      TestHelper.build_and_return_image(context, @tmp_dockerfile, "test:latest")
+
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test_1.txt")) == {:ok, "lol1\n"}
@@ -113,9 +135,9 @@ defmodule ImageTest do
     """
 
     context = create_test_context("test_image_builder_three_layers")
-    create_tmp_dockerfile(dockerfile, context)
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
     {:ok, pid} = Image.build(context, @tmp_dockerfile, "test:latest", false)
-    {_img, messages} = receive_results(pid, [])
+    {_img, messages} = TestHelper.receive_imagebuilder_results(pid, [])
 
     assert messages == [
              "Step 1/5 : FROM scratch\n",
@@ -125,30 +147,6 @@ defmodule ImageTest do
              "Step 4/5 : USER ntpd\n",
              "Step 5/5 : CMD /etc/rc\n"
            ]
-  end
-
-  defp build_and_return_image(context, dockerfile, tag) do
-    quiet = true
-    {:ok, pid} = Image.build(context, dockerfile, tag, quiet)
-    {img, _messages} = receive_results(pid, [])
-    img
-  end
-
-  defp receive_results(pid, msg_list) do
-    receive do
-      {:image_builder, ^pid, {:image_finished, img}} ->
-        {img, Enum.reverse(msg_list)}
-
-      {:image_builder, ^pid, msg} ->
-        receive_results(pid, [msg | msg_list])
-
-      other ->
-        IO.puts("\nError! Received unkown message #{inspect(other)}")
-    end
-  end
-
-  def create_tmp_dockerfile(content, context \\ @tmp_context) do
-    :ok = File.write(Path.join(context, @tmp_dockerfile), content, [:write])
   end
 
   defp create_test_context(name) do
