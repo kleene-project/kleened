@@ -60,16 +60,18 @@ defmodule Jocker.CLI.EngineClient do
 
   @impl true
   def handle_info({:tcp_closed, _socket}, %State{caller: pid} = state) do
+    Logger.info("Connection to to jocker-engine closed.")
     Process.send(pid, :tcp_closed, [])
     {:noreply, %State{state | :socket => nil, :buffer => ""}}
   end
 
   def handle_info({:tcp_error, _socket, reason}, %State{caller: pid} = state) do
+    Logger.warn("Connection-error occured: #{inspect(reason)}")
     Process.send(pid, {:tcp_error, reason}, [])
     {:noreply, state}
   end
 
-  def handle_info({:tcp, _socket, data}, %State{caller: pid, buffer: buffer} = state) do
+  def handle_info({:tcp, socket, data}, %State{caller: pid, buffer: buffer} = state) do
     case Jocker.Engine.Utils.decode_buffer(buffer <> data) do
       {:no_full_msg, new_buffer} ->
         {:noreply, %State{state | :buffer => new_buffer}}
@@ -77,6 +79,13 @@ defmodule Jocker.CLI.EngineClient do
       {reply, new_buffer} ->
         Logger.debug("Receiving reply from server: #{inspect(reply)}")
         Process.send(pid, {:server_reply, reply}, [])
+
+        case reply do
+          {:image_builder, _pid, {:image_finished, _img}} -> GenTCP.close(socket)
+          {:container, _id, {:shutdown, :jail_stopped}} -> GenTCP.close(socket)
+          _ -> :ok
+        end
+
         {:noreply, %State{state | :buffer => new_buffer}}
     end
   end

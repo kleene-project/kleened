@@ -92,7 +92,6 @@ defmodule Jocker.Engine.APIServer do
     Logger.info("Container #{inspect(id)} is shutting down. Closing client connection")
     socket = state.sockets[id]
     GenTCP.send(socket, Erlang.term_to_binary(container_msg))
-    GenTCP.close(socket)
     {:noreply, %State{state | :sockets => Map.delete(state.sockets, id)}}
   end
 
