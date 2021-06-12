@@ -21,7 +21,7 @@ USE_RC_SUBR=	jockerd
 
 USE_GITHUB=		yes
 
-GH_TUPLE=		lgandersen:jocker_dist:5f8e74d:DEFAULT
+GH_TUPLE=		lgandersen:jocker_dist:b5e676f:DEFAULT
 
 MIX_TARGET=		release
 ELIXIR_APP_NAME?=	${PORTNAME}
