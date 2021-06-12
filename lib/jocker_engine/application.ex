@@ -18,7 +18,12 @@ defmodule Jocker.Engine.Application do
       Jocker.Engine.Network,
       {DynamicSupervisor,
        name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0},
-      Jocker.Engine.APIServer
+      %{
+        id: Jocker.Engine.APIServer,
+        start: {Jocker.Engine.APIServer, :start_link, [[]]},
+        restart: :permanent,
+        type: :supervisor
+      }
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

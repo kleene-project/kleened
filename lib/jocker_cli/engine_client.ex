@@ -32,7 +32,7 @@ defmodule Jocker.CLI.EngineClient do
 
     {port, address} = server_location()
 
-    case GenTCP.connect(address, port, [:binary, {:packet, :raw}, {:active, true}]) do
+    case GenTCP.connect(address, port, [:binary, {:active, :once}]) do
       {:ok, socket} ->
         Logger.info("Connection succesfully established")
         {:ok, %State{:socket => socket, :caller => callers_pid, :buffer => ""}}
@@ -74,6 +74,7 @@ defmodule Jocker.CLI.EngineClient do
   def handle_info({:tcp, socket, data}, %State{caller: pid, buffer: buffer} = state) do
     case Jocker.Engine.Utils.decode_buffer(buffer <> data) do
       {:no_full_msg, new_buffer} ->
+        :inet.setopts(socket, [{:active, :once}])
         {:noreply, %State{state | :buffer => new_buffer}}
 
       {reply, new_buffer} ->
@@ -83,7 +84,7 @@ defmodule Jocker.CLI.EngineClient do
         case reply do
           {:image_builder, _pid, {:image_finished, _img}} -> GenTCP.close(socket)
           {:container, _id, {:shutdown, :jail_stopped}} -> GenTCP.close(socket)
-          _ -> :ok
+          _ -> :inet.setopts(socket, [{:active, :once}])
         end
 
         {:noreply, %State{state | :buffer => new_buffer}}
