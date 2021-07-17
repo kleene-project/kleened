@@ -1,28 +1,23 @@
 defmodule MetaDataTest do
   use ExUnit.Case
-  alias Jocker.Engine.{Config, Image, Container, Network, Volume, Volume.Mount, Layer}
+  alias Jocker.Engine.{Config, MetaData, Image, Container, Network, Volume, Volume.Mount, Layer}
   import Jocker.Engine.MetaData
   import TestHelper, only: [now: 0]
 
   @moduletag :capture_log
 
-  setup_all do
-    Application.stop(:jocker)
-    start_supervised(Config)
-    :ok
-  end
-
   setup do
+    :ok = Supervisor.terminate_child(Jocker.Engine.Supervisor, MetaData)
     File.rm(dbfile())
-    start_link([])
+    {:ok, _pid} = Supervisor.restart_child(Jocker.Engine.Supervisor, MetaData)
     :ok
   end
 
   test "test db creation" do
     assert db_exists?()
-    stop()
+    :ok = Supervisor.terminate_child(Jocker.Engine.Supervisor, MetaData)
     File.rm(dbfile())
-    start_link([])
+    {:ok, _pid} = Supervisor.restart_child(Jocker.Engine.Supervisor, MetaData)
     assert db_exists?()
   end
 

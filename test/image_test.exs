@@ -7,23 +7,11 @@ defmodule ImageTest do
   @tmp_dockerfile "tmp_dockerfile"
   @tmp_context "./"
 
-  setup_all do
-    Application.stop(:jocker)
-    TestHelper.clear_zroot()
-    start_supervised(Config)
-    :ok
-  end
-
   setup do
-    start_supervised(MetaData)
-    start_supervised(Layer)
-    start_supervised(Network)
+    on_exit(fn ->
+      MetaData.list_images() |> Enum.map(fn %Image{id: id} -> Image.destroy(id) end)
+    end)
 
-    start_supervised(
-      {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
-    )
-
-    on_exit(fn -> stop_and_delete_db() end)
     :ok
   end
 
@@ -155,10 +143,5 @@ defmodule ImageTest do
     Jocker.Engine.ZFS.create(dataset)
     {"", 0} = System.cmd("sh", ["-c", "echo 'lol' > #{mountpoint}/test.txt"])
     mountpoint
-  end
-
-  defp stop_and_delete_db() do
-    # Agent.stop(Jocker.Engine.MetaData)
-    File.rm(Config.get("metadata_db"))
   end
 end

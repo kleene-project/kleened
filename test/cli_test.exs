@@ -8,33 +8,12 @@ defmodule CLITest do
     Volume,
     Config,
     Utils,
-    Layer,
-    APIServer,
-    Network
+    Layer
   }
 
   require Logger
 
   @moduletag :capture_log
-
-  setup_all do
-    Application.stop(:jocker)
-    TestHelper.clear_zroot()
-    {:ok, _pid} = start_supervised(Config)
-    remove_volume_mounts()
-    {:ok, _pid} = start_supervised(MetaData)
-    {:ok, _pid} = start_supervised(Layer)
-
-    {:ok, _pid} =
-      start_supervised(
-        {DynamicSupervisor,
-         name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0}
-      )
-
-    {:ok, _pid} = start_supervised(APIServer)
-    {:ok, _pid} = start_supervised(Network)
-    :ok
-  end
 
   setup do
     register_as_cli_master()
@@ -67,9 +46,9 @@ defmodule CLITest do
 
   test "api_server MetaData.list_images()" do
     {:ok, _pid} = Jocker.CLI.Config.start_link([:default])
-    {:ok, _pid} = Jocker.CLI.EngineClient.start_link([])
+    {:ok, pid} = Jocker.CLI.EngineClient.start_link([])
     rpc = [MetaData, :list_images, []]
-    :ok = Jocker.CLI.EngineClient.command(rpc)
+    :ok = Jocker.CLI.EngineClient.command(pid, rpc)
     assert_receive {:server_reply, []}
   end
 
@@ -80,9 +59,9 @@ defmodule CLITest do
     )
 
     {:ok, _pid} = Jocker.CLI.Config.start_link([:default])
-    {:ok, _pid} = Jocker.CLI.EngineClient.start_link([])
+    {:ok, pid} = Jocker.CLI.EngineClient.start_link([])
     rpc = [Container, :list, [[all: true]]]
-    :ok = Jocker.CLI.EngineClient.command(rpc)
+    :ok = Jocker.CLI.EngineClient.command(pid, rpc)
     assert_receive {:server_reply, _containers}, 1_000
   end
 
@@ -96,12 +75,12 @@ defmodule CLITest do
 
     # Test list one
     img_id1 = create_image_at_timestamp("test-image:latest", epoch(1))
-    row1 = "test-image     latest       #{img_id1}   51 years          \n"
+    row1 = "test-image     latest       #{img_id1}   52 years          \n"
     assert cmd("image ls") == [header, row1]
 
     # Test list two
     img_id2 = create_image_at_timestamp("lol:latest", epoch(2))
-    row2 = "lol            latest       #{img_id2}   51 years          \n"
+    row2 = "lol            latest       #{img_id2}   52 years          \n"
     assert cmd("image ls") == [header, row2, row1]
 
     MetaData.delete_image(img_id1)
@@ -160,13 +139,13 @@ defmodule CLITest do
       "CONTAINER ID   IMAGE                       COMMAND                   CREATED              STATUS    NAME\n"
 
     row_no_image_name =
-      "1337           #{img_id1_tag}                 some_command              51 years             stopped   test1\n"
+      "1337           #{img_id1_tag}                 some_command              52 years             stopped   test1\n"
 
     row_with_tag =
-      "1338           #{img_id2_tag}                 some_command              51 years             stopped   test2\n"
+      "1338           #{img_id2_tag}                 some_command              52 years             stopped   test2\n"
 
     row_base =
-      "1339           base                        some_command              51 years             stopped   test3\n"
+      "1339           base                        some_command              52 years             stopped   test3\n"
 
     assert [header] == jocker_cmd("container ls")
     assert [header, row_base, row_with_tag, row_no_image_name] == jocker_cmd("container ls -a")
@@ -240,6 +219,23 @@ defmodule CLITest do
 
     cmd("container rm #{id}")
   end
+
+  # test "creating nginx-container" do
+  #  # :timer.sleep(19000)
+  #  {:ok, path} = File.cwd()
+
+  #  {output, 0} =
+  #    System.cmd("#{path}/jocker", [
+  #      "image",
+  #      "build",
+  #      "-t",
+  #      "nginx:latest",
+  #      "/host/image_examples/nginx"
+  #    ])
+
+  #  ["", second_last | _] = output |> String.split("\n") |> Enum.reverse()
+  #  assert String.slice(second_last, 0, 33) == "Image succesfully created with id"
+  # end
 
   test "jocker adding and removing a container with writable volumes" do
     dockerfile = """
@@ -334,12 +330,12 @@ defmodule CLITest do
       "CONTAINER ID   IMAGE                       COMMAND                   CREATED              STATUS    NAME\n"
 
     row =
-      "#{id}   base                        /bin/sleep 10000          51 years             stopped   #{
+      "#{id}   base                        /bin/sleep 10000          52 years             stopped   #{
         name
       }\n"
 
     row_running =
-      "#{id}   base                        /bin/sleep 10000          51 years             running   #{
+      "#{id}   base                        /bin/sleep 10000          52 years             running   #{
         name
       }\n"
 
@@ -363,8 +359,8 @@ defmodule CLITest do
 
     expected_output = """
     NETWORK ID     NAME                        DRIVER
-    host           host                        host
     #{network.id}   default                     loopback
+    host           host                        host
     """
 
     output = cmd("network ls")
@@ -438,8 +434,8 @@ defmodule CLITest do
 
     assert jocker_cmd("volume ls") == [
              header,
-             "test3            51 years          \n",
-             "test2            51 years          \n"
+             "test3            52 years          \n",
+             "test2            52 years          \n"
            ]
 
     assert jocker_cmd("volume rm test2 test5 test3") ==
@@ -457,8 +453,8 @@ defmodule CLITest do
 
     assert output == [
              "VOLUME NAME      CREATED           \n",
-             "test2            51 years          \n",
-             "test1            51 years          \n"
+             "test2            52 years          \n",
+             "test1            52 years          \n"
            ]
 
     assert ["test2\n", "test1\n"] == jocker_cmd("volume ls --quiet")

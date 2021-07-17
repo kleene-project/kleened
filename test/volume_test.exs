@@ -1,19 +1,14 @@
 defmodule VolumeTest do
   use ExUnit.Case
-  alias Jocker.Engine.{MetaData, Config, Container, Volume, Layer, Network}
+  alias Jocker.Engine.{MetaData, Container, Volume}
   @moduletag :capture_log
 
-  setup_all do
-    Application.stop(:jocker)
-    TestHelper.clear_zroot()
-    start_supervised(Config)
-    start_supervised(MetaData)
-    start_supervised(Layer)
-    start_supervised(Network)
-
-    start_supervised(
-      {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
-    )
+  setup do
+    # Remove networks from previous test
+    on_exit(fn ->
+      Jocker.Engine.MetaData.list_volumes()
+      |> Enum.map(&Volume.destroy_volume/1)
+    end)
 
     :ok
   end

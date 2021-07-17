@@ -1,28 +1,8 @@
 defmodule ContainerTest do
   use ExUnit.Case
-  alias Jocker.Engine.{Config, Container, Image}
+  alias Jocker.Engine.{Container, Image}
 
   @moduletag :capture_log
-
-  setup_all do
-    Application.stop(:jocker)
-    TestHelper.clear_zroot()
-    {:ok, _pid} = start_supervised(Config)
-
-    {:ok, _pid} =
-      start_supervised(
-        {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
-      )
-
-    :ok
-  end
-
-  setup do
-    {:ok, _pid} = start_supervised(Jocker.Engine.MetaData)
-    {:ok, _pid} = start_supervised(Jocker.Engine.Layer)
-    {:ok, _pid} = start_supervised(Jocker.Engine.Network)
-    :ok
-  end
 
   test "create container and fetch metadata" do
     %Image{id: id} = Jocker.Engine.MetaData.get_image("base")

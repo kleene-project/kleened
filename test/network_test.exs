@@ -2,23 +2,9 @@ defmodule NetworkTest do
   use ExUnit.Case
   alias Jocker.Engine.{Network, Config, Utils, MetaData, Container}
 
-  setup_all do
-    Application.stop(:jocker)
-    TestHelper.clear_zroot()
-    {:ok, _pid} = start_supervised(Config)
-    {:ok, _pid} = start_supervised(MetaData)
-    :ok
-  end
-
-  setup do
-    on_exit(fn -> MetaData.remove_network("host") end)
-    :ok
-  end
-
   test "default interface is not defined at startup" do
     Utils.destroy_interface("jocker0")
     Config.delete("default_network_name")
-    {:ok, _pid} = Network.start_link([])
 
     assert not Utils.interface_exists("jocker0")
 
@@ -27,14 +13,16 @@ defmodule NetworkTest do
 
   test "default interface is created at startup" do
     Utils.destroy_interface("jocker0")
-    {:ok, _pid} = Network.start_link([])
+    assert not Utils.interface_exists("jocker0")
+
+    Supervisor.terminate_child(Jocker.Engine.Supervisor, Network)
+    Supervisor.restart_child(Jocker.Engine.Supervisor, Network)
 
     assert Utils.interface_exists("jocker0")
   end
 
   test "create, get and remove a new network" do
     Utils.destroy_interface("jocker1")
-    {:ok, _pid} = Network.start_link([])
 
     assert {:ok, %Network{name: "testnetwork"} = test_network} =
              Network.create("testnetwork", subnet: "172.18.0.0/16", ifname: "jocker1")
@@ -49,7 +37,6 @@ defmodule NetworkTest do
 
   test "listing networks" do
     Utils.destroy_interface("jocker1")
-    {:ok, _pid} = Network.start_link([])
 
     assert [%Network{name: "default"}, %Network{id: "host"}] = Network.list()
 
@@ -65,8 +52,6 @@ defmodule NetworkTest do
   end
 
   test "remove a non-existing network" do
-    {:ok, _pid} = Network.start_link([])
-
     assert {:ok, test_network} =
              Network.create("testnetwork", subnet: "172.18.0.0/16", ifname: "jocker1")
 
@@ -75,8 +60,6 @@ defmodule NetworkTest do
   end
 
   test "create a network with same name twice" do
-    {:ok, _pid} = Network.start_link([])
-
     assert {:ok, test_network} =
              Network.create("testnetwork", subnet: "172.18.0.0/16", ifname: "jocker1")
 
@@ -87,20 +70,11 @@ defmodule NetworkTest do
   end
 
   test "try to create a network with a invalid subnet" do
-    {:ok, _pid} = Network.start_link([])
-
     assert {:error, "invalid subnet"} =
              Network.create("testnetwork", subnet: "172.18.0.0-16", ifname: "jocker1")
   end
 
   test "connect and disconnect a container to a network" do
-    {:ok, _pid} = Jocker.Engine.Layer.start_link([])
-    {:ok, _pid} = Network.start_link([])
-
-    start_supervised(
-      {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
-    )
-
     network_if = "jocker1"
     {:ok, test_network} = Network.create("testnet", subnet: "172.19.0.0/24", ifname: network_if)
 
@@ -119,14 +93,6 @@ defmodule NetworkTest do
   end
 
   test "using 'host' network instead of 'default'" do
-    {:ok, _pid} = Jocker.Engine.Layer.start_link([])
-    {:ok, _pid} = Network.start_link([])
-
-    {:ok, _pid} =
-      start_supervised(
-        {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
-      )
-
     opts = [
       networks: ["host"],
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-i", "-4"]
@@ -149,13 +115,6 @@ defmodule NetworkTest do
   end
 
   test "connectivity using default interface" do
-    {:ok, _pid} = Jocker.Engine.Layer.start_link([])
-    {:ok, _pid} = Network.start_link([])
-
-    start_supervised(
-      {DynamicSupervisor, name: Jocker.Engine.ContainerPool, strategy: :one_for_one}
-    )
-
     opts = [
       cmd: ["/usr/bin/host", "-t", "A", "freebsd.org", "1.1.1.1"]
     ]
