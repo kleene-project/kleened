@@ -2,23 +2,44 @@ defmodule Jocker.CLI.Utils do
   alias Jocker.CLI.EngineClient
   require Logger
 
-  def rpc(cmd) do
-    case Process.whereis(EngineClient) do
-      nil ->
-        case EngineClient.start_link([]) do
-          {:ok, _pid} ->
-            :ok
+  def rpc(cmd, method \\ :sync) do
+    case EngineClient.start_link([]) do
+      {:ok, pid} ->
+        :ok = EngineClient.command(pid, cmd)
 
-          {:error, reason} ->
-            Logger.error("jocker-cli: Error connecting to backend: #{reason}")
+        case method do
+          :sync -> fetch_single_reply()
+          :async -> fetch_reply()
         end
 
-      _pid ->
-        :ok
+      {:error, reason} ->
+        Logger.error("jocker-cli: Error connecting to backend: #{reason}")
     end
+  end
 
-    :ok = EngineClient.command(cmd)
-    fetch_reply()
+  def fetch_single_reply() do
+    reply = fetch_reply()
+    :tcp_closed = fetch_reply()
+    reply
+  end
+
+  def fetch_reply() do
+    receive do
+      {:server_reply, {:tcp_error, reason}} ->
+        to_cli("\nError: connection to Jocker engine closed unexpectedly\n", :eof)
+        :error
+
+      {:server_reply, reply} ->
+        reply
+
+      what ->
+        to_cli("Error: unexpected message received from backend: #{inspect(what)}", :eof)
+        :error
+    after
+      30_000 ->
+        to_cli("Error: connection to jockerd timed out.", :eof)
+        {:error, :timeout}
+    end
   end
 
   def to_cli(msg \\ nil, eof \\ nil) do
@@ -30,19 +51,6 @@ defmodule Jocker.CLI.Utils do
     case eof do
       :eof -> Process.send(:cli_master, {:msg, :eof}, [])
       nil -> :ok
-    end
-  end
-
-  def fetch_reply() do
-    receive do
-      {:server_reply, reply} ->
-        reply
-
-      :tcp_closed ->
-        :tcp_closed
-
-      what ->
-        {:error, "ERROR: Unexpected message received from backend: #{inspect(what)}"}
     end
   end
 

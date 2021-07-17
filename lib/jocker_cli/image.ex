@@ -1,7 +1,8 @@
 defmodule Jocker.CLI.Image do
   alias Jocker.CLI.Utils
   alias Jocker.Engine.Image
-  import Utils, only: [cell: 2, sp: 1, to_cli: 1, to_cli: 2, rpc: 1]
+  import Utils, only: [cell: 2, sp: 1, to_cli: 1, to_cli: 2, rpc: 2, rpc: 1]
+  require Logger
 
   @doc """
 
@@ -49,8 +50,9 @@ defmodule Jocker.CLI.Image do
     tag = Keyword.get(options, :tag, "<none>:<none>")
     quiet = Keyword.get(options, :quiet, false)
     dockerfile = Keyword.get(options, :file, "Dockerfile")
-    {:ok, _pid} = rpc([Jocker.Engine.Image, :build, [path, dockerfile, tag, quiet]])
+    {:ok, _pid} = rpc([Jocker.Engine.Image, :build, [path, dockerfile, tag, quiet]], :async)
     receive_results()
+    :tcp_closed = Utils.fetch_reply()
   end
 
   defp receive_results() do
@@ -62,11 +64,8 @@ defmodule Jocker.CLI.Image do
         to_cli(msg)
         receive_results()
 
-      :tcp_closed ->
-        to_cli("\nError! Connection to Jocker engine closed unexpectedly\n", :eof)
-
-      other ->
-        raise "Error: Unexpected error occurred: #{inspect(other)}"
+      unknown_msg ->
+        Logger.warn("Unexpected message received: #{inspect(unknown_msg)}")
     end
   end
 

@@ -15,11 +15,11 @@ defmodule Jocker.CLI.EngineClient do
   ### API
   ### ===================================================================
   def start_link([]) do
-    GenServer.start_link(__MODULE__, [self()], name: __MODULE__)
+    GenServer.start_link(__MODULE__, [self()])
   end
 
-  def command(cmd) do
-    GenServer.call(__MODULE__, {:command, cmd})
+  def command(pid, cmd) do
+    GenServer.call(pid, {:command, cmd})
   end
 
   ### ===================================================================
@@ -59,15 +59,16 @@ defmodule Jocker.CLI.EngineClient do
   end
 
   @impl true
-  def handle_info({:tcp_closed, _socket}, %State{caller: pid} = state) do
-    Logger.info("Connection to to jocker-engine closed.")
-    Process.send(pid, :tcp_closed, [])
+  def handle_info({:tcp_closed, socket}, %State{caller: pid} = state) do
+    Logger.info("Connection to to jocker-engine using socket #{inspect(socket)} closed.")
+    relay_msg(pid, :tcp_closed)
     {:noreply, %State{state | :socket => nil, :buffer => ""}}
   end
 
-  def handle_info({:tcp_error, _socket, reason}, %State{caller: pid} = state) do
-    Logger.warn("Connection-error occured: #{inspect(reason)}")
-    Process.send(pid, {:tcp_error, reason}, [])
+  def handle_info({:tcp_error, socket, reason}, %State{caller: pid} = state) do
+    Logger.warn("Connection-error on socket #{inspect(socket)} occured: #{inspect(reason)}")
+    msg = {:tcp_error, reason}
+    relay_msg(pid, msg)
     {:noreply, state}
   end
 
@@ -79,16 +80,14 @@ defmodule Jocker.CLI.EngineClient do
 
       {reply, new_buffer} ->
         Logger.debug("Receiving reply from server: #{inspect(reply)}")
-        Process.send(pid, {:server_reply, reply}, [])
-
-        case reply do
-          {:image_builder, _pid, {:image_finished, _img}} -> GenTCP.close(socket)
-          {:container, _id, {:shutdown, :jail_stopped}} -> GenTCP.close(socket)
-          _ -> :inet.setopts(socket, [{:active, :once}])
-        end
-
+        relay_msg(pid, reply)
+        :inet.setopts(socket, [{:active, :once}])
         {:noreply, %State{state | :buffer => new_buffer}}
     end
+  end
+
+  defp relay_msg(pid, msg) do
+    Process.send(pid, {:server_reply, msg}, [])
   end
 
   defp server_location() do

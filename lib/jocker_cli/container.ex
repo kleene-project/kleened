@@ -1,7 +1,7 @@
 defmodule Jocker.CLI.Container do
   alias Jocker.CLI.Utils
   alias Jocker.Engine.Container
-  import Utils, only: [cell: 2, sp: 1, to_cli: 1, to_cli: 2, rpc: 1]
+  import Utils, only: [cell: 2, sp: 1, to_cli: 1, to_cli: 2, rpc: 2, rpc: 1]
   require Logger
 
   @doc """
@@ -220,12 +220,55 @@ defmodule Jocker.CLI.Container do
 
       {true, 1} ->
         [id_or_name] = containers
-        start_single_container(id_or_name, true)
-        output_container_messages()
+        {:ok, %Container{id: id}} = start_single_container(id_or_name, true)
+        output_container_messages(id)
+        :tcp_closed = Utils.fetch_reply()
         to_cli(nil, :eof)
 
       {true, _n} ->
         to_cli("jocker: you cannot start and attach multiple containers at once\n", :eof)
+    end
+  end
+
+  defp start_single_container(id_or_name, attach \\ false) do
+    if attach do
+      case rpc([Jocker.Engine.Container, :attach, [id_or_name]], :async) do
+        :ok ->
+          rpc([Jocker.Engine.Container, :start, [id_or_name]])
+
+        {:error, :not_found} ->
+          to_cli("Error: No such container: #{id_or_name}\n")
+      end
+    else
+      case rpc([Jocker.Engine.Container, :start, [id_or_name]]) do
+        {:ok, %Container{id: id}} ->
+          to_cli("#{id}\n")
+
+        {:error, :not_found} ->
+          to_cli("Error: No such container: #{id_or_name}\n")
+      end
+    end
+  end
+
+  defp output_container_messages(id) do
+    case Utils.fetch_reply() do
+      {:container, ^id, {:shutdown, :end_of_ouput}} ->
+        to_cli(
+          "jocker: primary process terminated but the container is still running in the background\n"
+        )
+
+        :ok
+
+      {:container, ^id, {:shutdown, :jail_stopped}} ->
+        :ok
+
+      {:container, ^id, msg} ->
+        to_cli(msg)
+        output_container_messages(id)
+
+      unknown_msg ->
+        # In the test it receives a :tcp_closed here. Probably from the previous rpc-command?
+        Logger.warn("Unknown message received: #{inspect(unknown_msg)}")
     end
   end
 
@@ -248,55 +291,6 @@ defmodule Jocker.CLI.Container do
   def stop({_options, containers}) do
     Enum.map(containers, &stop_container/1)
     to_cli(nil, :eof)
-  end
-
-  defp start_single_container(id_or_name, attach \\ false) do
-    if attach do
-      case rpc([Jocker.Engine.Container, :attach, [id_or_name]]) do
-        :ok ->
-          rpc([Jocker.Engine.Container, :start, [id_or_name]])
-
-        {:error, :not_found} ->
-          to_cli("Error: No such container: #{id_or_name}\n")
-      end
-    else
-      case rpc([Jocker.Engine.Container, :start, [id_or_name]]) do
-        {:ok, %Container{id: id}} ->
-          to_cli("#{id}\n")
-
-        {:error, :not_found} ->
-          to_cli("Error: No such container: #{id_or_name}\n")
-      end
-    end
-  end
-
-  defp output_container_messages() do
-    case Utils.fetch_reply() do
-      {:container, _pid, {:shutdown, :end_of_ouput}} ->
-        to_cli(
-          "jocker: primary process terminated but the container is still running in the background\n"
-        )
-
-        :ok
-
-      {:container, _pid, {:shutdown, :jail_stopped}} ->
-        :ok
-
-      {:container, _pid, msg} ->
-        to_cli(msg)
-        output_container_messages()
-
-      :tcp_closed ->
-        :connection_closed
-
-      {:tcp_error, reason} ->
-        to_cli("Error! An error occured while communicating with the backend: #{inspect(reason)}")
-
-      unknown_msg ->
-        Logger.warn(
-          "Unknown message received while waiting for container output #{inspect(unknown_msg)}"
-        )
-    end
   end
 
   defp stop_container(container_id) do

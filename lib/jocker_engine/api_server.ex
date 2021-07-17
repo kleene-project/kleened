@@ -5,7 +5,15 @@ defmodule Jocker.Engine.APIServer do
   def start_link([]) do
     Logger.info("jocker-engine: Initating API backend")
     socket_opts = create_socket_options(Config.get("api_socket"))
-    :ranch.start_listener(make_ref(), :ranch_tcp, socket_opts, Jocker.Engine.APIConnection, [])
+    lingering = {:linger, {true, 30000}}
+
+    :ranch.start_listener(
+      make_ref(),
+      :ranch_tcp,
+      [lingering | socket_opts],
+      Jocker.Engine.APIConnection,
+      []
+    )
   end
 
   defp create_socket_options(api_socket) do

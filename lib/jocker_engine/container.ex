@@ -117,9 +117,14 @@ defmodule Jocker.Engine.Container do
   def attach(id_or_name) do
     cont = MetaData.get_container(id_or_name)
 
-    case spawn_container(cont) do
-      {:ok, pid} -> GenServer.call(pid, {:attach, self()})
-      other -> other
+    case cont do
+      %Container{} ->
+        {:ok, pid} = spawn_container(cont)
+        GenServer.call(pid, {:attach, self()})
+        :ok
+
+      :not_found ->
+        :not_found
     end
   end
 
@@ -161,13 +166,14 @@ defmodule Jocker.Engine.Container do
   end
 
   def handle_info({port, {:exit_status, _}}, %State{:starting_port => port} = state) do
-    Logger.debug("Jail-starting process exited succesfully.")
+    Logger.debug("#{inspect(self())}Jail-starting process exited.")
 
     cont = MetaData.get_container(state.container_id)
 
     case is_running?(state.container_id) do
       false ->
-        shutdown_container(cont, state)
+        shutdown_container(cont)
+        relay_msg({:shutdown, :jail_stopped}, state)
         DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, self())
         {:noreply, %State{}}
 
@@ -175,6 +181,7 @@ defmodule Jocker.Engine.Container do
         # Since the jail-starting process is stopped no messages will be sent to Jocker.
         # This happens when, e.g., a full-blow vm-jail has been started (using /etc/rc)
         relay_msg({:shutdown, :end_of_ouput}, state)
+        DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, self())
         {:noreply, %State{state | :starting_port => nil}}
     end
   end
@@ -285,7 +292,8 @@ defmodule Jocker.Engine.Container do
   defp stop_(cont, state) do
     case is_running?(state.container_id) do
       true ->
-        shutdown_container(cont, state)
+        shutdown_container(cont)
+        relay_msg({:shutdown, :jail_stopped}, state)
         {:ok, cont}
 
       false ->
@@ -338,7 +346,7 @@ defmodule Jocker.Engine.Container do
     {:ok, pid}
   end
 
-  defp shutdown_container(%Container{id: id} = cont, state) do
+  defp shutdown_container(%Container{id: id} = cont) do
     Logger.debug("Shutting down jail #{id}")
 
     if is_running?(id) do
@@ -349,7 +357,6 @@ defmodule Jocker.Engine.Container do
     jail_cleanup(cont)
     updated_container = %Container{cont | pid: ""}
     MetaData.add_container(updated_container)
-    relay_msg({:shutdown, :jail_stopped}, state)
   end
 
   def extract_ips(container_id, network_id, ip_list) do
@@ -358,7 +365,9 @@ defmodule Jocker.Engine.Container do
   end
 
   def is_running?(container_id) do
-    case System.cmd("jls", ["--libxo=json", "-j", container_id], stderr_to_stdout: true) do
+    output = System.cmd("jls", ["--libxo=json", "-j", container_id], stderr_to_stdout: true)
+
+    case output do
       {_json, 1} -> false
       {_json, 0} -> true
     end
@@ -404,7 +413,6 @@ defmodule Jocker.Engine.Container do
   end
 
   defp relay_msg(msg, state) do
-    # Logger.debug("relaying msg: #{inspect(msg)}")
     wrapped_msg = {:container, state.container_id, msg}
     Enum.map(state.subscribers, fn x -> Process.send(x, wrapped_msg, []) end)
   end

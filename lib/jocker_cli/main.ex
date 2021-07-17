@@ -60,6 +60,10 @@ defmodule Jocker.CLI.Main do
         parse_subcommand(rest)
 
       {opts, rest, []} ->
+        cond do
+          Keyword.get(opts, :debug) -> Logger.configure(level: :debug)
+        end
+
         Jocker.CLI.Config.start_link(opts)
         parse_subcommand(rest)
 
