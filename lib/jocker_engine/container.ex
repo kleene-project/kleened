@@ -238,6 +238,8 @@ defmodule Jocker.Engine.Container do
 
     # Store new container and connect to the networks
     MetaData.add_container(cont)
+    # FIXME: This hangs while building a simple image
+    # Looks like it can't find the network for some reason:
     Enum.map(network_idnames, &Network.connect(container_id, &1))
     {:ok, MetaData.get_container(container_id)}
   end

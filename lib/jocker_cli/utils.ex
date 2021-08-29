@@ -8,7 +8,7 @@ defmodule Jocker.CLI.Utils do
         :ok = EngineClient.command(pid, cmd)
 
         case method do
-          :sync -> fetch_single_reply()
+          :sync -> fetch_single_reply(pid)
           :async -> fetch_reply()
         end
 
@@ -17,9 +17,10 @@ defmodule Jocker.CLI.Utils do
     end
   end
 
-  def fetch_single_reply() do
+  def fetch_single_reply(pid) do
     reply = fetch_reply()
     :tcp_closed = fetch_reply()
+    :ok = GenServer.stop(pid)
     reply
   end
 
@@ -36,7 +37,7 @@ defmodule Jocker.CLI.Utils do
         to_cli("Error: unexpected message received from backend: #{inspect(what)}", :eof)
         :error
     after
-      30_000 ->
+      60_000 ->
         to_cli("Error: connection to jockerd timed out.", :eof)
         {:error, :timeout}
     end

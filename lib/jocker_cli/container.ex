@@ -266,6 +266,9 @@ defmodule Jocker.CLI.Container do
         to_cli(msg)
         output_container_messages(id)
 
+      :tcp_closed ->
+        to_cli("connection closed unexpectedly", :eof)
+
       unknown_msg ->
         # In the test it receives a :tcp_closed here. Probably from the previous rpc-command?
         Logger.warn("Unknown message received: #{inspect(unknown_msg)}")

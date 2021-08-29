@@ -73,15 +73,15 @@ defmodule Jocker.CLI.EngineClient do
   end
 
   def handle_info({:tcp, socket, data}, %State{caller: pid, buffer: buffer} = state) do
+    :inet.setopts(socket, [{:active, :once}])
+
     case Jocker.Engine.Utils.decode_buffer(buffer <> data) do
       {:no_full_msg, new_buffer} ->
-        :inet.setopts(socket, [{:active, :once}])
         {:noreply, %State{state | :buffer => new_buffer}}
 
       {reply, new_buffer} ->
         Logger.debug("Receiving reply from server: #{inspect(reply)}")
         relay_msg(pid, reply)
-        :inet.setopts(socket, [{:active, :once}])
         {:noreply, %State{state | :buffer => new_buffer}}
     end
   end

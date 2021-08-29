@@ -1,7 +1,8 @@
 defmodule Jocker.CLI.Config do
   use Agent
 
-  @default_socket "unix:///var/run/jocker.sock"
+  # @default_socket "unix:///var/run/jocker.sock"
+  @default_socket "tcp://127.0.0.1:8000"
 
   def start_link(opts) do
     Agent.start_link(fn -> initialize(opts) end, name: __MODULE__)

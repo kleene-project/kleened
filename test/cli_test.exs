@@ -168,7 +168,9 @@ defmodule CLITest do
 
   test "create a container with a specific jail parameter" do
     id = cmd("container create --jailparam allow.raw_sockets=true base ping -c 1 localhost")
-    assert [<<"PING localhost", _::binary>> | _] = jocker_cmd("container start --attach #{id}")
+    assert [<<"PING localhost", rest::binary>> | _] = jocker_cmd("container start --attach #{id}")
+    # example line: "round-trip min/avg/max/stddev = 0.021/0.021/0.021/0.000 ms\n"
+    assert String.ends_with?(rest, " ms\n")
   end
 
   test "create a container with devfs disabled" do
@@ -188,7 +190,7 @@ defmodule CLITest do
 
   test "create a container with a custom command" do
     id = cmd("container create base /bin/mkdir /loltest")
-    assert %Container{id: ^id, layer_id: layer_id, pid: pid} = cont = MetaData.get_container(id)
+    assert %Container{id: ^id, layer_id: layer_id, pid: _pid} = cont = MetaData.get_container(id)
 
     # We '--attach' to make sure the jail is done
 
@@ -220,6 +222,7 @@ defmodule CLITest do
     cmd("container rm #{id}")
   end
 
+  # FIXME: Unfinished 
   # test "creating nginx-container" do
   #  # :timer.sleep(19000)
   #  {:ok, path} = File.cwd()
@@ -544,33 +547,33 @@ defmodule CLITest do
     end
   end
 
-  defp remove_volume_mounts() do
-    case System.cmd("/bin/sh", ["-c", "mount | grep nullfs"]) do
-      {output, 0} ->
-        mounts = String.split(output, "\n")
-        Enum.map(mounts, &remove_mount/1)
+  # defp remove_volume_mounts() do
+  #  case System.cmd("/bin/sh", ["-c", "mount | grep nullfs"]) do
+  #    {output, 0} ->
+  #      mounts = String.split(output, "\n")
+  #      Enum.map(mounts, &remove_mount/1)
 
-      _ ->
-        :ok
-    end
-  end
+  #    _ ->
+  #      :ok
+  #  end
+  # end
 
-  defp remove_mount(mount) do
-    case mount |> String.replace(" on ", " ") |> String.split() do
-      [src, dst | _] ->
-        case String.starts_with?(src, "/" <> Config.get("volume_root")) do
-          true ->
-            # Logger.warn("Removing nullfs-mount #{dst}")
-            System.cmd("/sbin/umount", [dst])
+  # defp remove_mount(mount) do
+  #  case mount |> String.replace(" on ", " ") |> String.split() do
+  #    [src, dst | _] ->
+  #      case String.starts_with?(src, "/" <> Config.get("volume_root")) do
+  #        true ->
+  #          # Logger.warn("Removing nullfs-mount #{dst}")
+  #          System.cmd("/sbin/umount", [dst])
 
-          _ ->
-            :ok
-        end
+  #        _ ->
+  #          :ok
+  #      end
 
-      _ ->
-        :ok
-    end
-  end
+  #    _ ->
+  #      :ok
+  #  end
+  # end
 
   defp epoch(n) do
     DateTime.to_iso8601(DateTime.from_unix!(n))
