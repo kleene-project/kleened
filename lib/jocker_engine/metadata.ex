@@ -143,11 +143,13 @@ defmodule Jocker.Engine.MetaData do
 
   @spec list_networks(:include_host | :exclude_host) :: [%Network{}]
   def list_networks(:include_host) do
-    sql("SELECT id, network FROM networks")
+    sql("SELECT id, network FROM networks ORDER BY json_extract(network, '$.name')")
   end
 
   def list_networks(:exclude_host) do
-    sql("SELECT id, network FROM networks WHERE id != 'host'")
+    sql(
+      "SELECT id, network FROM networks WHERE id != 'host' ORDER BY json_extract(network, '$.name')"
+    )
   end
 
   @spec add_endpoint_config(

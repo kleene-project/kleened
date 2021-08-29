@@ -64,6 +64,9 @@ defmodule Jocker.CLI.Image do
         to_cli(msg)
         receive_results()
 
+      :tcp_closed ->
+        to_cli("connection closed unexpectedly", :eof)
+
       unknown_msg ->
         Logger.warn("Unexpected message received: #{inspect(unknown_msg)}")
     end

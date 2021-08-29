@@ -32,6 +32,7 @@ defmodule VolumeTest do
     Volume.destroy_volume(vol1)
     assert [vol2] == MetaData.list_volumes()
     Volume.destroy_volume(vol2)
+    assert [] == MetaData.list_volumes()
   end
 
   test "verify volume binding" do
@@ -53,5 +54,6 @@ defmodule VolumeTest do
 
     assert {:ok, %File.Stat{:type => :regular}} = File.stat(Path.join(volume.mountpoint, "test"))
     Volume.destroy_volume(volume)
+    Container.destroy(id)
   end
 end

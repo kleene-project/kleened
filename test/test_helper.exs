@@ -1,4 +1,5 @@
 alias Jocker.Engine.{ZFS, Config, Container, Layer}
+require Logger
 
 ExUnit.start()
 
@@ -68,7 +69,7 @@ defmodule TestHelper do
         receive_imagebuilder_results(pid, [msg | msg_list])
 
       other ->
-        IO.puts("\nError! Received unkown message #{inspect(other)}")
+        Logger.warn("\nError! Received unkown message #{inspect(other)}")
     end
   end
 

@@ -214,6 +214,16 @@ defmodule Jocker.Engine.Network do
     {:error, "Unknown driver"}
   end
 
+  defp connect_(_network, :not_found) do
+    Logger.warn("Could not connect container to network: container not found")
+    {:reply, {:error, "container not found"}}
+  end
+
+  defp connect_(:not_found, _container) do
+    Logger.warn("Could not connect container to network: network not found")
+    {:reply, {:error, "network not found"}}
+  end
+
   defp connect_(%Container{id: container_id}, %Network{id: "host"} = network) do
     cond do
       Container.is_running?(container_id) ->
@@ -252,16 +262,6 @@ defmodule Jocker.Engine.Network do
 
         :ok
     end
-  end
-
-  defp connect_(_network, :not_found) do
-    Logger.warn("Could not connect container to network: container not found")
-    {:reply, {:error, "container not found"}}
-  end
-
-  defp connect_(:not_found, _container) do
-    Logger.warn("Could not connect container to network: network not found")
-    {:reply, {:error, "network not found"}}
   end
 
   defp connect_(network, container) do

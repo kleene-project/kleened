@@ -1,6 +1,6 @@
 defmodule ImageTest do
   use ExUnit.Case
-  alias Jocker.Engine.{Config, Image, MetaData, Layer, Network}
+  alias Jocker.Engine.{Config, Image, MetaData, Layer}
 
   @moduletag :capture_log
 

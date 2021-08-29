@@ -60,7 +60,7 @@ defmodule NetworkTest do
   end
 
   test "create a network with same name twice" do
-    assert {:ok, test_network} =
+    assert {:ok, _test_network} =
              Network.create("testnetwork", subnet: "172.18.0.0/16", ifname: "jocker1")
 
     assert {:error, "network name is already taken"} =
@@ -90,6 +90,7 @@ defmodule NetworkTest do
     {:ok, output} = Jason.decode(TestHelper.collect_container_output(id))
     assert %{"statistics" => %{"interface" => [%{"address" => "172.19.0.0"}]}} = output
     assert Network.remove("testnet") == {:ok, test_network.id}
+    Container.destroy(id)
   end
 
   test "using 'host' network instead of 'default'" do

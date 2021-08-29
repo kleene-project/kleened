@@ -93,9 +93,7 @@ defmodule Jocker.Engine.APIConnection do
         %State{transport: transport, socket: socket} = state
       ) do
     Logger.debug(
-      "#{inspect(:erlang.now())} Closing client connection to container #{inspect(id)}. Reason: #{
-        inspect(reason)
-      }."
+      "container #{id} stopped with reason: #{inspect(reason)}. closing client connection."
     )
 
     :ok = transport.send(socket, Erlang.term_to_binary(container_msg))
@@ -120,7 +118,7 @@ defmodule Jocker.Engine.APIConnection do
         {:image_builder, _pid, {:image_finished, _img}} = imgbuild_msg,
         %State{transport: transport, socket: socket} = state
       ) do
-    Logger.debug("Image builder done!")
+    Logger.debug("image builder done!")
     transport.send(socket, Erlang.term_to_binary(imgbuild_msg))
     transport.close(socket)
     {:noreply, state}
