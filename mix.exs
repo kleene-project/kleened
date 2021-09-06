@@ -35,7 +35,7 @@ defmodule Jocker.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger, :crypto, :eex, :ranch],
+      extra_applications: [:logger, :crypto, :eex, :cowboy, :plug],
       mod: {Jocker.Engine.Application, []}
     ]
   end
@@ -43,7 +43,6 @@ defmodule Jocker.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:jason, "~> 1.2"},
       {:esqlite, "0.4.1",
        override: true,
        system_env: [
@@ -52,9 +51,11 @@ defmodule Jocker.MixProject do
           "$CFLAGS -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_JSON1 -DSQLITE_USE_URI -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS3_PARENTHESIS -I./c_src/sqlite3"}
        ]},
       {:sqlitex, "~> 1.7"},
-      {:ranch, "~> 2.0"},
+      {:jason, "~> 1.2"},
       {:yaml_elixir, "~> 2.4"},
       {:cidr, "~> 1.1"},
+      {:plug, "~> 1.12"},
+      {:plug_cowboy, "~> 2.5"},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:earmark, "~> 1.4.4", only: :dev},
       {:ex_doc, "~> 0.19", only: :dev},

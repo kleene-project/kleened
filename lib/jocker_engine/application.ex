@@ -16,9 +16,16 @@ defmodule Jocker.Engine.Application do
     # Load the configuration file at startup and pass configuration parameters in the child 
     # in the supervision-tree here: The configuration values are required here before supervisor i started.
     {:ok, pid} = Jocker.Engine.Config.start_link([])
-    socket_opts = create_socket_options(Jocker.Engine.Config.get("api_socket"))
+    # socket_opts = create_socket_options(Jocker.Engine.Config.get("api_socket"))
     GenServer.stop(pid)
-    lingering = {:linger, {true, 10_000}}
+
+    # FIXME: This is not related to the old socket_opts from when raw erlang API. Please2fix.
+    http_server =
+      Plug.Adapters.Cowboy.child_spec(
+        scheme: :http,
+        plug: Jocker.Engine.HTTPServer,
+        options: [port: 8085]
+      )
 
     children = [
       Jocker.Engine.Config,
@@ -27,13 +34,7 @@ defmodule Jocker.Engine.Application do
       Jocker.Engine.Network,
       {DynamicSupervisor,
        name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0},
-      :ranch.child_spec(
-        make_ref(),
-        :ranch_tcp,
-        [lingering | socket_opts],
-        Jocker.Engine.APIConnection,
-        []
-      )
+      http_server
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

@@ -38,8 +38,7 @@ defmodule Jocker.Engine.Container do
           }
 
   @type create_opts() :: [
-          {:existing_container, String.t()}
-          | {:image, String.t()}
+          {:image, String.t()}
           | {:name, String.t()}
           | {:cmd, [String.t()]}
           | {:user, String.t()}
@@ -63,7 +62,7 @@ defmodule Jocker.Engine.Container do
     GenServer.start_link(__MODULE__, opts)
   end
 
-  @spec create(create_opts) :: {:ok, Container.t()} | :image_not_found
+  @spec create(create_opts) :: {:ok, Container.t()} | {:error, :image_not_found}
   def create(options) do
     Logger.debug("Creating container with opts: #{inspect(options)}")
     image = MetaData.get_image(Keyword.get(options, :image, "base"))
@@ -81,13 +80,13 @@ defmodule Jocker.Engine.Container do
   end
 
   @spec stop(id_or_name()) ::
-          {:ok, %Container{}} | {:error, :not_found} | {:error, :not_running}
+          {:ok, %Container{}} | {:error, :not_found} | {:error, :container_not_running}
   def stop(id_or_name) do
     %Container{id: contaier_id} = cont = MetaData.get_container(id_or_name)
 
     case is_running?(contaier_id) do
       false ->
-        {:error, :not_running}
+        {:error, :container_not_running}
 
       true ->
         case spawn_container(cont) do
@@ -150,7 +149,7 @@ defmodule Jocker.Engine.Container do
   def handle_call({:start, cont, options}, _from, state) do
     case is_running?(state.container_id) do
       true ->
-        {:reply, :already_started, state}
+        {:reply, {:error, :already_started}, state}
 
       false ->
         port = start_(options, cont)
@@ -194,7 +193,7 @@ defmodule Jocker.Engine.Container do
   ### ===================================================================
   ### Internal functions
   ### ===================================================================
-  defp create_(:not_found, _), do: :image_not_found
+  defp create_(:not_found, _), do: {:error, :image_not_found}
 
   defp create_(
          %Image{

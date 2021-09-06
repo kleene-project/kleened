@@ -27,7 +27,11 @@ defmodule Jocker.CLI.Utils do
   def fetch_reply() do
     receive do
       {:server_reply, {:tcp_error, reason}} ->
-        to_cli("\nError: connection to Jocker engine closed unexpectedly\n", :eof)
+        to_cli(
+          "\nError: connection to Jocker engine closed unexpectedly: #{inspect(reason)}\n",
+          :eof
+        )
+
         :error
 
       {:server_reply, reply} ->
