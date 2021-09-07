@@ -50,7 +50,7 @@ defmodule ContainerTest do
 
     %Container{id: id} = start_attached_container(opts)
 
-    assert :already_started == Container.start(id)
+    assert {:error, :already_started} == Container.start(id)
     assert {:ok, %Container{id: ^id}} = Container.stop(id)
   end
 
@@ -70,7 +70,7 @@ defmodule ContainerTest do
   end
 
   test "create container from non-existing image" do
-    assert :image_not_found == Jocker.Engine.Container.create(image: "nonexisting")
+    assert {:error, :image_not_found} == Jocker.Engine.Container.create(image: "nonexisting")
   end
 
   test "create container from non-existing id" do
