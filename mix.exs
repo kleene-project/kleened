@@ -54,12 +54,14 @@ defmodule Jocker.MixProject do
       {:jason, "~> 1.2"},
       {:yaml_elixir, "~> 2.4"},
       {:cidr, "~> 1.1"},
+      {:cowlib, "~> 2.11", override: true},
       {:plug, "~> 1.12"},
       {:plug_cowboy, "~> 2.5"},
-      {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:earmark, "~> 1.4.4", only: :dev},
       {:ex_doc, "~> 0.19", only: :dev},
-      {:excoveralls, "~> 0.12", only: :test}
+      {:dialyxir, "~> 1.0", only: :dev, runtime: false},
+      {:excoveralls, "~> 0.12", only: :test},
+      {:gun, "~> 1.3", only: :test}
     ]
   end
 end

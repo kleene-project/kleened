@@ -13,7 +13,7 @@ defmodule Jocker.Engine.Application do
   def start(_type, _args) do
     # FIXME: This is a dirty-hack to fetch "api_socket" before supervisor is started, as it is used to configure ranch supervisor.
     # To make this properly requires a refactor of the Jocker.Engine.Config:
-    # Load the configuration file at startup and pass configuration parameters in the child 
+    # Load the configuration file at startup and pass configuration parameters in the child
     # in the supervision-tree here: The configuration values are required here before supervisor i started.
     {:ok, pid} = Jocker.Engine.Config.start_link([])
     # socket_opts = create_socket_options(Jocker.Engine.Config.get("api_socket"))
@@ -23,8 +23,9 @@ defmodule Jocker.Engine.Application do
     http_server =
       Plug.Adapters.Cowboy.child_spec(
         scheme: :http,
+        # This plug-name is not used. The plugs are defined in dispath/0 below
         plug: Jocker.Engine.HTTPServer,
-        options: [port: 8085]
+        options: [port: 8085, dispatch: dispatch]
       )
 
     children = [
@@ -55,6 +56,17 @@ defmodule Jocker.Engine.Application do
         Logger.error(msg)
         {:error, msg}
     end
+  end
+
+  defp dispatch do
+    [
+      {:_,
+       [
+         {"/containers/:container_id/attach", Jocker.Engine.HTTPContainerAttach, []},
+         {"/image/build", Jocker.Engine.HTTPImageBuild, []},
+         {:_, Plug.Adapters.Cowboy.Handler, {Jocker.Engine.HTTPServer, []}}
+       ]}
+    ]
   end
 
   defp create_socket_options(api_socket) do
