@@ -64,7 +64,7 @@ defmodule Jocker.Engine.Container do
 
   @spec create(create_opts) :: {:ok, Container.t()} | {:error, :image_not_found}
   def create(options) do
-    Logger.debug("Creating container with opts: #{inspect(options)}")
+    Logger.debug("creating container with opts: #{inspect(options)}")
     image = MetaData.get_image(Keyword.get(options, :image, "base"))
     create_(image, options)
   end
@@ -74,7 +74,7 @@ defmodule Jocker.Engine.Container do
     cont = MetaData.get_container(id_or_name)
 
     case spawn_container(cont) do
-      {:ok, pid} -> GenServer.call(pid, {:start, cont, opts})
+      {:ok, pid} -> GenServer.call(pid, {:start, opts})
       other -> other
     end
   end
@@ -123,7 +123,7 @@ defmodule Jocker.Engine.Container do
         :ok
 
       :not_found ->
-        :not_found
+        {:error, :not_found}
     end
   end
 
@@ -146,21 +146,21 @@ defmodule Jocker.Engine.Container do
     {:reply, :ok, %State{state | subscribers: Enum.uniq([pid | subscribers])}}
   end
 
-  def handle_call({:start, cont, options}, _from, state) do
+  def handle_call({:start, options}, _from, state) do
     case is_running?(state.container_id) do
       true ->
         {:reply, {:error, :already_started}, state}
 
       false ->
-        port = start_(options, cont)
+        {port, cont} = start_(options, MetaData.get_container(state.container_id))
         {:reply, {:ok, cont}, %State{state | :starting_port => port}}
     end
   end
 
   @impl true
-  def handle_info({port, {:data, msg}}, %State{:starting_port => port} = state) do
-    Logger.debug("Msg from jail-port: #{inspect(msg)}")
-    relay_msg(msg, state)
+  def handle_info({port, {:data, jail_output}}, %State{:starting_port => port} = state) do
+    Logger.debug("Msg from jail-port: #{inspect(jail_output)}")
+    relay_msg({:jail_output, jail_output}, state)
     {:noreply, state}
   end
 
@@ -179,7 +179,7 @@ defmodule Jocker.Engine.Container do
       true ->
         # Since the jail-starting process is stopped no messages will be sent to Jocker.
         # This happens when, e.g., a full-blow vm-jail has been started (using /etc/rc)
-        relay_msg({:shutdown, :end_of_ouput}, state)
+        relay_msg({:shutdown, :jail_root_process_exited}, state)
         DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, self())
         {:noreply, %State{state | :starting_port => nil}}
     end
@@ -254,9 +254,12 @@ defmodule Jocker.Engine.Container do
            env_vars: env_vars
          } = cont
        ) do
+    Logger.info("Starting container #{inspect(cont.id)}")
+
     command = Keyword.get(options, :cmd, default_cmd)
     user = Keyword.get(options, :user, default_user)
-    MetaData.add_container(%Container{cont | user: user, command: command})
+    cont_upd = %Container{cont | user: user, command: command}
+    MetaData.add_container(cont_upd)
 
     network_config =
       case MetaData.connected_networks(id) do
@@ -285,7 +288,7 @@ defmodule Jocker.Engine.Container do
       )
 
     Logger.info("Succesfully started jail-port: #{inspect(port)}")
-    port
+    {port, cont_upd}
   end
 
   defp stop_(:not_found, _state), do: {:error, :not_found}
