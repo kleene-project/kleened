@@ -39,14 +39,14 @@ defmodule Jocker.Engine.Image do
           }
 
   @spec build(String.t(), String.t(), String.t(), boolean()) :: {:ok, pid()}
-  def build(context, dockerfile, tag, quiet \\ false) do
+  def build(context_path, dockerfile, tag, quiet \\ false) do
     {name, tag} = Jocker.Engine.Utils.decode_tagname(tag)
-    dockerfile_path = Path.join(context, dockerfile)
+    dockerfile_path = Path.join(context_path, dockerfile)
     {:ok, dockerfile} = File.read(dockerfile_path)
     instructions = Jocker.Engine.Dockerfile.parse(dockerfile)
 
     state = %State{
-      :context => context,
+      :context => context_path,
       :user => "root",
       :quiet => quiet,
       :image_name => name,

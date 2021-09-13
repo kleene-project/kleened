@@ -32,11 +32,11 @@ defmodule Jocker.Engine.HTTPContainerAttach do
   end
 
   def websocket_info({:container, container_id, {:shutdown, :jail_stopped}}, state) do
-    {[{:text, "exit:container #{container_id} stopped"}], state}
+    {[{:close, 1000, "exit:container #{container_id} stopped"}], state}
   end
 
   def websocket_info({:container, container_id, {:shutdown, :jail_root_process_exited}}, state) do
-    {[{:text, "exit:container #{container_id}'s root process exited"}], state}
+    {[{:close, 1000, "exit:container #{container_id}'s root process exited"}], state}
   end
 
   def websocket_info({:container, _container_id, {:jail_output, msg}}, state) do

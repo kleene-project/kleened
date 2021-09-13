@@ -63,7 +63,7 @@ defmodule Jocker.Engine.Application do
       {:_,
        [
          {"/containers/:container_id/attach", Jocker.Engine.HTTPContainerAttach, []},
-         {"/image/build", Jocker.Engine.HTTPImageBuild, []},
+         {"/images/build", Jocker.Engine.HTTPImageBuild, []},
          {:_, Plug.Adapters.Cowboy.Handler, {Jocker.Engine.HTTPServer, []}}
        ]}
     ]

@@ -9,7 +9,7 @@ defmodule WebSocketTest do
 
   test "try attaching to a non-existing container" do
     conn = initialize_websocket("/containers/nonexisting/attach")
-    {:close, 1000, "exit:container not found"} = receive_frame(conn)
+    ["container not found"] = receive_frames(conn)
     # The underlying ranch-listener complains if this delay is not here:
     :timer.sleep(1000)
   end
@@ -21,16 +21,60 @@ defmodule WebSocketTest do
     assert {:text, "ok:"} == receive_frame(conn)
     {:ok, _} = Container.start(container.id)
     expected_frames = ["FreeBSD\n", "container #{container.id} stopped"]
-    assert expected_frames == receive_container_frames(conn)
+    assert expected_frames == receive_frames(conn)
   end
 
-  defp receive_container_frames(conn, frames \\ []) do
+  @tmp_dockerfile "tmp_dockerfile"
+  @tmp_context "./"
+
+  test "building a simple image that generates some text" do
+    dockerfile = """
+    FROM scratch
+    RUN echo "lets test that we receives this!"
+    RUN uname
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+
+    query_params =
+      Plug.Conn.Query.encode(%{
+        context: @tmp_context,
+        dockerfile: @tmp_dockerfile,
+        quiet: false,
+        tag: "<none>:<none>"
+      })
+
+    endpoint = "/images/build?#{query_params}"
+    conn = initialize_websocket(endpoint)
+    assert {:text, "ok:"} == receive_frame(conn)
+    frames = receive_frames(conn)
+
+    {finish_msg, build_log} = List.pop_at(frames, -1)
+
+    assert build_log == [
+             "Step 1/3 : FROM scratch\n",
+             "Step 2/3 : RUN echo \"lets test that we receives this!\"\n",
+             "lets test that we receives this!\n",
+             "Step 3/3 : RUN uname\n",
+             "FreeBSD\n"
+           ]
+
+    assert <<"image created with id ", _::binary>> = finish_msg
+  end
+
+  defp receive_frames(conn, frames \\ []) do
     case receive_frame(conn) do
       {:text, <<"exit:", msg::binary>>} ->
         Enum.reverse([msg | frames])
 
       {:text, <<"io:", msg::binary>>} ->
-        receive_container_frames(conn, [msg | frames])
+        receive_frames(conn, [msg | frames])
+
+      {:close, 1000, <<"exit:", msg::binary>>} ->
+        receive_frames(conn, [msg | frames])
+
+      :websocket_closed ->
+        Enum.reverse(frames)
     end
   end
 
@@ -39,8 +83,11 @@ defmodule WebSocketTest do
       {:gun_ws, ^conn, _ref, msg} ->
         msg
 
+      {:gun_down, ^conn, :ws, :closed, [], []} ->
+        :websocket_closed
+
       what ->
-        Logger.error("unknown message received #{what}")
+        Logger.error("unknown message received #{inspect(what)}")
         {:error, :unknown_msg}
     after
       1_000 -> {:error, :timeout}
@@ -67,8 +114,6 @@ defmodule WebSocketTest do
 
       {:gun_error, ^conn, _stream_ref, reason} ->
         exit({:ws_upgrade_failed, reason})
-
-      ## More clauses here as needed.
 
       msg ->
         exit({:ws_upgrade_failed, "unknown message '#{inspect(msg)}' received."})
