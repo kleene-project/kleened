@@ -79,8 +79,6 @@ defmodule Jocker.Engine.MetaData do
           | Volume.volume()
           | Mount.mount()
 
-  @type record_type() :: :image | :layer | :container
-
   @type db_conn() :: Sqlitex.connection()
 
   @spec start_link([]) :: Agent.on_start()
@@ -269,7 +267,7 @@ defmodule Jocker.Engine.MetaData do
     end
   end
 
-  @spec list_containers() :: [JockerRecords.container()]
+  @spec list_containers() :: [%{}]
   def list_containers() do
     Agent.get(__MODULE__, fn db -> list_containers_transaction(db) end)
   end
@@ -375,7 +373,7 @@ defmodule Jocker.Engine.MetaData do
     end
   end
 
-  @spec list_containers_transaction(db_conn()) :: [term()]
+  @spec list_containers_transaction(db_conn()) :: [%{}]
   defp list_containers_transaction(db) do
     sql = "SELECT * FROM api_list_containers WHERE id != 'base' ORDER BY created DESC"
     {:ok, statement} = Sqlitex.Statement.prepare(db, sql)

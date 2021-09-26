@@ -14,7 +14,7 @@ defmodule Jocker.CLI.Main do
 
   @doc """
 
-  Usage:	jocker [OPTIONS] COMMAND
+  Usage:  jocker [OPTIONS] COMMAND
 
   A self-sufficient runtime for containers
 

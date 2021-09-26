@@ -57,6 +57,7 @@ defmodule Jocker.MixProject do
       {:cowlib, "~> 2.11", override: true},
       {:plug, "~> 1.12"},
       {:plug_cowboy, "~> 2.5"},
+      {:open_api_spex, "~> 3.10"},
       {:earmark, "~> 1.4.4", only: :dev},
       {:ex_doc, "~> 0.19", only: :dev},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},

@@ -14,7 +14,6 @@ defmodule Jocker.CLI.Container do
     create      Create a new container
     ls          List containers
     rm          Remove one or more containers
-    run         Run a command in a new container
     start       Start one or more stopped containers
     stop        Stop one or more running containers
 

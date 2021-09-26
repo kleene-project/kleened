@@ -24,7 +24,7 @@ defmodule Jocker.Engine.Application do
       Plug.Adapters.Cowboy.child_spec(
         scheme: :http,
         # This plug-name is not used. The plugs are defined in dispath/0 below
-        plug: Jocker.Engine.HTTPServer,
+        plug: Jocker.API.Router,
         options: [port: 8085, dispatch: dispatch]
       )
 
@@ -58,13 +58,13 @@ defmodule Jocker.Engine.Application do
     end
   end
 
-  defp dispatch do
+  def dispatch do
     [
       {:_,
        [
          {"/containers/:container_id/attach", Jocker.Engine.HTTPContainerAttach, []},
          {"/images/build", Jocker.Engine.HTTPImageBuild, []},
-         {:_, Plug.Adapters.Cowboy.Handler, {Jocker.Engine.HTTPServer, []}}
+         {:_, Plug.Adapters.Cowboy.Handler, {Jocker.API.Router, []}}
        ]}
     ]
   end
