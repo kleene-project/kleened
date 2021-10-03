@@ -1,5 +1,6 @@
 defmodule Jocker.Engine.API.Container do
   alias OpenApiSpex.{Operation, Schema}
+  alias Jocker.Engine
   alias Jocker.Engine.API.Schemas
 
   import OpenApiSpex.Operation,
@@ -10,7 +11,7 @@ defmodule Jocker.Engine.API.Container do
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,
-      operation_id: "UserHandler.Index"
+      operation_id: "Container.List"
     )
 
     plug(:list)
@@ -20,7 +21,7 @@ defmodule Jocker.Engine.API.Container do
         # tags: ["users"],
         summary: "List containers",
         description: "Returns a compact listing of containers.",
-        operationId: "ContainerList",
+        operationId: "Container.List",
         parameters: [
           parameter(
             :all,
@@ -52,37 +53,52 @@ defmodule Jocker.Engine.API.Container do
 
       conn
       |> Plug.Conn.put_resp_header("Content-Type", "application/json")
-      |> Plug.Conn.send_resp(conn, 200, container_list)
+      |> Plug.Conn.send_resp(200, container_list)
     end
   end
 
   defmodule Create do
     use Plug.Builder
 
+    plug(Plug.Parsers,
+      parsers: [:json],
+      json_decoder: Jason
+    )
+
+    plug(OpenApiSpex.Plug.CastAndValidate,
+      json_render_error_v2: true,
+      operation_id: "Container.Create"
+    )
+
     plug(:create)
 
     def open_api_operation(_) do
       %Operation{
-        summary: "Start a container",
-        operationId: "ContainerStart",
+        summary: "Create a container",
+        operationId: "Container.Create",
         parameters: [
-          parameter(:id, :path, %Schema{type: :string}, "ID or name of the container",
-            required: true
+          parameter(
+            :name,
+            :query,
+            %Schema{type: :string},
+            "Assign the specified name to the container. Must match `/?[a-zA-Z0-9][a-zA-Z0-9_.-]+`."
           )
         ],
+        requestBody:
+          request_body(
+            "Container configuration to use when creating the container",
+            "application/json",
+            Schemas.ContainerConfig,
+            required: true
+          ),
         responses: %{
-          # FIXME: Hertil!
-          204 =>
-            response("no error", "application/json", %Schema{
-              type: :array,
-              items: Schemas.ContainerSummary
-            })
+          201 => response("no error", "application/json", Schemas.IdResponse)
         }
       }
     end
 
     def create(conn, _opts) do
-      {:ok, body, conn} = read_body(conn)
+      conn = Plug.Conn.fetch_query_params(conn)
       conn = fetch_query_params(conn)
 
       name_opt =
@@ -91,7 +107,7 @@ defmodule Jocker.Engine.API.Container do
           _ -> []
         end
 
-      opts = [name_opt | Jason.decode!(body, keys: :atoms!) |> Map.to_list()]
+      opts = name_opt ++ Map.to_list(conn.body_params)
 
       return_body =
         case Engine.Container.create(opts) do
@@ -99,46 +115,26 @@ defmodule Jocker.Engine.API.Container do
           {:error, error} -> Jason.encode!(error)
         end
 
-      IO.inspect(return_body)
-
-      send_resp(conn, 201, return_body)
+      conn
+      |> Plug.Conn.put_resp_header("Content-Type", "application/json")
+      |> send_resp(201, return_body)
     end
   end
 
   defmodule Remove do
     use Plug.Builder
+
+    plug(OpenApiSpex.Plug.CastAndValidate,
+      json_render_error_v2: true,
+      operation_id: "Container.Delete"
+    )
+
     plug(:remove)
 
     def open_api_operation(_) do
-    end
-
-    def remove(conn, _opts) do
-      case Engine.Container.destroy(conn.path_params.container_id) do
-        :ok ->
-          send_resp(conn, 204, "")
-
-        {:error, :not_found} ->
-          send_resp(conn, 404, "no such container")
-
-        # FIXME: Atm. the destroy api automatically stops a container. Docker Engine returns this error.
-        # {:error, :already_started} ->
-        #  send_resp(conn, 409, "you cannot remove a running container")
-
-        _ ->
-          send_resp(conn, 500, "server error")
-      end
-    end
-  end
-
-  defmodule Start do
-    use Plug.Builder
-    plug(:start)
-
-    def open_api_operation(_) do
       %Operation{
-        # tags: ["users"],
-        summary: "Start a container",
-        operationId: "ContainerStart",
+        summary: "Remove a container",
+        operationId: "Container.Delete",
         parameters: [
           parameter(
             :container_id,
@@ -150,6 +146,59 @@ defmodule Jocker.Engine.API.Container do
         ],
         responses: %{
           204 => response("no error", "application/json", Schemas.IdResponse),
+          404 =>
+            response("no such container", "application/json", Schemas.ErrorResponse,
+              example: %{message: "No such container: df6ed453357b"}
+            ),
+          500 => response("server error", "application/json", Schemas.ErrorResponse)
+        }
+      }
+    end
+
+    def remove(conn, _opts) do
+      case Engine.Container.destroy(conn.params.container_id) do
+        :ok ->
+          send_resp(conn, 204, "")
+
+        {:error, :not_found} ->
+          send_resp(conn, 404, "no such container")
+
+        # FIXME: Atm. the destroy api automatically stops a container. Docker Engine returns this error.
+        # {:error, :already_started} ->
+        #  send_resp(conn, 409, "you cannot remove a running container")
+
+        _ ->
+          send_resp(conn, 500, "{\"message\": \"server error\"}")
+      end
+    end
+  end
+
+  defmodule Start do
+    use Plug.Builder
+
+    plug(OpenApiSpex.Plug.CastAndValidate,
+      json_render_error_v2: true,
+      operation_id: "Container.Start"
+    )
+
+    plug(:start)
+
+    def open_api_operation(_) do
+      %Operation{
+        # tags: ["users"],
+        summary: "Start a container",
+        operationId: "Container.Start",
+        parameters: [
+          parameter(
+            :container_id,
+            :path,
+            %Schema{type: :string},
+            "ID or name of the container. An initial segment of the id can be supplied if it uniquely determines the container.",
+            required: true
+          )
+        ],
+        responses: %{
+          200 => response("no error", "application/json", Schemas.IdResponse),
           304 => response("container already started", "application/json", Schemas.ErrorResponse),
           404 =>
             response("no such container", "application/json", Schemas.ErrorResponse,
@@ -161,9 +210,11 @@ defmodule Jocker.Engine.API.Container do
     end
 
     def start(conn, _opts) do
-      case Engine.Container.start(conn.path_params.container_id) do
-        {:ok, container_id} ->
-          send_resp(conn, 204, container_id)
+      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+
+      case Engine.Container.start(conn.params.container_id) do
+        {:ok, %Engine.Container{id: container_id}} ->
+          send_resp(conn, 200, Jason.encode!(%{id: container_id}))
 
         {:error, :not_found} ->
           send_resp(conn, 404, "{\"message\": \"no such container\"}")
@@ -179,13 +230,41 @@ defmodule Jocker.Engine.API.Container do
 
   defmodule Stop do
     use Plug.Builder
+
+    plug(OpenApiSpex.Plug.CastAndValidate,
+      json_render_error_v2: true,
+      operation_id: "Container.Stop"
+    )
+
     plug(:stop)
 
     def open_api_operation(_) do
+      %Operation{
+        summary: "Stop a container",
+        operationId: "Container.Stop",
+        parameters: [
+          parameter(
+            :container_id,
+            :path,
+            %Schema{type: :string},
+            "ID or name of the container. An initial segment of the id can be supplied if it uniquely determines the container.",
+            required: true
+          )
+        ],
+        responses: %{
+          204 => response("no error", "application/json", Schemas.IdResponse),
+          304 => response("container already stopped", "application/json", Schemas.ErrorResponse),
+          404 =>
+            response("no such container", "application/json", Schemas.ErrorResponse,
+              example: %{message: "no such container"}
+            ),
+          500 => response("server error", "application/json", Schemas.ErrorResponse)
+        }
+      }
     end
 
     def stop(conn, _opts) do
-      case Engine.Container.stop(conn.path_params.container_id) do
+      case Engine.Container.stop(conn.params.container_id) do
         {:ok, container_id} ->
           send_resp(conn, 204, container_id)
 

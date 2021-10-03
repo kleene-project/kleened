@@ -19,15 +19,6 @@ defmodule Jocker.Engine.Application do
     # socket_opts = create_socket_options(Jocker.Engine.Config.get("api_socket"))
     GenServer.stop(pid)
 
-    # FIXME: This is not related to the old socket_opts from when raw erlang API. Please2fix.
-    http_server =
-      Plug.Adapters.Cowboy.child_spec(
-        scheme: :http,
-        # This plug-name is not used. The plugs are defined in dispath/0 below
-        plug: Jocker.API.Router,
-        options: [port: 8085, dispatch: dispatch]
-      )
-
     children = [
       Jocker.Engine.Config,
       Jocker.Engine.MetaData,
@@ -35,7 +26,10 @@ defmodule Jocker.Engine.Application do
       Jocker.Engine.Network,
       {DynamicSupervisor,
        name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0},
-      http_server
+      {Plug.Cowboy,
+       scheme: :http,
+       plug: NotUsed,
+       options: [port: 8085, dispatch: Jocker.Engine.API.Router.dispatch()]}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
@@ -56,17 +50,6 @@ defmodule Jocker.Engine.Application do
         Logger.error(msg)
         {:error, msg}
     end
-  end
-
-  def dispatch do
-    [
-      {:_,
-       [
-         {"/containers/:container_id/attach", Jocker.Engine.HTTPContainerAttach, []},
-         {"/images/build", Jocker.Engine.HTTPImageBuild, []},
-         {:_, Plug.Adapters.Cowboy.Handler, {Jocker.API.Router, []}}
-       ]}
-    ]
   end
 
   defp create_socket_options(api_socket) do

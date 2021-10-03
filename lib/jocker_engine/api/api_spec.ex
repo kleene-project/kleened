@@ -12,19 +12,26 @@ defmodule Jocker.Engine.API.Spec do
         version: "0.0.1"
       },
       paths: %{
-        # FIXME: no handler made for this
-        # "/v0.0.1/containers/create" =>
-        #  OpenApiSpex.PathItem.from_routes([
-        #    %{verb: :post, plug: API.Container.Create, opts: []}
-        #  ]),
         "/containers/list" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :get, plug: API.Container.List, opts: []}
             # %{verb: :post, plug: PlugApp.UserHandler.Create, opts: []}
           ]),
-        "/containers/{id}/start" =>
+        "/containers/create" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :post, plug: API.Container.Create, opts: []}
+          ]),
+        "/containers/{container_id}" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :delete, plug: API.Container.Remove, opts: []}
+          ]),
+        "/containers/{container_id}/start" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :post, plug: API.Container.Start, opts: []}
+          ]),
+        "/containers/{container_id}/stop" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :post, plug: API.Container.Stop, opts: []}
           ])
       }
     }

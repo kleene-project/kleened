@@ -82,22 +82,21 @@ defmodule Jocker.Engine.Container do
   @spec stop(id_or_name()) ::
           {:ok, %Container{}} | {:error, :not_found} | {:error, :container_not_running}
   def stop(id_or_name) do
-    %Container{id: contaier_id} = cont = MetaData.get_container(id_or_name)
+    case MetaData.get_container(id_or_name) do
+      %Container{id: container_id} = cont ->
+        case is_running?(container_id) do
+          false ->
+            {:error, :container_not_running}
 
-    case is_running?(contaier_id) do
-      false ->
-        {:error, :container_not_running}
-
-      true ->
-        case spawn_container(cont) do
-          {:ok, pid} ->
+          true ->
+            {:ok, pid} = spawn_container(cont)
             reply = GenServer.call(pid, {:stop, cont})
             DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, pid)
             reply
-
-          other ->
-            other
         end
+
+      :not_found ->
+        {:error, :not_found}
     end
   end
 
