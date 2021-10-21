@@ -256,12 +256,12 @@ defmodule Jocker.Engine.MetaData do
   @spec get_container(String.t()) :: Container.t() | :not_found
   def get_container(id_or_name) do
     query = """
-    SELECT id, container FROM containers WHERE id=?
+    SELECT id, container FROM containers WHERE substr(id, 1, ?) = ?
     UNION
     SELECT id, container FROM containers WHERE json_extract(container, '$.name')=?
     """
 
-    case sql(query, [id_or_name, id_or_name]) do
+    case sql(query, [String.length(id_or_name), id_or_name, id_or_name]) do
       [] -> :not_found
       [row | _rest] -> row
     end

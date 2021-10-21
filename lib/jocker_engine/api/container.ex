@@ -1,7 +1,14 @@
+defmodule Jocker.Engine.API.Utils do
+  def error_response(msg) do
+    Jason.encode!(%{message: msg})
+  end
+end
+
 defmodule Jocker.Engine.API.Container do
   alias OpenApiSpex.{Operation, Schema}
   alias Jocker.Engine
   alias Jocker.Engine.API.Schemas
+  require Logger
 
   import OpenApiSpex.Operation,
     only: [parameter: 4, parameter: 5, request_body: 4, response: 3, response: 4]
@@ -59,6 +66,7 @@ defmodule Jocker.Engine.API.Container do
 
   defmodule Create do
     use Plug.Builder
+    alias Jocker.Engine.API.Utils
 
     plug(Plug.Parsers,
       parsers: [:json],
@@ -92,7 +100,8 @@ defmodule Jocker.Engine.API.Container do
             required: true
           ),
         responses: %{
-          201 => response("no error", "application/json", Schemas.IdResponse)
+          201 => response("no error", "application/json", Schemas.IdResponse),
+          500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
     end
@@ -100,6 +109,7 @@ defmodule Jocker.Engine.API.Container do
     def create(conn, _opts) do
       conn = Plug.Conn.fetch_query_params(conn)
       conn = fetch_query_params(conn)
+      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
 
       name_opt =
         case conn.query_params do
@@ -109,20 +119,21 @@ defmodule Jocker.Engine.API.Container do
 
       opts = name_opt ++ Map.to_list(conn.body_params)
 
-      return_body =
-        case Engine.Container.create(opts) do
-          {:ok, container} -> Jason.encode!(container)
-          {:error, error} -> Jason.encode!(error)
-        end
+      case Engine.Container.create(opts) do
+        {:ok, container} ->
+          return_body = Jason.encode!(container)
+          send_resp(conn, 201, return_body)
 
-      conn
-      |> Plug.Conn.put_resp_header("Content-Type", "application/json")
-      |> send_resp(201, return_body)
+        {:error, error} ->
+          return_body = Utils.error_response(Jason.encode!(error))
+          send_resp(conn, 500, return_body)
+      end
     end
   end
 
   defmodule Remove do
     use Plug.Builder
+    alias Jocker.Engine.API.Utils
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,
@@ -145,7 +156,7 @@ defmodule Jocker.Engine.API.Container do
           )
         ],
         responses: %{
-          204 => response("no error", "application/json", Schemas.IdResponse),
+          200 => response("no error", "application/json", Schemas.IdResponse),
           404 =>
             response("no such container", "application/json", Schemas.ErrorResponse,
               example: %{message: "No such container: df6ed453357b"}
@@ -156,25 +167,29 @@ defmodule Jocker.Engine.API.Container do
     end
 
     def remove(conn, _opts) do
+      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+
       case Engine.Container.destroy(conn.params.container_id) do
-        :ok ->
-          send_resp(conn, 204, "")
+        {:ok, container_id} ->
+          msg = "{\"id\": \"#{container_id}\"}"
+          send_resp(conn, 200, msg)
 
         {:error, :not_found} ->
-          send_resp(conn, 404, "no such container")
+          send_resp(conn, 404, Utils.error_response("no such container"))
 
-        # FIXME: Atm. the destroy api automatically stops a container. Docker Engine returns this error.
+        # Atm. the destroy api automatically stops a container. Docker Engine returns this error.
         # {:error, :already_started} ->
         #  send_resp(conn, 409, "you cannot remove a running container")
 
         _ ->
-          send_resp(conn, 500, "{\"message\": \"server error\"}")
+          send_resp(conn, 500, Utils.error_response("server error"))
       end
     end
   end
 
   defmodule Start do
     use Plug.Builder
+    alias Jocker.Engine.API.Utils
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,
@@ -217,19 +232,20 @@ defmodule Jocker.Engine.API.Container do
           send_resp(conn, 200, Jason.encode!(%{id: container_id}))
 
         {:error, :not_found} ->
-          send_resp(conn, 404, "{\"message\": \"no such container\"}")
+          send_resp(conn, 404, Utils.error_response("no such container"))
 
         {:error, :already_started} ->
-          send_resp(conn, 304, "{\"message\": \"container already started\"}")
+          send_resp(conn, 304, Utils.error_response("container already started"))
 
         _ ->
-          send_resp(conn, 500, "{\"message\": \"server error\"}")
+          send_resp(conn, 500, Utils.error_response("server error"))
       end
     end
   end
 
   defmodule Stop do
     use Plug.Builder
+    alias Jocker.Engine.API.Utils
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,
@@ -252,7 +268,7 @@ defmodule Jocker.Engine.API.Container do
           )
         ],
         responses: %{
-          204 => response("no error", "application/json", Schemas.IdResponse),
+          200 => response("no error", "application/json", Schemas.IdResponse),
           304 => response("container already stopped", "application/json", Schemas.ErrorResponse),
           404 =>
             response("no such container", "application/json", Schemas.ErrorResponse,
@@ -264,18 +280,20 @@ defmodule Jocker.Engine.API.Container do
     end
 
     def stop(conn, _opts) do
+      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+
       case Engine.Container.stop(conn.params.container_id) do
-        {:ok, container_id} ->
-          send_resp(conn, 204, container_id)
+        {:ok, container} ->
+          send_resp(conn, 200, Jason.encode!(%{id: container.id}))
 
         {:error, :not_found} ->
-          send_resp(conn, 404, "no such container")
+          send_resp(conn, 404, Utils.error_response("no such container"))
 
         {:error, :not_running} ->
-          send_resp(conn, 304, "container already stopped")
+          send_resp(conn, 304, Utils.error_response("container already stopped"))
 
         _ ->
-          send_resp(conn, 500, "server error")
+          send_resp(conn, 500, Utils.error_response("server error"))
       end
     end
   end

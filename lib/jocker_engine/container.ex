@@ -100,7 +100,7 @@ defmodule Jocker.Engine.Container do
     end
   end
 
-  @spec destroy(id_or_name()) :: :ok | {:error, :not_found}
+  @spec destroy(id_or_name()) :: {:ok, container_id()} | {:error, :not_found}
   def destroy(id_or_name) do
     cont = MetaData.get_container(id_or_name)
     destroy_(cont)
@@ -316,7 +316,7 @@ defmodule Jocker.Engine.Container do
     Volume.destroy_mounts(cont)
     MetaData.delete_container(container_id)
     Layer.destroy(layer_id)
-    :ok
+    {:ok, container_id}
   end
 
   @spec list_([list_containers_opts()]) :: [%{}]

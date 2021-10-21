@@ -28,6 +28,7 @@ defmodule Jocker.Engine.HTTPContainerAttach do
 
   def websocket_handle({:text, message}, state) do
     # Ignore messages from the client (i.e. no interactive possibility atm.
+    Logger.debug("Received input from client. Cannot handle this yet.")
     {:ok, state}
   end
 
