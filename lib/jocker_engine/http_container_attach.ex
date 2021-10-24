@@ -3,7 +3,7 @@ defmodule Jocker.Engine.HTTPContainerAttach do
   require Logger
 
   # Called on connection initialization
-  def init(req, state) do
+  def init(req, _opts) do
     state = %{request: req}
     {:cowboy_websocket, req, state, %{idle_timeout: 60000}}
   end
@@ -26,7 +26,7 @@ defmodule Jocker.Engine.HTTPContainerAttach do
     {:ok, state}
   end
 
-  def websocket_handle({:text, message}, state) do
+  def websocket_handle({:text, _message}, state) do
     # Ignore messages from the client (i.e. no interactive possibility atm.
     Logger.debug("Received input from client. Cannot handle this yet.")
     {:ok, state}

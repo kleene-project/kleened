@@ -14,6 +14,8 @@ defmodule Jocker.Engine.API.Router do
   delete("/containers/:container_id", to: API.Container.Remove)
   post("/containers/:container_id/start", to: API.Container.Start)
   post("/containers/:container_id/stop", to: API.Container.Stop)
+  get("/images/list", to: API.Image.List)
+  delete("/images/:image_id", to: API.Image.Remove)
 
   # "Default" route that will get called when no other route is matched
   match _ do

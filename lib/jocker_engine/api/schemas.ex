@@ -43,6 +43,34 @@ defmodule Jocker.Engine.API.Schemas do
     })
   end
 
+  defmodule Image do
+    OpenApiSpex.schema(%{
+      description: "the image metadata",
+      type: :object,
+      properties: %{
+        id: %Schema{description: "The id of the image", type: :string},
+        name: %Schema{description: "Name of the image", type: :string},
+        tag: %Schema{description: "Tag of the image", type: :string},
+        command: %Schema{
+          description: "Default command used when creating a container from this image",
+          type: :array,
+          items: %Schema{type: :string},
+          example: ["/bin/sh", "-c", "/bin/ls"]
+        },
+        env_vars: %Schema{
+          description:
+            "List of environment variables and their values to set before running command.",
+          type: :array,
+          items: %Schema{type: :string},
+          example: ["PWD=/roo/", "JAIL_MGMT_ENGINE=jocker"]
+        },
+        layer_id: %Schema{description: "Id of the layer containing the image", type: :string},
+        user: %Schema{description: "user used when executing the command", type: :string},
+        created: %Schema{description: "When the image was created", type: :string}
+      }
+    })
+  end
+
   defmodule ContainerSummary do
     OpenApiSpex.schema(%{
       description: "summary description of a container",

@@ -15,7 +15,6 @@ defmodule Jocker.Engine.API.Spec do
         "/containers/list" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :get, plug: API.Container.List, opts: []}
-            # %{verb: :post, plug: PlugApp.UserHandler.Create, opts: []}
           ]),
         "/containers/create" =>
           OpenApiSpex.PathItem.from_routes([
@@ -32,7 +31,15 @@ defmodule Jocker.Engine.API.Spec do
         "/containers/{container_id}/stop" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :post, plug: API.Container.Stop, opts: []}
-          ])
+          ]),
+        "/images/list" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :get, plug: API.Image.List, opts: []}
+          ]),
+        "/images/{image_id}" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :delete, plug: API.Image.Remove, opts: []}
+          ]),
       }
     }
     |> OpenApiSpex.resolve_schema_modules()

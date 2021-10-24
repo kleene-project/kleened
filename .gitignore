@@ -36,3 +36,5 @@ vim_*
 
 # Ignore vagrant directory
 /.vagrant/
+
+/.vscode
