@@ -21,6 +21,9 @@ defmodule Jocker.Engine.API.Router do
   delete("/networks/:network_id", to: API.Network.Remove)
   post("/networks/:network_id/connect/:container_id", to: API.Network.Connect)
   post("/networks/:network_id/disconnect/:container_id", to: API.Network.Disconnect)
+  get("/volumes/list", to: API.Volume.List)
+  post("/volumes/create", to: API.Volume.Create)
+  delete("/volumes/:volume_name", to: API.Volume.Remove)
 
   # "Default" route that will get called when no other route is matched
   match _ do

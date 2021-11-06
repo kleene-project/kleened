@@ -73,6 +73,17 @@ defmodule Jocker.Engine.API.Schemas do
     })
   end
 
+  defmodule VolumeConfig do
+    OpenApiSpex.schema(%{
+      description: "Volume configuration",
+      type: :object,
+      properties: %{
+        name: %Schema{type: :string, description: "Name of the volume."}
+      },
+      required: [:name]
+    })
+  end
+
   defmodule Image do
     OpenApiSpex.schema(%{
       description: "the image metadata",
@@ -118,6 +129,23 @@ defmodule Jocker.Engine.API.Schemas do
           description: "interface where the gateway can be reached",
           type: :boolean
         }
+      }
+    })
+  end
+
+  defmodule VolumeSummary do
+    # Atm. this is actually a mirror of the volume itself
+    OpenApiSpex.schema(%{
+      description: "summary description of a volume",
+      type: :object,
+      properties: %{
+        name: %Schema{description: "Name of the volume", type: :string},
+        dataset: %Schema{description: "underlying zfs dataset of the volume", type: :string},
+        mountpoint: %Schema{
+          description: "main mountpoint of the volume (the mountpoint shown with 'zfs list')",
+          type: :string
+        },
+        created: %Schema{description: "when the volume was created", type: :string}
       }
     })
   end

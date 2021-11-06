@@ -59,6 +59,18 @@ defmodule Jocker.Engine.API.Spec do
         "/networks/{network_id}/disconnect/{container_id}" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :post, plug: API.Network.Disconnect, opts: []}
+          ]),
+        "/volumes/list" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :get, plug: API.Volume.List, opts: []}
+          ]),
+        "/volumes/create" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :post, plug: API.Volume.Create, opts: []}
+          ]),
+        "/volumes/{volume_name}" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :delete, plug: API.Volume.Remove, opts: []}
           ])
       }
     }

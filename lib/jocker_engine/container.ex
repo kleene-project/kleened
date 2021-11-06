@@ -406,7 +406,7 @@ defmodule Jocker.Engine.Container do
 
   defp create_and_bind("", location, opts, cont) do
     name = Jocker.Engine.Utils.uuid()
-    vol = Volume.create_volume(name)
+    vol = Volume.create(name)
     Volume.bind_volume(cont, vol, location, opts)
   end
 
