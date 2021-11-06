@@ -77,14 +77,14 @@ defmodule Jocker.Engine.API.Image do
 
     def remove(conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+      image_id = conn.params.image_id
 
-      case Engine.Image.destroy(conn.params.image_id) do
+      case Engine.Image.destroy(image_id) do
         :ok ->
-          msg = "{\"id\": \"#{conn.params.image_id}\"}"
-          Plug.Conn.send_resp(conn, 200, msg)
+          Plug.Conn.send_resp(conn, 200, Utils.id_response(image_id))
 
         :not_found ->
-          msg = "Error: No such image: #{conn.params.image_id}\n"
+          msg = "Error: No such image: #{image_id}\n"
           Plug.Conn.send_resp(conn, 404, Utils.error_response(msg))
       end
     end

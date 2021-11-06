@@ -25,6 +25,9 @@ defmodule TestHelper do
       {:container, ^id, {:shutdown, :jail_stopped}} ->
         output
 
+      {:container, ^id, {:jail_output, msg}} ->
+        collect_container_output_(id, [msg | output])
+
       {:container, ^id, msg} ->
         collect_container_output_(id, [msg | output])
 
@@ -64,6 +67,9 @@ defmodule TestHelper do
     receive do
       {:image_builder, ^pid, {:image_finished, img}} ->
         {img, Enum.reverse(msg_list)}
+
+      {:image_builder, ^pid, {:jail_output, msg}} ->
+        receive_imagebuilder_results(pid, [msg | msg_list])
 
       {:image_builder, ^pid, msg} ->
         receive_imagebuilder_results(pid, [msg | msg_list])

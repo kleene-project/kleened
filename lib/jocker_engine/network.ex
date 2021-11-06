@@ -8,6 +8,7 @@ defmodule Jocker.Engine.Network do
             name: nil,
             subnet: nil,
             if_name: nil,
+            driver: nil,
             default_gw_if: nil
 
   alias __MODULE__, as: Network
@@ -29,7 +30,10 @@ defmodule Jocker.Engine.Network do
 
   @type create_options() :: [create_option()]
   @type create_option() ::
-          {:subnet, String.t()} | {:ifname, String.t()} | {:driver, driver_type()}
+          {:name, String.t()}
+          | {:subnet, String.t()}
+          | {:ifname, String.t()}
+          | {:driver, driver_type()}
   @type driver_type() :: :loopback
   @type network_id() :: String.t()
   @type endpoint_config() :: %EndPointConfig{}
@@ -59,10 +63,10 @@ defmodule Jocker.Engine.Network do
   end
 
   ### Docker Engine style API's
-  @spec create(String.t(), create_options()) ::
+  @spec create(create_options()) ::
           {:ok, %Network{}} | {:error, String.t()}
-  def create(name, options) do
-    GenServer.call(__MODULE__, {:create, name, options})
+  def create(options) do
+    GenServer.call(__MODULE__, {:create, options})
   end
 
   @spec connect(String.t(), String.t()) :: :ok | {:error, String.t()}
@@ -79,6 +83,7 @@ defmodule Jocker.Engine.Network do
     GenServer.call(__MODULE__, {:disconnect_all, container_id})
   end
 
+  @spec list() :: [%Network{}]
   def list() do
     GenServer.call(__MODULE__, :list)
   end
@@ -117,7 +122,7 @@ defmodule Jocker.Engine.Network do
     state = %State{:pf_config_path => pf_conf_path, :gateway_interface => gateway}
 
     # Adding the special 'host' network (meaning use ip4=inherit when jails are connected to it)
-    MetaData.add_network(%Network{id: "host", name: "host"})
+    MetaData.add_network(%Network{id: "host", name: "host", driver: "host"})
 
     if default_network_name != nil do
       case create_(default_network_name, :loopback, state, ifname: if_name, subnet: subnet) do
@@ -133,7 +138,8 @@ defmodule Jocker.Engine.Network do
   end
 
   @impl true
-  def handle_call({:create, name, options}, _from, state) do
+  def handle_call({:create, options}, _from, state) do
+    name = Keyword.get(options, :name)
     reply = create_(name, :loopback, state, options)
     {:reply, reply, state}
   end
@@ -381,7 +387,8 @@ defmodule Jocker.Engine.Network do
       id: Utils.uuid(),
       name: name,
       subnet: subnet,
-      if_name: if_name
+      if_name: if_name,
+      driver: "loopback"
     }
 
     case ifconfig_loopback_create(if_name) do

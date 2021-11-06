@@ -43,6 +43,36 @@ defmodule Jocker.Engine.API.Schemas do
     })
   end
 
+  defmodule NetworkConfig do
+    OpenApiSpex.schema(%{
+      description: "Network configuration",
+      type: :object,
+      properties: %{
+        name: %Schema{
+          type: :string,
+          description: "Name of the network.",
+          example: "westnet"
+        },
+        subnet: %Schema{
+          type: :string,
+          description: "The subnet (in CIDR-format) that is used for the network.",
+          example: "10.13.37.0/24"
+        },
+        ifname: %Schema{
+          type: :string,
+          description: "Name of the interface that is being used for the network.",
+          example: "jocker0"
+        },
+        driver: %Schema{
+          type: :string,
+          description: "Network type. Only 'loopback' type of network is supported.",
+          example: "loopback"
+        }
+      },
+      required: [:name]
+    })
+  end
+
   defmodule Image do
     OpenApiSpex.schema(%{
       description: "the image metadata",
@@ -67,6 +97,27 @@ defmodule Jocker.Engine.API.Schemas do
         layer_id: %Schema{description: "Id of the layer containing the image", type: :string},
         user: %Schema{description: "user used when executing the command", type: :string},
         created: %Schema{description: "When the image was created", type: :string}
+      }
+    })
+  end
+
+  defmodule NetworkSummary do
+    # Atm. this is actually a mirror of the network itself
+    OpenApiSpex.schema(%{
+      description: "summary description of a network",
+      type: :object,
+      properties: %{
+        id: %Schema{description: "The id of the network", type: :string},
+        name: %Schema{description: "Name of the network", type: :string},
+        subnet: %Schema{description: "subnet used for the network", type: :string},
+        if_name: %Schema{
+          description: "Name of the loopback interface used for the network",
+          type: :string
+        },
+        default_gw_if: %Schema{
+          description: "interface where the gateway can be reached",
+          type: :boolean
+        }
       }
     })
   end

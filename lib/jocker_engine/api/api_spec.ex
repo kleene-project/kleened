@@ -40,6 +40,26 @@ defmodule Jocker.Engine.API.Spec do
           OpenApiSpex.PathItem.from_routes([
             %{verb: :delete, plug: API.Image.Remove, opts: []}
           ]),
+        "/networks/list" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :get, plug: API.Network.List, opts: []}
+          ]),
+        "/networks/create" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :post, plug: API.Network.Create, opts: []}
+          ]),
+        "/networks/{network_id}" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :delete, plug: API.Network.Remove, opts: []}
+          ]),
+        "/networks/{network_id}/connect/{container_id}" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :post, plug: API.Network.Connect, opts: []}
+          ]),
+        "/networks/{network_id}/disconnect/{container_id}" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :post, plug: API.Network.Disconnect, opts: []}
+          ])
       }
     }
     |> OpenApiSpex.resolve_schema_modules()

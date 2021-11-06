@@ -1,12 +1,6 @@
-defmodule Jocker.Engine.API.Utils do
-  def error_response(msg) do
-    Jason.encode!(%{message: msg})
-  end
-end
-
 defmodule Jocker.Engine.API.Container do
   alias OpenApiSpex.{Operation, Schema}
-  alias Jocker.Engine
+  alias Jocker.Engine.Container
   alias Jocker.Engine.API.Schemas
   require Logger
 
@@ -56,7 +50,7 @@ defmodule Jocker.Engine.API.Container do
           _ -> [all: false]
         end
 
-      container_list = Engine.Container.list(opts) |> Jason.encode!()
+      container_list = Container.list(opts) |> Jason.encode!()
 
       conn
       |> Plug.Conn.put_resp_header("Content-Type", "application/json")
@@ -108,7 +102,6 @@ defmodule Jocker.Engine.API.Container do
 
     def create(conn, _opts) do
       conn = Plug.Conn.fetch_query_params(conn)
-      conn = fetch_query_params(conn)
       conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
 
       name_opt =
@@ -119,14 +112,12 @@ defmodule Jocker.Engine.API.Container do
 
       opts = name_opt ++ Map.to_list(conn.body_params)
 
-      case Engine.Container.create(opts) do
-        {:ok, container} ->
-          return_body = Jason.encode!(container)
-          send_resp(conn, 201, return_body)
+      case Container.create(opts) do
+        {:ok, %Container{id: id}} ->
+          send_resp(conn, 201, Utils.id_response(id))
 
         {:error, error} ->
-          return_body = Utils.error_response(Jason.encode!(error))
-          send_resp(conn, 500, return_body)
+          send_resp(conn, 500, Utils.error_response(Jason.encode!(error)))
       end
     end
   end
@@ -169,10 +160,9 @@ defmodule Jocker.Engine.API.Container do
     def remove(conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
 
-      case Engine.Container.destroy(conn.params.container_id) do
+      case Container.destroy(conn.params.container_id) do
         {:ok, container_id} ->
-          msg = "{\"id\": \"#{container_id}\"}"
-          send_resp(conn, 200, msg)
+          send_resp(conn, 200, Utils.id_response(container_id))
 
         {:error, :not_found} ->
           send_resp(conn, 404, Utils.error_response("no such container"))
@@ -227,8 +217,8 @@ defmodule Jocker.Engine.API.Container do
     def start(conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
 
-      case Engine.Container.start(conn.params.container_id) do
-        {:ok, %Engine.Container{id: container_id}} ->
+      case Container.start(conn.params.container_id) do
+        {:ok, %Container{id: container_id}} ->
           send_resp(conn, 200, Jason.encode!(%{id: container_id}))
 
         {:error, :not_found} ->
@@ -282,9 +272,9 @@ defmodule Jocker.Engine.API.Container do
     def stop(conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
 
-      case Engine.Container.stop(conn.params.container_id) do
-        {:ok, container} ->
-          send_resp(conn, 200, Jason.encode!(%{id: container.id}))
+      case Container.stop(conn.params.container_id) do
+        {:ok, %Container{id: id}} ->
+          send_resp(conn, 200, Utils.id_response(id))
 
         {:error, :not_found} ->
           send_resp(conn, 404, Utils.error_response("no such container"))

@@ -23,7 +23,7 @@ defmodule ContainerTest do
     Container.start(id)
 
     assert opts[:cmd] == cmd_out
-    assert_receive {:container, ^id, "test test\n"}
+    assert_receive {:container, ^id, {:jail_output, "test test\n"}}
     assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
     assert not TestHelper.devfs_mounted(cont)
   end
@@ -86,7 +86,9 @@ defmodule ContainerTest do
 
     %Container{id: id} = start_attached_container(opts)
 
-    assert_receive {:container, ^id, "uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"}
+    assert_receive {:container, ^id,
+                    {:jail_output, "uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"}}
+
     assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
   end
 
@@ -101,7 +103,7 @@ defmodule ContainerTest do
 
     right_messsage_received =
       receive do
-        {:container, ^id, "PWD=/\nLOOL=test2\nLOL=test\n"} ->
+        {:container, ^id, {:jail_output, "PWD=/\nLOOL=test2\nLOL=test\n"}} ->
           true
 
         msg ->
@@ -133,7 +135,7 @@ defmodule ContainerTest do
 
     right_messsage_received =
       receive do
-        {:container, ^id, "PWD=/\nTEST2=lool test\nTEST=lol\nTEST3=loool\n"} ->
+        {:container, ^id, {:jail_output, "PWD=/\nTEST2=lool test\nTEST=lol\nTEST3=loool\n"}} ->
           true
 
         msg ->
