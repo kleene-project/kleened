@@ -1,5 +1,5 @@
 defmodule Jocker.Engine.API.Network do
-  alias OpenApiSpex.{Operation, Schema}
+  alias OpenApiSpex.{Operation, Schema, Response}
   alias Jocker.Engine.Network
   alias Jocker.Engine.API.Utils
   alias Jocker.Engine.API.Schemas
@@ -61,7 +61,7 @@ defmodule Jocker.Engine.API.Network do
       %Operation{
         # tags: ["users"],
         summary: "Create network",
-        description: "Create a network. Only on type 'loopback' networks are supported atm.",
+        description: "Create a network. Only type 'loopback' networks are supported atm.",
         operationId: "Network.Create",
         requestBody:
           request_body(
@@ -85,7 +85,7 @@ defmodule Jocker.Engine.API.Network do
 
       case Network.create(options) do
         {:ok, %Network{id: id}} ->
-          send_resp(conn, 200, Utils.id_response(id))
+          send_resp(conn, 201, Utils.id_response(id))
 
         {:error, msg} ->
           send_resp(conn, 409, Utils.error_response(msg))
@@ -170,7 +170,8 @@ defmodule Jocker.Engine.API.Network do
           )
         ],
         responses: %{
-          204 => response("operation was succesful", "application/json", Schemas.IdResponse),
+          #204 => response("operation was succesful", "application/json", Schemas.IdResponse),
+          204 => %Response{description: "operation was succesful"},
           404 => response("no such network", "application/json", Schemas.ErrorResponse),
           409 =>
             response(
@@ -232,7 +233,8 @@ defmodule Jocker.Engine.API.Network do
           )
         ],
         responses: %{
-          204 => response("operation was succesful", "application/json", Schemas.IdResponse),
+          #204 => response("operation was succesful", "application/json", Schemas.IdResponse),
+          204 => %Response{description: "operation was succesful"},
           404 =>
             response(
               "no such network and/or container",

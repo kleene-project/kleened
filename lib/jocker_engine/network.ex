@@ -1,6 +1,7 @@
 defmodule Jocker.Engine.Network do
   use GenServer
   alias Jocker.Engine.{Config, Container, Utils, MetaData}
+  alias Jocker.Engine.API.Schemas.NetworkConfig
   require Logger
 
   @derive Jason.Encoder
@@ -28,14 +29,8 @@ defmodule Jocker.Engine.Network do
               gateway_interface: nil
   end
 
-  @type create_options() :: [create_option()]
-  @type create_option() ::
-          {:name, String.t()}
-          | {:subnet, String.t()}
-          | {:ifname, String.t()}
-          | {:driver, driver_type()}
-  @type driver_type() :: :loopback
   @type network_id() :: String.t()
+  @type network_config :: %NetworkConfig{}
   @type endpoint_config() :: %EndPointConfig{}
 
   @default_pf_configuration """
@@ -63,7 +58,7 @@ defmodule Jocker.Engine.Network do
   end
 
   ### Docker Engine style API's
-  @spec create(create_options()) ::
+  @spec create(network_config()) ::
           {:ok, %Network{}} | {:error, String.t()}
   def create(options) do
     GenServer.call(__MODULE__, {:create, options})
@@ -125,7 +120,15 @@ defmodule Jocker.Engine.Network do
     MetaData.add_network(%Network{id: "host", name: "host", driver: "host"})
 
     if default_network_name != nil do
-      case create_(default_network_name, :loopback, state, ifname: if_name, subnet: subnet) do
+      case create_(
+             %NetworkConfig{
+               name: default_network_name,
+               driver: :loopback,
+               ifname: if_name,
+               subnet: subnet
+             },
+             state
+           ) do
         {:ok, _} -> :ok
         {:error, "network name is already taken"} -> :ok
         {:error, reason} -> Logger.warn("Could not initialize default network: #{reason}")
@@ -139,8 +142,7 @@ defmodule Jocker.Engine.Network do
 
   @impl true
   def handle_call({:create, options}, _from, state) do
-    name = Keyword.get(options, :name)
-    reply = create_(name, :loopback, state, options)
+    reply = create_(options, state)
     {:reply, reply, state}
   end
 
@@ -195,13 +197,14 @@ defmodule Jocker.Engine.Network do
   ##########################
   ### Internal functions ###
   ##########################
-  def create_("host", _type, _state, _options) do
+  def create_(%NetworkConfig{name: "host"}, _state) do
     {:error, "network name 'host' is reserved and cannot be used"}
   end
 
-  def create_(name, :loopback, state, options) do
-    subnet = Keyword.get(options, :subnet)
-    if_name = Keyword.get(options, :ifname)
+  def create_(
+        %NetworkConfig{driver: :loopback, name: name, subnet: subnet, ifname: if_name},
+        state
+      ) do
     parsed_subnet = CIDR.parse(subnet)
 
     cond do
@@ -216,8 +219,8 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  def create_(_, _unknown_driver, _, _) do
-    {:error, "Unknown driver"}
+  def create_(%NetworkConfig{driver: unknown_driver}, _state) do
+    {:error, "Unknown driver #{inspect(unknown_driver)}"}
   end
 
   defp connect_(_network, :not_found) do
