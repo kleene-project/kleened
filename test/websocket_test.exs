@@ -17,11 +17,14 @@ defmodule WebSocketTest do
   test "attach to actual container and receive some output from it" do
     create_opt = [image: "base", cmd: ["/bin/sh", "-c", "uname"]]
     {:ok, container} = Container.create(create_opt)
-    conn = initialize_websocket("/containers/#{container.id}/attach")
+    container_id = container.id
+    conn = initialize_websocket("/containers/#{container_id}/attach")
     assert {:text, "ok:"} == receive_frame(conn)
-    {:ok, _} = Container.start(container.id)
-    expected_frames = ["FreeBSD\n", "container #{container.id} stopped"]
+    {:ok, _} = Container.start(container_id)
+    expected_frames = ["FreeBSD\n", "container #{container_id} stopped"]
     assert expected_frames == receive_frames(conn)
+    {:ok, _} = Container.start(container_id)
+    {:ok, ^container_id} = Container.destroy(container_id)
   end
 
   @tmp_dockerfile "tmp_dockerfile"
@@ -41,7 +44,7 @@ defmodule WebSocketTest do
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
         quiet: false,
-        tag: "<none>:<none>"
+        tag: "websock_img:latest"
       })
 
     endpoint = "/images/build?#{query_params}"
@@ -60,6 +63,7 @@ defmodule WebSocketTest do
            ]
 
     assert <<"image created with id ", _::binary>> = finish_msg
+    Image.destroy("websock_img")
   end
 
   defp receive_frames(conn, frames \\ []) do
@@ -75,6 +79,9 @@ defmodule WebSocketTest do
 
       :websocket_closed ->
         Enum.reverse(frames)
+
+      unknown_message ->
+        IO.puts("Unknown message received: ", unknown_message)
     end
   end
 

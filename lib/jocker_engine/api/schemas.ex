@@ -120,9 +120,14 @@ defmodule Jocker.Engine.API.Schemas do
       properties: %{
         id: %Schema{description: "The id of the network", type: :string},
         name: %Schema{description: "Name of the network", type: :string},
-        subnet: %Schema{description: "subnet used for the network", type: :string},
+        subnet: %Schema{description: "Subnet used for the network", type: :string},
         if_name: %Schema{
           description: "Name of the loopback interface used for the network",
+          type: :string
+        },
+        driver: %Schema{
+          description:
+            "Which type of network is used. Possible values are 'loopback' where the network is situated on a loopback interface on the host, and 'host' where the container have inherited the hosts network configuration. Only one read-only network exists with the 'host' driver.",
           type: :string
         },
         default_gw_if: %Schema{
