@@ -30,7 +30,7 @@ defmodule NetworkTest do
                name: "testnetwork",
                subnet: "172.18.0.0/16",
                ifname: "jocker1",
-               driver: :loopback
+               driver: "loopback"
              })
 
     assert Utils.interface_exists("jocker1")
@@ -51,7 +51,7 @@ defmodule NetworkTest do
         name: "testnetwork",
         subnet: "172.18.0.0/16",
         ifname: "jocker1",
-        driver: :loopback
+        driver: "loopback"
       })
 
     assert [
@@ -69,7 +69,7 @@ defmodule NetworkTest do
                name: "testnetwork",
                subnet: "172.18.0.0/16",
                ifname: "jocker1",
-               driver: :loopback
+               driver: "loopback"
              })
 
     assert Network.remove("testnetwork") == {:ok, test_network.id}
@@ -82,7 +82,7 @@ defmodule NetworkTest do
                name: "testnetwork",
                subnet: "172.18.0.0/16",
                ifname: "jocker1",
-               driver: :loopback
+               driver: "loopback"
              })
 
     assert {:error, "network name is already taken"} =
@@ -90,7 +90,7 @@ defmodule NetworkTest do
                name: "testnetwork",
                subnet: "172.19.0.0/16",
                ifname: "jocker2",
-               driver: :loopback
+               driver: "loopback"
              })
 
     Network.remove("testnetwork")
@@ -102,7 +102,7 @@ defmodule NetworkTest do
                name: "testnetwork",
                subnet: "172.18.0.0-16",
                ifname: "jocker1",
-               driver: :loopback
+               driver: "loopback"
              })
   end
 
@@ -114,14 +114,14 @@ defmodule NetworkTest do
         name: "testnet",
         subnet: "172.19.0.0/24",
         ifname: network_if,
-        driver: :loopback
+        driver: "loopback"
       })
 
-    opts = [
+    opts = %{
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network_if]
-    ]
+    }
 
-    {:ok, %Container{id: id}} = Container.create(opts)
+    {:ok, %Container{id: id}} = TestHelper.create_container("network_test", opts)
 
     Network.connect(id, "testnet")
     :ok = Container.attach(id)
@@ -133,12 +133,12 @@ defmodule NetworkTest do
   end
 
   test "using 'host' network instead of 'default'" do
-    opts = [
+    opts = %{
       networks: ["host"],
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-i", "-4"]
-    ]
+    }
 
-    {:ok, %Container{id: id}} = Container.create(opts)
+    {:ok, %Container{id: id}} = TestHelper.create_container("network_test2", opts)
 
     {output_json, 0} = System.cmd("/usr/bin/netstat", ["--libxo", "json", "-i", "-4"])
     ips_before = ips_on_all_interfaces(output_json)
@@ -155,11 +155,11 @@ defmodule NetworkTest do
   end
 
   test "connectivity using default interface" do
-    opts = [
+    opts = %{
       cmd: ["/usr/bin/host", "-t", "A", "freebsd.org", "1.1.1.1"]
-    ]
+    }
 
-    {:ok, %Container{id: id}} = Container.create(opts)
+    {:ok, %Container{id: id}} = TestHelper.create_container("network_test3", opts)
     :ok = Container.attach(id)
     Container.start(id)
 

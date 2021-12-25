@@ -56,7 +56,7 @@ defmodule Jocker.Engine.Image do
       :total_steps => length(instructions)
     }
 
-    pid = Process.spawn(fn -> create_image(instructions, state) end, [])
+    {pid, _reference} = Process.spawn(fn -> create_image(instructions, state) end, [:monitor])
     {:ok, pid}
   end
 
@@ -109,14 +109,21 @@ defmodule Jocker.Engine.Image do
     state = send_status(line, state)
     %Image{id: image_id, user: user} = Jocker.Engine.MetaData.get_image(image_reference)
 
-    opts = [
-      jail_param: ["mount.devfs=true"],
-      image: image_id,
-      user: user,
-      cmd: []
-    ]
+    {:ok, container_config} =
+      OpenApiSpex.Cast.cast(
+        Jocker.Engine.API.Schemas.ContainerConfig.schema(),
+        %{
+          jail_param: ["mount.devfs=true"],
+          image: image_id,
+          user: user,
+          networks: ["default"],
+          cmd: []
+        }
+      )
 
-    {:ok, cont} = Jocker.Engine.Container.create(opts)
+    name = Utils.uuid()
+
+    {:ok, cont} = Jocker.Engine.Container.create(name, container_config)
     %State{state | :container => cont, :user => user}
   end
 

@@ -21,6 +21,7 @@ defmodule Jocker.Engine.Container do
 
   require Logger
   alias Jocker.Engine.{MetaData, Volume, Layer, Network, Image}
+  alias Jocker.Engine.API.Schemas.ContainerConfig
   use GenServer
 
   @type t() ::
@@ -37,15 +38,7 @@ defmodule Jocker.Engine.Container do
             created: String.t()
           }
 
-  @type create_opts() :: [
-          {:image, String.t()}
-          | {:name, String.t()}
-          | {:cmd, [String.t()]}
-          | {:user, String.t()}
-          | {:env, [String.t()]}
-          | {:networks, [String.t()]}
-          | {:jail_param, [String.t()]}
-        ]
+  @type create_opts() :: %ContainerConfig{}
 
   @type list_containers_opts :: [
           {:all, boolean()}
@@ -62,11 +55,9 @@ defmodule Jocker.Engine.Container do
     GenServer.start_link(__MODULE__, opts)
   end
 
-  @spec create(create_opts) :: {:ok, Container.t()} | {:error, :image_not_found}
-  def create(options) do
-    Logger.debug("creating container with opts: #{inspect(options)}")
-    image = MetaData.get_image(Keyword.get(options, :image, "base"))
-    create_(image, options)
+  @spec create(String.t(), create_opts) :: {:ok, Container.t()} | {:error, :image_not_found}
+  def create(name, options) do
+    create_(name, options)
   end
 
   @spec start(id_or_name()) :: {:ok, Container.t()} | {:error, :not_found}
@@ -192,54 +183,69 @@ defmodule Jocker.Engine.Container do
   ### ===================================================================
   ### Internal functions
   ### ===================================================================
-  defp create_(:not_found, _), do: {:error, :image_not_found}
-
   defp create_(
-         %Image{
-           id: image_id,
-           user: default_user,
-           command: default_cmd,
-           layer_id: parent_layer_id,
-           env_vars: img_env_vars
-         },
-         opts
+         name,
+         %ContainerConfig{
+           image: image_name,
+           user: user,
+           env: env_vars,
+           networks: networks,
+           cmd: command,
+           jail_param: jail_param
+         } = container_config
        ) do
-    container_id = Jocker.Engine.Utils.uuid()
+    case MetaData.get_image(image_name) do
+      :not_found ->
+        {:error, :image_not_found}
 
-    parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
-    %Layer{id: layer_id} = Layer.new(parent_layer, container_id)
+      %Image{
+        id: image_id,
+        user: image_user,
+        command: image_command,
+        layer_id: parent_layer_id,
+        env_vars: img_env_vars
+      } ->
+        Logger.debug("creating container with config: #{inspect(container_config)}")
+        container_id = Jocker.Engine.Utils.uuid()
 
-    # Extract values from options:
-    command = Keyword.get(opts, :cmd, default_cmd)
-    user = Keyword.get(opts, :user, default_user)
-    jail_param = Keyword.get(opts, :jail_param, [])
-    name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
-    env_vars = Keyword.get(opts, :env, []) ++ img_env_vars
+        parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
+        %Layer{id: layer_id} = Layer.new(parent_layer, container_id)
+        # TODO: Implement an overriding mechanism for environments variables here
+        # remember to modifiy openapi docs on this specific option
+        env_vars = env_vars ++ img_env_vars
 
-    network_idnames =
-      Keyword.get(opts, :networks, [Jocker.Engine.Config.get("default_network_name")])
+        command =
+          case command do
+            [] -> image_command
+            _ -> command
+          end
 
-    cont = %Container{
-      id: container_id,
-      name: name,
-      command: command,
-      layer_id: layer_id,
-      image_id: image_id,
-      user: user,
-      parameters: jail_param,
-      env_vars: env_vars,
-      created: DateTime.to_iso8601(DateTime.utc_now())
-    }
+        user =
+          case user do
+            "" -> image_user
+            _ -> user
+          end
 
-    # Mount volumes into container (if any have been provided)
-    bind_volumes(opts, cont)
+        cont = %Container{
+          id: container_id,
+          name: name,
+          command: command,
+          layer_id: layer_id,
+          image_id: image_id,
+          user: user,
+          parameters: jail_param,
+          env_vars: env_vars,
+          created: DateTime.to_iso8601(DateTime.utc_now())
+        }
 
-    # Store new container and connect to the networks
-    MetaData.add_container(cont)
-    # FIXME: This hangs while building a simple image
-    # Looks like it can't find the network for some reason:
-    Enum.map(network_idnames, &Network.connect(container_id, &1))
-    {:ok, MetaData.get_container(container_id)}
+        # Mount volumes into container (if any have been provided)
+        bind_volumes(container_config.volumes, cont)
+
+        # Store new container and connect to the networks
+        MetaData.add_container(cont)
+        Enum.map(networks, &Network.connect(container_id, &1))
+        {:ok, MetaData.get_container(container_id)}
+    end
   end
 
   defp start_(
@@ -376,12 +382,12 @@ defmodule Jocker.Engine.Container do
     end
   end
 
-  defp bind_volumes(options, container) do
-    Enum.map(options, fn vol -> bind_volumes_(vol, container) end)
+  defp bind_volumes(volumes, container) do
+    Enum.map(volumes, fn vol -> bind_volumes_(vol, container) end)
   end
 
-  defp bind_volumes_({:volume, vol_raw}, cont) do
-    case String.split(vol_raw, ":") do
+  defp bind_volumes_(volume_raw, cont) do
+    case String.split(volume_raw, ":") do
       [<<"/", _::binary>> = location] ->
         # anonymous volume
         create_and_bind("", location, [ro: false], cont)
@@ -397,11 +403,10 @@ defmodule Jocker.Engine.Container do
       [name, location] ->
         # named volume
         create_and_bind(name, location, [ro: false], cont)
-    end
-  end
 
-  defp bind_volumes_(_, _cont) do
-    :ok
+      _ ->
+        {:error, "could not decode volume specfication string"}
+    end
   end
 
   defp create_and_bind("", location, opts, cont) do

@@ -2,7 +2,6 @@ defmodule Jocker.Engine.API.Schemas do
   require OpenApiSpex
   alias OpenApiSpex.Schema
 
-  # FIXME: Haven't used "examples: %{}" or "required: []" in the schema definitions.
   defmodule ContainerConfig do
     OpenApiSpex.schema(%{
       description: "Configuration for a container that is portable between hosts",
@@ -13,30 +12,43 @@ defmodule Jocker.Engine.API.Schemas do
           description: "The name of the image to use when creating the container"
         },
         cmd: %Schema{
+          description:
+            "Command to execute when the container is started. If no command is specified the command from the image is used.",
           type: :array,
           items: %Schema{type: :string},
+          default: [],
           example: ["/bin/sh", "-c", "ls /"]
         },
+        user: %Schema{
+          type: :string,
+          description:
+            "User that executes the command (cmd). If no user is set the user from the image will be used (which in turn is 'root' if no user is specified there).",
+          default: ""
+        },
         env: %Schema{
-          description: "List of environment variables set when the command is executed",
+          description: "List of environment variables set when the command is executed.",
           type: :array,
           items: %Schema{type: :string},
+          default: [],
           example: ["DEBUG=0", "LANG=da_DK.UTF-8"]
         },
         volumes: %Schema{
           description: "List of volumes that should be mounted into the container",
           type: :array,
-          items: %Schema{type: :string}
+          items: %Schema{type: :string},
+          default: []
         },
         networks: %Schema{
-          description: "List of networks that the container should be connected to",
+          description: "List of networks that the container should be connected to.",
           type: :array,
-          items: %Schema{type: :string}
+          items: %Schema{type: :string},
+          default: []
         },
         jail_param: %Schema{
           description: "List of jail parameters (see jail(8) for details)",
           type: :array,
           items: %Schema{type: :string},
+          default: [],
           example: ["allow.raw_sockets=true", "osrelease=jockerjail"]
         }
       }

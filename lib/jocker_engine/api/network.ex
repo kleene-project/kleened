@@ -79,15 +79,15 @@ defmodule Jocker.Engine.API.Network do
     end
 
     def create(conn, _opts) do
-      conn = Plug.Conn.fetch_query_params(conn)
       conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
-      options = Map.to_list(conn.body_params)
+      options = conn.body_params
 
       case Network.create(options) do
         {:ok, %Network{id: id}} ->
           send_resp(conn, 201, Utils.id_response(id))
 
         {:error, msg} ->
+          Logger.info("Could not create network: #{msg}")
           send_resp(conn, 409, Utils.error_response(msg))
       end
     end
@@ -170,7 +170,7 @@ defmodule Jocker.Engine.API.Network do
           )
         ],
         responses: %{
-          #204 => response("operation was succesful", "application/json", Schemas.IdResponse),
+          # 204 => response("operation was succesful", "application/json", Schemas.IdResponse),
           204 => %Response{description: "operation was succesful"},
           404 => response("no such network", "application/json", Schemas.ErrorResponse),
           409 =>
@@ -233,7 +233,7 @@ defmodule Jocker.Engine.API.Network do
           )
         ],
         responses: %{
-          #204 => response("operation was succesful", "application/json", Schemas.IdResponse),
+          # 204 => response("operation was succesful", "application/json", Schemas.IdResponse),
           204 => %Response{description: "operation was succesful"},
           404 =>
             response(

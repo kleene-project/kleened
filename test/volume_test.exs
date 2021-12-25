@@ -42,7 +42,7 @@ defmodule VolumeTest do
     volume = Volume.create("testvol")
 
     {:ok, %Container{id: id} = con} =
-      Jocker.Engine.Container.create(cmd: ["/usr/bin/touch", file])
+      TestHelper.create_container("volume_test", %{cmd: ["/usr/bin/touch", file]})
 
     Jocker.Engine.Container.attach(id)
     :ok = Volume.bind_volume(con, volume, location)

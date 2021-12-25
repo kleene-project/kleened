@@ -83,7 +83,8 @@ defmodule Jocker.Engine.API.Container do
             :name,
             :query,
             %Schema{type: :string},
-            "Assign the specified name to the container. Must match `/?[a-zA-Z0-9][a-zA-Z0-9_.-]+`."
+            "Assign the specified name to the container. Must match `/?[a-zA-Z0-9][a-zA-Z0-9_.-]+`.",
+            required: true
           )
         ],
         requestBody:
@@ -104,15 +105,10 @@ defmodule Jocker.Engine.API.Container do
       conn = Plug.Conn.fetch_query_params(conn)
       conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
 
-      name_opt =
-        case conn.query_params do
-          %{"name" => name} -> [name: name]
-          _ -> []
-        end
+      name = conn.query_params["name"]
+      container_config = conn.body_params
 
-      opts = name_opt ++ Map.to_list(conn.body_params)
-
-      case Container.create(opts) do
+      case Container.create(name, container_config) do
         {:ok, %Container{id: id}} ->
           send_resp(conn, 201, Utils.id_response(id))
 

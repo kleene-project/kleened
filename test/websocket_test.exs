@@ -15,8 +15,12 @@ defmodule WebSocketTest do
   end
 
   test "attach to actual container and receive some output from it" do
-    create_opt = [image: "base", cmd: ["/bin/sh", "-c", "uname"]]
-    {:ok, container} = Container.create(create_opt)
+    {:ok, container} =
+      TestHelper.create_container("ws_test_container", %{
+        image: "base",
+        cmd: ["/bin/sh", "-c", "uname"]
+      })
+
     container_id = container.id
     conn = initialize_websocket("/containers/#{container_id}/attach")
     assert {:text, "ok:"} == receive_frame(conn)

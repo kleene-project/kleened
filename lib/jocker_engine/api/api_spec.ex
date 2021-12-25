@@ -7,7 +7,7 @@ defmodule Jocker.Engine.API.Spec do
   def spec do
     %OpenApi{
       info: %Info{
-        title: "Jocker Engine REST API.",
+        title: "Jockerd API",
         description: "HTTP API for communicating with the Jocker Engine",
         version: "0.0.1"
       },

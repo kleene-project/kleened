@@ -123,7 +123,7 @@ defmodule Jocker.Engine.Network do
       case create_(
              %NetworkConfig{
                name: default_network_name,
-               driver: :loopback,
+               driver: "loopback",
                ifname: if_name,
                subnet: subnet
              },
@@ -202,7 +202,7 @@ defmodule Jocker.Engine.Network do
   end
 
   def create_(
-        %NetworkConfig{driver: :loopback, name: name, subnet: subnet, ifname: if_name},
+        %NetworkConfig{driver: "loopback", name: name, subnet: subnet, ifname: if_name},
         state
       ) do
     parsed_subnet = CIDR.parse(subnet)
@@ -223,13 +223,13 @@ defmodule Jocker.Engine.Network do
     {:error, "Unknown driver #{inspect(unknown_driver)}"}
   end
 
-  defp connect_(_network, :not_found) do
-    Logger.warn("Could not connect container to network: container not found")
+  defp connect_(_container, :not_found) do
+    Logger.warn("Could not connect container to network: network not found")
     {:reply, {:error, "container not found"}}
   end
 
-  defp connect_(:not_found, _container) do
-    Logger.warn("Could not connect container to network: network not found")
+  defp connect_(:not_found, _netowrk) do
+    Logger.warn("Could not connect container to network: container not found")
     {:reply, {:error, "network not found"}}
   end
 
