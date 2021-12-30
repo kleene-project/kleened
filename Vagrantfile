@@ -7,7 +7,7 @@ $configure_zfs = <<-SCRIPT
 kldload zfs
 sysrc -f /boot/loader.conf zfs_load="YES"
 sysrc zfs_enable="YES"
-truncate -s 2000M /home/vagrant/zpool.disk
+truncate -s 1700M /home/vagrant/zpool.disk
 zpool create -f zroot /home/vagrant/zpool.disk
 zfs create -o compression=gzip-9 -o mountpoint=/zroot/jocker zroot/jocker
 zfs create zroot/jocker_basejail
@@ -46,12 +46,19 @@ Vagrant.configure("2") do |config|
     dev.vm.hostname = "jocker-dev"
 
     dev.vm.provision "shell", inline: <<-SHELL
-      ## Install packages
-      pkg install -y zsh bash tmux git-lite vim-console elixir elixir-hex jq
-
       ## Setup my development environment
       ln -s #{$host}/jocker/example/jocker_config.yaml /usr/local/etc/jocker_config.yaml
       ln -s #{$host}/jocker /home/vagrant/jocker
+      ln -s #{$host}/jcli /home/vagrant/jcli
+
+      ## Install packages
+      ## Use 'erlang-wx' instead of 'erlang', if the observer gui is needed.
+      ## Also remember to tweak ssh to X-forwarding etc.
+      pkg install -y zsh bash tmux git-lite vim erlang elixir elixir-hex jq
+      pkg install -y py38-pipenv py38-pipx
+      su - vagrant -c 'pipx install openapi-python-client --include-deps'
+      su - vagrant -c 'cd jcli && pipenv install'
+
       pw usermod -s /usr/local/bin/zsh -n vagrant
       export HOME=/home/vagrant
       rm ~/.profile # we remove this to avoid error from yadm
