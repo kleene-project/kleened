@@ -22,7 +22,7 @@ defmodule Jocker.Engine.Container do
   require Logger
   alias Jocker.Engine.{MetaData, Volume, Layer, Network, Image}
   alias Jocker.Engine.API.Schemas.ContainerConfig
-  use GenServer
+  use GenServer, restart: :transient, shutdown: 10_000
 
   @type t() ::
           %Container{
@@ -155,24 +155,21 @@ defmodule Jocker.Engine.Container do
   end
 
   def handle_info({port, {:exit_status, _}}, %State{:starting_port => port} = state) do
-    Logger.debug("#{inspect(self())}Jail-starting process exited.")
-
-    cont = MetaData.get_container(state.container_id)
-
     case is_running?(state.container_id) do
       false ->
-        shutdown_container(cont)
+        cont = MetaData.get_container(state.container_id)
+        jail_cleanup(cont)
+        updated_container = %Container{cont | pid: ""}
+        MetaData.add_container(updated_container)
         relay_msg({:shutdown, :jail_stopped}, state)
-        DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, self())
-        {:noreply, %State{}}
 
       true ->
         # Since the jail-starting process is stopped no messages will be sent to Jocker.
         # This happens when, e.g., a full-blow vm-jail has been started (using /etc/rc)
         relay_msg({:shutdown, :jail_root_process_exited}, state)
-        DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, self())
-        {:noreply, %State{state | :starting_port => nil}}
     end
+
+    {:stop, :shutdown, %State{state | :starting_port => nil}}
   end
 
   def handle_info(unknown_msg, state) do

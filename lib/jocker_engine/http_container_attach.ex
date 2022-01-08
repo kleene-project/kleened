@@ -17,7 +17,7 @@ defmodule Jocker.Engine.HTTPContainerAttach do
 
       {:error, :not_found} ->
         Logger.debug("could not attach to container #{container_id}: not found")
-        {[{:close, 1000, "exit:container not found"}], state}
+        {[{:text, "exit:container not found"}, {:close, 1000, ""}], state}
     end
   end
 
@@ -29,6 +29,12 @@ defmodule Jocker.Engine.HTTPContainerAttach do
   def websocket_handle({:text, _message}, state) do
     # Ignore messages from the client (i.e. no interactive possibility atm.
     Logger.debug("Received input from client. Cannot handle this yet.")
+    {:ok, state}
+  end
+
+  def websocket_handle(msg, state) do
+    # Ignore messages from the client (i.e. no interactive possibility atm.
+    Logger.warn("Unknown message received: #{inspect(msg)}")
     {:ok, state}
   end
 
@@ -50,7 +56,8 @@ defmodule Jocker.Engine.HTTPContainerAttach do
   end
 
   # No matter why we terminate, remove all of this pids subscriptions
-  def websocket_terminate(_reason, _state) do
+  def websocket_terminate(reason, _state) do
+    Logger.info("websocket terminated: #{inspect(reason)}")
     :ok
   end
 end

@@ -81,7 +81,7 @@ defmodule Jocker.Engine.API.Schemas do
           example: "loopback"
         }
       },
-      required: [:name]
+      required: [:name, :ifname, :subnet]
     })
   end
 

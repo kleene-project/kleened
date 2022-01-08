@@ -27,8 +27,32 @@ defmodule WebSocketTest do
     {:ok, _} = Container.start(container_id)
     expected_frames = ["FreeBSD\n", "container #{container_id} stopped"]
     assert expected_frames == receive_frames(conn)
-    {:ok, _} = Container.start(container_id)
     {:ok, ^container_id} = Container.destroy(container_id)
+  end
+
+  test "start container quickly several times to verify reproducibility" do
+    {:ok, container} =
+      TestHelper.create_container("ws_test_container", %{
+        image: "base",
+        cmd: ["/bin/sh", "-c", "uname"]
+      })
+
+    container_id = container.id
+    :ok = start_attached_container_and_receive_output(container.id, 20)
+    {:ok, ^container_id} = Container.destroy(container_id)
+  end
+
+  defp start_attached_container_and_receive_output(container_id, 0) do
+    :ok
+  end
+
+  defp start_attached_container_and_receive_output(container_id, number_of_starts) do
+    conn = initialize_websocket("/containers/#{container_id}/attach")
+    assert {:text, "ok:"} == receive_frame(conn)
+    {:ok, _} = Container.start(container_id)
+    expected_frames = ["FreeBSD\n", "container #{container_id} stopped"]
+    assert expected_frames == receive_frames(conn)
+    start_attached_container_and_receive_output(container_id, number_of_starts - 1)
   end
 
   @tmp_dockerfile "tmp_dockerfile"

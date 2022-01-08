@@ -76,6 +76,7 @@ defmodule Jocker.Engine.API.Image do
     end
 
     def remove(conn, _opts) do
+      conn = Plug.Conn.fetch_query_params(conn)
       conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
       image_id = conn.params.image_id
 
