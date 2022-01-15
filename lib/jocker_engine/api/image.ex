@@ -75,10 +75,8 @@ defmodule Jocker.Engine.API.Image do
       }
     end
 
-    def remove(conn, _opts) do
-      conn = Plug.Conn.fetch_query_params(conn)
+    def remove(%Plug.Conn{path_params: %{"image_id" => image_id}} = conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
-      image_id = conn.params.image_id
 
       case Engine.Image.destroy(image_id) do
         :ok ->

@@ -161,11 +161,13 @@ defmodule Jocker.Engine.Container do
         jail_cleanup(cont)
         updated_container = %Container{cont | pid: ""}
         MetaData.add_container(updated_container)
+        Logger.debug("container #{inspect(state.container_id)} stopped")
         relay_msg({:shutdown, :jail_stopped}, state)
 
       true ->
         # Since the jail-starting process is stopped no messages will be sent to Jocker.
         # This happens when, e.g., a full-blow vm-jail has been started (using /etc/rc)
+        Logger.debug("container #{inspect(state.container_id)}'s creator process exited")
         relay_msg({:shutdown, :jail_root_process_exited}, state)
     end
 

@@ -21,7 +21,7 @@ defmodule Jocker.Engine.HTTPImageBuild do
     args = Map.merge(default_values, values)
 
     args =
-      case args["quiet"] do
+      case String.downcase(args["quiet"]) do
         "false" ->
           Map.put(args, "quiet", false)
 
