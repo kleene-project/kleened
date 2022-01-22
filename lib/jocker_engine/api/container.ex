@@ -96,6 +96,7 @@ defmodule Jocker.Engine.API.Container do
           ),
         responses: %{
           201 => response("no error", "application/json", Schemas.IdResponse),
+          404 => response("no such image", "application/json", Schemas.ErrorResponse),
           500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
@@ -112,8 +113,12 @@ defmodule Jocker.Engine.API.Container do
         {:ok, %Container{id: id}} ->
           send_resp(conn, 201, Utils.id_response(id))
 
-        {:error, error} ->
-          send_resp(conn, 500, Utils.error_response(Jason.encode!(error)))
+        {:error, :image_not_found} ->
+          send_resp(conn, 404, Utils.error_response("no such image '#{container_config.image}'"))
+
+        unknown_msg ->
+          Logger.warn("unknown error creating container: #{inspect(unknown_msg)}")
+          send_resp(conn, 500, Utils.error_response("server error"))
       end
     end
   end
@@ -167,7 +172,8 @@ defmodule Jocker.Engine.API.Container do
         # {:error, :already_started} ->
         #  send_resp(conn, 409, "you cannot remove a running container")
 
-        _ ->
+        unknown_msg ->
+          Logger.warn("unknown error when destroying container #{inspect(unknown_msg)}")
           send_resp(conn, 500, Utils.error_response("server error"))
       end
     end
