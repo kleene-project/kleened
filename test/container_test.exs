@@ -128,8 +128,38 @@ defmodule ContainerTest do
 
     %Container{id: id} = TestHelper.start_attached_container("testcont", config)
 
-    assert_receive {:container, ^id,
-                    {:jail_output, "PWD=/\nTEST2=lool test\nTEST=lol\nTEST3=loool\n"}}
+    assert_receive {:container, ^id, {:jail_output, env_vars}}
+    env_vars_set = String.trim(env_vars, "\n") |> String.split("\n") |> MapSet.new()
+    expected_set = MapSet.new(["PWD=/", "TEST=lol", "TEST2=lool test", "TEST3=loool"])
+    assert MapSet.equal?(env_vars_set, expected_set)
+
+    Container.destroy(id)
+    Image.destroy(image.id)
+  end
+
+  test "start a container with environment variables and overwrite one of them" do
+    dockerfile = """
+    FROM scratch
+    ENV TEST=lol
+    ENV TEST2="lool test"
+    CMD /bin/sh -c "printenv"
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
+    image = TestHelper.build_and_return_image("./", "tmp_dockerfile", "test:latest")
+
+    config = %{
+      image: image.id,
+      env: ["TEST=new_value"],
+      cmd: ["/bin/sh", "-c", "printenv"]
+    }
+
+    %Container{id: id} = TestHelper.start_attached_container("testcont", config)
+
+    assert_receive {:container, ^id, {:jail_output, env_vars}}
+    env_vars_set = String.trim(env_vars, "\n") |> String.split("\n") |> MapSet.new()
+    expected_set = MapSet.new(["PWD=/", "TEST=new_value", "TEST2=lool test"])
+    assert MapSet.equal?(env_vars_set, expected_set)
 
     Container.destroy(id)
     Image.destroy(image.id)

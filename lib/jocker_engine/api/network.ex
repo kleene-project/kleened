@@ -233,7 +233,6 @@ defmodule Jocker.Engine.API.Network do
           )
         ],
         responses: %{
-          # 204 => response("operation was succesful", "application/json", Schemas.IdResponse),
           204 => %Response{description: "operation was succesful"},
           404 =>
             response(

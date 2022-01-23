@@ -189,6 +189,7 @@ defmodule Jocker.Engine.Container do
            user: user,
            env: env_vars,
            networks: networks,
+           volumes: volumes,
            cmd: command,
            jail_param: jail_param
          } = container_config
@@ -202,7 +203,6 @@ defmodule Jocker.Engine.Container do
         user: image_user,
         command: image_command,
         layer_id: parent_layer_id,
-        volumes: volumes,
         env_vars: img_env_vars
       } ->
         Logger.debug("creating container with config: #{inspect(container_config)}")
@@ -210,9 +210,7 @@ defmodule Jocker.Engine.Container do
 
         parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
         %Layer{id: layer_id} = Layer.new(parent_layer, container_id)
-        # TODO: Implement an overriding mechanism for environments variables here
-        # remember to modifiy openapi docs on this specific option
-        env_vars = env_vars ++ img_env_vars
+        env_vars = merge_environment_variable_lists(img_env_vars, env_vars)
 
         command =
           case command do
@@ -366,6 +364,25 @@ defmodule Jocker.Engine.Container do
     jail_cleanup(cont)
     updated_container = %Container{cont | pid: ""}
     MetaData.add_container(updated_container)
+  end
+
+  defp merge_environment_variable_lists(envlist1, envlist2) do
+    # list2 overwrites environment varibles from list1
+    map1 = env_vars2map(envlist1)
+    map2 = env_vars2map(envlist2)
+    Map.merge(map1, map2) |> map2env_vars()
+  end
+
+  defp env_vars2map(envs) do
+    convert = fn envvar ->
+      {name, value} = List.to_tuple(String.split(envvar, "=", parts: 2))
+    end
+
+    Map.new(Enum.map(envs, convert))
+  end
+
+  defp map2env_vars(env_map) do
+    Map.to_list(env_map) |> Enum.map(fn {name, value} -> Enum.join([name, value], "=") end)
   end
 
   def extract_ips(container_id, network_id, ip_list) do
