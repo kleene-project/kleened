@@ -202,6 +202,7 @@ defmodule Jocker.Engine.Container do
         user: image_user,
         command: image_command,
         layer_id: parent_layer_id,
+        volumes: volumes,
         env_vars: img_env_vars
       } ->
         Logger.debug("creating container with config: #{inspect(container_config)}")
@@ -238,7 +239,7 @@ defmodule Jocker.Engine.Container do
         }
 
         # Mount volumes into container (if any have been provided)
-        bind_volumes(container_config.volumes, cont)
+        bind_volumes(volumes, cont)
 
         # Store new container and connect to the networks
         MetaData.add_container(cont)

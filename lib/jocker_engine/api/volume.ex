@@ -71,7 +71,7 @@ defmodule Jocker.Engine.API.Volume do
             required: true
           ),
         responses: %{
-          204 => response("volume created", "application/json", Schemas.IdResponse),
+          201 => response("volume created", "application/json", Schemas.IdResponse),
           500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
