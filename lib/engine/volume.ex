@@ -33,8 +33,8 @@ defmodule Jocker.Engine.Volume do
           rw: boolean()
         ]
 
-  @spec create_volume(String.t()) :: Volume.t()
-  def create_volume(name) do
+  @spec create(String.t()) :: Volume.t()
+  def create(name) do
     dataset = Path.join(Config.get("volume_root"), name)
     mountpoint = Path.join("/", dataset)
     ZFS.create(dataset)
@@ -51,13 +51,19 @@ defmodule Jocker.Engine.Volume do
     vol
   end
 
-  @spec destroy_volume(Volume.t()) :: :ok
-  def destroy_volume(%Volume{dataset: dataset} = vol) do
-    mounts = MetaData.remove_mounts(vol)
-    Enum.map(mounts, fn %Mount{location: location} -> 0 = Utils.unmount(location) end)
-    ZFS.destroy(dataset)
-    MetaData.remove_volume(vol)
-    :ok
+  @spec destroy(String.t()) :: :ok | {:error, String.t()}
+  def destroy(name) do
+    case Jocker.Engine.MetaData.get_volume(name) do
+      :not_found ->
+        {:error, "No such volume"}
+
+      volume ->
+        mounts = MetaData.remove_mounts(volume)
+        Enum.map(mounts, fn %Mount{location: location} -> 0 = Utils.unmount(location) end)
+        ZFS.destroy(volume.dataset)
+        MetaData.remove_volume(volume)
+        :ok
+    end
   end
 
   @spec destroy_mounts(%Container{}) :: :ok

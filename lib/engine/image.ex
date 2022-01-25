@@ -39,14 +39,14 @@ defmodule Jocker.Engine.Image do
           }
 
   @spec build(String.t(), String.t(), String.t(), boolean()) :: {:ok, pid()}
-  def build(context, dockerfile, tag, quiet \\ false) do
+  def build(context_path, dockerfile, tag, quiet \\ false) do
     {name, tag} = Jocker.Engine.Utils.decode_tagname(tag)
-    dockerfile_path = Path.join(context, dockerfile)
+    dockerfile_path = Path.join(context_path, dockerfile)
     {:ok, dockerfile} = File.read(dockerfile_path)
     instructions = Jocker.Engine.Dockerfile.parse(dockerfile)
 
     state = %State{
-      :context => context,
+      :context => context_path,
       :user => "root",
       :quiet => quiet,
       :image_name => name,
@@ -56,7 +56,7 @@ defmodule Jocker.Engine.Image do
       :total_steps => length(instructions)
     }
 
-    pid = Process.spawn(fn -> create_image(instructions, state) end, [])
+    {pid, _reference} = Process.spawn(fn -> create_image(instructions, state) end, [:monitor])
     {:ok, pid}
   end
 
@@ -109,14 +109,21 @@ defmodule Jocker.Engine.Image do
     state = send_status(line, state)
     %Image{id: image_id, user: user} = Jocker.Engine.MetaData.get_image(image_reference)
 
-    opts = [
-      jail_param: ["mount.devfs=true"],
-      image: image_id,
-      user: user,
-      cmd: []
-    ]
+    {:ok, container_config} =
+      OpenApiSpex.Cast.cast(
+        Jocker.API.Schemas.ContainerConfig.schema(),
+        %{
+          jail_param: ["mount.devfs=true"],
+          image: image_id,
+          user: user,
+          networks: ["default"],
+          cmd: []
+        }
+      )
 
-    {:ok, cont} = Jocker.Engine.Container.create(opts)
+    name = Utils.uuid()
+
+    {:ok, cont} = Jocker.Engine.Container.create(name, container_config)
     %State{state | :container => cont, :user => user}
   end
 

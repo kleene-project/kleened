@@ -4,37 +4,39 @@ defmodule ContainerTest do
 
   @moduletag :capture_log
 
-  test "create container and fetch metadata" do
+  setup do
+    on_exit(fn ->
+      Jocker.Engine.MetaData.list_containers()
+      |> Enum.map(fn %{id: id} -> Container.destroy(id) end)
+    end)
+
+    :ok
+  end
+
+  test "plug testing container and fetch metadata" do
+    {:ok, %Container{image_id: img_id}} = TestHelper.create_container("testcont", %{})
     %Image{id: id} = Jocker.Engine.MetaData.get_image("base")
-    {:ok, %Container{image_id: img_id}} = Container.create([])
     assert id == img_id
   end
 
   test "start a container (using devfs), attach to it and receive output" do
-    opts = [
-      cmd: ["/bin/echo", "test test"],
-      jail_param: ["mount.devfs"]
-    ]
+    cmd_expected = ["/bin/echo", "test test"]
 
-    {:ok, cont} = Container.create(opts)
-    %Container{id: id, pid: _pid, command: cmd_out} = cont
+    {:ok, %Container{id: id} = container} =
+      TestHelper.create_container("testcont", %{cmd: cmd_expected})
+
     :ok = Container.attach(id)
-
     Container.start(id)
 
-    assert opts[:cmd] == cmd_out
-    assert_receive {:container, ^id, "test test\n"}
+    assert cmd_expected == container.command
+    assert_receive {:container, ^id, {:jail_output, "test test\n"}}
     assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
-    assert not TestHelper.devfs_mounted(cont)
+    assert not TestHelper.devfs_mounted(container)
   end
 
   test "start and stop a container (using devfs)" do
-    opts = [
-      cmd: ["/bin/sleep", "10"],
-      jail_param: ["mount.devfs"]
-    ]
-
-    %Container{id: id} = cont = start_attached_container(opts)
+    config = %{cmd: ["/bin/sleep", "10"]}
+    %Container{id: id} = cont = TestHelper.start_attached_container("testcont", config)
 
     assert TestHelper.devfs_mounted(cont)
     assert {:ok, %Container{id: ^id}} = Container.stop(id)
@@ -43,25 +45,21 @@ defmodule ContainerTest do
   end
 
   test "try to start a running container" do
-    opts = [
-      cmd: ["/bin/sleep", "10"],
-      jail_param: ["mount.devfs"]
-    ]
+    %Container{id: id} =
+      TestHelper.start_attached_container("testcont", %{cmd: ["/bin/sleep", "10"]})
 
-    %Container{id: id} = start_attached_container(opts)
-
-    assert :already_started == Container.start(id)
+    assert {:error, :already_started} == Container.start(id)
     assert {:ok, %Container{id: ^id}} = Container.stop(id)
   end
 
   test "start and stop a container with '/etc/rc' (using devfs)" do
-    opts = [
-      cmd: ["/bin/sh", "/etc/rc"],
+    config = %{
+      cmd: ["/bin/sleep", "10"],
       jail_param: ["mount.devfs", "exec.stop=\"/bin/sh /etc/rc.shutdown\""],
       user: "root"
-    ]
+    }
 
-    %Container{id: id} = cont = start_attached_container(opts)
+    %Container{id: id} = cont = TestHelper.start_attached_container("testcont", config)
 
     assert TestHelper.devfs_mounted(cont)
     assert {:ok, %Container{id: ^id}} = Container.stop(id)
@@ -70,7 +68,8 @@ defmodule ContainerTest do
   end
 
   test "create container from non-existing image" do
-    assert :image_not_found == Jocker.Engine.Container.create(image: "nonexisting")
+    assert {:error, :image_not_found} ==
+             TestHelper.create_container("testcont", %{image: "nonexisting"})
   end
 
   test "create container from non-existing id" do
@@ -79,29 +78,27 @@ defmodule ContainerTest do
   end
 
   test "start a container as non-root" do
-    opts = [
-      cmd: ["/usr/bin/id"],
-      user: "ntpd"
-    ]
+    %Container{id: id} =
+      TestHelper.start_attached_container("testcont", %{cmd: ["/usr/bin/id"], user: "ntpd"})
 
-    %Container{id: id} = start_attached_container(opts)
+    assert_receive {:container, ^id,
+                    {:jail_output, "uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"}}
 
-    assert_receive {:container, ^id, "uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"}
     assert_receive {:container, ^id, {:shutdown, :jail_stopped}}
   end
 
   test "start a container with environment variables set" do
-    opts = [
+    config = %{
       cmd: ["/bin/sh", "-c", "printenv"],
       env: ["LOL=test", "LOOL=test2"],
       user: "root"
-    ]
+    }
 
-    %Container{id: id} = start_attached_container(opts)
+    %Container{id: id} = TestHelper.start_attached_container("testcont", config)
 
     right_messsage_received =
       receive do
-        {:container, ^id, "PWD=/\nLOOL=test2\nLOL=test\n"} ->
+        {:container, ^id, {:jail_output, "PWD=/\nLOOL=test2\nLOL=test\n"}} ->
           true
 
         msg ->
@@ -123,31 +120,48 @@ defmodule ContainerTest do
     TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
     image = TestHelper.build_and_return_image("./", "tmp_dockerfile", "test:latest")
 
-    opts = [
+    config = %{
       image: image.id,
       env: ["TEST3=loool"],
       cmd: ["/bin/sh", "-c", "printenv"]
-    ]
+    }
 
-    %Container{id: id} = start_attached_container(opts)
+    %Container{id: id} = TestHelper.start_attached_container("testcont", config)
 
-    right_messsage_received =
-      receive do
-        {:container, ^id, "PWD=/\nTEST2=lool test\nTEST=lol\nTEST3=loool\n"} ->
-          true
+    assert_receive {:container, ^id, {:jail_output, env_vars}}
+    env_vars_set = String.trim(env_vars, "\n") |> String.split("\n") |> MapSet.new()
+    expected_set = MapSet.new(["PWD=/", "TEST=lol", "TEST2=lool test", "TEST3=loool"])
+    assert MapSet.equal?(env_vars_set, expected_set)
 
-        msg ->
-          IO.puts("\nUnknown message received: #{inspect(msg)}")
-          false
-      end
-
-    assert right_messsage_received
+    Container.destroy(id)
+    Image.destroy(image.id)
   end
 
-  defp start_attached_container(opts) do
-    {:ok, %Container{id: id} = cont} = Container.create(opts)
-    :ok = Container.attach(id)
-    Container.start(id)
-    cont
+  test "start a container with environment variables and overwrite one of them" do
+    dockerfile = """
+    FROM scratch
+    ENV TEST=lol
+    ENV TEST2="lool test"
+    CMD /bin/sh -c "printenv"
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
+    image = TestHelper.build_and_return_image("./", "tmp_dockerfile", "test:latest")
+
+    config = %{
+      image: image.id,
+      env: ["TEST=new_value"],
+      cmd: ["/bin/sh", "-c", "printenv"]
+    }
+
+    %Container{id: id} = TestHelper.start_attached_container("testcont", config)
+
+    assert_receive {:container, ^id, {:jail_output, env_vars}}
+    env_vars_set = String.trim(env_vars, "\n") |> String.split("\n") |> MapSet.new()
+    expected_set = MapSet.new(["PWD=/", "TEST=new_value", "TEST2=lool test"])
+    assert MapSet.equal?(env_vars_set, expected_set)
+
+    Container.destroy(id)
+    Image.destroy(image.id)
   end
 end

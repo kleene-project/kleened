@@ -12,10 +12,10 @@ base_layer_dataset: "zroot/jocker_basejail"
 # Name of the default network. If omitted no default network is created.
 default_network_name: "default"
 
-# Name of the loopback interface used for the default network. If omitted 'jocker0' is used.
+# Name of the loopback interface used for the default network.
 default_loopback_name: "jocker0"
 
-# Subnet (in CIDR-format) allocated the default network. If omitted '172.17.0.0/16' is used.
+# Subnet (in CIDR-format) of the default network.
 default_subnet: "172.17.0.0/16"
 
 # Default interface used as default gateway for containers. If omitted jocker tries to detect it automatically.

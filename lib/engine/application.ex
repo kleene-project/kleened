@@ -13,12 +13,11 @@ defmodule Jocker.Engine.Application do
   def start(_type, _args) do
     # FIXME: This is a dirty-hack to fetch "api_socket" before supervisor is started, as it is used to configure ranch supervisor.
     # To make this properly requires a refactor of the Jocker.Engine.Config:
-    # Load the configuration file at startup and pass configuration parameters in the child 
+    # Load the configuration file at startup and pass configuration parameters in the child
     # in the supervision-tree here: The configuration values are required here before supervisor i started.
     {:ok, pid} = Jocker.Engine.Config.start_link([])
-    socket_opts = create_socket_options(Jocker.Engine.Config.get("api_socket"))
+    # socket_opts = create_socket_options(Jocker.Engine.Config.get("api_socket"))
     GenServer.stop(pid)
-    lingering = {:linger, {true, 10_000}}
 
     children = [
       Jocker.Engine.Config,
@@ -27,13 +26,10 @@ defmodule Jocker.Engine.Application do
       Jocker.Engine.Network,
       {DynamicSupervisor,
        name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0},
-      :ranch.child_spec(
-        make_ref(),
-        :ranch_tcp,
-        [lingering | socket_opts],
-        Jocker.Engine.APIConnection,
-        []
-      )
+      {Plug.Cowboy,
+       scheme: :http,
+       plug: NotUsed,
+       options: [port: 8085, dispatch: Jocker.API.Router.dispatch()]}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

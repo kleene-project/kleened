@@ -1,6 +1,7 @@
 defmodule Jocker.Engine.Network do
   use GenServer
   alias Jocker.Engine.{Config, Container, Utils, MetaData}
+  alias Jocker.API.Schemas.NetworkConfig
   require Logger
 
   @derive Jason.Encoder
@@ -8,6 +9,7 @@ defmodule Jocker.Engine.Network do
             name: nil,
             subnet: nil,
             if_name: nil,
+            driver: nil,
             default_gw_if: nil
 
   alias __MODULE__, as: Network
@@ -27,11 +29,8 @@ defmodule Jocker.Engine.Network do
               gateway_interface: nil
   end
 
-  @type create_options() :: [create_option()]
-  @type create_option() ::
-          {:subnet, String.t()} | {:ifname, String.t()} | {:driver, driver_type()}
-  @type driver_type() :: :loopback
   @type network_id() :: String.t()
+  @type network_config :: %NetworkConfig{}
   @type endpoint_config() :: %EndPointConfig{}
 
   @default_pf_configuration """
@@ -59,10 +58,10 @@ defmodule Jocker.Engine.Network do
   end
 
   ### Docker Engine style API's
-  @spec create(String.t(), create_options()) ::
+  @spec create(network_config()) ::
           {:ok, %Network{}} | {:error, String.t()}
-  def create(name, options) do
-    GenServer.call(__MODULE__, {:create, name, options})
+  def create(options) do
+    GenServer.call(__MODULE__, {:create, options})
   end
 
   @spec connect(String.t(), String.t()) :: :ok | {:error, String.t()}
@@ -79,6 +78,7 @@ defmodule Jocker.Engine.Network do
     GenServer.call(__MODULE__, {:disconnect_all, container_id})
   end
 
+  @spec list() :: [%Network{}]
   def list() do
     GenServer.call(__MODULE__, :list)
   end
@@ -117,10 +117,18 @@ defmodule Jocker.Engine.Network do
     state = %State{:pf_config_path => pf_conf_path, :gateway_interface => gateway}
 
     # Adding the special 'host' network (meaning use ip4=inherit when jails are connected to it)
-    MetaData.add_network(%Network{id: "host", name: "host"})
+    MetaData.add_network(%Network{id: "host", name: "host", driver: "host"})
 
     if default_network_name != nil do
-      case create_(default_network_name, :loopback, state, ifname: if_name, subnet: subnet) do
+      case create_(
+             %NetworkConfig{
+               name: default_network_name,
+               driver: "loopback",
+               ifname: if_name,
+               subnet: subnet
+             },
+             state
+           ) do
         {:ok, _} -> :ok
         {:error, "network name is already taken"} -> :ok
         {:error, reason} -> Logger.warn("Could not initialize default network: #{reason}")
@@ -133,8 +141,8 @@ defmodule Jocker.Engine.Network do
   end
 
   @impl true
-  def handle_call({:create, name, options}, _from, state) do
-    reply = create_(name, :loopback, state, options)
+  def handle_call({:create, options}, _from, state) do
+    reply = create_(options, state)
     {:reply, reply, state}
   end
 
@@ -189,13 +197,14 @@ defmodule Jocker.Engine.Network do
   ##########################
   ### Internal functions ###
   ##########################
-  def create_("host", _type, _state, _options) do
+  def create_(%NetworkConfig{name: "host"}, _state) do
     {:error, "network name 'host' is reserved and cannot be used"}
   end
 
-  def create_(name, :loopback, state, options) do
-    subnet = Keyword.get(options, :subnet)
-    if_name = Keyword.get(options, :ifname)
+  def create_(
+        %NetworkConfig{driver: "loopback", name: name, subnet: subnet, ifname: if_name},
+        state
+      ) do
     parsed_subnet = CIDR.parse(subnet)
 
     cond do
@@ -210,17 +219,17 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  def create_(_, _unknown_driver, _, _) do
-    {:error, "Unknown driver"}
+  def create_(%NetworkConfig{driver: unknown_driver}, _state) do
+    {:error, "Unknown driver #{inspect(unknown_driver)}"}
   end
 
-  defp connect_(_network, :not_found) do
-    Logger.warn("Could not connect container to network: container not found")
+  defp connect_(_container, :not_found) do
+    Logger.warn("Could not connect container to network: network not found")
     {:reply, {:error, "container not found"}}
   end
 
-  defp connect_(:not_found, _container) do
-    Logger.warn("Could not connect container to network: network not found")
+  defp connect_(:not_found, _netowrk) do
+    Logger.warn("Could not connect container to network: container not found")
     {:reply, {:error, "network not found"}}
   end
 
@@ -381,7 +390,8 @@ defmodule Jocker.Engine.Network do
       id: Utils.uuid(),
       name: name,
       subnet: subnet,
-      if_name: if_name
+      if_name: if_name,
+      driver: "loopback"
     }
 
     case ifconfig_loopback_create(if_name) do

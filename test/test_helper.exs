@@ -10,9 +10,33 @@ ExUnit.configure(
 )
 
 defmodule TestHelper do
-  def now() do
-    :timer.sleep(10)
-    DateTime.to_iso8601(DateTime.utc_now())
+  def create_container(name, config) when not is_map_key(config, :image) do
+    create_container(name, Map.put(config, :image, "base"))
+  end
+
+  def create_container(name, config) when not is_map_key(config, :jail_param) do
+    create_container(name, Map.put(config, :jail_param, ["mount.devfs=true"]))
+  end
+
+  def create_container(name, config) when not is_map_key(config, :networks) do
+    create_container(name, Map.put(config, :networks, ["default"]))
+  end
+
+  def create_container(name, config) do
+    {:ok, container_config} =
+      OpenApiSpex.Cast.cast(
+        Jocker.API.Schemas.ContainerConfig.schema(),
+        config
+      )
+
+    Container.create(name, container_config)
+  end
+
+  def start_attached_container(name, config) do
+    {:ok, %Container{id: id} = cont} = create_container(name, config)
+    :ok = Container.attach(id)
+    Container.start(id)
+    cont
   end
 
   def collect_container_output(id) do
@@ -25,6 +49,9 @@ defmodule TestHelper do
       {:container, ^id, {:shutdown, :jail_stopped}} ->
         output
 
+      {:container, ^id, {:jail_output, msg}} ->
+        collect_container_output_(id, [msg | output])
+
       {:container, ^id, msg} ->
         collect_container_output_(id, [msg | output])
 
@@ -33,6 +60,11 @@ defmodule TestHelper do
           "\nUnknown message received while collecting container output: #{inspect(unknown)}"
         )
     end
+  end
+
+  def now() do
+    :timer.sleep(10)
+    DateTime.to_iso8601(DateTime.utc_now())
   end
 
   def clear_zroot() do
@@ -64,6 +96,9 @@ defmodule TestHelper do
     receive do
       {:image_builder, ^pid, {:image_finished, img}} ->
         {img, Enum.reverse(msg_list)}
+
+      {:image_builder, ^pid, {:jail_output, msg}} ->
+        receive_imagebuilder_results(pid, [msg | msg_list])
 
       {:image_builder, ^pid, msg} ->
         receive_imagebuilder_results(pid, [msg | msg_list])

@@ -28,6 +28,7 @@ defmodule Jocker.Engine.Config do
     error_if_not_defined(cfg, "api_socket")
     error_if_not_defined(cfg, "base_layer_dataset")
     error_if_not_defined(cfg, "default_subnet")
+    error_if_not_defined(cfg, "default_loopback_name")
     valid_subnet_or_exit(cfg["default_subnet"])
     cfg = valid_api_socket(cfg)
     cfg = initialize_jocker_root(cfg)

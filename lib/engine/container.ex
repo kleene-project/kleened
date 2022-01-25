@@ -21,7 +21,8 @@ defmodule Jocker.Engine.Container do
 
   require Logger
   alias Jocker.Engine.{MetaData, Volume, Layer, Network, Image}
-  use GenServer
+  alias Jocker.API.Schemas.ContainerConfig
+  use GenServer, restart: :transient, shutdown: 10_000
 
   @type t() ::
           %Container{
@@ -37,16 +38,7 @@ defmodule Jocker.Engine.Container do
             created: String.t()
           }
 
-  @type create_opts() :: [
-          {:existing_container, String.t()}
-          | {:image, String.t()}
-          | {:name, String.t()}
-          | {:cmd, [String.t()]}
-          | {:user, String.t()}
-          | {:env, [String.t()]}
-          | {:networks, [String.t()]}
-          | {:jail_param, [String.t()]}
-        ]
+  @type create_opts() :: %ContainerConfig{}
 
   @type list_containers_opts :: [
           {:all, boolean()}
@@ -63,11 +55,9 @@ defmodule Jocker.Engine.Container do
     GenServer.start_link(__MODULE__, opts)
   end
 
-  @spec create(create_opts) :: {:ok, Container.t()} | :image_not_found
-  def create(options) do
-    Logger.debug("Creating container with opts: #{inspect(options)}")
-    image = MetaData.get_image(Keyword.get(options, :image, "base"))
-    create_(image, options)
+  @spec create(String.t(), create_opts) :: {:ok, Container.t()} | {:error, :image_not_found}
+  def create(name, options) do
+    create_(name, options)
   end
 
   @spec start(id_or_name()) :: {:ok, Container.t()} | {:error, :not_found}
@@ -75,34 +65,33 @@ defmodule Jocker.Engine.Container do
     cont = MetaData.get_container(id_or_name)
 
     case spawn_container(cont) do
-      {:ok, pid} -> GenServer.call(pid, {:start, cont, opts})
+      {:ok, pid} -> GenServer.call(pid, {:start, opts})
       other -> other
     end
   end
 
   @spec stop(id_or_name()) ::
-          {:ok, %Container{}} | {:error, :not_found} | {:error, :not_running}
+          {:ok, %Container{}} | {:error, :not_found} | {:error, :container_not_running}
   def stop(id_or_name) do
-    %Container{id: contaier_id} = cont = MetaData.get_container(id_or_name)
+    case MetaData.get_container(id_or_name) do
+      %Container{id: container_id} = cont ->
+        case is_running?(container_id) do
+          false ->
+            {:error, :container_not_running}
 
-    case is_running?(contaier_id) do
-      false ->
-        {:error, :not_running}
-
-      true ->
-        case spawn_container(cont) do
-          {:ok, pid} ->
+          true ->
+            {:ok, pid} = spawn_container(cont)
             reply = GenServer.call(pid, {:stop, cont})
             DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, pid)
             reply
-
-          other ->
-            other
         end
+
+      :not_found ->
+        {:error, :not_found}
     end
   end
 
-  @spec destroy(id_or_name()) :: :ok | {:error, :not_found}
+  @spec destroy(id_or_name()) :: {:ok, container_id()} | {:error, :not_found}
   def destroy(id_or_name) do
     cont = MetaData.get_container(id_or_name)
     destroy_(cont)
@@ -124,7 +113,7 @@ defmodule Jocker.Engine.Container do
         :ok
 
       :not_found ->
-        :not_found
+        {:error, :not_found}
     end
   end
 
@@ -147,43 +136,42 @@ defmodule Jocker.Engine.Container do
     {:reply, :ok, %State{state | subscribers: Enum.uniq([pid | subscribers])}}
   end
 
-  def handle_call({:start, cont, options}, _from, state) do
+  def handle_call({:start, options}, _from, state) do
     case is_running?(state.container_id) do
       true ->
-        {:reply, :already_started, state}
+        {:reply, {:error, :already_started}, state}
 
       false ->
-        port = start_(options, cont)
+        {port, cont} = start_(options, MetaData.get_container(state.container_id))
         {:reply, {:ok, cont}, %State{state | :starting_port => port}}
     end
   end
 
   @impl true
-  def handle_info({port, {:data, msg}}, %State{:starting_port => port} = state) do
-    Logger.debug("Msg from jail-port: #{inspect(msg)}")
-    relay_msg(msg, state)
+  def handle_info({port, {:data, jail_output}}, %State{:starting_port => port} = state) do
+    Logger.debug("Msg from jail-port: #{inspect(jail_output)}")
+    relay_msg({:jail_output, jail_output}, state)
     {:noreply, state}
   end
 
   def handle_info({port, {:exit_status, _}}, %State{:starting_port => port} = state) do
-    Logger.debug("#{inspect(self())}Jail-starting process exited.")
-
-    cont = MetaData.get_container(state.container_id)
-
     case is_running?(state.container_id) do
       false ->
-        shutdown_container(cont)
+        cont = MetaData.get_container(state.container_id)
+        jail_cleanup(cont)
+        updated_container = %Container{cont | pid: ""}
+        MetaData.add_container(updated_container)
+        Logger.debug("container #{inspect(state.container_id)} stopped")
         relay_msg({:shutdown, :jail_stopped}, state)
-        DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, self())
-        {:noreply, %State{}}
 
       true ->
         # Since the jail-starting process is stopped no messages will be sent to Jocker.
         # This happens when, e.g., a full-blow vm-jail has been started (using /etc/rc)
-        relay_msg({:shutdown, :end_of_ouput}, state)
-        DynamicSupervisor.terminate_child(Jocker.Engine.ContainerPool, self())
-        {:noreply, %State{state | :starting_port => nil}}
+        Logger.debug("container #{inspect(state.container_id)}'s creator process exited")
+        relay_msg({:shutdown, :jail_root_process_exited}, state)
     end
+
+    {:stop, :shutdown, %State{state | :starting_port => nil}}
   end
 
   def handle_info(unknown_msg, state) do
@@ -194,54 +182,68 @@ defmodule Jocker.Engine.Container do
   ### ===================================================================
   ### Internal functions
   ### ===================================================================
-  defp create_(:not_found, _), do: :image_not_found
-
   defp create_(
-         %Image{
-           id: image_id,
-           user: default_user,
-           command: default_cmd,
-           layer_id: parent_layer_id,
-           env_vars: img_env_vars
-         },
-         opts
+         name,
+         %ContainerConfig{
+           image: image_name,
+           user: user,
+           env: env_vars,
+           networks: networks,
+           volumes: volumes,
+           cmd: command,
+           jail_param: jail_param
+         } = container_config
        ) do
-    container_id = Jocker.Engine.Utils.uuid()
+    case MetaData.get_image(image_name) do
+      :not_found ->
+        {:error, :image_not_found}
 
-    parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
-    %Layer{id: layer_id} = Layer.new(parent_layer, container_id)
+      %Image{
+        id: image_id,
+        user: image_user,
+        command: image_command,
+        layer_id: parent_layer_id,
+        env_vars: img_env_vars
+      } ->
+        Logger.debug("creating container with config: #{inspect(container_config)}")
+        container_id = Jocker.Engine.Utils.uuid()
 
-    # Extract values from options:
-    command = Keyword.get(opts, :cmd, default_cmd)
-    user = Keyword.get(opts, :user, default_user)
-    jail_param = Keyword.get(opts, :jail_param, [])
-    name = Keyword.get(opts, :name, Jocker.Engine.NameGenerator.new())
-    env_vars = Keyword.get(opts, :env, []) ++ img_env_vars
+        parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
+        %Layer{id: layer_id} = Layer.new(parent_layer, container_id)
+        env_vars = merge_environment_variable_lists(img_env_vars, env_vars)
 
-    network_idnames =
-      Keyword.get(opts, :networks, [Jocker.Engine.Config.get("default_network_name")])
+        command =
+          case command do
+            [] -> image_command
+            _ -> command
+          end
 
-    cont = %Container{
-      id: container_id,
-      name: name,
-      command: command,
-      layer_id: layer_id,
-      image_id: image_id,
-      user: user,
-      parameters: jail_param,
-      env_vars: env_vars,
-      created: DateTime.to_iso8601(DateTime.utc_now())
-    }
+        user =
+          case user do
+            "" -> image_user
+            _ -> user
+          end
 
-    # Mount volumes into container (if any have been provided)
-    bind_volumes(opts, cont)
+        cont = %Container{
+          id: container_id,
+          name: name,
+          command: command,
+          layer_id: layer_id,
+          image_id: image_id,
+          user: user,
+          parameters: jail_param,
+          env_vars: env_vars,
+          created: DateTime.to_iso8601(DateTime.utc_now())
+        }
 
-    # Store new container and connect to the networks
-    MetaData.add_container(cont)
-    # FIXME: This hangs while building a simple image
-    # Looks like it can't find the network for some reason:
-    Enum.map(network_idnames, &Network.connect(container_id, &1))
-    {:ok, MetaData.get_container(container_id)}
+        # Mount volumes into container (if any have been provided)
+        bind_volumes(volumes, cont)
+
+        # Store new container and connect to the networks
+        MetaData.add_container(cont)
+        Enum.map(networks, &Network.connect(container_id, &1))
+        {:ok, MetaData.get_container(container_id)}
+    end
   end
 
   defp start_(
@@ -255,9 +257,12 @@ defmodule Jocker.Engine.Container do
            env_vars: env_vars
          } = cont
        ) do
+    Logger.info("Starting container #{inspect(cont.id)}")
+
     command = Keyword.get(options, :cmd, default_cmd)
     user = Keyword.get(options, :user, default_user)
-    MetaData.add_container(%Container{cont | user: user, command: command})
+    cont_upd = %Container{cont | user: user, command: command}
+    MetaData.add_container(cont_upd)
 
     network_config =
       case MetaData.connected_networks(id) do
@@ -286,7 +291,7 @@ defmodule Jocker.Engine.Container do
       )
 
     Logger.info("Succesfully started jail-port: #{inspect(port)}")
-    port
+    {port, cont_upd}
   end
 
   defp stop_(:not_found, _state), do: {:error, :not_found}
@@ -315,7 +320,7 @@ defmodule Jocker.Engine.Container do
     Volume.destroy_mounts(cont)
     MetaData.delete_container(container_id)
     Layer.destroy(layer_id)
-    :ok
+    {:ok, container_id}
   end
 
   @spec list_([list_containers_opts()]) :: [%{}]
@@ -361,6 +366,25 @@ defmodule Jocker.Engine.Container do
     MetaData.add_container(updated_container)
   end
 
+  defp merge_environment_variable_lists(envlist1, envlist2) do
+    # list2 overwrites environment varibles from list1
+    map1 = env_vars2map(envlist1)
+    map2 = env_vars2map(envlist2)
+    Map.merge(map1, map2) |> map2env_vars()
+  end
+
+  defp env_vars2map(envs) do
+    convert = fn envvar ->
+      {name, value} = List.to_tuple(String.split(envvar, "=", parts: 2))
+    end
+
+    Map.new(Enum.map(envs, convert))
+  end
+
+  defp map2env_vars(env_map) do
+    Map.to_list(env_map) |> Enum.map(fn {name, value} -> Enum.join([name, value], "=") end)
+  end
+
   def extract_ips(container_id, network_id, ip_list) do
     config = MetaData.get_endpoint_config(container_id, network_id)
     Enum.concat(config.ip_addresses, ip_list)
@@ -375,12 +399,12 @@ defmodule Jocker.Engine.Container do
     end
   end
 
-  defp bind_volumes(options, container) do
-    Enum.map(options, fn vol -> bind_volumes_(vol, container) end)
+  defp bind_volumes(volumes, container) do
+    Enum.map(volumes, fn vol -> bind_volumes_(vol, container) end)
   end
 
-  defp bind_volumes_({:volume, vol_raw}, cont) do
-    case String.split(vol_raw, ":") do
+  defp bind_volumes_(volume_raw, cont) do
+    case String.split(volume_raw, ":") do
       [<<"/", _::binary>> = location] ->
         # anonymous volume
         create_and_bind("", location, [ro: false], cont)
@@ -396,16 +420,15 @@ defmodule Jocker.Engine.Container do
       [name, location] ->
         # named volume
         create_and_bind(name, location, [ro: false], cont)
-    end
-  end
 
-  defp bind_volumes_(_, _cont) do
-    :ok
+      _ ->
+        {:error, "could not decode volume specfication string"}
+    end
   end
 
   defp create_and_bind("", location, opts, cont) do
     name = Jocker.Engine.Utils.uuid()
-    vol = Volume.create_volume(name)
+    vol = Volume.create(name)
     Volume.bind_volume(cont, vol, location, opts)
   end
 
