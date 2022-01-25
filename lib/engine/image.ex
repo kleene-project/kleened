@@ -111,7 +111,7 @@ defmodule Jocker.Engine.Image do
 
     {:ok, container_config} =
       OpenApiSpex.Cast.cast(
-        Jocker.Engine.API.Schemas.ContainerConfig.schema(),
+        Jocker.API.Schemas.ContainerConfig.schema(),
         %{
           jail_param: ["mount.devfs=true"],
           image: image_id,

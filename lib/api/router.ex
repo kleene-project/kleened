@@ -1,11 +1,11 @@
-defmodule Jocker.Engine.API.Router do
+defmodule Jocker.API.Router do
   use Plug.Router
   use Plug.Debugger
   require Logger
-  alias Jocker.Engine.API
+  alias Jocker.API
 
   plug(Plug.Logger, log: :debug)
-  plug(OpenApiSpex.Plug.PutApiSpec, module: Jocker.Engine.API.Spec)
+  plug(OpenApiSpex.Plug.PutApiSpec, module: Jocker.API.Spec)
   plug(:match)
   plug(:dispatch)
 
@@ -44,7 +44,7 @@ defmodule Jocker.Engine.API.Router do
        [
          {"/containers/:container_id/attach", Jocker.Engine.HTTPContainerAttach, []},
          {"/images/build", Jocker.Engine.HTTPImageBuild, []},
-         {:_, Plug.Cowboy.Handler, {Jocker.Engine.API.Router, []}}
+         {:_, Plug.Cowboy.Handler, {Jocker.API.Router, []}}
        ]}
     ]
   end

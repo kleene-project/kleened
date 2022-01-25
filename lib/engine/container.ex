@@ -21,7 +21,7 @@ defmodule Jocker.Engine.Container do
 
   require Logger
   alias Jocker.Engine.{MetaData, Volume, Layer, Network, Image}
-  alias Jocker.Engine.API.Schemas.ContainerConfig
+  alias Jocker.API.Schemas.ContainerConfig
   use GenServer, restart: :transient, shutdown: 10_000
 
   @type t() ::

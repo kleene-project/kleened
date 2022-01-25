@@ -1,6 +1,6 @@
-defmodule Jocker.Engine.API.Spec do
+defmodule Jocker.API.Spec do
   alias OpenApiSpex.{Info, OpenApi}
-  alias Jocker.Engine.API
+  alias Jocker.API
   @behaviour OpenApi
 
   @impl OpenApi

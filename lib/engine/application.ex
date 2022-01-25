@@ -29,7 +29,7 @@ defmodule Jocker.Engine.Application do
       {Plug.Cowboy,
        scheme: :http,
        plug: NotUsed,
-       options: [port: 8085, dispatch: Jocker.Engine.API.Router.dispatch()]}
+       options: [port: 8085, dispatch: Jocker.API.Router.dispatch()]}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

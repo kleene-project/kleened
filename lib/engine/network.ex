@@ -1,7 +1,7 @@
 defmodule Jocker.Engine.Network do
   use GenServer
   alias Jocker.Engine.{Config, Container, Utils, MetaData}
-  alias Jocker.Engine.API.Schemas.NetworkConfig
+  alias Jocker.API.Schemas.NetworkConfig
   require Logger
 
   @derive Jason.Encoder

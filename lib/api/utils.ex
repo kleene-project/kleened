@@ -1,4 +1,4 @@
-defmodule Jocker.Engine.API.Utils do
+defmodule Jocker.API.Utils do
   def error_response(msg) do
     Jason.encode!(%{message: msg})
   end

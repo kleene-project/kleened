@@ -1,8 +1,8 @@
-defmodule Jocker.Engine.API.Image do
+defmodule Jocker.API.Image do
   alias OpenApiSpex.{Operation, Schema}
   alias Jocker.Engine
-  alias Jocker.Engine.API.Utils
-  alias Jocker.Engine.API.Schemas
+  alias Jocker.API.Utils
+  alias Jocker.API.Schemas
   require Logger
 
   import OpenApiSpex.Operation,

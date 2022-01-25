@@ -1,8 +1,8 @@
-defmodule Jocker.Engine.API.Volume do
+defmodule Jocker.API.Volume do
   # FIXME:
   #  - autogenerate and add to jcli
   alias OpenApiSpex.{Operation, Schema}
-  alias Jocker.Engine.API.Schemas
+  alias Jocker.API.Schemas
   alias Jocker.Engine.Volume
   require Logger
 
@@ -45,7 +45,7 @@ defmodule Jocker.Engine.API.Volume do
 
   defmodule Create do
     use Plug.Builder
-    alias Jocker.Engine.API.Utils
+    alias Jocker.API.Utils
 
     plug(Plug.Parsers,
       parsers: [:json],
@@ -89,7 +89,7 @@ defmodule Jocker.Engine.API.Volume do
 
   defmodule Remove do
     use Plug.Builder
-    alias Jocker.Engine.API.Utils
+    alias Jocker.API.Utils
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,

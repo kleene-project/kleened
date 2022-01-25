@@ -1,7 +1,7 @@
-defmodule Jocker.Engine.API.Container do
+defmodule Jocker.API.Container do
   alias OpenApiSpex.{Operation, Schema}
   alias Jocker.Engine.Container
-  alias Jocker.Engine.API.Schemas
+  alias Jocker.API.Schemas
   require Logger
 
   import OpenApiSpex.Operation,
@@ -60,7 +60,7 @@ defmodule Jocker.Engine.API.Container do
 
   defmodule Create do
     use Plug.Builder
-    alias Jocker.Engine.API.Utils
+    alias Jocker.API.Utils
 
     plug(Plug.Parsers,
       parsers: [:json],
@@ -125,7 +125,7 @@ defmodule Jocker.Engine.API.Container do
 
   defmodule Remove do
     use Plug.Builder
-    alias Jocker.Engine.API.Utils
+    alias Jocker.API.Utils
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,
@@ -181,7 +181,7 @@ defmodule Jocker.Engine.API.Container do
 
   defmodule Start do
     use Plug.Builder
-    alias Jocker.Engine.API.Utils
+    alias Jocker.API.Utils
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,
@@ -237,7 +237,7 @@ defmodule Jocker.Engine.API.Container do
 
   defmodule Stop do
     use Plug.Builder
-    alias Jocker.Engine.API.Utils
+    alias Jocker.API.Utils
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,

@@ -1,7 +1,7 @@
 defmodule NetworkTest do
   use ExUnit.Case
   alias Jocker.Engine.{Network, Config, Utils, MetaData, Container}
-  alias Jocker.Engine.API.Schemas.NetworkConfig
+  alias Jocker.API.Schemas.NetworkConfig
 
   test "default interface is not defined at startup" do
     Utils.destroy_interface("jocker0")

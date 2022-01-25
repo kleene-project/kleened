@@ -25,7 +25,7 @@ defmodule TestHelper do
   def create_container(name, config) do
     {:ok, container_config} =
       OpenApiSpex.Cast.cast(
-        Jocker.Engine.API.Schemas.ContainerConfig.schema(),
+        Jocker.API.Schemas.ContainerConfig.schema(),
         config
       )
 

@@ -1,4 +1,4 @@
-defmodule Jocker.Engine.API.Schemas do
+defmodule Jocker.API.Schemas do
   require OpenApiSpex
   alias OpenApiSpex.Schema
 
