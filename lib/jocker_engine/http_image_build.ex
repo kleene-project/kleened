@@ -52,7 +52,7 @@ defmodule Jocker.Engine.HTTPImageBuild do
     end
   end
 
-  def websocket_handle({:text, "ping"}, state) do
+  def websocket_handle({:ping, _}, state) do
     # ping messages should be handled by cowboy
     {:ok, state}
   end
