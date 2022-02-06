@@ -1,20 +1,19 @@
 defmodule Jocker.Engine.Exec do
   alias Jocker.API.Schemas.ExecConfig
-  alias Jocker.Engine.{MetaData, Volume, Layer, Network, Image, Utils, ExecInstances}
+  alias Jocker.Engine.{Container, MetaData, Layer, Utils, ExecInstances}
 
   defmodule State do
     defstruct config: nil,
               exec_id: nil,
               subscribers: nil,
+              container: :not_started,
               port: nil
   end
 
-  alias __MODULE__, as: Exec
+  require Logger
   use GenServer, restart: :transient
 
   # Todos:
-  # - Need to create a "exec_instance" table in MetaData
-  #   - it needs to store exec config + is-it-the-jail-starting-exec
   # questions:
   # - You can attach to a exec instance before it is started.
   #   Where do we store info about processes that wants to received io-data,
@@ -24,33 +23,53 @@ defmodule Jocker.Engine.Exec do
   #    - merge start and attach into one call (which is then going to use a ws in case it needs to be attached)
 
   @type execution_config() :: %ExecConfig{}
+  @type start_options() :: %{:attach => boolean(), :start_container => boolean()}
+  @type stop_options() :: %{:force_stop => boolean(), :stop_container => boolean()}
+  @type container() :: %Container{}
 
   @type exec_id() :: String.t()
+  @type container_id() :: String.t()
 
-  @spec create(execution_config()) :: {:ok, exec_id()} | {:error, String.t()}
-  def create(config) do
-    exec_id = Utils.uuid()
-    name = {:via, Registry, {ExecInstances, exec_id, config.container_id}}
-    {:ok, _pid} = GenServer.start_link(Jocker.Engine.Exec, [exec_id, config], name: name)
-    exec_id
+  @spec create(execution_config() | container_id()) :: {:ok, exec_id()} | {:error, String.t()}
+  def create(container_id) when is_binary(container_id) do
+    config = %ExecConfig{container_id: container_id, cmd: [], env: [], user: ""}
+    create(config)
   end
 
-  @spec start(exec_id()) :: :ok | {:error, String.t()}
-  def start(exec_id, %{:attach => attach}) do
-    case Registry.lookup(ExecInstances, exec_id) do
-      [{pid, _container_id}] ->
-        GenServer.call(pid, :start)
+  def create(%ExecConfig{container_id: container_idname} = config) do
+    exec_id = Utils.uuid()
 
-      [] ->
-        {:error, "could not find a execution instance matching #{exec_id}"}
+    case MetaData.get_container(container_idname) do
+      %Container{id: container_id} ->
+        name = {:via, Registry, {ExecInstances, exec_id, container_id}}
+        {:ok, _pid} = GenServer.start_link(Jocker.Engine.Exec, [exec_id, config], name: name)
+        # Process.unlink(pid)
+        {:ok, exec_id}
+
+      :not_found ->
+        {:error, "conntainer not found"}
     end
   end
 
-  @spec stop(exec_id()) :: :ok | {:error, String.t()}
-  def stop(exec_id) do
+  @spec start(exec_id(), start_options()) :: :ok | {:error, String.t()}
+  def start(exec_id, opts) do
+    if opts.attach do
+      call(exec_id, {:attach, self()})
+    end
+
+    call(exec_id, {:start, opts})
+  end
+
+  @spec stop(exec_id(), stop_options) :: :ok | {:error, String.t()}
+  def stop(exec_id, opts) do
+    # Stopping is automatically destroying the execution instance
+    call(exec_id, {:stop, opts})
+  end
+
+  defp call(exec_id, command) do
     case Registry.lookup(ExecInstances, exec_id) do
       [{pid, _container_id}] ->
-        GenServer.call(pid, :stop)
+        GenServer.call(pid, command)
 
       [] ->
         {:error, "could not find a execution instance matching #{exec_id}"}
@@ -66,35 +85,38 @@ defmodule Jocker.Engine.Exec do
   end
 
   @impl true
-  def handle_call(:stop, _from, %State{port: nil} = state) do
-    # - lookup exec instance
-    # - stop it (but not stopping the jail
-    {:reply, {:error, "already stopped"}, state}
+  def handle_call({:stop, _}, _from, %State{port: nil} = state) do
+    reply = {:ok, "execution instance not running, removing it anyway"}
+    {:reply, reply, state}
   end
 
-  def handle_call(:stop, _from, %State{port: port} = state) do
-    Port.close(port)
-    {:reply, :ok, state}
+  def handle_call({:stop, %{stop_container: true}}, _from, state) do
+    reply = stop_container_(state)
+    {:reply, reply, state}
+  end
+
+  def handle_call({:stop, %{stop_container: false} = opts}, _from, state) do
+    reply = stop_executable(state, opts)
+    {:reply, reply, state}
   end
 
   def handle_call({:attach, pid}, _from, %State{subscribers: subscribers} = state) do
     {:reply, :ok, %State{state | subscribers: Enum.uniq([pid | subscribers])}}
   end
 
-  def handle_call(:start, _from, state) do
-    # - verify if jail is running or not
-    # - check if it is already executing (i.e., lookup in registry)
-    # - start it, if it is not already started
+  def handle_call({:start, _opts}, _from, %State{port: port} = state)
+      when is_port(port) do
+    reply = {:error, "executable already started"}
+    {:reply, reply, state}
+  end
 
-    # - lookup container
-    # - merge container-conf with the conf supplied here
-    # - generate id and save metadata
-    case start_(state.config) do
+  def handle_call({:start, %{start_container: start_container}}, _from, %State{port: nil} = state) do
+    case start_(state.config, start_container) do
       {:error, _reason} = msg ->
         {:reply, msg, state}
 
-      {:ok, port} when is_port(port) ->
-        {:reply, :ok, %State{state | :port => port}}
+      {:ok, port, container} when is_port(port) ->
+        {:reply, :ok, %State{state | container: container, port: port}}
     end
   end
 
@@ -107,33 +129,247 @@ defmodule Jocker.Engine.Exec do
 
   def handle_info(
         {port, {:exit_status, exit_code}},
-        %State{port: port, config: config} = state
+        %State{port: port, config: config, container: cont} = state
       ) do
     case is_jail_running?(config.container_id) do
       false ->
-        jail_cleanup(cont)
+        msg = "container #{config.container_id} stopped with exit code #{exit_code}"
+        Logger.debug(msg)
 
-        Logger.debug(
-          "container #{inspect(config.container_id)} stopped with exit code #{exit_code}"
-        )
+        jail_cleanup(cont)
 
         relay_msg({:shutdown, :jail_stopped}, state)
 
       true ->
-        Logger.debug(
-          "execution instance #{inspect(state.exec_id)} stopped with exit code #{exit_code}"
-        )
+        msg = "execution instance #{state.exec_id} stopped with exit code #{exit_code}"
+        Logger.debug(msg)
 
         # FIXME rename atom :jail_root_process_exited
         relay_msg({:shutdown, :jail_root_process_exited}, state)
     end
 
-    {:stop, :shutdown, %State{state | :starting_port => nil}}
+    {:stop, :normal, %State{state | :port => nil}}
   end
 
   def handle_info(unknown_msg, state) do
     Logger.warn("Unknown message: #{inspect(unknown_msg)}")
     {:noreply, state}
+  end
+
+  defp stop_container_(%State{config: %{container_id: container_id}} = state) do
+    case is_jail_running?(container_id) do
+      true ->
+        Logger.debug("Shutting down jail #{container_id}")
+
+        {output, exit_code} =
+          System.cmd("/usr/sbin/jail", ["-r", container_id], stderr_to_stdout: true)
+
+        relay_msg({:shutdown, :jail_stopped}, state)
+
+        case {output, exit_code} do
+          {output, 0} ->
+            Logger.info("Stopped jail #{container_id} with exitcode #{exit_code}: #{output}")
+            {:ok, "succesfully closed container"}
+
+          {output, _} ->
+            Logger.warn("Stopped jail #{container_id} with exitcode #{exit_code}: #{output}")
+            msg = "/usr/sbin/jail exited abnormally with exit code #{exit_code}: '#{output}'"
+            {:error, msg}
+        end
+
+      false ->
+        {:error, "container is not running"}
+    end
+  end
+
+  defp stop_executable(state, opts) do
+    jailed_process_pid = get_pid_of_jailed_process(state.port)
+
+    cmd_args =
+      case opts do
+        %{force_stop: true} -> ["-9", Integer.to_string(jailed_process_pid)]
+        %{force_stop: false} -> [Integer.to_string(jailed_process_pid)]
+      end
+
+    case System.cmd("/bin/kill", cmd_args) do
+      {_, 0} ->
+        {:ok, "succesfully sent termination signal to executable"}
+
+      {output, non_zero} ->
+        Logger.warn(
+          "Could not kill process, kill exited with code #{non_zero} and output: #{output}"
+        )
+
+        {:error, "error closing process: #{output}"}
+    end
+  end
+
+  defp get_pid_of_jailed_process(port) do
+    # ps --libxo json -o user,pid,ppid,command -d  -ax -p 2138
+    # {"process-information":
+    #   {"process": [
+    #     {"user":"root","pid":"2138","ppid":"2137","command":"jail -c command=/bin/sh -c /bin/sleep 10"},
+    #     {"user":"root","pid":"2139","ppid":"2138","command":"- /bin/sleep 10"}
+    #   ]}
+    jail_pid = port |> Port.info() |> Keyword.get(:os_pid)
+
+    {jailed_processes, 0} =
+      System.cmd("/bin/ps", ~w"--libxo json -o user,pid,ppid,command -d  -ax -p #{jail_pid}")
+
+    %{"process-information" => %{"process" => processes}} = Jason.decode!(jailed_processes)
+
+    # Locate the process that have our port (i.e. /sbin/jail) as parent.
+    [jailed_pid] =
+      processes
+      |> Enum.filter(fn %{"ppid" => ppid} -> ppid == jail_pid end)
+      |> Enum.map(fn %{"pid" => pid} -> pid end)
+
+    jailed_pid
+  end
+
+  defp start_(config, start_container) do
+    case MetaData.get_container(config.container_id) do
+      %Container{} = cont ->
+        cont = merge_configurations(cont, config)
+
+        case {is_jail_running?(cont.id), start_container} do
+          {true, _} ->
+            port = jexec_container(cont)
+            {:ok, port, cont}
+
+          {false, true} ->
+            port = jail_start_container(cont)
+            {:ok, port, cont}
+
+          {false, false} ->
+            {:error, "cannot start container when 'start_container' is false."}
+        end
+
+      :not_found ->
+        {:error, "container not found"}
+    end
+  end
+
+  defp merge_configurations(
+         %Container{
+           command: default_cmd,
+           user: default_user,
+           env_vars: default_env
+         } = cont,
+         %ExecConfig{
+           cmd: exec_cmd,
+           user: exec_user,
+           env: exec_env
+         }
+       ) do
+    env = Utils.merge_environment_variable_lists(default_env, exec_env)
+
+    cmd =
+      case exec_cmd do
+        [] -> default_cmd
+        _ -> exec_cmd
+      end
+
+    user =
+      case exec_user do
+        "" -> default_user
+        _ -> exec_user
+      end
+
+    %Container{cont | user: user, command: cmd, env_vars: env}
+  end
+
+  defp jail_cleanup(%Container{layer_id: layer_id}) do
+    %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
+
+    # remove any devfs mounts of the jail. If it was closed with 'jail -r <jailname>' devfs should be removed automatically.
+    # If the jail stops because there jailed process stops (i.e. 'jail -c <etc> /bin/sleep 10') then devfs is NOT removed.
+    # A race condition can also occur such that "jail -r" does not unmount before this call to mount.
+    {output, _exitcode} = System.cmd("mount", ["-t", "devfs"], stderr_to_stdout: true)
+    output |> String.split("\n") |> Enum.map(&umount_container_devfs(&1, mountpoint))
+  end
+
+  defp jexec_container(%Container{
+         id: container_id,
+         command: cmd,
+         user: user,
+         env_vars: env_vars
+       }) do
+    # jexec [-l] [-u username | -U username] jail [command ...]
+    args = ~w"-l -u #{user} #{container_id} /usr/bin/env -i" ++ env_vars ++ cmd
+
+    port =
+      Port.open(
+        {:spawn_executable, '/usr/sbin/jexec'},
+        [:stderr_to_stdout, :binary, :exit_status, {:args, args}]
+      )
+
+    Logger.debug("Executing /usr/sbin/jexec #{Enum.join(args, " ")}")
+    port
+  end
+
+  defp jail_start_container(
+         %Container{
+           id: id,
+           layer_id: layer_id,
+           command: command,
+           user: user,
+           parameters: parameters,
+           env_vars: env_vars
+         } = cont
+       ) do
+    Logger.info("Starting container #{inspect(cont.id)}")
+
+    network_config =
+      case MetaData.connected_networks(id) do
+        ["host"] ->
+          "ip4=inherit"
+
+        network_ids ->
+          ips = Enum.reduce(network_ids, [], &extract_ips(id, &1, &2))
+          ips_as_string = Enum.join(ips, ",")
+          "ip4.addr=#{ips_as_string}"
+      end
+
+    %Layer{mountpoint: path} = Jocker.Engine.MetaData.get_layer(layer_id)
+
+    args =
+      ~w"-c path=#{path} name=#{id} #{network_config}" ++
+        parameters ++
+        ~w"exec.jail_user=#{user} command=/usr/bin/env -i" ++ env_vars ++ command
+
+    Logger.debug("Executing /usr/sbin/jail #{Enum.join(args, " ")}")
+
+    port =
+      Port.open(
+        {:spawn_executable, '/usr/sbin/jail'},
+        [:stderr_to_stdout, :binary, :exit_status, {:args, args}]
+      )
+
+    port
+  end
+
+  def extract_ips(container_id, network_id, ip_list) do
+    config = MetaData.get_endpoint_config(container_id, network_id)
+    Enum.concat(config.ip_addresses, ip_list)
+  end
+
+  defp relay_msg(msg, state) do
+    wrapped_msg = {:container, state.exec_id, msg}
+    Enum.map(state.subscribers, fn x -> Process.send(x, wrapped_msg, []) end)
+  end
+
+  defp umount_container_devfs(line, mountpoint) do
+    devfs_path = Path.join(mountpoint, "dev")
+
+    case String.split(line, " ") do
+      ["devfs", "on", ^devfs_path | _rest] ->
+        {msg, n} = System.cmd("/sbin/umount", [devfs_path], stderr_to_stdout: true)
+        Logger.info("unmounting #{devfs_path} with status code #{n} and msg #{msg}")
+
+      _ ->
+        :ok
+    end
   end
 
   defp is_jail_running?(container_id) do

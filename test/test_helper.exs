@@ -1,4 +1,4 @@
-alias Jocker.Engine.{ZFS, Config, Container, Layer}
+alias Jocker.Engine.{ZFS, Config, Container, Layer, Exec}
 require Logger
 
 ExUnit.start()
@@ -33,10 +33,10 @@ defmodule TestHelper do
   end
 
   def start_attached_container(name, config) do
-    {:ok, %Container{id: id} = cont} = create_container(name, config)
-    :ok = Container.attach(id)
-    Container.start(id)
-    cont
+    {:ok, %Container{id: container_id} = cont} = create_container(name, config)
+    {:ok, exec_id} = Exec.create(container_id)
+    :ok = Exec.start(exec_id, %{attach: true, start_container: true})
+    {cont, exec_id}
   end
 
   def collect_container_output(id) do

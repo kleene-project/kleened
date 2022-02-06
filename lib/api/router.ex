@@ -42,8 +42,8 @@ defmodule Jocker.API.Router do
     [
       {:_,
        [
-         {"/containers/:container_id/attach", Jocker.Engine.HTTPContainerAttach, []},
-         {"/images/build", Jocker.Engine.HTTPImageBuild, []},
+         {"/exec/:exec_id/start", Jocker.API.ExecStart, []},
+         {"/images/build", Jocker.API.ImageBuild, []},
          {:_, Plug.Cowboy.Handler, {Jocker.API.Router, []}}
        ]}
     ]

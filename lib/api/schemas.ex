@@ -89,9 +89,10 @@ defmodule Jocker.API.Schemas do
           default: [],
           example: ["DEBUG=0", "LANG=da_DK.UTF-8"]
         },
-        ensure_started: %Schema{
+        # FIXME: This is actually not part of this. Will be part of the "exec/{exec_id}/start" endpoint
+        start_container: %Schema{
           description:
-            "If this is set to false the execution instance cannot be started if no other processes are already running in the container.",
+            "If this is set to true the container is started if it is not already running.",
           type: :boolean
         }
       }

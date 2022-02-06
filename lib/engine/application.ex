@@ -24,7 +24,7 @@ defmodule Jocker.Engine.Application do
       Jocker.Engine.MetaData,
       Jocker.Engine.Layer,
       Jocker.Engine.Network,
-      {Registry, keys: :unique, name: Registry.ExecInstances},
+      {Registry, keys: :unique, name: Jocker.Engine.ExecInstances},
       {DynamicSupervisor,
        name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0},
       {Plug.Cowboy,

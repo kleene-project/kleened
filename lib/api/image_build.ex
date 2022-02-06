@@ -1,4 +1,4 @@
-defmodule Jocker.Engine.HTTPImageBuild do
+defmodule Jocker.API.ImageBuild do
   alias Jocker.Engine.Image
   require Logger
 
