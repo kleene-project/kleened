@@ -24,13 +24,17 @@ defmodule Jocker.API.Spec do
           OpenApiSpex.PathItem.from_routes([
             %{verb: :delete, plug: API.Container.Remove, opts: []}
           ]),
-        "/containers/{container_id}/start" =>
+        "/exec/create" =>
           OpenApiSpex.PathItem.from_routes([
-            %{verb: :post, plug: API.Container.Start, opts: []}
+            %{verb: :post, plug: API.Exec.Create, opts: []}
           ]),
-        "/containers/{container_id}/stop" =>
+        "/exec/{exec_id}/start" =>
           OpenApiSpex.PathItem.from_routes([
-            %{verb: :post, plug: API.Container.Stop, opts: []}
+            %{verb: :post, plug: API.Exec.Start, opts: []}
+          ]),
+        "/exec/{exec_id}/stop" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :post, plug: API.Exec.Stop, opts: []}
           ]),
         "/images/list" =>
           OpenApiSpex.PathItem.from_routes([

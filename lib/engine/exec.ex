@@ -72,7 +72,7 @@ defmodule Jocker.Engine.Exec do
         GenServer.call(pid, command)
 
       [] ->
-        {:error, "could not find a execution instance matching #{exec_id}"}
+        {:error, "could not find a execution instance matching '#{exec_id}'"}
     end
   end
 
@@ -84,6 +84,8 @@ defmodule Jocker.Engine.Exec do
     {:ok, %State{exec_id: exec_id, config: config, subscribers: []}}
   end
 
+  # FIXME: Should we stop the erlang process when stopping container/executable?
+  # In case the erlang-process is spawn'ed (using create) but haven't been Exec.start()'ed it will linger forever
   @impl true
   def handle_call({:stop, _}, _from, %State{port: nil} = state) do
     reply = {:ok, "execution instance not running, removing it anyway"}
@@ -178,7 +180,7 @@ defmodule Jocker.Engine.Exec do
         end
 
       false ->
-        {:error, "container is not running"}
+        {:error, "container not running"}
     end
   end
 
