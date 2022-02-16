@@ -18,7 +18,7 @@ defmodule Jocker.API.Exec do
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,
-      operation_id: "Container.Create"
+      operation_id: "Exec.Create"
     )
 
     plug(:create)
@@ -26,16 +26,7 @@ defmodule Jocker.API.Exec do
     def open_api_operation(_) do
       %Operation{
         summary: "Create an execution instance",
-        operationId: "Container.Create",
-        parameters: [
-          parameter(
-            :container_id,
-            :query,
-            %Schema{type: :string},
-            "id (or unique initial segment of the id) or name of the container.",
-            required: true
-          )
-        ],
+        operationId: "Exec.Create",
         requestBody:
           request_body(
             "Configuration to use when creating the execution instance",
@@ -52,15 +43,13 @@ defmodule Jocker.API.Exec do
     end
 
     def create(conn, _opts) do
-      conn = Plug.Conn.fetch_query_params(conn)
       conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
 
-      container_id = conn.query_params["container_id"]
       exec_config = conn.body_params
 
-      case Exec.create(container_id, exec_config) do
+      case Exec.create(exec_config) do
         {:ok, exec_id} ->
-          send_resp(conn, 201, Utils.id_response(id))
+          send_resp(conn, 201, Utils.id_response(exec_id))
 
         {:error, msg} ->
           send_resp(conn, 404, Utils.error_response(msg))
@@ -111,7 +100,7 @@ defmodule Jocker.API.Exec do
           )
         ],
         responses: %{
-          204 => response("no error"),
+          200 => response("no error", "application/json", Schemas.IdResponse),
           404 =>
             response("no such container", "application/json", Schemas.ErrorResponse,
               example: %{message: "container not running"}
@@ -123,20 +112,19 @@ defmodule Jocker.API.Exec do
 
     def stop(conn, _opts) do
       conn = Plug.Conn.fetch_query_params(conn)
+      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
       stop_container = conn.query_params["stop_container"]
       force_stop = conn.query_params["force_stop"]
       exec_id = conn.params.exec_id
 
       case Exec.stop(exec_id, %{stop_container: stop_container, force_stop: force_stop}) do
         {:ok, _msg} ->
-          send_resp(conn, 204)
+          send_resp(conn, 200, Utils.id_response(exec_id))
 
-        {:error, msg} ->
-          conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+        {:error, _msg} ->
           send_resp(conn, 404, Utils.error_response("no such container"))
 
         _ ->
-          conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
           send_resp(conn, 500, Utils.error_response("server error"))
       end
     end

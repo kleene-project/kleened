@@ -16,7 +16,6 @@ defmodule Jocker.API.Router do
 
   # Execution instances
   post("/exec/create", to: API.Exec.Create)
-  post("/exec/:exec_id/start", to: API.Exec.Start)
   post("/exec/:exec_id/stop", to: API.Exec.Stop)
 
   # Images:

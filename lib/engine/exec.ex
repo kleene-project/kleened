@@ -60,9 +60,8 @@ defmodule Jocker.Engine.Exec do
     call(exec_id, {:start, opts})
   end
 
-  @spec stop(exec_id(), stop_options) :: :ok | {:error, String.t()}
+  @spec stop(exec_id(), stop_options) :: {:ok, String.t()} | {:error, String.t()}
   def stop(exec_id, opts) do
-    # Stopping is automatically destroying the execution instance
     call(exec_id, {:stop, opts})
   end
 
@@ -84,22 +83,20 @@ defmodule Jocker.Engine.Exec do
     {:ok, %State{exec_id: exec_id, config: config, subscribers: []}}
   end
 
-  # FIXME: Should we stop the erlang process when stopping container/executable?
-  # In case the erlang-process is spawn'ed (using create) but haven't been Exec.start()'ed it will linger forever
   @impl true
   def handle_call({:stop, _}, _from, %State{port: nil} = state) do
     reply = {:ok, "execution instance not running, removing it anyway"}
-    {:reply, reply, state}
+    {:stop, :normal, reply, state}
   end
 
   def handle_call({:stop, %{stop_container: true}}, _from, state) do
-    reply = stop_container_(state)
-    {:reply, reply, state}
+    result = stop_container_(state)
+    await_exit_and_shutdown(result, state)
   end
 
   def handle_call({:stop, %{stop_container: false} = opts}, _from, state) do
-    reply = stop_executable(state, opts)
-    {:reply, reply, state}
+    result = stop_executable(state, opts)
+    await_exit_and_shutdown(result, state)
   end
 
   def handle_call({:attach, pid}, _from, %State{subscribers: subscribers} = state) do
@@ -131,25 +128,9 @@ defmodule Jocker.Engine.Exec do
 
   def handle_info(
         {port, {:exit_status, exit_code}},
-        %State{port: port, config: config, container: cont} = state
+        %State{port: port} = state
       ) do
-    case is_jail_running?(config.container_id) do
-      false ->
-        msg = "container #{config.container_id} stopped with exit code #{exit_code}"
-        Logger.debug(msg)
-
-        jail_cleanup(cont)
-
-        relay_msg({:shutdown, :jail_stopped}, state)
-
-      true ->
-        msg = "execution instance #{state.exec_id} stopped with exit code #{exit_code}"
-        Logger.debug(msg)
-
-        # FIXME rename atom :jail_root_process_exited
-        relay_msg({:shutdown, :jail_root_process_exited}, state)
-    end
-
+    shutdown_process(exit_code, state)
     {:stop, :normal, %State{state | :port => nil}}
   end
 
@@ -158,6 +139,7 @@ defmodule Jocker.Engine.Exec do
     {:noreply, state}
   end
 
+  @spec stop_container_(%State{}) :: {:ok, String.t()} | {:error, String.t()}
   defp stop_container_(%State{config: %{container_id: container_id}} = state) do
     case is_jail_running?(container_id) do
       true ->
@@ -184,6 +166,7 @@ defmodule Jocker.Engine.Exec do
     end
   end
 
+  @spec stop_executable(%State{}, stop_options()) :: {:ok, String.t()} | {:error, String.t()}
   defp stop_executable(state, opts) do
     jailed_process_pid = get_pid_of_jailed_process(state.port)
 
@@ -203,6 +186,39 @@ defmodule Jocker.Engine.Exec do
         )
 
         {:error, "error closing process: #{output}"}
+    end
+  end
+
+  defp await_exit_and_shutdown({:error, _msg} = reply, state) do
+    {:reply, reply, state}
+  end
+
+  defp await_exit_and_shutdown({:ok, _msg} = reply, %State{port: port} = state) do
+    receive do
+      {^port, {:exit_status, exit_code}} ->
+        shutdown_process(exit_code, state)
+        {:stop, :normal, reply, %State{state | port: nil}}
+    after
+      5_000 ->
+        {:reply, {:error, "timed out while waiting for jail to exit"}, state}
+    end
+  end
+
+  defp shutdown_process(exit_code, %State{config: config, container: cont} = state) do
+    case is_jail_running?(config.container_id) do
+      false ->
+        msg = "container #{config.container_id} stopped with exit code #{exit_code}"
+        Logger.debug(msg)
+
+        jail_cleanup(cont)
+
+        relay_msg({:shutdown, :jail_stopped}, state)
+
+      true ->
+        msg = "execution instance #{state.exec_id} stopped with exit code #{exit_code}"
+        Logger.debug(msg)
+
+        relay_msg({:shutdown, :jailed_process_exited}, state)
     end
   end
 

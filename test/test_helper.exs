@@ -86,10 +86,10 @@ defmodule TestHelper do
   end
 
   def build_and_return_image(context, dockerfile, tag) do
-    quiet = true
+    quiet = false
     {:ok, pid} = Jocker.Engine.Image.build(context, dockerfile, tag, quiet)
-    {img, _messages} = receive_imagebuilder_results(pid, [])
-    img
+    {_img, _messages} = result = receive_imagebuilder_results(pid, [])
+    result
   end
 
   def receive_imagebuilder_results(pid, msg_list) do

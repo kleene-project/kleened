@@ -112,7 +112,7 @@ defmodule ContainerTest do
     """
 
     TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
-    image = TestHelper.build_and_return_image("./", "tmp_dockerfile", "test:latest")
+    {image, _messages} = TestHelper.build_and_return_image("./", "tmp_dockerfile", "test:latest")
 
     config = %{
       image: image.id,
@@ -140,7 +140,7 @@ defmodule ContainerTest do
     """
 
     TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
-    image = TestHelper.build_and_return_image("./", "tmp_dockerfile", "test:latest")
+    {image, _messages} = TestHelper.build_and_return_image("./", "tmp_dockerfile", "test:latest")
 
     config = %{
       image: image.id,

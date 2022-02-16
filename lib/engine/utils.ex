@@ -110,7 +110,10 @@ defmodule Jocker.Engine.Utils do
     <<uuid::binary-size(12), _rest::binary>> = uuid_all
 
     # This way we avoid ever getting uuids that could be interpreted as an integer (by, e.g., /usr/sbin/jail)
-    String.replace(uuid, "1", "g")
+    case Integer.parse(uuid) do
+      {_integer, ""} -> uuid()
+      _ -> uuid
+    end
   end
 
   def decode_buffer(buffer) do

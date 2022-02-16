@@ -98,13 +98,12 @@ defmodule WebSocketTest do
       })
 
     endpoint = "/images/build?#{query_params}"
-    conn = initialize_websocket(endpoint)
-    assert {:text, "ok:"} == receive_frame(conn)
+    {:ok, conn} = initialize_websocket(endpoint)
     frames = receive_frames(conn)
-
     {finish_msg, build_log} = List.pop_at(frames, -1)
 
     assert build_log == [
+             "OK",
              "Step 1/3 : FROM scratch\n",
              "Step 2/3 : RUN echo \"lets test that we receives this!\"\n",
              "lets test that we receives this!\n",
@@ -213,9 +212,6 @@ defmodule WebSocketTest do
       {:gun_data, ^conn, ^stream_ref, :nofin, data} ->
         Logger.info("received data (more coming): #{data}")
         receive_data(conn, stream_ref, buffer <> data)
-
-      # {:gun_data, ^conn, ^stream_ref, :fin, data} ->
-      #  data
 
       unknown ->
         Logger.warn(

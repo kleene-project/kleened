@@ -1,6 +1,6 @@
 defmodule NetworkTest do
   use ExUnit.Case
-  alias Jocker.Engine.{Network, Config, Utils, MetaData, Container}
+  alias Jocker.Engine.{Network, Config, Utils, MetaData, Container, Exec}
   alias Jocker.API.Schemas.NetworkConfig
 
   test "default interface is not defined at startup" do
@@ -124,9 +124,9 @@ defmodule NetworkTest do
     {:ok, %Container{id: id}} = TestHelper.create_container("network_test", opts)
 
     Network.connect(id, "testnet")
-    :ok = Container.attach(id)
-    Container.start(id)
-    {:ok, output} = Jason.decode(TestHelper.collect_container_output(id))
+    {:ok, exec_id} = Exec.create(id)
+    Jocker.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
+    {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
     assert %{"statistics" => %{"interface" => [%{"address" => "172.19.0.0"}]}} = output
     assert Network.remove("testnet") == {:ok, test_network.id}
     Container.destroy(id)
@@ -143,9 +143,9 @@ defmodule NetworkTest do
     {output_json, 0} = System.cmd("/usr/bin/netstat", ["--libxo", "json", "-i", "-4"])
     ips_before = ips_on_all_interfaces(output_json)
 
-    :ok = Container.attach(id)
-    Container.start(id)
-    output_json = TestHelper.collect_container_output(id)
+    {:ok, exec_id} = Exec.create(id)
+    Jocker.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
+    output_json = TestHelper.collect_container_output(exec_id)
 
     ips_after = ips_on_all_interfaces(output_json)
 
@@ -160,12 +160,12 @@ defmodule NetworkTest do
     }
 
     {:ok, %Container{id: id}} = TestHelper.create_container("network_test3", opts)
-    :ok = Container.attach(id)
-    Container.start(id)
+    {:ok, exec_id} = Exec.create(id)
+    Jocker.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
 
     output =
       receive do
-        {:container, ^id, {:jail_output, msg}} -> msg
+        {:container, ^exec_id, {:jail_output, msg}} -> msg
       end
 
     assert output ==

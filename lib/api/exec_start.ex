@@ -1,20 +1,13 @@
 defmodule Jocker.API.ExecStartWebSocket do
-  alias Jocker.Engine.{Container, Exec}
-  alias Jocker.API.Utils
+  alias Jocker.Engine.Exec
   require Logger
 
   # Called on connection initialization
   def init(%{bindings: %{exec_id: exec_id}} = req0, _opts) do
-    opts_raw = :cowboy_req.parse_qs(req0) |> Enum.sort()
-
     opts =
-      case opts_raw do
-        [{"attach", val1}, {"start_container", val2}] ->
-          [{"attach", string2bool(val1)}, {"start_container", string2bool(val2)}]
-
-        _ ->
-          opts_raw
-      end
+      :cowboy_req.parse_qs(req0)
+      |> Enum.sort()
+      |> Enum.map(fn {key, value} -> {key, string2bool(value)} end)
 
     case opts do
       # Everything should be good, proceed with the websocket!
@@ -91,7 +84,7 @@ defmodule Jocker.API.ExecStartWebSocket do
     {[{:close, 1000, "executable #{exec_id} stopped"}], state}
   end
 
-  def websocket_info({:container, exec_id, {:shutdown, :jail_root_process_exited}}, state) do
+  def websocket_info({:container, exec_id, {:shutdown, :jailed_process_exited}}, state) do
     {[{:close, 1001, "container #{exec_id}'s root process exited"}], state}
   end
 

@@ -23,7 +23,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    %Image{layer_id: layer_id} =
+    {%Image{layer_id: layer_id}, _messages} =
       TestHelper.build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
 
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
@@ -40,7 +40,7 @@ defmodule ImageTest do
     context = create_test_context("test_copy_instruction")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    %Image{layer_id: layer_id} =
+    {%Image{layer_id: layer_id}, _messages} =
       TestHelper.build_and_return_image(context, @tmp_dockerfile, "test:latest")
 
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
@@ -59,7 +59,7 @@ defmodule ImageTest do
     context = create_test_context("test_copy_instruction_symbolic")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    %Image{layer_id: layer_id} =
+    {%Image{layer_id: layer_id}, _messages} =
       TestHelper.build_and_return_image(context, @tmp_dockerfile, "test:latest")
 
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
@@ -74,7 +74,10 @@ defmodule ImageTest do
     """
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
-    _image = TestHelper.build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
+
+    {_image, _messages} =
+      TestHelper.build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
+
     assert MetaData.list_containers() == []
   end
 
@@ -87,8 +90,43 @@ defmodule ImageTest do
     """
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
-    image = TestHelper.build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
-    assert image.env_vars == ["TEST2=lool test", "TEST=lol"]
+
+    {image, _messages} =
+      TestHelper.build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
+
+    assert Enum.sort(image.env_vars) == ["TEST2=lool test", "TEST=lol"]
+  end
+
+  test "verify that RUN instructions uses the environment variables set earlier in the Dockerfile" do
+    dockerfile = """
+    FROM scratch
+    ENV TEST=testvalue
+    RUN printenv
+    ENV TEST="a new test value for TEST"
+    ENV TEST2=test2value
+    RUN printenv
+    CMD /bin/ls
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+
+    {image, messages} =
+      TestHelper.build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
+
+    expected_messages = [
+      "Step 1/7 : FROM scratch\n",
+      "Step 2/7 : ENV TEST=testvalue\n",
+      "Step 3/7 : RUN printenv\n",
+      "PWD=/\nTEST=testvalue\n",
+      "Step 4/7 : ENV TEST=\"a new test value for TEST\"\n",
+      "Step 5/7 : ENV TEST2=test2value\n",
+      "Step 6/7 : RUN printenv\n",
+      "PWD=/\nTEST=a new test value for TEST\nTEST2=test2value\n",
+      "Step 7/7 : CMD /bin/ls\n"
+    ]
+
+    assert expected_messages == messages
+    assert Enum.sort(image.env_vars) == ["TEST2=test2value", "TEST=a new test value for TEST"]
   end
 
   test "create an image using three RUN/COPY instructions" do
@@ -102,7 +140,7 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    %Image{layer_id: layer_id} =
+    {%Image{layer_id: layer_id}, _messages} =
       TestHelper.build_and_return_image(context, @tmp_dockerfile, "test:latest")
 
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
@@ -112,7 +150,7 @@ defmodule ImageTest do
     assert MetaData.list_containers() == []
   end
 
-  test "receiving of status messages during build" do
+  test "building an image quietly" do
     dockerfile = """
     FROM scratch
     COPY test.txt /root/
@@ -124,17 +162,10 @@ defmodule ImageTest do
 
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
-    {:ok, pid} = Image.build(context, @tmp_dockerfile, "test:latest", false)
+    {:ok, pid} = Image.build(context, @tmp_dockerfile, "test:latest", true)
     {_img, messages} = TestHelper.receive_imagebuilder_results(pid, [])
 
-    assert messages == [
-             "Step 1/5 : FROM scratch\n",
-             "Step 2/5 : COPY test.txt /root/\n",
-             "Step 3/5 : RUN echo   \"this should be relayed back to the parent process\"\n",
-             "this should be relayed back to the parent process\n",
-             "Step 4/5 : USER ntpd\n",
-             "Step 5/5 : CMD /etc/rc\n"
-           ]
+    assert messages == []
   end
 
   defp create_test_context(name) do
