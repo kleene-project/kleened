@@ -1,6 +1,15 @@
 defmodule Jocker.Engine.Utils do
   require Logger
 
+  def is_container_running?(container_id) do
+    output = System.cmd("jls", ["--libxo=json", "-j", container_id], stderr_to_stdout: true)
+
+    case output do
+      {_json, 1} -> false
+      {_json, 0} -> true
+    end
+  end
+
   def decode_socket_address(<<"unix://", unix_socket::binary>>) do
     {:unix, unix_socket, 0}
   end

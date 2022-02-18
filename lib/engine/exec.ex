@@ -41,9 +41,11 @@ defmodule Jocker.Engine.Exec do
 
     case MetaData.get_container(container_idname) do
       %Container{id: container_id} ->
+        config = %ExecConfig{config | container_id: container_id}
         name = {:via, Registry, {ExecInstances, exec_id, container_id}}
         {:ok, _pid} = GenServer.start_link(Jocker.Engine.Exec, [exec_id, config], name: name)
         # Process.unlink(pid)
+        Logger.debug("succesfully created new execution instance #{exec_id}")
         {:ok, exec_id}
 
       :not_found ->
@@ -90,11 +92,13 @@ defmodule Jocker.Engine.Exec do
   end
 
   def handle_call({:stop, %{stop_container: true}}, _from, state) do
-    result = stop_container_(state)
-    await_exit_and_shutdown(result, state)
+    Logger.debug("#{state.exec_id}: stopping container")
+    reply = stop_container_(state)
+    await_exit_and_shutdown(reply, state)
   end
 
   def handle_call({:stop, %{stop_container: false} = opts}, _from, state) do
+    Logger.debug("#{state.exec_id}: stopping executable")
     result = stop_executable(state, opts)
     await_exit_and_shutdown(result, state)
   end
@@ -141,7 +145,7 @@ defmodule Jocker.Engine.Exec do
 
   @spec stop_container_(%State{}) :: {:ok, String.t()} | {:error, String.t()}
   defp stop_container_(%State{config: %{container_id: container_id}} = state) do
-    case is_jail_running?(container_id) do
+    case Utils.is_container_running?(container_id) do
       true ->
         Logger.debug("Shutting down jail #{container_id}")
 
@@ -172,8 +176,8 @@ defmodule Jocker.Engine.Exec do
 
     cmd_args =
       case opts do
-        %{force_stop: true} -> ["-9", Integer.to_string(jailed_process_pid)]
-        %{force_stop: false} -> [Integer.to_string(jailed_process_pid)]
+        %{force_stop: true} -> ["-9", jailed_process_pid]
+        %{force_stop: false} -> [jailed_process_pid]
       end
 
     case System.cmd("/bin/kill", cmd_args) do
@@ -205,9 +209,11 @@ defmodule Jocker.Engine.Exec do
   end
 
   defp shutdown_process(exit_code, %State{config: config, container: cont} = state) do
-    case is_jail_running?(config.container_id) do
+    case Utils.is_container_running?(config.container_id) do
       false ->
-        msg = "container #{config.container_id} stopped with exit code #{exit_code}"
+        msg =
+          "#{state.exec_id}: container #{config.container_id} stopped with exit code #{exit_code}"
+
         Logger.debug(msg)
 
         jail_cleanup(cont)
@@ -222,6 +228,7 @@ defmodule Jocker.Engine.Exec do
     end
   end
 
+  @spec get_pid_of_jailed_process(port()) :: String.t()
   defp get_pid_of_jailed_process(port) do
     # ps --libxo json -o user,pid,ppid,command -d  -ax -p 2138
     # {"process-information":
@@ -229,17 +236,21 @@ defmodule Jocker.Engine.Exec do
     #     {"user":"root","pid":"2138","ppid":"2137","command":"jail -c command=/bin/sh -c /bin/sleep 10"},
     #     {"user":"root","pid":"2139","ppid":"2138","command":"- /bin/sleep 10"}
     #   ]}
-    jail_pid = port |> Port.info() |> Keyword.get(:os_pid)
+    jail_pid = port |> Port.info() |> Keyword.get(:os_pid) |> Integer.to_string()
 
     {jailed_processes, 0} =
       System.cmd("/bin/ps", ~w"--libxo json -o user,pid,ppid,command -d  -ax -p #{jail_pid}")
+
+    Logger.warn("#{jail_pid} : LOL #{inspect(jailed_processes)}")
 
     %{"process-information" => %{"process" => processes}} = Jason.decode!(jailed_processes)
 
     # Locate the process that have our port (i.e. /sbin/jail) as parent.
     [jailed_pid] =
       processes
-      |> Enum.filter(fn %{"ppid" => ppid} -> ppid == jail_pid end)
+      |> Enum.filter(fn %{"pid" => pid} -> pid == jail_pid end)
+      # If you are using /sbin/jail, you need to shutdown the child of the port pid:
+      # |> Enum.filter(fn %{"ppid" => ppid} -> ppid == jail_pid end)
       |> Enum.map(fn %{"pid" => pid} -> pid end)
 
     jailed_pid
@@ -250,7 +261,7 @@ defmodule Jocker.Engine.Exec do
       %Container{} = cont ->
         cont = merge_configurations(cont, config)
 
-        case {is_jail_running?(cont.id), start_container} do
+        case {Utils.is_container_running?(cont.id), start_container} do
           {true, _} ->
             port = jexec_container(cont)
             {:ok, port, cont}
@@ -387,15 +398,6 @@ defmodule Jocker.Engine.Exec do
 
       _ ->
         :ok
-    end
-  end
-
-  defp is_jail_running?(container_id) do
-    output = System.cmd("jls", ["--libxo=json", "-j", container_id], stderr_to_stdout: true)
-
-    case output do
-      {_json, 1} -> false
-      {_json, 0} -> true
     end
   end
 end
