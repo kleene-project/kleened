@@ -191,10 +191,10 @@ defmodule Jocker.Engine.Image do
 
   defp relay_output_and_await_shutdown(id, exec_id, state) do
     receive do
-      {:container, ^id, {:shutdown, :jail_stopped}} ->
+      {:container, ^exec_id, {:shutdown, :jail_stopped}} ->
         :ok
 
-      {:container, ^id, msg} ->
+      {:container, ^exec_id, msg} ->
         if not state.quiet do
           send_msg(state.msg_receiver, msg)
         end

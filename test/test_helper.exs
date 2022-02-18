@@ -39,21 +39,21 @@ defmodule TestHelper do
     {cont, exec_id}
   end
 
-  def collect_container_output(id) do
-    output = collect_container_output_(id, [])
+  def collect_container_output(exec_id) do
+    output = collect_container_output_(exec_id, [])
     output |> Enum.reverse() |> Enum.join("")
   end
 
-  defp collect_container_output_(id, output) do
+  defp collect_container_output_(exec_id, output) do
     receive do
-      {:container, ^id, {:shutdown, :jail_stopped}} ->
+      {:container, ^exec_id, {:shutdown, :jail_stopped}} ->
         output
 
-      {:container, ^id, {:jail_output, msg}} ->
-        collect_container_output_(id, [msg | output])
+      {:container, ^exec_id, {:jail_output, msg}} ->
+        collect_container_output_(exec_id, [msg | output])
 
-      {:container, ^id, msg} ->
-        collect_container_output_(id, [msg | output])
+      {:container, ^exec_id, msg} ->
+        collect_container_output_(exec_id, [msg | output])
 
       unknown ->
         IO.puts(

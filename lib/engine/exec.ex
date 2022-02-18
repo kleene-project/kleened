@@ -13,15 +13,6 @@ defmodule Jocker.Engine.Exec do
   require Logger
   use GenServer, restart: :transient
 
-  # Todos:
-  # questions:
-  # - You can attach to a exec instance before it is started.
-  #   Where do we store info about processes that wants to received io-data,
-  #   before the process is started? In the metadata?
-  #   two possible solutions:
-  #    - Store the pid somewhere where it can be fetched by exec_start process
-  #    - merge start and attach into one call (which is then going to use a ws in case it needs to be attached)
-
   @type execution_config() :: %ExecConfig{}
   @type start_options() :: %{:attach => boolean(), :start_container => boolean()}
   @type stop_options() :: %{:force_stop => boolean(), :stop_container => boolean()}
@@ -44,7 +35,6 @@ defmodule Jocker.Engine.Exec do
         config = %ExecConfig{config | container_id: container_id}
         name = {:via, Registry, {ExecInstances, exec_id, container_id}}
         {:ok, _pid} = GenServer.start_link(Jocker.Engine.Exec, [exec_id, config], name: name)
-        # Process.unlink(pid)
         Logger.debug("succesfully created new execution instance #{exec_id}")
         {:ok, exec_id}
 

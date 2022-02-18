@@ -35,7 +35,6 @@ defmodule VolumeTest do
     assert [] == MetaData.list_volumes()
   end
 
-  # FIXME: This test fails!
   test "verify volume binding" do
     # use /mnt since this is empty in the basejail by default
     location = "/mnt"
