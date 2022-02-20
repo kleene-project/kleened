@@ -83,7 +83,7 @@ defmodule Jocker.Engine.Exec do
 
   def handle_call({:stop, %{stop_container: true}}, _from, state) do
     Logger.debug("#{state.exec_id}: stopping container")
-    reply = stop_container_(state)
+    reply = Container.stop_container(state.container.id)
     await_exit_and_shutdown(reply, state)
   end
 
@@ -131,33 +131,6 @@ defmodule Jocker.Engine.Exec do
   def handle_info(unknown_msg, state) do
     Logger.warn("Unknown message: #{inspect(unknown_msg)}")
     {:noreply, state}
-  end
-
-  @spec stop_container_(%State{}) :: {:ok, String.t()} | {:error, String.t()}
-  defp stop_container_(%State{config: %{container_id: container_id}} = state) do
-    case Utils.is_container_running?(container_id) do
-      true ->
-        Logger.debug("Shutting down jail #{container_id}")
-
-        {output, exit_code} =
-          System.cmd("/usr/sbin/jail", ["-r", container_id], stderr_to_stdout: true)
-
-        relay_msg({:shutdown, :jail_stopped}, state)
-
-        case {output, exit_code} do
-          {output, 0} ->
-            Logger.info("Stopped jail #{container_id} with exitcode #{exit_code}: #{output}")
-            {:ok, "succesfully closed container"}
-
-          {output, _} ->
-            Logger.warn("Stopped jail #{container_id} with exitcode #{exit_code}: #{output}")
-            msg = "/usr/sbin/jail exited abnormally with exit code #{exit_code}: '#{output}'"
-            {:error, msg}
-        end
-
-      false ->
-        {:error, "container not running"}
-    end
   end
 
   @spec stop_executable(%State{}, stop_options()) :: {:ok, String.t()} | {:error, String.t()}

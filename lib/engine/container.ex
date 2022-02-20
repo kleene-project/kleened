@@ -61,6 +61,17 @@ defmodule Jocker.Engine.Container do
     destroy_(cont)
   end
 
+  @spec stop(id_or_name()) :: {:ok, String.t()} | {:error, String.t()}
+  def stop(id_or_name) do
+    case MetaData.get_container(id_or_name) do
+      %Container{id: container_id} = cont ->
+        stop_container(container_id)
+
+      :not_found ->
+        {:error, "container not found"}
+    end
+  end
+
   @spec list([list_containers_opts()]) :: [%{}]
   def list(options \\ []) do
     list_(options)
@@ -141,6 +152,31 @@ defmodule Jocker.Engine.Container do
     MetaData.delete_container(container_id)
     Layer.destroy(layer_id)
     {:ok, container_id}
+  end
+
+  @spec stop_container(%State{}) :: {:ok, String.t()} | {:error, String.t()}
+  def stop_container(container_id) do
+    case Utils.is_container_running?(container_id) do
+      true ->
+        Logger.debug("Shutting down jail #{container_id}")
+
+        {output, exit_code} =
+          System.cmd("/usr/sbin/jail", ["-r", container_id], stderr_to_stdout: true)
+
+        case {output, exit_code} do
+          {output, 0} ->
+            Logger.info("Stopped jail #{container_id} with exitcode #{exit_code}: #{output}")
+            {:ok, container_id}
+
+          {output, _} ->
+            Logger.warn("Stopped jail #{container_id} with exitcode #{exit_code}: #{output}")
+            msg = "/usr/sbin/jail exited abnormally with exit code #{exit_code}: '#{output}'"
+            {:error, msg}
+        end
+
+      false ->
+        {:error, "container not running"}
+    end
   end
 
   @spec list_([list_containers_opts()]) :: [%{}]

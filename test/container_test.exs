@@ -21,11 +21,13 @@ defmodule ContainerTest do
 
   test "start and stop a container (using devfs)" do
     config = %{cmd: ["/bin/sleep", "10"]}
-    {cont, exec_id} = TestHelper.start_attached_container("testcont", config)
+
+    {%Container{id: container_id} = cont, exec_id} =
+      TestHelper.start_attached_container("testcont", config)
 
     assert TestHelper.devfs_mounted(cont)
 
-    assert {:ok, "succesfully closed container"} = Exec.stop(exec_id, %{stop_container: true})
+    assert {:ok, ^container_id} = Exec.stop(exec_id, %{stop_container: true})
 
     assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
     refute TestHelper.devfs_mounted(cont)
@@ -54,8 +56,7 @@ defmodule ContainerTest do
     {:ok, exec_id} = Exec.create(container_id)
     :ok = Exec.start(exec_id, %{attach: false, start_container: true})
 
-    assert {:ok, "succesfully closed container"} =
-             Exec.stop(exec_id, %{stop_container: true, force_stop: true})
+    assert {:ok, ^container_id} = Exec.stop(exec_id, %{stop_container: true, force_stop: true})
 
     refute Utils.is_container_running?(container_id)
   end
@@ -78,7 +79,7 @@ defmodule ContainerTest do
     assert_receive {:container, ^exec_id, {:shutdown, :jailed_process_exited}}
 
     stop_opts = %{stop_container: true, force_stop: false}
-    assert {:ok, "succesfully closed container"} = Exec.stop(root_exec_id, stop_opts)
+    assert {:ok, ^container_id} = Exec.stop(root_exec_id, stop_opts)
     refute Utils.is_container_running?(container_id)
   end
 
@@ -106,7 +107,7 @@ defmodule ContainerTest do
 
     assert Utils.is_container_running?(container_id)
 
-    assert {:ok, "succesfully closed container"} =
+    assert {:ok, ^container_id} =
              Exec.stop(root_exec_id, %{stop_container: true, force_stop: false})
 
     refute Utils.is_container_running?(container_id)
@@ -128,8 +129,7 @@ defmodule ContainerTest do
     :ok = Exec.start(exec_id, %{attach: true, start_container: false})
     assert number_of_jailed_processes(container_id) == 2
 
-    assert {:ok, "succesfully closed container"} =
-             Exec.stop(exec_id, %{stop_container: true, force_stop: false})
+    assert {:ok, ^container_id} = Exec.stop(exec_id, %{stop_container: true, force_stop: false})
 
     assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
     assert number_of_jailed_processes(container_id) == 0
@@ -146,7 +146,7 @@ defmodule ContainerTest do
 
     assert Utils.is_container_running?(container_id)
 
-    assert {:ok, "succesfully closed container"} ==
+    assert {:ok, container_id} ==
              Exec.stop(root_exec_id, %{stop_container: true, force_stop: false})
 
     refute Utils.is_container_running?(container_id)
@@ -185,7 +185,7 @@ defmodule ContainerTest do
     assert Utils.is_container_running?(container_id)
     assert Utils.is_container_running?(container_id)
 
-    assert {:ok, "succesfully closed container"} ==
+    assert {:ok, container_id} ==
              Exec.stop(root_exec_id, %{stop_container: true, force_stop: false})
   end
 
@@ -193,11 +193,11 @@ defmodule ContainerTest do
     start_opts = %{start_container: true, attach: false}
     stop_opts = %{stop_container: true, force_stop: false}
 
-    {_container, exec_id} =
+    {%Container{id: container_id}, exec_id} =
       TestHelper.start_attached_container("testcont", %{cmd: ["/bin/sleep", "10"]})
 
     assert {:error, "executable already started"} == Exec.start(exec_id, start_opts)
-    assert {:ok, "succesfully closed container"} = Exec.stop(exec_id, stop_opts)
+    assert {:ok, ^container_id} = Exec.stop(exec_id, stop_opts)
   end
 
   test "start and stop a container with '/etc/rc' (using devfs)" do
@@ -209,10 +209,11 @@ defmodule ContainerTest do
       user: "root"
     }
 
-    {cont, exec_id} = TestHelper.start_attached_container("testcont", config)
+    {%Container{id: container_id} = cont, exec_id} =
+      TestHelper.start_attached_container("testcont", config)
 
     assert TestHelper.devfs_mounted(cont)
-    assert {:ok, "succesfully closed container"} = Exec.stop(exec_id, stop_opts)
+    assert {:ok, ^container_id} = Exec.stop(exec_id, stop_opts)
     assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
     assert not TestHelper.devfs_mounted(cont)
   end

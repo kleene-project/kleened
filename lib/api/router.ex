@@ -13,6 +13,7 @@ defmodule Jocker.API.Router do
   get("/containers/list", to: API.Container.List)
   post("/containers/create", to: API.Container.Create)
   delete("/containers/:container_id", to: API.Container.Remove)
+  post("/containers/:container_id/stop", to: API.Container.Stop)
 
   # Execution instances
   post("/exec/create", to: API.Exec.Create)

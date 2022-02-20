@@ -53,15 +53,8 @@ defmodule Jocker.API.ImageBuild do
         args["quiet"]
       )
 
-    case args["quiet"] do
-      true ->
-        Logger.debug("Building image. Closing socket.")
-        {[{:close, 1001, ""}], state}
-
-      false ->
-        Logger.debug("Building image. Await output.")
-        {[{:text, "OK"}], state}
-    end
+    Logger.debug("Building image. Await output.")
+    {[{:text, "OK"}], state}
   end
 
   def websocket_handle({:ping, _}, state) do
