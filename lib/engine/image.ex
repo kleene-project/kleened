@@ -1,4 +1,5 @@
 defmodule Jocker.Engine.Image do
+  alias Jocker.API.Schemas.ExecConfig
   alias Jocker.Engine.{ZFS, MetaData, Utils, Container, Layer}
   require Logger
 
@@ -150,10 +151,11 @@ defmodule Jocker.Engine.Image do
     %State{state | :container => %Container{cont | command: cmd}}
   end
 
-  defp process_instructions({line, {:env, env_var}}, %State{:container => cont} = state) do
-    Logger.info("Processing instruction: ENV #{inspect(env_var)}")
+  defp process_instructions({line, {:env, env_vars}}, %State{:container => cont} = state) do
+    Logger.info("Processing instruction: ENV #{inspect(env_vars)}")
     state = send_status(line, state)
-    %State{state | :container => %Container{cont | env_vars: [env_var | cont.env_vars]}}
+    new_env_vars = Utils.merge_environment_variable_lists(cont.env_vars, [env_vars])
+    %State{state | :container => %Container{cont | env_vars: new_env_vars}}
   end
 
   defp process_instructions({line, {:run, cmd}}, state) do
@@ -180,23 +182,31 @@ defmodule Jocker.Engine.Image do
     %State{state | :current_step => step + 1}
   end
 
-  defp execute_cmd(cmd, user, %State{:container => %Container{id: id}} = state) do
-    Jocker.Engine.Container.attach(id)
-    Jocker.Engine.Container.start(id, cmd: cmd, user: user)
-    receive_shutdown(id, state)
+  defp execute_cmd(cmd, user, %State{container: %Container{id: id, env_vars: env}} = state) do
+    config = %ExecConfig{container_id: id, cmd: cmd, env: env, user: user}
+    {:ok, exec_id} = Jocker.Engine.Exec.create(config)
+    Jocker.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
+    relay_output_and_await_shutdown(id, exec_id, state)
   end
 
-  defp receive_shutdown(id, state) do
+  defp relay_output_and_await_shutdown(id, exec_id, state) do
     receive do
-      {:container, ^id, {:shutdown, :jail_stopped}} ->
+      {:container, ^exec_id, {:shutdown, :jail_stopped}} ->
         :ok
 
-      {:container, ^id, msg} ->
+      {:container, ^exec_id, msg} ->
         if not state.quiet do
           send_msg(state.msg_receiver, msg)
         end
 
-        receive_shutdown(id, state)
+        relay_output_and_await_shutdown(id, exec_id, state)
+
+      {:container, ^exec_id, {:jail_output, msg}} ->
+        if not state.quiet do
+          send_msg(state.msg_receiver, {:jail_output, msg})
+        end
+
+        relay_output_and_await_shutdown(id, exec_id, state)
 
       other ->
         Logger.error("Weird stuff received: #{inspect(other)}")

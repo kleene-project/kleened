@@ -1,4 +1,4 @@
-alias Jocker.Engine.{ZFS, Config, Container, Layer}
+alias Jocker.Engine.{ZFS, Config, Container, Layer, Exec}
 require Logger
 
 ExUnit.start()
@@ -33,27 +33,27 @@ defmodule TestHelper do
   end
 
   def start_attached_container(name, config) do
-    {:ok, %Container{id: id} = cont} = create_container(name, config)
-    :ok = Container.attach(id)
-    Container.start(id)
-    cont
+    {:ok, %Container{id: container_id} = cont} = create_container(name, config)
+    {:ok, exec_id} = Exec.create(container_id)
+    :ok = Exec.start(exec_id, %{attach: true, start_container: true})
+    {cont, exec_id}
   end
 
-  def collect_container_output(id) do
-    output = collect_container_output_(id, [])
+  def collect_container_output(exec_id) do
+    output = collect_container_output_(exec_id, [])
     output |> Enum.reverse() |> Enum.join("")
   end
 
-  defp collect_container_output_(id, output) do
+  defp collect_container_output_(exec_id, output) do
     receive do
-      {:container, ^id, {:shutdown, :jail_stopped}} ->
+      {:container, ^exec_id, {:shutdown, :jail_stopped}} ->
         output
 
-      {:container, ^id, {:jail_output, msg}} ->
-        collect_container_output_(id, [msg | output])
+      {:container, ^exec_id, {:jail_output, msg}} ->
+        collect_container_output_(exec_id, [msg | output])
 
-      {:container, ^id, msg} ->
-        collect_container_output_(id, [msg | output])
+      {:container, ^exec_id, msg} ->
+        collect_container_output_(exec_id, [msg | output])
 
       unknown ->
         IO.puts(
@@ -86,10 +86,10 @@ defmodule TestHelper do
   end
 
   def build_and_return_image(context, dockerfile, tag) do
-    quiet = true
+    quiet = false
     {:ok, pid} = Jocker.Engine.Image.build(context, dockerfile, tag, quiet)
-    {img, _messages} = receive_imagebuilder_results(pid, [])
-    img
+    {_img, _messages} = result = receive_imagebuilder_results(pid, [])
+    result
   end
 
   def receive_imagebuilder_results(pid, msg_list) do

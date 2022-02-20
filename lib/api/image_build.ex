@@ -1,15 +1,9 @@
-defmodule Jocker.Engine.HTTPImageBuild do
+defmodule Jocker.API.ImageBuild do
   alias Jocker.Engine.Image
   require Logger
 
   # Called on connection initialization
-  def init(req, _state) do
-    state = %{request: req}
-    {:cowboy_websocket, req, state, %{idle_timeout: 60000}}
-  end
-
-  # Called on websocket connection initialization.
-  def websocket_init(state) do
+  def init(req0, _state) do
     default_values = %{
       # 'tag'-parameter is mandatory
       "context" => "./",
@@ -17,7 +11,7 @@ defmodule Jocker.Engine.HTTPImageBuild do
       "quiet" => "false"
     }
 
-    values = Plug.Conn.Query.decode(state.request.qs)
+    values = Plug.Conn.Query.decode(req0.qs)
     args = Map.merge(default_values, values)
 
     args =
@@ -34,22 +28,33 @@ defmodule Jocker.Engine.HTTPImageBuild do
 
     cond do
       not Map.has_key?(args, "tag") ->
-        {[{:close, 1000, "error:missing argument tag"}], state}
+        msg = "missing argument tag"
+        req = :cowboy_req.reply(400, %{"content-type" => "text/plain"}, msg, req0)
+        {:ok, req, %{}}
 
       not is_boolean(args["quiet"]) ->
-        {[{:close, 1000, "error:invalid value to argument 'quiet'"}], state}
+        msg = "invalid value to argument 'quiet'"
+        req = :cowboy_req.reply(400, %{"content-type" => "text/plain"}, msg, req0)
+        {:ok, req, %{}}
 
       true ->
-        {:ok, _pid} =
-          Image.build(
-            args["context"],
-            args["dockerfile"],
-            args["tag"],
-            args["quiet"]
-          )
-
-        {[{:text, "ok:"}], state}
+        state = %{args: args, request: req0}
+        {:cowboy_websocket, req0, state, %{idle_timeout: 60000}}
     end
+  end
+
+  # Called on websocket connection initialization.
+  def websocket_init(%{args: args} = state) do
+    {:ok, _pid} =
+      Image.build(
+        args["context"],
+        args["dockerfile"],
+        args["tag"],
+        args["quiet"]
+      )
+
+    Logger.debug("Building image. Await output.")
+    {[{:text, "OK"}], state}
   end
 
   def websocket_handle({:ping, _}, state) do
@@ -64,15 +69,15 @@ defmodule Jocker.Engine.HTTPImageBuild do
 
   # Format and forward elixir messages to client
   def websocket_info({:image_builder, _pid, {:image_finished, %Image{id: id}}}, state) do
-    {[{:close, 1000, "exit:image created with id #{id}"}], state}
+    {[{:close, 1000, "image created with id #{id}"}], state}
   end
 
   def websocket_info({:image_builder, _pid, {:jail_output, msg}}, state) do
-    {[{:text, "io:" <> msg}], state}
+    {[{:text, msg}], state}
   end
 
   def websocket_info({:image_builder, _pid, msg}, state) when is_binary(msg) do
-    {[{:text, "io:" <> msg}], state}
+    {[{:text, msg}], state}
   end
 
   def websocket_info({:image_builder, _pid, msg}, state) do

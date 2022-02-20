@@ -179,62 +179,6 @@ defmodule Jocker.API.Container do
     end
   end
 
-  defmodule Start do
-    use Plug.Builder
-    alias Jocker.API.Utils
-
-    plug(OpenApiSpex.Plug.CastAndValidate,
-      json_render_error_v2: true,
-      operation_id: "Container.Start"
-    )
-
-    plug(:start)
-
-    def open_api_operation(_) do
-      %Operation{
-        # tags: ["users"],
-        summary: "Start a container",
-        operationId: "Container.Start",
-        parameters: [
-          parameter(
-            :container_id,
-            :path,
-            %Schema{type: :string},
-            "ID or name of the container. An initial segment of the id can be supplied if it uniquely determines the container.",
-            required: true
-          )
-        ],
-        responses: %{
-          200 => response("no error", "application/json", Schemas.IdResponse),
-          304 => response("container already started", "application/json", Schemas.ErrorResponse),
-          404 =>
-            response("no such container", "application/json", Schemas.ErrorResponse,
-              example: %{message: "No such container: df6ed453357b"}
-            ),
-          500 => response("server error", "application/json", Schemas.ErrorResponse)
-        }
-      }
-    end
-
-    def start(conn, _opts) do
-      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
-
-      case Container.start(conn.params.container_id) do
-        {:ok, %Container{id: container_id}} ->
-          send_resp(conn, 200, Jason.encode!(%{id: container_id}))
-
-        {:error, :not_found} ->
-          send_resp(conn, 404, Utils.error_response("no such container"))
-
-        {:error, :already_started} ->
-          send_resp(conn, 304, Utils.error_response("container already started"))
-
-        _ ->
-          send_resp(conn, 500, Utils.error_response("server error"))
-      end
-    end
-  end
-
   defmodule Stop do
     use Plug.Builder
     alias Jocker.API.Utils
@@ -248,7 +192,8 @@ defmodule Jocker.API.Container do
 
     def open_api_operation(_) do
       %Operation{
-        summary: "Stop a container",
+        summary:
+          "Stop a container. Alle execution instances running in the container will be shut down.",
         operationId: "Container.Stop",
         parameters: [
           parameter(
@@ -261,7 +206,7 @@ defmodule Jocker.API.Container do
         ],
         responses: %{
           200 => response("no error", "application/json", Schemas.IdResponse),
-          304 => response("container already stopped", "application/json", Schemas.ErrorResponse),
+          304 => response("container not running", "application/json", Schemas.ErrorResponse),
           404 =>
             response("no such container", "application/json", Schemas.ErrorResponse,
               example: %{message: "no such container"}
@@ -275,16 +220,20 @@ defmodule Jocker.API.Container do
       conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
 
       case Container.stop(conn.params.container_id) do
-        {:ok, %Container{id: id}} ->
+        {:ok, id} ->
           send_resp(conn, 200, Utils.id_response(id))
 
-        {:error, :not_found} ->
-          send_resp(conn, 404, Utils.error_response("no such container"))
+        {:error, "container not running" = msg} ->
+          send_resp(conn, 304, Utils.error_response(msg))
 
-        {:error, :not_running} ->
-          send_resp(conn, 304, Utils.error_response("container already stopped"))
+        {:error, msg} ->
+          send_resp(conn, 404, Utils.error_response(msg))
 
-        _ ->
+        unknown_msg ->
+          Logger.warn(
+            "unknown message received while stopping container: #{inspect(unknown_msg)}"
+          )
+
           send_resp(conn, 500, Utils.error_response("server error"))
       end
     end

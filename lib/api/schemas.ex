@@ -4,7 +4,8 @@ defmodule Jocker.API.Schemas do
 
   defmodule ContainerConfig do
     OpenApiSpex.schema(%{
-      description: "Configuration for a container that is portable between hosts",
+      description:
+        "Configuration for a container. Some of the configuration parameters will overwrite the corresponding parameters in the specified image.",
       type: :object,
       properties: %{
         image: %Schema{
@@ -26,7 +27,8 @@ defmodule Jocker.API.Schemas do
           default: ""
         },
         env: %Schema{
-          description: "List of environment variables set when the command is executed.",
+          description:
+            "List of environment variables used when the container is used. This list will be merged with environment variables defined by the image. The values in this list takes precedence if the variable is defined in both places.",
           type: :array,
           items: %Schema{type: :string},
           default: [],
@@ -50,6 +52,42 @@ defmodule Jocker.API.Schemas do
           items: %Schema{type: :string},
           default: [],
           example: ["allow.raw_sockets=true", "osrelease=jockerjail"]
+        }
+      }
+    })
+  end
+
+  defmodule ExecConfig do
+    OpenApiSpex.schema(%{
+      description:
+        "Configuration of an executable to run within a container. Some of the configuration parameters will overwrite the corresponding parameters in the container.",
+      type: :object,
+      properties: %{
+        container_id: %Schema{
+          type: :string,
+          description: "Id of the container that this exec instance belongs to."
+        },
+        cmd: %Schema{
+          description:
+            "Command to execute whithin the container. If no command is specified the command from the container is used.",
+          type: :array,
+          items: %Schema{type: :string},
+          default: [],
+          example: ["/bin/sh", "-c", "ls /"]
+        },
+        user: %Schema{
+          type: :string,
+          description:
+            "User that executes the command. If no user is set the user from the container will be used.",
+          default: ""
+        },
+        env: %Schema{
+          description:
+            "List of environment variables that is set when the command is executed. This list will be merged with environment variables defined by the container. The values in this list takes precedence iif the variable is defined in both places.",
+          type: :array,
+          items: %Schema{type: :string},
+          default: [],
+          example: ["DEBUG=0", "LANG=da_DK.UTF-8"]
         }
       }
     })
