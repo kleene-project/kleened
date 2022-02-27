@@ -5,7 +5,7 @@ defmodule Jocker.API.Exec do
   require Logger
 
   import OpenApiSpex.Operation,
-    only: [parameter: 4, parameter: 5, request_body: 4, response: 3, response: 4]
+    only: [parameter: 5, request_body: 4, response: 3, response: 4]
 
   defmodule Create do
     use Plug.Builder

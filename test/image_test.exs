@@ -168,6 +168,21 @@ defmodule ImageTest do
     assert messages == []
   end
 
+  test "try building an image from a invalid Dockerfile" do
+    dockerfile = """
+    FROM scratch
+    RUN echo
+      "this should faile because we omitted the '\\' above"
+    CMD /usr/bin/uname
+    """
+
+    context = create_test_context("test_image_builder_three_layers")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    assert {:error, "error parsing: '  \"this should faile because we omitted the '\\' above\"'"} ==
+             Image.build(context, @tmp_dockerfile, "test:latest", true)
+  end
+
   defp create_test_context(name) do
     dataset = Path.join(Config.get("zroot"), name)
     mountpoint = Path.join("/", dataset)

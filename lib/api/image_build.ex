@@ -45,16 +45,20 @@ defmodule Jocker.API.ImageBuild do
 
   # Called on websocket connection initialization.
   def websocket_init(%{args: args} = state) do
-    {:ok, _pid} =
-      Image.build(
-        args["context"],
-        args["dockerfile"],
-        args["tag"],
-        args["quiet"]
-      )
+    case Image.build(
+           args["context"],
+           args["dockerfile"],
+           args["tag"],
+           args["quiet"]
+         ) do
+      {:ok, _pid} ->
+        Logger.debug("Building image. Await output.")
+        {[{:text, "OK"}], state}
 
-    Logger.debug("Building image. Await output.")
-    {[{:text, "OK"}], state}
+      {:error, msg} ->
+        Logger.info("Error building image. Closing websocket.")
+        {[{:text, "ERROR:#{msg}"}, {:close, 1000, "failed to build image"}], state}
+    end
   end
 
   def websocket_handle({:ping, _}, state) do
@@ -87,7 +91,7 @@ defmodule Jocker.API.ImageBuild do
 
   def websocket_info(message, state) do
     Logger.warn("unknown message received: #{inspect(message)}")
-    {:ok, state}
+    {[{:close, 1000, "unknown error occured while building image"}], state}
   end
 
   # No matter why we terminate, remove all of this pids subscriptions

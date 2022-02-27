@@ -59,7 +59,7 @@ defmodule Jocker.API.ExecStartWebSocket do
 
       {:error, msg} ->
         Logger.debug("could not start attached executable #{exec_id}: #{msg}")
-        {[{:close, 1000, msg}], state}
+        {[{:text, "ERROR:#{msg}"}, {:close, 1000, "Failed to execute command."}], state}
     end
   end
 

@@ -1,5 +1,6 @@
 defmodule Jocker.Engine.Dockerfile do
   import String, only: [replace: 3, split: 2, split: 3, trim: 1, to_integer: 1]
+  require Logger
 
   def parse(dockerfile) do
     {:ok, tokens} = decode_file(dockerfile)
@@ -76,7 +77,7 @@ defmodule Jocker.Engine.Dockerfile do
           {:volume, args}
 
         unknown_instruction ->
-          IO.puts("WARNING: Instruction '#{instruction_line}' not understood\n")
+          Logger.info("Invalid instruction: #{instruction_line}")
           {:unparsed, unknown_instruction}
       end
 

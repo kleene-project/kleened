@@ -39,26 +39,33 @@ defmodule Jocker.Engine.Image do
             created: String.t()
           }
 
-  @spec build(String.t(), String.t(), String.t(), boolean()) :: {:ok, pid()}
+  @spec build(String.t(), String.t(), String.t(), boolean()) ::
+          {:ok, pid()} | {:error, String.t()}
   def build(context_path, dockerfile, tag, quiet \\ false) do
     {name, tag} = Jocker.Engine.Utils.decode_tagname(tag)
     dockerfile_path = Path.join(context_path, dockerfile)
     {:ok, dockerfile} = File.read(dockerfile_path)
     instructions = Jocker.Engine.Dockerfile.parse(dockerfile)
 
-    state = %State{
-      :context => context_path,
-      :user => "root",
-      :quiet => quiet,
-      :image_name => name,
-      :image_tag => tag,
-      :msg_receiver => self(),
-      :current_step => 1,
-      :total_steps => length(instructions)
-    }
+    case verify_instructions(instructions) do
+      :ok ->
+        state = %State{
+          :context => context_path,
+          :user => "root",
+          :quiet => quiet,
+          :image_name => name,
+          :image_tag => tag,
+          :msg_receiver => self(),
+          :current_step => 1,
+          :total_steps => length(instructions)
+        }
 
-    {pid, _reference} = Process.spawn(fn -> create_image(instructions, state) end, [:monitor])
-    {:ok, pid}
+        {pid, _reference} = Process.spawn(fn -> create_image(instructions, state) end, [:monitor])
+        {:ok, pid}
+
+      {:error, invalid_line} ->
+        {:error, "error parsing: '#{invalid_line}'"}
+    end
   end
 
   @spec destroy(String.t()) :: :ok | :not_found
@@ -103,6 +110,18 @@ defmodule Jocker.Engine.Image do
 
     Jocker.Engine.MetaData.add_image(img)
     send_msg(state.msg_receiver, {:image_finished, img})
+  end
+
+  defp verify_instructions([]) do
+    :ok
+  end
+
+  defp verify_instructions([{line, {:unparsed, _}} | _rest]) do
+    {:error, line}
+  end
+
+  defp verify_instructions([{_line, _instruction} | rest]) do
+    verify_instructions(rest)
   end
 
   defp process_instructions({line, {:from, image_reference}}, state) do

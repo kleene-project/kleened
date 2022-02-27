@@ -358,6 +358,7 @@ defmodule Jocker.Engine.Exec do
       ["devfs", "on", ^devfs_path | _rest] ->
         {msg, n} = System.cmd("/sbin/umount", [devfs_path], stderr_to_stdout: true)
         Logger.info("unmounting #{devfs_path} with status code #{n} and msg #{msg}")
+        :timer.sleep(1000)
 
       _ ->
         :ok

@@ -64,7 +64,7 @@ defmodule Jocker.Engine.Container do
   @spec stop(id_or_name()) :: {:ok, String.t()} | {:error, String.t()}
   def stop(id_or_name) do
     case MetaData.get_container(id_or_name) do
-      %Container{id: container_id} = cont ->
+      %Container{id: container_id} ->
         stop_container(container_id)
 
       :not_found ->

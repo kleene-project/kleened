@@ -9,7 +9,11 @@ defmodule WebSocketTest do
 
   test "try starting and attaching to a non-existing execution instance" do
     {:ok, conn} = initialize_websocket("/exec/nonexisting/start?attach=true&start_container=true")
-    ["could not find a execution instance matching 'nonexisting'"] = receive_frames(conn)
+
+    assert [
+             "ERROR:could not find a execution instance matching 'nonexisting'",
+             "Failed to execute command."
+           ] == receive_frames(conn)
   end
 
   test "try executing a non-existining execution instance with invalid parameters" do
@@ -30,7 +34,12 @@ defmodule WebSocketTest do
     {:ok, exec_id} = Exec.create(container.id)
     container_id = container.id
     {:ok, conn} = initialize_websocket("/exec/#{exec_id}/start?attach=true&start_container=false")
-    assert ["cannot start container when 'start_container' is false."] == receive_frames(conn)
+
+    assert [
+             "ERROR:cannot start container when 'start_container' is false.",
+             "Failed to execute command."
+           ] == receive_frames(conn)
+
     {:ok, ^container_id} = Container.destroy(container_id)
   end
 
