@@ -96,9 +96,6 @@ defmodule Jocker.Engine.Network do
   @impl true
   def init([]) do
     pf_conf_path = Config.get("pf_config_path")
-    default_network_name = Config.get("default_network_name")
-    if_name = Config.get("default_loopback_name")
-    subnet = Config.get("default_subnet")
 
     gateway =
       case Config.get("default_gateway_if") do
@@ -118,22 +115,6 @@ defmodule Jocker.Engine.Network do
 
     # Adding the special 'host' network (meaning use ip4=inherit when jails are connected to it)
     MetaData.add_network(%Network{id: "host", name: "host", driver: "host"})
-
-    if default_network_name != nil do
-      case create_(
-             %NetworkConfig{
-               name: default_network_name,
-               driver: "loopback",
-               ifname: if_name,
-               subnet: subnet
-             },
-             state
-           ) do
-        {:ok, _} -> :ok
-        {:error, "network name is already taken"} -> :ok
-        {:error, reason} -> Logger.warn("Could not initialize default network: #{reason}")
-      end
-    end
 
     enable_pf()
     configure_pf(pf_conf_path, gateway)

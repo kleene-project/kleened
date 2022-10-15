@@ -12,16 +12,6 @@ defmodule NetworkTest do
     Config.put("default_network_name", "default")
   end
 
-  test "default interface is created at startup" do
-    Utils.destroy_interface("jocker0")
-    assert not Utils.interface_exists("jocker0")
-
-    Supervisor.terminate_child(Jocker.Engine.Supervisor, Network)
-    Supervisor.restart_child(Jocker.Engine.Supervisor, Network)
-
-    assert Utils.interface_exists("jocker0")
-  end
-
   test "create, get and remove a new network" do
     Utils.destroy_interface("jocker1")
 
@@ -44,7 +34,7 @@ defmodule NetworkTest do
   test "listing networks" do
     Utils.destroy_interface("jocker1")
 
-    assert [%Network{name: "default"}, %Network{id: "host"}] = Network.list()
+    assert [%Network{id: "host"}] = Network.list()
 
     {:ok, network} =
       Network.create(%NetworkConfig{
@@ -55,7 +45,6 @@ defmodule NetworkTest do
       })
 
     assert [
-             %Network{name: "default"},
              %Network{id: "host"},
              %Network{name: "testnetwork"}
            ] = Network.list()
@@ -155,8 +144,17 @@ defmodule NetworkTest do
   end
 
   test "connectivity using default interface" do
+    {:ok, test_network} =
+      Network.create(%NetworkConfig{
+        name: "testnet",
+        subnet: "172.18.0.0/16",
+        ifname: "jocker1",
+        driver: "loopback"
+      })
+
     opts = %{
-      cmd: ["/usr/bin/host", "-t", "A", "freebsd.org", "1.1.1.1"]
+      cmd: ["/usr/bin/host", "-t", "A", "freebsd.org", "1.1.1.1"],
+      networks: ["testnet"]
     }
 
     {:ok, %Container{id: id}} = TestHelper.create_container("network_test3", opts)
@@ -171,6 +169,7 @@ defmodule NetworkTest do
     assert output ==
              "Using domain server:\nName: 1.1.1.1\nAddress: 1.1.1.1#53\nAliases: \n\nfreebsd.org has address 96.47.72.84\n"
 
+    assert Network.remove("testnet") == {:ok, test_network.id}
     Container.destroy(id)
   end
 

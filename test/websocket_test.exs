@@ -2,10 +2,27 @@ defmodule WebSocketTest do
   use ExUnit.Case
   require Logger
 
-  alias Jocker.Engine.{Exec, Container, Image}
+  alias Jocker.Engine.{Exec, Container, Network, Image}
+  alias Jocker.API.Schemas.NetworkConfig
   alias :gun, as: Gun
 
   @moduletag :capture_log
+
+  setup do
+    {:ok, %Network{name: "default"} = testnet} =
+      Network.create(%NetworkConfig{
+        name: "default",
+        subnet: "192.168.83.0/24",
+        ifname: "jocker1",
+        driver: "loopback"
+      })
+
+    on_exit(fn ->
+      Jocker.Engine.Network.remove(testnet.id)
+    end)
+
+    :ok
+  end
 
   test "try starting and attaching to a non-existing execution instance" do
     {:ok, conn} = initialize_websocket("/exec/nonexisting/start?attach=true&start_container=true")

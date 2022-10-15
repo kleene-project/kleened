@@ -8,20 +8,19 @@ defmodule MetaDataTest do
 
   test "adding, listing and removing networks" do
     host_network = get_network("host")
-    default_network = get_network("default")
-    assert [default_network, host_network] == list_networks(:include_host)
-    assert [default_network] == list_networks(:exclude_host)
+    assert [host_network] == list_networks(:include_host)
+    assert [] == list_networks(:exclude_host)
 
     network1 = %Network{id: "test_id1", name: "testname1"}
     network2 = %Network{id: "id2_test", name: "testname2"}
     assert :ok = add_network(network1)
-    assert [default_network, network1] == list_networks(:exclude_host)
+    assert [network1] == list_networks(:exclude_host)
     assert network1 == get_network("test_id1")
     assert network1 == get_network("tes")
     assert :ok = add_network(network2)
-    assert [default_network, network1, network2] == list_networks(:exclude_host)
+    assert [network1, network2] == list_networks(:exclude_host)
     remove_network("test_id1")
-    assert [default_network, host_network, network2] == list_networks(:include_host)
+    assert [host_network, network2] == list_networks(:include_host)
     remove_network("id2_test")
   end
 

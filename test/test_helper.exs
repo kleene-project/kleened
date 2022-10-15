@@ -19,7 +19,7 @@ defmodule TestHelper do
   end
 
   def create_container(name, config) when not is_map_key(config, :networks) do
-    create_container(name, Map.put(config, :networks, ["default"]))
+    create_container(name, Map.put(config, :networks, ["host"]))
   end
 
   def create_container(name, config) do
