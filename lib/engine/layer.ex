@@ -60,7 +60,7 @@ defmodule Jocker.Engine.Layer do
   defp new_(%Layer{snapshot: parent_snapshot}, container_id) do
     id = Jocker.Engine.Utils.uuid()
     dataset = Path.join([Config.get("zroot"), "container", container_id])
-    0 = Jocker.Engine.ZFS.clone(parent_snapshot, dataset)
+    {_, 0} = Jocker.Engine.ZFS.clone(parent_snapshot, dataset)
 
     new_layer = %Layer{
       id: id,
@@ -75,7 +75,7 @@ defmodule Jocker.Engine.Layer do
   defp destroy_(layer_id) do
     case MetaData.get_layer(layer_id) do
       %Layer{dataset: dataset} ->
-        0 = Jocker.Engine.ZFS.destroy(dataset)
+        {_, 0} = Jocker.Engine.ZFS.destroy(dataset)
         MetaData.remove_layer(layer_id)
 
       :not_found ->
@@ -89,7 +89,7 @@ defmodule Jocker.Engine.Layer do
 
     snapshot = new_dataset <> "@layer"
     mountpoint = "/" <> new_dataset
-    0 = Jocker.Engine.ZFS.snapshot(snapshot)
+    {_, 0} = Jocker.Engine.ZFS.snapshot(snapshot)
 
     updated_layer = %Layer{
       layer

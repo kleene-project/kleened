@@ -45,7 +45,7 @@ defmodule ContainerTest do
     :ok = Exec.start(exec_id, %{attach: true, start_container: true})
 
     assert_receive {:container, ^exec_id, {:jail_output, "test test\n"}}
-    assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
+    assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}, 5_000
     refute TestHelper.devfs_mounted(container)
   end
 

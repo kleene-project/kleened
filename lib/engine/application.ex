@@ -47,9 +47,7 @@ defmodule Jocker.Engine.Application do
         {:error, "could not start dockerd: #{msg}"}
 
       unknown_return ->
-        msg = "could not start jockerd: #{inspect(unknown_return)}"
-        Logger.error(msg)
-        {:error, msg}
+        {:error, "could not start jockerd: #{inspect(unknown_return)}"}
     end
   end
 

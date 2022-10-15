@@ -84,7 +84,18 @@ defmodule Jocker.Engine.MetaData do
   @spec start_link([]) :: Agent.on_start()
   def start_link([]) do
     filepath = Config.get("metadata_db")
-    {:ok, db} = Sqlitex.open(filepath)
+
+    db =
+      case Sqlitex.open(filepath) do
+        {:error, {:cantopen, error_msg}} ->
+          Logger.error(
+            "unable to open database at #{filepath}: Do you have the correct privileges?"
+          )
+
+        {:ok, db} ->
+          db
+      end
+
     create_tables(db)
     on_start = Agent.start_link(fn -> db end, name: __MODULE__)
 

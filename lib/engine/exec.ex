@@ -1,6 +1,6 @@
 defmodule Jocker.Engine.Exec do
   alias Jocker.API.Schemas.ExecConfig
-  alias Jocker.Engine.{Container, MetaData, Layer, Utils, ExecInstances}
+  alias Jocker.Engine.{Container, MetaData, OS, Layer, Utils, ExecInstances}
 
   defmodule State do
     defstruct config: nil,
@@ -143,7 +143,7 @@ defmodule Jocker.Engine.Exec do
         %{force_stop: false} -> [jailed_process_pid]
       end
 
-    case System.cmd("/bin/kill", cmd_args) do
+    case OS.cmd(["/bin/kill" | cmd_args]) do
       {_, 0} ->
         {:ok, "succesfully sent termination signal to executable"}
 
@@ -174,17 +174,15 @@ defmodule Jocker.Engine.Exec do
   defp shutdown_process(exit_code, %State{config: config, container: cont} = state) do
     case Utils.is_container_running?(config.container_id) do
       false ->
-        msg =
-          "#{state.exec_id}: container #{config.container_id} stopped with exit code #{exit_code}"
-
+        msg = "#{state.exec_id} stopped with exit code #{exit_code}: {:shutdown, :jail_stopped}"
         Logger.debug(msg)
-
         jail_cleanup(cont)
-
         relay_msg({:shutdown, :jail_stopped}, state)
 
       true ->
-        msg = "execution instance #{state.exec_id} stopped with exit code #{exit_code}"
+        msg =
+          "#{state.exec_id} stopped with exit code #{exit_code}: {:shutdown, :jailed_process_exited}"
+
         Logger.debug(msg)
 
         relay_msg({:shutdown, :jailed_process_exited}, state)
@@ -277,7 +275,7 @@ defmodule Jocker.Engine.Exec do
     # remove any devfs mounts of the jail. If it was closed with 'jail -r <jailname>' devfs should be removed automatically.
     # If the jail stops because there jailed process stops (i.e. 'jail -c <etc> /bin/sleep 10') then devfs is NOT removed.
     # A race condition can also occur such that "jail -r" does not unmount before this call to mount.
-    {output, _exitcode} = System.cmd("mount", ["-t", "devfs"], stderr_to_stdout: true)
+    {output, _exitcode} = OS.cmd(["mount", "-t", "devfs"])
     output |> String.split("\n") |> Enum.map(&umount_container_devfs(&1, mountpoint))
   end
 
@@ -290,13 +288,7 @@ defmodule Jocker.Engine.Exec do
     # jexec [-l] [-u username | -U username] jail [command ...]
     args = ~w"-l -u #{user} #{container_id} /usr/bin/env -i" ++ env_vars ++ cmd
 
-    port =
-      Port.open(
-        {:spawn_executable, '/usr/sbin/jexec'},
-        [:stderr_to_stdout, :binary, :exit_status, {:args, args}]
-      )
-
-    Logger.debug("Executing /usr/sbin/jexec #{Enum.join(args, " ")}")
+    port = OS.cmd_async(['/usr/sbin/jexec' | args])
     port
   end
 
@@ -330,14 +322,7 @@ defmodule Jocker.Engine.Exec do
         parameters ++
         ~w"exec.jail_user=#{user} command=/usr/bin/env -i" ++ env_vars ++ command
 
-    Logger.debug("Executing /usr/sbin/jail #{Enum.join(args, " ")}")
-
-    port =
-      Port.open(
-        {:spawn_executable, '/usr/sbin/jail'},
-        [:stderr_to_stdout, :binary, :exit_status, {:args, args}]
-      )
-
+    port = OS.cmd_async(['/usr/sbin/jail' | args])
     port
   end
 
@@ -348,17 +333,18 @@ defmodule Jocker.Engine.Exec do
 
   defp relay_msg(msg, state) do
     wrapped_msg = {:container, state.exec_id, msg}
-    Enum.map(state.subscribers, fn x -> Process.send(x, wrapped_msg, []) end)
+
+    Enum.map(state.subscribers, fn x ->
+      Logger.debug("relaying to #{inspect(x)}: #{inspect(msg)}")
+      Process.send(x, wrapped_msg, [])
+    end)
   end
 
   defp umount_container_devfs(line, mountpoint) do
-    devfs_path = Path.join(mountpoint, "dev")
-
-    case String.split(line, " ") do
-      ["devfs", "on", ^devfs_path | _rest] ->
-        {msg, n} = System.cmd("/sbin/umount", [devfs_path], stderr_to_stdout: true)
-        Logger.info("unmounting #{devfs_path} with status code #{n} and msg #{msg}")
-        :timer.sleep(1000)
+    case String.contains?(line, mountpoint) do
+      true ->
+        devfs_path = Path.join(mountpoint, "dev")
+        OS.cmd(["/sbin/umount", devfs_path])
 
       _ ->
         :ok

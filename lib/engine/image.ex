@@ -76,7 +76,7 @@ defmodule Jocker.Engine.Image do
 
       %Image{id: id, layer_id: layer_id} ->
         %Layer{dataset: dataset} = MetaData.get_layer(layer_id)
-        0 = ZFS.destroy_force(dataset)
+        {_, 0} = ZFS.destroy_force(dataset)
         MetaData.delete_image(id)
     end
   end
