@@ -1,6 +1,6 @@
 defmodule Jocker.Engine.Image do
-  alias Jocker.API.Schemas.ExecConfig
-  alias Jocker.Engine.{ZFS, MetaData, Utils, Container, Layer}
+  alias Jocker.API.Schemas.{ExecConfig, NetworkConfig}
+  alias Jocker.Engine.{ZFS, MetaData, Utils, Container, Layer, Network}
   require Logger
 
   @derive Jason.Encoder
@@ -19,6 +19,7 @@ defmodule Jocker.Engine.Image do
     defstruct context: nil,
               image_name: nil,
               image_tag: nil,
+              network: nil,
               msg_receiver: nil,
               current_step: nil,
               total_steps: nil,
@@ -49,12 +50,23 @@ defmodule Jocker.Engine.Image do
 
     case verify_instructions(instructions) do
       :ok ->
+        build_id = String.slice(Utils.uuid(), 0..5)
+
+        {:ok, buildnet} =
+          Network.create(%NetworkConfig{
+            name: "builder" <> build_id,
+            subnet: "172.18.0.0/24",
+            ifname: build_id,
+            driver: "loopback"
+          })
+
         state = %State{
           :context => context_path,
           :user => "root",
           :quiet => quiet,
           :image_name => name,
           :image_tag => tag,
+          :network => buildnet.id,
           :msg_receiver => self(),
           :current_step => 1,
           :total_steps => length(instructions)
@@ -92,7 +104,9 @@ defmodule Jocker.Engine.Image do
       }
     } = Enum.reduce(instructions, state, &process_instructions/2)
 
-    Jocker.Engine.Network.disconnect(container_id, "default")
+    Network.disconnect(container_id, state.network)
+    Network.remove(state.network)
+
     MetaData.delete_container(container_id)
     layer = MetaData.get_layer(layer_id)
     Jocker.Engine.Layer.to_image(layer, container_id)
@@ -136,7 +150,7 @@ defmodule Jocker.Engine.Image do
           jail_param: ["mount.devfs=true"],
           image: image_id,
           user: user,
-          networks: ["default"],
+          networks: [state.network],
           cmd: []
         }
       )
