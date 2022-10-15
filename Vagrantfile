@@ -21,9 +21,9 @@ $make_utf8_default = "cp #{$host}/jocker/vagrant_data/login.conf /etc/ && cap_mk
 
 Vagrant.configure("2") do |config|
   ### Basic configuration across VM's
-  config.vm.box = "freebsd/FreeBSD-12.2-RELEASE" # "freebsd/FreeBSD-12.2-STABLE"
+  config.vm.box = "generic/freebsd13"
   config.vm.box_check_update = false
-  config.vm.network "private_network", ip: "192.168.83.10"
+  config.vm.network "private_network", ip: "192.168.58.2"
 
   config.vm.synced_folder "..", $host,
     type: "nfs",
@@ -31,7 +31,7 @@ Vagrant.configure("2") do |config|
 
   config.vm.provider "virtualbox" do |vb|
     #vb.gui = true
-    vb.memory = "2048"
+    vb.memory = "4096"
   end
 
   config.vm.provision "shell", inline: $configure_zfs

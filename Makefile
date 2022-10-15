@@ -2,7 +2,6 @@ package:
 	mix release --overwrite
 
 test:
-	mix escript.build
 	mix test --seed 1 --trace --max-failures 1
 
 clear-jocker:
