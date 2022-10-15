@@ -7,12 +7,6 @@ defmodule Jocker.MixProject do
       version: "0.0.1",
       elixir: "~> 1.9",
       start_permanent: Mix.env() == :prod,
-      escript: [
-        main_module: Jocker.CLI.Main,
-        name: "jocker",
-        app: :logger,
-        embed_elixir: true
-      ],
       releases: [
         jockerd: [include_executables_for: [:unix]]
       ],
