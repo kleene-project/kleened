@@ -311,8 +311,14 @@ defmodule Jocker.Engine.Exec do
 
         network_ids ->
           ips = Enum.reduce(network_ids, [], &extract_ips(id, &1, &2))
-          ips_as_string = Enum.join(ips, ",")
-          "ip4.addr=#{ips_as_string}"
+
+          case Enum.join(ips, ",") do
+            "" ->
+              ""
+
+            ips_as_string ->
+              "ip4.addr=#{ips_as_string}"
+          end
       end
 
     %Layer{mountpoint: path} = Jocker.Engine.MetaData.get_layer(layer_id)

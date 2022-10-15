@@ -55,7 +55,7 @@ Vagrant.configure("2") do |config|
       ## Use 'erlang-wx' instead of 'erlang', if the observer gui is needed.
       ## Also remember to tweak ssh to X-forwarding etc.
       pkg install -y zsh bash tmux git-lite vim erlang elixir elixir-hex jq
-      pkg install -y py38-pipenv py38-pipx
+      pkg install -y py39-pipenv py39-pipx
       su - vagrant -c 'pipx install openapi-python-client --include-deps'
       su - vagrant -c 'cd jcli && pipenv install'
 
