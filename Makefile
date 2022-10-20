@@ -4,6 +4,9 @@ package:
 test:
 	mix test --seed 0 --trace --max-failures 1
 
+shell:
+	iex -S mix
+
 clear-jocker:
 	zfs destroy -rf zroot/jocker
 	zfs create zroot/jocker

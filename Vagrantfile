@@ -13,8 +13,7 @@ zfs create -o compression=gzip-9 -o mountpoint=/zroot/jocker zroot/jocker
 zfs create zroot/jocker_basejail
 SCRIPT
 
-### Fetched from: ftp://ftp.dk.freebsd.org/pub/FreeBSD/releases/amd64/12.2-RELEASE/base.txz
-$create_jocker_jailbase = "tar -xf #{$host}/base.txz -C /zroot/jocker_basejail"
+$create_jocker_jailbase = "tar -xf #{$host}/amd64_13.1-RELEASE_base.txz -C /zroot/jocker_basejail"
 
 $make_utf8_default = "cp #{$host}/jocker/vagrant_data/login.conf /etc/ && cap_mkdb /etc/login.conf"
 
