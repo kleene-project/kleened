@@ -19,7 +19,7 @@ defmodule NetworkTest do
              Network.create(%NetworkConfig{
                name: "testnetwork",
                subnet: "172.18.0.0/16",
-               ifname: "jocker1",
+               loopback_if_name: "jocker1",
                driver: "loopback"
              })
 
@@ -40,7 +40,7 @@ defmodule NetworkTest do
       Network.create(%NetworkConfig{
         name: "testnetwork",
         subnet: "172.18.0.0/16",
-        ifname: "jocker1",
+        loopback_if_name: "jocker1",
         driver: "loopback"
       })
 
@@ -57,7 +57,7 @@ defmodule NetworkTest do
              Network.create(%NetworkConfig{
                name: "testnetwork",
                subnet: "172.18.0.0/16",
-               ifname: "jocker1",
+               loopback_if_name: "jocker1",
                driver: "loopback"
              })
 
@@ -70,7 +70,7 @@ defmodule NetworkTest do
              Network.create(%NetworkConfig{
                name: "testnetwork",
                subnet: "172.18.0.0/16",
-               ifname: "jocker1",
+               loopback_if_name: "jocker1",
                driver: "loopback"
              })
 
@@ -78,7 +78,7 @@ defmodule NetworkTest do
              Network.create(%NetworkConfig{
                name: "testnetwork",
                subnet: "172.19.0.0/16",
-               ifname: "jocker2",
+               loopback_if_name: "jocker2",
                driver: "loopback"
              })
 
@@ -90,7 +90,7 @@ defmodule NetworkTest do
              Network.create(%NetworkConfig{
                name: "testnetwork",
                subnet: "172.18.0.0-16",
-               ifname: "jocker1",
+               loopback_if_name: "jocker1",
                driver: "loopback"
              })
   end
@@ -102,7 +102,7 @@ defmodule NetworkTest do
       Network.create(%NetworkConfig{
         name: "testnet",
         subnet: "172.19.0.0/24",
-        ifname: network_if,
+        loopback_if_name: network_if,
         driver: "loopback"
       })
 
@@ -148,7 +148,7 @@ defmodule NetworkTest do
       Network.create(%NetworkConfig{
         name: "testnet",
         subnet: "172.18.0.0/16",
-        ifname: "jocker1",
+        loopback_if_name: "jocker1",
         driver: "loopback"
       })
 

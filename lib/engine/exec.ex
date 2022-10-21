@@ -1,6 +1,7 @@
 defmodule Jocker.Engine.Exec do
   alias Jocker.API.Schemas.ExecConfig
-  alias Jocker.Engine.{Container, MetaData, OS, Layer, Utils, ExecInstances}
+  alias Jocker.Engine.{Container, MetaData, OS, FreeBSD, Layer, Utils, ExecInstances, Network}
+  alias Network.EndPointConfig
 
   defmodule State do
     defstruct config: nil,
@@ -269,12 +270,18 @@ defmodule Jocker.Engine.Exec do
     %Container{cont | user: user, command: cmd, env_vars: env}
   end
 
-  defp jail_cleanup(%Container{layer_id: layer_id}) do
-    %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
+  defp jail_cleanup(%Container{id: container_id, layer_id: layer_id}) do
+    destoy_jail_epairs = fn network ->
+      config = MetaData.get_endpoint_config(container_id, network.id)
+      FreeBSD.destroy_bridged_epair(config.epair, network.bridge_if_name)
+    end
+
+    MetaData.connected_networks(container_id) |> Enum.map(destoy_jail_epairs)
 
     # remove any devfs mounts of the jail. If it was closed with 'jail -r <jailname>' devfs should be removed automatically.
     # If the jail stops because there jailed process stops (i.e. 'jail -c <etc> /bin/sleep 10') then devfs is NOT removed.
     # A race condition can also occur such that "jail -r" does not unmount before this call to mount.
+    %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     {output, _exitcode} = OS.cmd(["mount", "-t", "devfs"])
     output |> String.split("\n") |> Enum.map(&umount_container_devfs(&1, mountpoint))
   end
@@ -304,22 +311,7 @@ defmodule Jocker.Engine.Exec do
        ) do
     Logger.info("Starting container #{inspect(cont.id)}")
 
-    network_config =
-      case MetaData.connected_networks(id) do
-        ["host"] ->
-          "ip4=inherit"
-
-        network_ids ->
-          ips = Enum.reduce(network_ids, [], &extract_ips(id, &1, &2))
-
-          case Enum.join(ips, ",") do
-            "" ->
-              ""
-
-            ips_as_string ->
-              "ip4.addr=#{ips_as_string}"
-          end
-      end
+    network_config = setup_connectivity_configuration(id)
 
     %Layer{mountpoint: path} = Jocker.Engine.MetaData.get_layer(layer_id)
 
@@ -332,9 +324,77 @@ defmodule Jocker.Engine.Exec do
     port
   end
 
+  defp setup_connectivity_configuration(container_id) do
+    networks = MetaData.connected_networks(container_id)
+
+    case network_type_used(networks) do
+      :host ->
+        "ip4=inherit"
+
+      :loopback ->
+        network_ids = Enum.map(networks, fn %Network{id: id} -> id end)
+        ips = Enum.reduce(network_ids, [], &extract_ips(container_id, &1, &2))
+
+        case Enum.join(ips, ",") do
+          "" ->
+            ""
+
+          ips_as_string ->
+            "ip4.addr=#{ips_as_string}"
+        end
+
+      :vnet ->
+        create_vnet_network_config(networks, container_id, [])
+    end
+  end
+
+  defp create_vnet_network_config(
+         [%Network{id: id, bridge_if_name: bridge, subnet: subnet} | rest],
+         container_id,
+         network_configs
+       ) do
+    subnet = CIDR.parse(subnet)
+    gateway = subnet.first |> :inet.ntoa() |> :binary.list_to_bin()
+
+    %EndPointConfig{ip_addresses: [ip]} =
+      endpoint = MetaData.get_endpoint_config(container_id, id)
+
+    epair = create_epair()
+    MetaData.add_endpoint_config(container_id, id, %EndPointConfig{endpoint | epair: epair})
+    # "exec.start=\"ifconfig #{epair}b name jail0\" " <>
+    # "exec.poststop=\"ifconfig #{bridge} deletem #{epair}a\" " <>
+    # "exec.poststop=\"ifconfig #{epair}a destroy\""
+    network_config =
+      "vnet vnet.interface=#{epair}b " <>
+        "exec.prestart=\"ifconfig #{bridge} addm #{epair}a up\" " <>
+        "exec.start=\"ifconfig #{epair}b #{ip}/#{subnet.mask}\" " <>
+        "exec.start=\"route add -inet default #{gateway}\" "
+
+    create_vnet_network_config(rest, container_id, [network_config | network_configs])
+  end
+
+  defp create_vnet_network_config([], _, network_configs) do
+    Enum.join(network_configs, " ")
+  end
+
+  def create_epair() do
+    epair_a = OS.cmd(~w"/sbin/ifconfig epair create")
+    String.slice(epair_a, 0, String.length(epair_a) - 1)
+  end
+
   def extract_ips(container_id, network_id, ip_list) do
     config = MetaData.get_endpoint_config(container_id, network_id)
     Enum.concat(config.ip_addresses, ip_list)
+  end
+
+  defp network_type_used(networks) do
+    case networks do
+      [] -> :no_networks
+      [%Network{driver: "host"}] -> :host
+      [%Network{driver: "loopback"} | _] -> :loopback
+      [%Network{driver: "vnet"} | _] -> :vnet
+      invalid_response -> Logger.error("Invalid response: #{inspect(invalid_response)}")
+    end
   end
 
   defp relay_msg(msg, state) do

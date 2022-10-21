@@ -87,7 +87,7 @@ defmodule Jocker.Engine.MetaData do
 
     db =
       case Sqlitex.open(filepath) do
-        {:error, {:cantopen, error_msg}} ->
+        {:error, {:cantopen, _error_msg}} ->
           Logger.error(
             "unable to open database at #{filepath}: Do you have the correct privileges?"
           )
@@ -185,6 +185,15 @@ defmodule Jocker.Engine.MetaData do
       )
 
     endpoint_cfg
+  end
+
+  @spec get_endpoint_configs_from_network(Network.network_id()) ::
+          [%EndPointConfig{}] | :not_found
+  def get_endpoint_configs_from_network(network_id) do
+    sql(
+      "SELECT config FROM endpoint_configs WHERE network_id = ?",
+      [network_id]
+    )
   end
 
   @spec remove_endpoint_config(Container.container_id(), Network.network_id()) :: :ok

@@ -1,6 +1,6 @@
 defmodule Jocker.Engine.Network do
   use GenServer
-  alias Jocker.Engine.{Config, Container, Utils, MetaData}
+  alias Jocker.Engine.{Config, Container, Utils, MetaData, OS, FreeBSD}
   alias Jocker.API.Schemas.NetworkConfig
   require Logger
 
@@ -8,9 +8,9 @@ defmodule Jocker.Engine.Network do
   defstruct id: nil,
             name: nil,
             subnet: nil,
-            if_name: nil,
             driver: nil,
-            default_gw_if: nil
+            loopback_if_name: nil,
+            bridge_if_name: nil
 
   alias __MODULE__, as: Network
 
@@ -20,8 +20,8 @@ defmodule Jocker.Engine.Network do
               name: nil,
               subnet: nil,
               if_name: nil,
-              ip_addresses: [],
-              default_gw_if: nil
+              epair: nil,
+              ip_addresses: []
   end
 
   defmodule State do
@@ -110,7 +110,7 @@ defmodule Jocker.Engine.Network do
       Logger.error("Unable to access Jockers PF configuration file located at #{pf_conf_path}")
     end
 
-    create_interfaces()
+    create_loopback_interfaces()
     state = %State{:pf_config_path => pf_conf_path, :gateway_interface => gateway}
 
     # Adding the special 'host' network (meaning use ip4=inherit when jails are connected to it)
@@ -152,9 +152,21 @@ defmodule Jocker.Engine.Network do
 
   def handle_call({:remove, idname}, _from, state) do
     case MetaData.get_network(idname) do
-      %Network{:id => id, :if_name => if_name} ->
+      %Network{id: id, driver: "loopback", loopback_if_name: if_name} ->
         container_ids = MetaData.connected_containers(id)
         Enum.map(container_ids, &disconnect_(&1, id))
+        Utils.destroy_interface(if_name)
+        MetaData.remove_network(id)
+        configure_pf(state.pf_config_path, state.gateway_interface)
+        {:reply, {:ok, id}, state}
+
+      %Network{id: id, driver: "vnet", bridge_if_name: if_name} ->
+        container_ids = MetaData.connected_containers(id)
+        Enum.map(container_ids, &disconnect_(&1, id))
+
+        # Just in case there are more members added:
+        remove_bridge_members(if_name)
+
         Utils.destroy_interface(if_name)
         MetaData.remove_network(id)
         configure_pf(state.pf_config_path, state.gateway_interface)
@@ -183,7 +195,7 @@ defmodule Jocker.Engine.Network do
   end
 
   def create_(
-        %NetworkConfig{driver: "loopback", name: name, subnet: subnet, ifname: if_name},
+        %NetworkConfig{driver: driver, name: name, subnet: subnet, ifname: loopback_if},
         state
       ) do
     parsed_subnet = CIDR.parse(subnet)
@@ -195,13 +207,15 @@ defmodule Jocker.Engine.Network do
       not is_map(parsed_subnet) or parsed_subnet.__struct__ != CIDR ->
         {:error, "invalid subnet"}
 
-      true ->
-        create_loopback_network(name, if_name, subnet, state)
-    end
-  end
+      driver == "loopback" ->
+        create_loopback_network(name, loopback_if, subnet, state)
 
-  def create_(%NetworkConfig{driver: unknown_driver}, _state) do
-    {:error, "Unknown driver #{inspect(unknown_driver)}"}
+      driver == "vnet" ->
+        create_vnet_network(name, subnet, state)
+
+      true ->
+        {:error, "Unknown driver #{inspect(driver)}"}
+    end
   end
 
   defp connect_(_container, :not_found) do
@@ -235,22 +249,50 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  defp connect_(%Container{id: container_id}, network) do
-    case MetaData.connected_networks(container_id) do
-      [%Network{id: "host"}] ->
+  defp connect_(%Container{id: container_id}, %Network{driver: "loopback"} = network) do
+    cond do
+      connected_to_host_network?(container_id) ->
         {:error, "connected to host network"}
 
-      _ ->
+      connected_to_vnet_networks?(container_id) ->
+        {:error,
+         "already connected to a vnet network and containers can't be connected to both vnet and loopback networks"}
+
+      true ->
         ip = new_ip(network)
         config = %EndPointConfig{ip_addresses: [ip]}
         MetaData.add_endpoint_config(container_id, network.id, config)
-        ifconfig_alias(network.if_name, ip)
 
-        if Container.is_running?(container_id) do
-          add_jail_ip(container_id, ip)
+        case OS.cmd(~w"ifconfig #{network.loopback_if_name} alias #{ip}/32") do
+          {_, 0} ->
+            if Container.is_running?(container_id) do
+              add_jail_ip(container_id, ip)
+            end
+
+            :ok
+
+          {error_output, _nonzero_exitcode} ->
+            {:error, "could not add ip #{ip} to container #{container_id}: #{error_output}"}
         end
+    end
+  end
 
-        :ok
+  defp connect_(%Container{id: container_id}, %Network{driver: "vnet"} = network) do
+    cond do
+      connected_to_host_network?(container_id) ->
+        {:error, "connected to host network"}
+
+      Utils.is_container_running?(container_id) ->
+        {:error, "cannot connect a running container to a vnet network"}
+
+      connected_to_loopback_networks?(container_id) ->
+        {:error,
+         "already connected to a loopback network and containers can't be connected to both vnet and loopback networks"}
+
+      true ->
+        ip = new_ip(network)
+        config = %EndPointConfig{ip_addresses: [ip], if_name: network.name}
+        MetaData.add_endpoint_config(container_id, network.id, config)
     end
   end
 
@@ -277,7 +319,11 @@ defmodule Jocker.Engine.Network do
       config == :not_found ->
         {:error, "endpoint configuration not found"}
 
-      true ->
+      network.driver == "host" ->
+        # The container needs to be restarted for the disconnect to take effect.
+        MetaData.remove_endpoint_config(container_id, network.id)
+
+      network.driver == "loopback" ->
         # Remove ip-addresses from the jail, network interface, and database
         Enum.map(config.ip_addresses, &ifconfig_remove_alias(&1, network.if_name))
 
@@ -286,7 +332,36 @@ defmodule Jocker.Engine.Network do
         end
 
         MetaData.remove_endpoint_config(container_id, network.id)
+
+      network.driver == "vnet" ->
+        if config.epair != nil do
+          FreeBSD.destroy_bridged_vnet_epair(config.epair, network.bridge_if_name, container_id)
+        end
+
+        MetaData.remove_endpoint_config(container_id, network.id)
+
+      true ->
+        Logger.error("this should not happen!")
+        {:error, "unknown error occured"}
     end
+  end
+
+  defp remove_bridge_members(bridge) do
+    remove_if_member = fn line ->
+      line = String.trim(line)
+
+      case String.contains?(line, "member: ") do
+        true ->
+          [_, epair | _rest] = String.split(line)
+          OS.cmd(~w"ifconfig #{bridge} deletem #{epair}")
+
+        false ->
+          :ok
+      end
+    end
+
+    lines = OS.cmd(~w"ifconfig #{bridge}") |> String.trim() |> String.split("\n")
+    Enum.map(lines, remove_if_member)
   end
 
   def configure_pf(pf_config_path, default_gw) do
@@ -305,16 +380,32 @@ defmodule Jocker.Engine.Network do
   end
 
   def create_pf_config(
-        [%Network{:if_name => if_name, :subnet => subnet} | rest],
-        %{:macros => macros, :translation => translation} = state
+        [%Network{driver: "loopback", loopback_if_name: if_name, subnet: subnet} | rest],
+        %{macros: macros, translation: translation} = state
       ) do
-    new_macro = "jocker_#{if_name}_subnet=\"#{subnet}\""
-    nat_subnet = "nat on $gw_if from $jocker_#{if_name}_subnet to any -> ($gw_if)"
+    new_macro = "jocker_loopback_#{if_name}_subnet=\"#{subnet}\""
+    nat_subnet = "nat on $gw_if from $jocker_loopback_#{if_name}_subnet to any -> ($gw_if)"
 
     new_state = %{
       state
       | :macros => [new_macro | macros],
         :translation => [nat_subnet | translation]
+    }
+
+    create_pf_config(rest, new_state)
+  end
+
+  def create_pf_config(
+        [%Network{driver: "vnet", bridge_if_name: bridge_name, subnet: subnet} | rest],
+        %{macros: macros, translation: translation} = state
+      ) do
+    new_macro = "jocker_bridge_#{bridge_name}_subnet=\"#{subnet}\""
+    nat_bridged_network = "nat on $(gw_if) inet from ($bridge_jail_if:network) to any -> ($gw_if)"
+
+    new_state = %{
+      state
+      | :macros => [new_macro | macros],
+        :translation => [nat_bridged_network | translation]
     }
 
     create_pf_config(rest, new_state)
@@ -359,9 +450,9 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  defp create_interfaces() do
+  defp create_loopback_interfaces() do
     MetaData.list_networks(:exclude_host)
-    |> Enum.map(fn %Network{:if_name => if_name} ->
+    |> Enum.map(fn %Network{:loopback_if_name => if_name} ->
       ifconfig_loopback_create(if_name)
     end)
   end
@@ -371,7 +462,7 @@ defmodule Jocker.Engine.Network do
       id: Utils.uuid(),
       name: name,
       subnet: subnet,
-      if_name: if_name,
+      loopback_if_name: if_name,
       driver: "loopback"
     }
 
@@ -386,12 +477,67 @@ defmodule Jocker.Engine.Network do
     end
   end
 
+  def create_vnet_network(name, subnet, state) do
+    network = %Network{
+      id: Utils.uuid(),
+      name: name,
+      subnet: subnet,
+      driver: "vnet"
+    }
+
+    case OS.cmd(~w"ifconfig bridge create") do
+      {bridge_name, 0} ->
+        bridge_name = String.trim(bridge_name)
+        %CIDR{:first => ip, :mask => mask} = CIDR.parse(subnet)
+        # :inet.ntoa/1 produces erlang strings :S
+        ip = :binary.list_to_bin(:inet.ntoa(ip))
+
+        case OS.cmd(~w"ifconfig #{bridge_name} alias #{ip}/#{mask}") do
+          :ok ->
+            MetaData.add_network(%Network{network | bridge_if_name: bridge_name})
+            configure_pf(state.pf_config_path, state.gateway_interface)
+
+          :error ->
+            msg = "could not add ip to the newly created bridge interface for network #{name}"
+            {:error, msg}
+        end
+
+      {error_msg, _nonzero_exitcode} ->
+        Logger.warn(
+          "failed to create network '#{name}': could not create bridge interface: #{error_msg}"
+        )
+    end
+  end
+
   defp ifconfig_loopback_create(if_name) do
     if Utils.interface_exists(if_name) do
       Utils.destroy_interface(if_name)
     end
 
     System.cmd("ifconfig", ["lo", "create", "name", if_name])
+  end
+
+  defp connected_to_host_network?(container_id) do
+    case MetaData.connected_networks(container_id) do
+      [%Network{id: "host"}] -> true
+      _ -> false
+    end
+  end
+
+  def connected_to_loopback_networks?(container_id) do
+    MetaData.connected_networks(container_id)
+    |> Enum.any?(fn
+      %Network{driver: "loopback"} -> true
+      _ -> false
+    end)
+  end
+
+  def connected_to_vnet_networks?(container_id) do
+    MetaData.connected_networks(container_id)
+    |> Enum.any?(fn
+      %Network{driver: "vnet"} -> true
+      _ -> false
+    end)
   end
 
   def detect_gateway_if() do
@@ -459,17 +605,6 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  def ifconfig_alias(iface, ip) do
-    case System.cmd("ifconfig", [iface, "alias", "#{ip}/32"], stderr_to_stdout: true) do
-      {_, 0} ->
-        :ok
-
-      {error, _} ->
-        Logger.error("Some error occured while adding #{ip} to #{iface}: #{error}")
-        :error
-    end
-  end
-
   defp ifconfig_remove_alias(ip, iface) do
     case System.cmd("ifconfig", [iface, "-alias", "#{ip}"], stderr_to_stdout: true) do
       {_, 0} -> :ok
@@ -489,7 +624,7 @@ defmodule Jocker.Engine.Network do
     Enum.any?(output, &(&1["address"] == ip))
   end
 
-  defp new_ip(%Network{if_name: if_name, subnet: subnet}) do
+  defp new_ip(%Network{driver: "loopback", loopback_if_name: if_name, subnet: subnet}) do
     ips_in_use = ips_on_interface(if_name)
     n_ips_used = length(ips_in_use)
     ips_in_use = MapSet.new(Enum.map(ips_in_use, &ip2int(&1)))
@@ -506,6 +641,14 @@ defmodule Jocker.Engine.Network do
         next_ip = first_ip
         new_ip_(first_ip, last_ip, next_ip, ips_in_use)
     end
+  end
+
+  defp new_ip(%Network{driver: "vnet", id: network_id, subnet: subnet}) do
+    configs = MetaData.get_endpoint_configs_from_network(network_id)
+    ips_in_use = Enum.flat_map(configs, & &1.ip_addresses)
+    %CIDR{:first => first_ip, :last => last_ip} = CIDR.parse(subnet)
+    next_ip = first_ip
+    new_ip_(first_ip, last_ip, next_ip, ips_in_use)
   end
 
   defp new_ip_(_first_ip, last_ip, next_ip, _ips_in_use) when next_ip > last_ip do
