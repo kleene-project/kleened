@@ -140,7 +140,9 @@ defmodule Jocker.Engine.Network do
   end
 
   def handle_call({:disconnect_all, container_id}, _from, state) do
-    network_ids = MetaData.connected_networks(container_id)
+    network_ids =
+      MetaData.connected_networks(container_id) |> Enum.map(fn network -> network.id end)
+
     Enum.map(network_ids, &disconnect_(container_id, &1))
     {:reply, :ok, state}
   end
@@ -325,7 +327,7 @@ defmodule Jocker.Engine.Network do
 
       network.driver == "loopback" ->
         # Remove ip-addresses from the jail, network interface, and database
-        Enum.map(config.ip_addresses, &ifconfig_remove_alias(&1, network.if_name))
+        Enum.map(config.ip_addresses, &ifconfig_remove_alias(&1, network.loopback_if_name))
 
         if Container.is_running?(container_id) do
           remove_jail_ips(container_id, config.ip_addresses)

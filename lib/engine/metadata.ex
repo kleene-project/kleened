@@ -213,7 +213,12 @@ defmodule Jocker.Engine.MetaData do
 
   @spec connected_networks(Container.container_id()) :: [Network.network_id()]
   def connected_networks(container_id) do
-    sql("SELECT network_id FROM endpoint_configs WHERE container_id = ?", [container_id])
+    sql(
+      "SELECT id, network FROM endpoint_configs INNER JOIN networks ON networks.id = network_id WHERE container_id = ?",
+      [
+        container_id
+      ]
+    )
   end
 
   @spec add_layer(Layer.t()) :: :ok

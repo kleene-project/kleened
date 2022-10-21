@@ -271,12 +271,14 @@ defmodule Jocker.Engine.Exec do
   end
 
   defp jail_cleanup(%Container{id: container_id, layer_id: layer_id}) do
-    destoy_jail_epairs = fn network ->
-      config = MetaData.get_endpoint_config(container_id, network.id)
-      FreeBSD.destroy_bridged_epair(config.epair, network.bridge_if_name)
-    end
+    if Network.connected_to_vnet_networks?(container_id) do
+      destoy_jail_epairs = fn network ->
+        config = MetaData.get_endpoint_config(container_id, network.id)
+        FreeBSD.destroy_bridged_epair(config.epair, network.bridge_if_name)
+      end
 
-    MetaData.connected_networks(container_id) |> Enum.map(destoy_jail_epairs)
+      MetaData.connected_networks(container_id) |> Enum.map(destoy_jail_epairs)
+    end
 
     # remove any devfs mounts of the jail. If it was closed with 'jail -r <jailname>' devfs should be removed automatically.
     # If the jail stops because there jailed process stops (i.e. 'jail -c <etc> /bin/sleep 10') then devfs is NOT removed.

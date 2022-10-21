@@ -19,7 +19,7 @@ defmodule NetworkTest do
              Network.create(%NetworkConfig{
                name: "testnetwork",
                subnet: "172.18.0.0/16",
-               loopback_if_name: "jocker1",
+               ifname: "jocker1",
                driver: "loopback"
              })
 
@@ -40,7 +40,7 @@ defmodule NetworkTest do
       Network.create(%NetworkConfig{
         name: "testnetwork",
         subnet: "172.18.0.0/16",
-        loopback_if_name: "jocker1",
+        ifname: "jocker1",
         driver: "loopback"
       })
 
@@ -57,7 +57,7 @@ defmodule NetworkTest do
              Network.create(%NetworkConfig{
                name: "testnetwork",
                subnet: "172.18.0.0/16",
-               loopback_if_name: "jocker1",
+               ifname: "jocker1",
                driver: "loopback"
              })
 
@@ -70,7 +70,7 @@ defmodule NetworkTest do
              Network.create(%NetworkConfig{
                name: "testnetwork",
                subnet: "172.18.0.0/16",
-               loopback_if_name: "jocker1",
+               ifname: "jocker1",
                driver: "loopback"
              })
 
@@ -78,7 +78,7 @@ defmodule NetworkTest do
              Network.create(%NetworkConfig{
                name: "testnetwork",
                subnet: "172.19.0.0/16",
-               loopback_if_name: "jocker2",
+               ifname: "jocker2",
                driver: "loopback"
              })
 
@@ -90,7 +90,7 @@ defmodule NetworkTest do
              Network.create(%NetworkConfig{
                name: "testnetwork",
                subnet: "172.18.0.0-16",
-               loopback_if_name: "jocker1",
+               ifname: "jocker1",
                driver: "loopback"
              })
   end
@@ -102,17 +102,18 @@ defmodule NetworkTest do
       Network.create(%NetworkConfig{
         name: "testnet",
         subnet: "172.19.0.0/24",
-        loopback_if_name: network_if,
+        ifname: network_if,
         driver: "loopback"
       })
 
     opts = %{
-      cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network_if]
+      cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network_if],
+      networks: []
     }
 
     {:ok, %Container{id: id}} = TestHelper.create_container("network_test", opts)
 
-    Network.connect(id, "testnet")
+    assert :ok == Network.connect(id, "testnet")
     {:ok, exec_id} = Exec.create(id)
     Jocker.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
     {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
@@ -148,7 +149,7 @@ defmodule NetworkTest do
       Network.create(%NetworkConfig{
         name: "testnet",
         subnet: "172.18.0.0/16",
-        loopback_if_name: "jocker1",
+        ifname: "jocker1",
         driver: "loopback"
       })
 
