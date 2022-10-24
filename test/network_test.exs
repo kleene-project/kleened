@@ -3,15 +3,6 @@ defmodule NetworkTest do
   alias Jocker.Engine.{Network, Config, Utils, MetaData, Container, Exec}
   alias Jocker.API.Schemas.NetworkConfig
 
-  test "default interface is not defined at startup" do
-    Utils.destroy_interface("jocker0")
-    Config.delete("default_network_name")
-
-    assert not Utils.interface_exists("jocker0")
-
-    Config.put("default_network_name", "default")
-  end
-
   test "create, get and remove a new network" do
     Utils.destroy_interface("jocker1")
 
