@@ -318,7 +318,8 @@ defmodule Jocker.Engine.Exec do
     %Layer{mountpoint: path} = Jocker.Engine.MetaData.get_layer(layer_id)
 
     args =
-      ~w"-c path=#{path} name=#{id} #{network_config}" ++
+      ~w"-c path=#{path} name=#{id}" ++
+        network_config ++
         parameters ++
         ~w"exec.jail_user=#{user} command=/usr/bin/env -i" ++ env_vars ++ command
 
@@ -331,18 +332,15 @@ defmodule Jocker.Engine.Exec do
 
     case network_type_used(networks) do
       :host ->
-        "ip4=inherit"
+        ["ip4=inherit"]
 
       :loopback ->
         network_ids = Enum.map(networks, fn %Network{id: id} -> id end)
         ips = Enum.reduce(network_ids, [], &extract_ips(container_id, &1, &2))
 
         case Enum.join(ips, ",") do
-          "" ->
-            ""
-
-          ips_as_string ->
-            "ip4.addr=#{ips_as_string}"
+          "" -> []
+          ips_as_string -> ["ip4.addr=#{ips_as_string}"]
         end
 
       :vnet ->
@@ -366,22 +364,32 @@ defmodule Jocker.Engine.Exec do
     # "exec.start=\"ifconfig #{epair}b name jail0\" " <>
     # "exec.poststop=\"ifconfig #{bridge} deletem #{epair}a\" " <>
     # "exec.poststop=\"ifconfig #{epair}a destroy\""
-    network_config =
-      "vnet vnet.interface=#{epair}b " <>
-        "exec.prestart=\"ifconfig #{bridge} addm #{epair}a up\" " <>
-        "exec.start=\"ifconfig #{epair}b #{ip}/#{subnet.mask}\" " <>
-        "exec.start=\"route add -inet default #{gateway}\" "
+    network_configs = [
+      "vnet",
+      "vnet.interface=#{epair}b",
+      "exec.prestart=ifconfig #{bridge} addm #{epair}a",
+      "exec.prestart=ifconfig #{epair}a up",
+      "exec.start=ifconfig #{epair}b #{ip}/#{subnet.mask}",
+      "exec.start=route add -inet default #{gateway}"
+      | network_configs
+    ]
 
-    create_vnet_network_config(rest, container_id, [network_config | network_configs])
+    create_vnet_network_config(rest, container_id, network_configs)
   end
 
   defp create_vnet_network_config([], _, network_configs) do
-    Enum.join(network_configs, " ")
+    network_configs
   end
 
   def create_epair() do
-    epair_a = OS.cmd(~w"/sbin/ifconfig epair create")
-    String.slice(epair_a, 0, String.length(epair_a) - 1)
+    case OS.cmd(~w"/sbin/ifconfig epair create") do
+      {epair_a_raw, 0} ->
+        String.slice(epair_a_raw, 0, String.length(epair_a_raw) - 2)
+
+      {error_msg, _nonzero} ->
+        Logger.warn("could not create anew epair, ifconfig failed with: #{error_msg}")
+        nil
+    end
   end
 
   def extract_ips(container_id, network_id, ip_list) do

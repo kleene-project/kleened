@@ -18,7 +18,8 @@ defmodule Jocker.Engine.MetaData do
   endpoint_configs (
     container_id TEXT,
     network_id   TEXT,
-    config       TEXT
+    config       TEXT,
+    UNIQUE(container_id, network_id)
   )
   """
 

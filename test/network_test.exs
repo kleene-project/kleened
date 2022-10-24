@@ -86,7 +86,7 @@ defmodule NetworkTest do
              })
   end
 
-  test "connect and disconnect a container to a network" do
+  test "connect and disconnect a container to a loopback network" do
     network_if = "jocker1"
 
     {:ok, test_network} =
@@ -109,6 +109,38 @@ defmodule NetworkTest do
     Jocker.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
     {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
     assert %{"statistics" => %{"interface" => [%{"address" => "172.19.0.0"}]}} = output
+    assert Network.remove("testnet") == {:ok, test_network.id}
+    Container.destroy(id)
+  end
+
+  test "connect and disconnect a container with to a vnet network" do
+    network_if = "vnet0"
+
+    {:ok, test_network} =
+      Network.create(%NetworkConfig{
+        name: "testnet",
+        subnet: "172.19.0.0/24",
+        ifname: network_if,
+        driver: "vnet"
+      })
+
+    opts = %{
+      cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-i"],
+      networks: []
+    }
+
+    {:ok, %Container{id: id}} = TestHelper.create_container("network_test", opts)
+
+    assert :ok == Network.connect(id, "testnet")
+    {:ok, exec_id} = Exec.create(id)
+    Jocker.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
+
+    ["add net default: gateway 172.19.0.0", netstat_libxo, ""] =
+      String.split(TestHelper.collect_container_output(exec_id), "\n")
+
+    {:ok, output} = Jason.decode(netstat_libxo)
+
+    assert %{"statistics" => %{"interface" => [%{"address" => "172.19.0.1"}]}} = output
     assert Network.remove("testnet") == {:ok, test_network.id}
     Container.destroy(id)
   end

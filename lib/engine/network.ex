@@ -350,8 +350,6 @@ defmodule Jocker.Engine.Network do
 
   defp remove_bridge_members(bridge) do
     remove_if_member = fn line ->
-      line = String.trim(line)
-
       case String.contains?(line, "member: ") do
         true ->
           [_, epair | _rest] = String.split(line)
@@ -362,7 +360,8 @@ defmodule Jocker.Engine.Network do
       end
     end
 
-    lines = OS.cmd(~w"ifconfig #{bridge}") |> String.trim() |> String.split("\n")
+    {output, 0} = OS.cmd(~w"ifconfig #{bridge}")
+    lines = output |> String.trim() |> String.split("\n") |> Enum.map(&String.trim/1)
     Enum.map(lines, remove_if_member)
   end
 
@@ -401,12 +400,15 @@ defmodule Jocker.Engine.Network do
         [%Network{driver: "vnet", bridge_if_name: bridge_name, subnet: subnet} | rest],
         %{macros: macros, translation: translation} = state
       ) do
-    new_macro = "jocker_bridge_#{bridge_name}_subnet=\"#{subnet}\""
-    nat_bridged_network = "nat on $(gw_if) inet from ($bridge_jail_if:network) to any -> ($gw_if)"
+    new_macro1 = "jocker_bridge_#{bridge_name}_subnet=\"#{subnet}\""
+    new_macro2 = "jocker_bridge_#{bridge_name}_if=\"#{bridge_name}\""
+
+    nat_bridged_network =
+      "nat on $gw_if inet from ($jocker_bridge_#{bridge_name}_if:network) to any -> ($gw_if)"
 
     new_state = %{
       state
-      | :macros => [new_macro | macros],
+      | :macros => [new_macro1, new_macro2 | macros],
         :translation => [nat_bridged_network | translation]
     }
 
@@ -454,8 +456,12 @@ defmodule Jocker.Engine.Network do
 
   defp create_loopback_interfaces() do
     MetaData.list_networks(:exclude_host)
-    |> Enum.map(fn %Network{:loopback_if_name => if_name} ->
-      ifconfig_loopback_create(if_name)
+    |> Enum.map(fn
+      %Network{driver: "loopback", loopback_if_name: if_name} ->
+        ifconfig_loopback_create(if_name)
+
+      _ ->
+        :ok
     end)
   end
 
@@ -495,13 +501,14 @@ defmodule Jocker.Engine.Network do
         ip = :binary.list_to_bin(:inet.ntoa(ip))
 
         case OS.cmd(~w"ifconfig #{bridge_name} alias #{ip}/#{mask}") do
-          :ok ->
-            MetaData.add_network(%Network{network | bridge_if_name: bridge_name})
+          {"", 0} ->
+            network = %Network{network | bridge_if_name: bridge_name}
+            MetaData.add_network(network)
             configure_pf(state.pf_config_path, state.gateway_interface)
+            {:ok, network}
 
-          :error ->
-            msg = "could not add ip to the newly created bridge interface for network #{name}"
-            {:error, msg}
+          {error_msg, _nonzero} ->
+            {:error, error_msg}
         end
 
       {error_msg, _nonzero_exitcode} ->
@@ -628,39 +635,49 @@ defmodule Jocker.Engine.Network do
 
   defp new_ip(%Network{driver: "loopback", loopback_if_name: if_name, subnet: subnet}) do
     ips_in_use = ips_on_interface(if_name)
-    n_ips_used = length(ips_in_use)
-    ips_in_use = MapSet.new(Enum.map(ips_in_use, &ip2int(&1)))
+    # n_ips_used = length(ips_in_use)
+    # ips_in_use = MapSet.new(Enum.map(ips_in_use, &ip2int(&1)))
 
-    %CIDR{:last => last, :first => first} = CIDR.parse(subnet)
-    last_ip = ip2int(last)
-    first_ip = ip2int(first)
+    %CIDR{:first => first_ip, :last => last_ip} = CIDR.parse(subnet)
+    generate_ip(first_ip, last_ip, ips_in_use)
+    # last_ip = ip2int(last)
+    # first_ip = ip2int(first)
 
-    case first_ip - last_ip do
-      n when n > n_ips_used - 1 ->
-        :out_of_ips
+    # case first_ip - last_ip do
+    #  n when n > n_ips_used - 1 ->
+    #    :out_of_ips
 
-      _ ->
-        next_ip = first_ip
-        new_ip_(first_ip, last_ip, next_ip, ips_in_use)
-    end
+    #  _ ->
+    #    # next_ip = first_ip
+    # end
   end
 
   defp new_ip(%Network{driver: "vnet", id: network_id, subnet: subnet}) do
     configs = MetaData.get_endpoint_configs_from_network(network_id)
-    ips_in_use = Enum.flat_map(configs, & &1.ip_addresses)
+    ips_in_use = MapSet.new(Enum.flat_map(configs, & &1.ip_addresses))
     %CIDR{:first => first_ip, :last => last_ip} = CIDR.parse(subnet)
-    next_ip = first_ip
-    new_ip_(first_ip, last_ip, next_ip, ips_in_use)
+    first_ip = first_ip |> ip2int() |> (&(&1 + 1)).() |> int2ip()
+    # next_ip = first_ip
+    generate_ip(first_ip, last_ip, ips_in_use)
   end
 
-  defp new_ip_(_first_ip, last_ip, next_ip, _ips_in_use) when next_ip > last_ip do
+  defp generate_ip(first_ip, last_ip, ips_in_use) do
+    first_ip = ip2int(first_ip)
+    last_ip = ip2int(last_ip)
+    ips_in_use = MapSet.new(Enum.map(ips_in_use, &ip2int(&1)))
+    next_ip = first_ip
+
+    generate_ip_(first_ip, last_ip, next_ip, ips_in_use)
+  end
+
+  defp generate_ip_(_first_ip, last_ip, next_ip, _ips_in_use) when next_ip > last_ip do
     :out_of_ips
   end
 
-  defp new_ip_(first_ip, last_ip, next_ip, ips_in_use) do
+  defp generate_ip_(first_ip, last_ip, next_ip, ips_in_use) do
     case MapSet.member?(ips_in_use, next_ip) do
       true ->
-        new_ip_(first_ip, last_ip, next_ip + 1, ips_in_use)
+        generate_ip_(first_ip, last_ip, next_ip + 1, ips_in_use)
 
       false ->
         int2ip(next_ip)
