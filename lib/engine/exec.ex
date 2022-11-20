@@ -275,6 +275,8 @@ defmodule Jocker.Engine.Exec do
       destoy_jail_epairs = fn network ->
         config = MetaData.get_endpoint_config(container_id, network.id)
         FreeBSD.destroy_bridged_epair(config.epair, network.bridge_if_name)
+        config = %EndPointConfig{config | epair: nil}
+        MetaData.add_endpoint_config(container_id, network.id, config)
       end
 
       MetaData.connected_networks(container_id) |> Enum.map(destoy_jail_epairs)

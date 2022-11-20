@@ -190,7 +190,7 @@ defmodule Jocker.API.Network do
       container_id = conn.params.container_id
 
       case Network.connect(container_id, network_id) do
-        :ok ->
+        {:ok, _endpoint_config} ->
           send_resp(conn, 204, "")
 
         {:error, msg} ->

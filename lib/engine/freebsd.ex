@@ -2,6 +2,24 @@ defmodule Jocker.Engine.FreeBSD do
   alias Jocker.Engine.OS
   require Logger
 
+  @spec enable_ip_forwarding() :: :ok
+  def enable_ip_forwarding() do
+    case OS.cmd(~w"/sbin/sysctl net.inet.ip.forwarding") do
+      {"net.inet.ip.forwarding: 1\n", _} ->
+        :ok
+
+      {"net.inet.ip.forwarding: 0\n", _} ->
+        OS.cmd(~w"/sbin/sysctl net.inet.ip.forwarding=1")
+
+      {unknown_output, exitcode} ->
+        Logger.warn(
+          "could not understand the output from 'sysctl' when inspecting ip forwarding configuration"
+        )
+    end
+
+    :ok
+  end
+
   @spec(
     destroy_bridged_vnet_epair(String.t(), String.t(), String.t()) :: :ok,
     {:error, String.t()}

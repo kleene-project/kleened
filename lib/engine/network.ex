@@ -49,6 +49,12 @@ defmodule Jocker.Engine.Network do
   ### JOCKER TRANSLATION RULES END #####
 
   ### JOCKER FILTERING RULES START #####
+  # block everything
+  #block log all
+
+  # skip loopback interface(s)
+  set skip on lo0
+
   <%= jocker_filtering %>
   ### JOCKER FILTERING RULES END #######
   """
@@ -64,7 +70,7 @@ defmodule Jocker.Engine.Network do
     GenServer.call(__MODULE__, {:create, options})
   end
 
-  @spec connect(String.t(), String.t()) :: :ok | {:error, String.t()}
+  @spec connect(String.t(), String.t()) :: {:ok, endpoint_config()} | {:error, String.t()}
   def connect(container_idname, network_idname) do
     GenServer.call(__MODULE__, {:connect, container_idname, network_idname}, 10_000)
   end
@@ -92,6 +98,10 @@ defmodule Jocker.Engine.Network do
     GenServer.call(__MODULE__, {:inspect, network_idname})
   end
 
+  def inspect_endpoint(container_id, network_id) do
+    GenServer.call(__MODULE__, {:inspect_endpoint, container_id, network_id})
+  end
+
   ### Callback functions
   @impl true
   def init([]) do
@@ -105,6 +115,8 @@ defmodule Jocker.Engine.Network do
         gw ->
           gw
       end
+
+    FreeBSD.enable_ip_forwarding()
 
     if not Utils.touch(pf_conf_path) do
       Logger.error("Unable to access Jockers PF configuration file located at #{pf_conf_path}")
@@ -184,6 +196,11 @@ defmodule Jocker.Engine.Network do
     {:reply, network, state}
   end
 
+  def handle_call({:inspect_endpoint, container_id, network_id}, _from, state) do
+    endpoint_config = MetaData.get_endpoint_config(container_id, network_id)
+    {:reply, endpoint_config, state}
+  end
+
   @impl true
   def terminate(_reason, _state) do
     :ok
@@ -243,7 +260,7 @@ defmodule Jocker.Engine.Network do
           [] ->
             config = %EndPointConfig{ip_addresses: []}
             MetaData.add_endpoint_config(container_id, network.id, config)
-            :ok
+            {:ok, config}
 
           _ ->
             {:error, "cannot connect to host network simultaneously with other networks"}
@@ -271,7 +288,7 @@ defmodule Jocker.Engine.Network do
               add_jail_ip(container_id, ip)
             end
 
-            :ok
+            {:ok, config}
 
           {error_output, _nonzero_exitcode} ->
             {:error, "could not add ip #{ip} to container #{container_id}: #{error_output}"}
@@ -285,6 +302,7 @@ defmodule Jocker.Engine.Network do
         {:error, "connected to host network"}
 
       Utils.is_container_running?(container_id) ->
+        # FIXME: This can be done! Just create an epair, add the epairXa to the bridge and delegate the epairXb to the jail, add ip and gw within the jail
         {:error, "cannot connect a running container to a vnet network"}
 
       connected_to_loopback_networks?(container_id) ->
@@ -295,6 +313,7 @@ defmodule Jocker.Engine.Network do
         ip = new_ip(network)
         config = %EndPointConfig{ip_addresses: [ip], if_name: network.name}
         MetaData.add_endpoint_config(container_id, network.id, config)
+        {:ok, config}
     end
   end
 
@@ -353,7 +372,7 @@ defmodule Jocker.Engine.Network do
       case String.contains?(line, "member: ") do
         true ->
           [_, epair | _rest] = String.split(line)
-          OS.cmd(~w"ifconfig #{bridge} deletem #{epair}")
+          {_output, 0} = OS.cmd(~w"ifconfig #{bridge} deletem #{epair}")
 
         false ->
           :ok
@@ -376,6 +395,7 @@ defmodule Jocker.Engine.Network do
       :filtering => []
     }
 
+    FreeBSD.enable_ip_forwarding()
     pf_config = create_pf_config(networks, state)
     load_pf_config(pf_config_path, pf_config)
   end

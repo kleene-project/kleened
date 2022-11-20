@@ -1,4 +1,4 @@
-alias Jocker.Engine.{ZFS, Config, Container, Layer, Exec}
+alias Jocker.Engine.{ZFS, Config, Container, Layer, Exec, Network}
 require Logger
 
 ExUnit.start()
@@ -37,6 +37,28 @@ defmodule TestHelper do
     {:ok, exec_id} = Exec.create(container_id)
     :ok = Exec.start(exec_id, %{attach: true, start_container: true})
     {cont, exec_id}
+  end
+
+  def create_network(config) when not is_map_key(config, :driver) do
+    exit(:testhelper_error)
+  end
+
+  def create_network(config) do
+    config_default = %{
+      name: "testnet",
+      subnet: "172.18.0.0/16",
+      ifname: "vnet0"
+    }
+
+    config = Map.merge(config_default, config)
+
+    {:ok, network_config} =
+      OpenApiSpex.Cast.cast(
+        Jocker.API.Schemas.NetworkConfig.schema(),
+        config
+      )
+
+    Network.create(network_config)
   end
 
   def collect_container_output(exec_id) do
