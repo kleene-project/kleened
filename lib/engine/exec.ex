@@ -333,6 +333,9 @@ defmodule Jocker.Engine.Exec do
     networks = MetaData.connected_networks(container_id)
 
     case network_type_used(networks) do
+      :no_networks ->
+        []
+
       :host ->
         ["ip4=inherit"]
 
@@ -361,7 +364,7 @@ defmodule Jocker.Engine.Exec do
     %EndPointConfig{ip_addresses: [ip]} =
       endpoint = MetaData.get_endpoint_config(container_id, id)
 
-    epair = create_epair()
+    epair = FreeBSD.create_epair()
     MetaData.add_endpoint_config(container_id, id, %EndPointConfig{endpoint | epair: epair})
     # "exec.start=\"ifconfig #{epair}b name jail0\" " <>
     # "exec.poststop=\"ifconfig #{bridge} deletem #{epair}a\" " <>
@@ -381,17 +384,6 @@ defmodule Jocker.Engine.Exec do
 
   defp create_vnet_network_config([], _, network_configs) do
     network_configs
-  end
-
-  def create_epair() do
-    case OS.cmd(~w"/sbin/ifconfig epair create") do
-      {epair_a_raw, 0} ->
-        String.slice(epair_a_raw, 0, String.length(epair_a_raw) - 2)
-
-      {error_msg, _nonzero} ->
-        Logger.warn("could not create anew epair, ifconfig failed with: #{error_msg}")
-        nil
-    end
   end
 
   def extract_ips(container_id, network_id, ip_list) do

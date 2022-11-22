@@ -20,6 +20,17 @@ defmodule Jocker.Engine.FreeBSD do
     :ok
   end
 
+  def create_epair() do
+    case OS.cmd(~w"/sbin/ifconfig epair create") do
+      {epair_a_raw, 0} ->
+        String.slice(epair_a_raw, 0, String.length(epair_a_raw) - 2)
+
+      {error_msg, _nonzero} ->
+        Logger.warn("could not create anew epair, ifconfig failed with: #{error_msg}")
+        nil
+    end
+  end
+
   @spec(
     destroy_bridged_vnet_epair(String.t(), String.t(), String.t()) :: :ok,
     {:error, String.t()}

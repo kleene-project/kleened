@@ -2,10 +2,12 @@ defmodule NetworkTest do
   use ExUnit.Case
   require Logger
   alias Jocker.Engine.{Network, Utils, MetaData, Container, Exec, OS}
-  alias Jocker.API.Schemas.{NetworkConfig, ExecConfig}
+  alias Jocker.API.Schemas.ExecConfig
   alias Network.EndPointConfig
 
-  # FIXME: Test trying to connect to a container twice or is it a idempotent?
+  @dns_lookup_cmd ["/usr/bin/host", "-t", "A", "freebsd.org", "1.1.1.1"]
+  @dns_lookup_success "Using domain server:\nName: 1.1.1.1\nAddress: 1.1.1.1#53\nAliases: \n\nfreebsd.org has address 96.47.72.84\n"
+  @dns_lookup_failure ";; connection timed out; no servers could be reached\n"
 
   test "create, get and remove a new network" do
     Utils.destroy_interface("jocker1")
@@ -61,6 +63,23 @@ defmodule NetworkTest do
                subnet: "172.18.0.0-16",
                driver: "loopback"
              })
+  end
+
+  test "try to connect/disconnect twice" do
+    {:ok, network} = create_network(%{driver: "loopback"})
+
+    {:ok, container} =
+      TestHelper.create_container("network_test", %{
+        cmd: ["/bin/sleep", "10"],
+        networks: [network.name]
+      })
+
+    assert :ok == Network.disconnect(container.id, network.id)
+
+    assert {:error, "endpoint configuration not found"} ==
+             Network.disconnect(container.id, network.id)
+
+    cleanup(container, network)
   end
 
   test "create a container using the host network" do
@@ -162,7 +181,6 @@ defmodule NetworkTest do
     {:ok, exec_id} = exec_run(container.id, %{attach: true, start_container: true})
     assert receive_jail_output(exec_id) == "add net default: gateway 172.18.0.0\n"
     %EndPointConfig{epair: epair} = Network.inspect_endpoint(container.id, network.id)
-    assert epair != nil
 
     # This is needed because "jail" adds the epair<N>b AFTER "add net default.." so a race-condition occurs
     :timer.sleep(1_000)
@@ -176,8 +194,31 @@ defmodule NetworkTest do
     cleanup(container, network)
   end
 
-  test "connect/disconnect vnet network when container is running" do
-    # FIXME: Use the "connect vnet when is created" approach to creating the test objects (most simple)
+  test "try to connect a container to vnet and then loopback network" do
+    {:ok, network1} =
+      create_network(%{driver: "vnet", name: "testnet1", subnet: "10.13.37.0/24", ifname: "vnet1"})
+
+    {:ok, network2} =
+      create_network(%{
+        driver: "loopback",
+        name: "testnet2",
+        subnet: "10.13.38.0/24",
+        ifname: "vnet2"
+      })
+
+    {:ok, container} =
+      TestHelper.create_container("network_test3", %{
+        cmd: ["/bin/sleep", "10"],
+        networks: []
+      })
+
+    assert {:ok, %EndPointConfig{}} = Network.connect(container.id, network1.id)
+
+    assert {:error,
+            "already connected to a vnet network and containers can't be connected to both vnet and loopback networks"} ==
+             Network.connect(container.id, network2.id)
+
+    cleanup(container, [network1, network2])
   end
 
   test "connectivity using loopback interface" do
@@ -186,16 +227,12 @@ defmodule NetworkTest do
     {:ok, %Container{} = container} =
       TestHelper.create_container(
         "network_test3",
-        opts = %{
-          cmd: ["/usr/bin/host", "-t", "A", "freebsd.org", "1.1.1.1"],
-          networks: ["testnet"]
-        }
+        %{cmd: @dns_lookup_cmd, networks: ["testnet"]}
       )
 
     {:ok, exec_id} = exec_run(container.id, %{attach: true, start_container: true})
 
-    assert receive_jail_output(exec_id) ==
-             "Using domain server:\nName: 1.1.1.1\nAddress: 1.1.1.1#53\nAliases: \n\nfreebsd.org has address 96.47.72.84\n"
+    assert receive_jail_output(exec_id) == @dns_lookup_success
 
     cleanup(container, network)
   end
@@ -206,30 +243,46 @@ defmodule NetworkTest do
     {:ok, %Container{} = container} =
       TestHelper.create_container(
         "network_test3",
-        opts = %{
-          cmd: ["/bin/sleep", "100"],
-          networks: ["testnet"]
-        }
+        %{cmd: @dns_lookup_cmd, networks: ["testnet"]}
       )
 
     {:ok, exec_id} = exec_run(container.id, %{attach: true, start_container: true})
 
     assert receive_jail_output(exec_id) == "add net default: gateway 172.18.0.0\n"
-
-    {:ok, exec_id} =
-      exec_run(
-        %ExecConfig{
-          container_id: container.id,
-          cmd: ["/usr/bin/host", "-t", "A", "freebsd.org", "1.1.1.1"]
-        },
-        %{attach: true, start_container: false}
-      )
-
-    assert receive_jail_output(exec_id) ==
-             "Using domain server:\nName: 1.1.1.1\nAddress: 1.1.1.1#53\nAliases: \n\nfreebsd.org has address 96.47.72.84\n"
+    assert receive_jail_output(exec_id) == @dns_lookup_success
 
     Container.stop(container.id)
 
+    cleanup(container, network)
+  end
+
+  test "disconnect vnet network while the container is running" do
+    {:ok, network} = create_network(%{driver: "vnet", ifname: "vnet1"})
+
+    {:ok, %Container{} = container} =
+      TestHelper.create_container(
+        "network_test3",
+        %{cmd: ["/bin/sleep", "100"], networks: []}
+      )
+
+    assert {:ok, %EndPointConfig{epair: _epair}} = Network.connect(container.id, network.name)
+    {:ok, exec_id} = exec_run(container.id, %{attach: true, start_container: true})
+
+    assert receive_jail_output(exec_id) == "add net default: gateway 172.18.0.0\n"
+
+    %EndPointConfig{epair: epair} = Network.inspect_endpoint(container.id, network.id)
+    assert interface_exists?("#{epair}a")
+    assert :ok = Network.disconnect(container.id, network.name)
+
+    {:ok, exec_id} =
+      exec_run(
+        %ExecConfig{container_id: container.id, cmd: @dns_lookup_cmd},
+        %{attach: true, start_container: false}
+      )
+
+    assert receive_jail_output(exec_id) == @dns_lookup_failure
+
+    Container.stop(container.id)
     cleanup(container, network)
   end
 
@@ -248,6 +301,11 @@ defmodule NetworkTest do
     end
 
     reply
+  end
+
+  defp cleanup(container, [network1, network2]) do
+    assert Network.remove(network1.name) == {:ok, network1.id}
+    cleanup(container, network2)
   end
 
   defp cleanup(container, network) do
@@ -270,8 +328,6 @@ defmodule NetworkTest do
 
   defp interface_exists?(interface_name) do
     {output_json, 0} = OS.cmd(["/usr/bin/netstat", "--libxo", "json", "-n", "-I", interface_name])
-
-    Logger.warn("interface_exists?(#{inspect(interface_name)}): " <> output_json)
 
     {:ok, %{"statistics" => %{"interface" => if_properties}}} = Jason.decode(output_json)
     # No properties => no interface named 'interface_name' exists

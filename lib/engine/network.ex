@@ -296,23 +296,22 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  defp connect_(%Container{id: container_id}, %Network{driver: "vnet"} = network) do
+  defp connect_(%Container{} = container, %Network{driver: "vnet"} = network) do
     cond do
-      connected_to_host_network?(container_id) ->
+      connected_to_host_network?(container.id) ->
         {:error, "connected to host network"}
 
-      Utils.is_container_running?(container_id) ->
-        # FIXME: This can be done! Just create an epair, add the epairXa to the bridge and delegate the epairXb to the jail, add ip and gw within the jail
+      Utils.is_container_running?(container.id) ->
         {:error, "cannot connect a running container to a vnet network"}
 
-      connected_to_loopback_networks?(container_id) ->
+      connected_to_loopback_networks?(container.id) ->
         {:error,
          "already connected to a loopback network and containers can't be connected to both vnet and loopback networks"}
 
       true ->
         ip = new_ip(network)
         config = %EndPointConfig{ip_addresses: [ip], if_name: network.name}
-        MetaData.add_endpoint_config(container_id, network.id, config)
+        MetaData.add_endpoint_config(container.id, network.id, config)
         {:ok, config}
     end
   end
