@@ -18,7 +18,8 @@ defmodule Jocker.Engine.MetaData do
   endpoint_configs (
     container_id TEXT,
     network_id   TEXT,
-    config       TEXT
+    config       TEXT,
+    UNIQUE(container_id, network_id)
   )
   """
 
@@ -87,7 +88,7 @@ defmodule Jocker.Engine.MetaData do
 
     db =
       case Sqlitex.open(filepath) do
-        {:error, {:cantopen, error_msg}} ->
+        {:error, {:cantopen, _error_msg}} ->
           Logger.error(
             "unable to open database at #{filepath}: Do you have the correct privileges?"
           )
@@ -178,13 +179,25 @@ defmodule Jocker.Engine.MetaData do
   @spec get_endpoint_config(Container.container_id(), Network.network_id()) ::
           %EndPointConfig{} | :not_found
   def get_endpoint_config(container_id, network_id) do
-    [endpoint_cfg] =
+    reply =
       sql(
         "SELECT config FROM endpoint_configs WHERE container_id = ? AND network_id = ?",
         [container_id, network_id]
       )
 
-    endpoint_cfg
+    case reply do
+      [endpoint_cfg] -> endpoint_cfg
+      [] -> :not_found
+    end
+  end
+
+  @spec get_endpoint_configs_from_network(Network.network_id()) ::
+          [%EndPointConfig{}] | :not_found
+  def get_endpoint_configs_from_network(network_id) do
+    sql(
+      "SELECT config FROM endpoint_configs WHERE network_id = ?",
+      [network_id]
+    )
   end
 
   @spec remove_endpoint_config(Container.container_id(), Network.network_id()) :: :ok
@@ -204,7 +217,12 @@ defmodule Jocker.Engine.MetaData do
 
   @spec connected_networks(Container.container_id()) :: [Network.network_id()]
   def connected_networks(container_id) do
-    sql("SELECT network_id FROM endpoint_configs WHERE container_id = ?", [container_id])
+    sql(
+      "SELECT id, network FROM endpoint_configs INNER JOIN networks ON networks.id = network_id WHERE container_id = ?",
+      [
+        container_id
+      ]
+    )
   end
 
   @spec add_layer(Layer.t()) :: :ok

@@ -55,7 +55,7 @@ defmodule Jocker.MixProject do
       {:earmark, "~> 1.4.4", only: :dev},
       {:ex_doc, "~> 0.19", only: :dev},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
-      {:excoveralls, "~> 0.12", only: :test},
+      {:excoveralls, "~> 0.15.0", only: :test},
       {:gun, "~> 1.3", only: :test}
     ]
   end

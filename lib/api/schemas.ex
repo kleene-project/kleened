@@ -115,11 +115,12 @@ defmodule Jocker.API.Schemas do
         },
         driver: %Schema{
           type: :string,
-          description: "Network type. Only 'loopback' type of network is supported.",
+          description:
+            "Network type to use. Possible values are 'loopback' and 'vnet'. See the documentation on networking for details.",
           example: "loopback"
         }
       },
-      required: [:name, :ifname, :subnet]
+      required: [:name, :ifname, :subnet, :driver]
     })
   end
 
@@ -176,8 +177,7 @@ defmodule Jocker.API.Schemas do
           type: :string
         },
         driver: %Schema{
-          description:
-            "Which type of network is used. Possible values are 'loopback' where the network is situated on a loopback interface on the host, and 'host' where the container have inherited the hosts network configuration. Only one read-only network exists with the 'host' driver.",
+          description: "Type of network.",
           type: :string
         },
         default_gw_if: %Schema{

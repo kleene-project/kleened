@@ -144,6 +144,8 @@ defmodule ContainerTest do
 
     :ok = Exec.start(root_exec_id, %{attach: false, start_container: true})
 
+    # seems like '/usr/sbin/jail' returns before the kernel reports it as running?
+    :timer.sleep(500)
     assert Utils.is_container_running?(container_id)
 
     assert {:ok, container_id} ==

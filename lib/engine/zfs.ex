@@ -12,7 +12,7 @@ defmodule Jocker.Engine.ZFS do
   def destroy(dataset) do
     # zfs destroy [-dnpRrv] snapshot[%snapname][,...]
     # zfs destroy [-fnpRrv] filesystem|volume
-    cmd("destroy #{dataset}")
+    cmd("destroy -f #{dataset}")
   end
 
   @spec destroy_force(String.t()) :: integer()
@@ -33,7 +33,7 @@ defmodule Jocker.Engine.ZFS do
 
   @spec rename(String.t(), String.t()) :: integer()
   def rename(dataset, new_dataset) do
-    {exit_code, msg} = cmd("rename #{dataset} #{new_dataset}")
+    {exit_code, msg} = cmd("rename -f #{dataset} #{new_dataset}")
   end
 
   @spec info(String.t()) :: %{:exists? => boolean(), :mountpoint => String.t() | nil}
