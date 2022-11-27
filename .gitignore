@@ -1,6 +1,9 @@
 # Auto-generated OpenAPI spec
 openapi.json
 
+# Directory where code coverage report from excoveralls is stored
+/coveralls/
+
 # The directory Mix will write compiled artifacts to.
 /_build/
 

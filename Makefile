@@ -11,4 +11,7 @@ clear-jocker:
 	zfs destroy -rf zroot/jocker
 	zfs create zroot/jocker
 
+codecov:
+	MIX_ENV=test mix coveralls.html -o ./coveralls --max-failures 5
+
 .PHONY: test
