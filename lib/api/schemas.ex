@@ -177,7 +177,7 @@ defmodule Jocker.API.Schemas do
           type: :string
         },
         driver: %Schema{
-          description: "Which type of network.",
+          description: "Type of network.",
           type: :string
         },
         default_gw_if: %Schema{
