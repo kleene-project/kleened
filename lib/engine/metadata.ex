@@ -2,6 +2,7 @@ defmodule Jocker.Engine.MetaData do
   require Logger
   alias Jocker.Engine.{Config, Layer, Image, Container, Network, Volume, Volume.Mount}
   alias Jocker.Engine.Network.EndPointConfig
+  alias Jocker.API.Schemas
 
   use Agent
 
@@ -319,7 +320,7 @@ defmodule Jocker.Engine.MetaData do
   end
 
   @spec remove_volume(Volume.t()) :: :ok | :not_found
-  def remove_volume(%Volume{name: name}) do
+  def remove_volume(%{name: name}) do
     sql("DELETE FROM volumes WHERE name = ?", [name])
     :ok
   end
@@ -341,7 +342,7 @@ defmodule Jocker.Engine.MetaData do
   end
 
   @spec list_mounts(Volume.t()) :: [Mount.t()]
-  def list_mounts(%Volume{name: name}) do
+  def list_mounts(%Schemas.Volume{name: name}) do
     sql("SELECT mount FROM mounts WHERE json_extract(mount, '$.volume_name') = ?", [name])
   end
 
@@ -426,7 +427,7 @@ defmodule Jocker.Engine.MetaData do
     result
   end
 
-  def remove_mounts_transaction(db, %Volume{name: name}) do
+  def remove_mounts_transaction(db, %Schemas.Volume{name: name}) do
     result =
       fetch_all(db, "SELECT mount FROM mounts WHERE json_extract(mount, '$.volume_name') = ?", [
         name
@@ -438,7 +439,7 @@ defmodule Jocker.Engine.MetaData do
     result
   end
 
-  @spec to_db(Image.t() | Container.t() | %Volume{} | %Mount{}) :: String.t()
+  @spec to_db(Image.t() | Container.t() | %Schemas.Volume{} | %Mount{}) :: String.t()
   defp to_db(struct) do
     map = Map.from_struct(struct)
 
@@ -464,7 +465,7 @@ defmodule Jocker.Engine.MetaData do
         {:ok, json} = Jason.encode(map)
         {id, json}
 
-      Volume ->
+      Schemas.Volume ->
         {name, map} = Map.pop(map, :name)
         {:ok, json} = Jason.encode(map)
         {name, json}
@@ -512,7 +513,7 @@ defmodule Jocker.Engine.MetaData do
         Keyword.has_key?(row, :volume) ->
           map = from_json(row, :volume)
           name = Keyword.get(row, :name)
-          {Volume, Map.put(map, :name, name)}
+          {Schemas.Volume, Map.put(map, :name, name)}
 
         Keyword.has_key?(row, :mount) ->
           {Mount, from_json(row, :mount)}

@@ -1,6 +1,7 @@
 defmodule MetaDataTest do
   use ExUnit.Case
-  alias Jocker.Engine.{Config, Image, Container, Network, Volume, Volume.Mount, Layer}
+  alias Jocker.Engine.{Config, Image, Container, Network, Volume.Mount, Layer}
+  alias Jocker.API.Schemas
   import Jocker.Engine.MetaData
   import TestHelper, only: [now: 0]
 
@@ -119,16 +120,16 @@ defmodule MetaDataTest do
   test "adding, listing, and removing volumes" do
     [] = list_volumes()
 
-    vol1 = %Volume{
+    vol1 = %Schemas.Volume{
       name: "test1",
       dataset: "dataset/location",
       mountpoint: "mountpoint/location",
       created: now()
     }
 
-    vol1_modified = %Volume{vol1 | dataset: "dataset/new_location"}
+    vol1_modified = %Schemas.Volume{vol1 | dataset: "dataset/new_location"}
 
-    vol2 = %Volume{
+    vol2 = %Schemas.Volume{
       name: "test2",
       dataset: "dataset/location",
       mountpoint: "mountpoint/location",
@@ -151,7 +152,7 @@ defmodule MetaDataTest do
   test "adding and listing mounts" do
     vol_name = "testvol"
 
-    vol = %Volume{
+    vol = %Schemas.Volume{
       name: vol_name,
       dataset: "dataset/location",
       mountpoint: "mountpoint/location",

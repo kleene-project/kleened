@@ -1,20 +1,12 @@
 defmodule Jocker.Engine.Volume do
   alias Jocker.Engine.{ZFS, Config, Utils, Layer, MetaData, Container}
+  alias Jocker.API.Schemas
   require Config
   require Logger
 
-  @derive Jason.Encoder
-  defstruct([:name, :dataset, :mountpoint, :created])
-
   alias __MODULE__, as: Volume
 
-  @type t() ::
-          %Volume{
-            name: String.t(),
-            dataset: String.t(),
-            mountpoint: String.t(),
-            created: String.t()
-          }
+  @type t() :: %Schemas.Volume{}
 
   defmodule Mount do
     @derive Jason.Encoder
@@ -35,20 +27,26 @@ defmodule Jocker.Engine.Volume do
 
   @spec create(String.t()) :: Volume.t()
   def create(name) do
-    dataset = Path.join(Config.get("volume_root"), name)
-    mountpoint = Path.join("/", dataset)
-    ZFS.create(dataset)
+    case MetaData.get_volume(name) do
+      :not_found ->
+        dataset = Path.join(Config.get("volume_root"), name)
+        mountpoint = Path.join("/", dataset)
+        ZFS.create(dataset)
 
-    vol = %Volume{
-      name: name,
-      dataset: dataset,
-      mountpoint: mountpoint,
-      created: Utils.timestamp_now()
-    }
+        volume = %Schemas.Volume{
+          name: name,
+          dataset: dataset,
+          mountpoint: mountpoint,
+          created: Utils.timestamp_now()
+        }
 
-    MetaData.add_volume(vol)
-    Logger.debug("Volume created: #{inspect(vol)}")
-    vol
+        MetaData.add_volume(volume)
+        Logger.debug("Volume created: #{inspect(volume)}")
+        volume
+
+      %Schemas.Volume{} = volume ->
+        volume
+    end
   end
 
   @spec destroy(String.t()) :: :ok | {:error, String.t()}
@@ -80,7 +78,7 @@ defmodule Jocker.Engine.Volume do
         ) :: :ok
   def bind_volume(
         %Container{id: container_id, layer_id: layer_id},
-        %Volume{name: volume_name, mountpoint: volume_mountpoint},
+        %Schemas.Volume{name: volume_name, mountpoint: volume_mountpoint},
         location,
         opts \\ []
       ) do

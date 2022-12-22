@@ -124,17 +124,6 @@ defmodule Jocker.API.Schemas do
     })
   end
 
-  defmodule VolumeConfig do
-    OpenApiSpex.schema(%{
-      description: "Volume configuration",
-      type: :object,
-      properties: %{
-        name: %Schema{type: :string, description: "Name of the volume."}
-      },
-      required: [:name]
-    })
-  end
-
   defmodule Image do
     OpenApiSpex.schema(%{
       description: "the image metadata",
@@ -188,20 +177,39 @@ defmodule Jocker.API.Schemas do
     })
   end
 
-  defmodule VolumeSummary do
-    # Atm. this is actually a mirror of the volume itself
+  defmodule Volume do
     OpenApiSpex.schema(%{
-      description: "summary description of a volume",
+      description: "Volume object used for persistent storage in containers.",
       type: :object,
       properties: %{
         name: %Schema{description: "Name of the volume", type: :string},
         dataset: %Schema{description: "underlying zfs dataset of the volume", type: :string},
         mountpoint: %Schema{
-          description: "main mountpoint of the volume (the mountpoint shown with 'zfs list')",
+          description:
+            "mountpoint of the volume's underlying zfs-dataset (the mountpoint shown with 'zfs list')",
           type: :string
         },
         created: %Schema{description: "when the volume was created", type: :string}
       }
+    })
+  end
+
+  defmodule VolumeConfig do
+    OpenApiSpex.schema(%{
+      description: "Volume configuration",
+      type: :object,
+      properties: %{
+        name: %Schema{type: :string, description: "Name of the volume."}
+      },
+      required: [:name]
+    })
+  end
+
+  defmodule VolumeList do
+    OpenApiSpex.schema(%{
+      description: "List of volumes.",
+      type: :array,
+      items: Jocker.API.Schemas.Volume
     })
   end
 
@@ -250,12 +258,13 @@ defmodule Jocker.API.Schemas do
 
   defmodule IdResponse do
     OpenApiSpex.schema(%{
+      title: "IdResponse",
       description: "Response to an API call that returns just an Id",
       type: :object,
       properties: %{
         id: %Schema{
           description: "The id of the created/modified/destroyed object.",
-          type: "string",
+          type: :string,
           nullable: false
         }
       },

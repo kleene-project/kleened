@@ -95,7 +95,6 @@ defmodule WebSocketTest do
       })
 
     {:ok, exec_id} = Exec.create(container.id)
-    stop_msg = "executable #{exec_id} stopped"
 
     container_id = container.id
     {:ok, conn} = initialize_websocket("/exec/#{exec_id}/start?attach=false&start_container=true")

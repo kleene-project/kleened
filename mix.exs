@@ -7,6 +7,7 @@ defmodule Jocker.MixProject do
       version: "0.0.1",
       elixir: "~> 1.9",
       start_permanent: Mix.env() == :prod,
+      elixirc_paths: elixirc_paths(Mix.env()),
       releases: [
         jockerd: [include_executables_for: [:unix]]
       ],
@@ -59,4 +60,8 @@ defmodule Jocker.MixProject do
       {:gun, "~> 1.3", only: :test}
     ]
   end
+
+  # Specifies which paths to compile per environment.
+  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(_), do: ["lib"]
 end

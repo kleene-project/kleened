@@ -1,6 +1,4 @@
 defmodule Jocker.API.Volume do
-  # FIXME:
-  #  - autogenerate and add to jcli
   alias OpenApiSpex.{Operation, Schema}
   alias Jocker.API.Schemas
   alias Jocker.Engine.Volume
@@ -28,7 +26,7 @@ defmodule Jocker.API.Volume do
           200 =>
             response("no error", "application/json", %Schema{
               type: :array,
-              items: Schemas.VolumeSummary
+              items: Schemas.VolumeList
             })
         }
       }
@@ -38,7 +36,7 @@ defmodule Jocker.API.Volume do
       volumes = Jocker.Engine.MetaData.list_volumes() |> Jason.encode!()
 
       conn
-      |> Plug.Conn.put_resp_header("Content-Type", "application/json")
+      |> Plug.Conn.put_resp_header("content-type", "application/json")
       |> Plug.Conn.send_resp(200, volumes)
     end
   end
@@ -79,10 +77,10 @@ defmodule Jocker.API.Volume do
 
     def create(conn, _opts) do
       conn = Plug.Conn.fetch_query_params(conn)
-      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
       name = conn.body_params.name
-      %Volume{} = Volume.create(name)
+      %Schemas.Volume{} = Volume.create(name)
       send_resp(conn, 201, Utils.id_response(name))
     end
   end
@@ -120,7 +118,7 @@ defmodule Jocker.API.Volume do
     end
 
     def remove(conn, _opts) do
-      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
       name = conn.params.volume_name
 
       case Volume.destroy(name) do
