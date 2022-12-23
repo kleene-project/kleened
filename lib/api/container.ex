@@ -32,11 +32,7 @@ defmodule Jocker.API.Container do
           )
         ],
         responses: %{
-          200 =>
-            response("no error", "application/json", %Schema{
-              type: :array,
-              items: Schemas.ContainerSummary
-            })
+          200 => response("no error", "application/json", Schemas.ContainerSummaryList)
         }
       }
     end
@@ -53,7 +49,7 @@ defmodule Jocker.API.Container do
       container_list = Container.list(opts) |> Jason.encode!()
 
       conn
-      |> Plug.Conn.put_resp_header("Content-Type", "application/json")
+      |> Plug.Conn.put_resp_header("content-type", "application/json")
       |> Plug.Conn.send_resp(200, container_list)
     end
   end
@@ -104,7 +100,7 @@ defmodule Jocker.API.Container do
 
     def create(conn, _opts) do
       conn = Plug.Conn.fetch_query_params(conn)
-      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
       name = conn.query_params["name"]
       container_config = conn.body_params
@@ -115,10 +111,6 @@ defmodule Jocker.API.Container do
 
         {:error, :image_not_found} ->
           send_resp(conn, 404, Utils.error_response("no such image '#{container_config.image}'"))
-
-        unknown_msg ->
-          Logger.warn("unknown error creating container: #{inspect(unknown_msg)}")
-          send_resp(conn, 500, Utils.error_response("server error"))
       end
     end
   end
@@ -129,15 +121,15 @@ defmodule Jocker.API.Container do
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,
-      operation_id: "Container.Delete"
+      operation_id: "Container.Destroy"
     )
 
     plug(:remove)
 
     def open_api_operation(_) do
       %Operation{
-        summary: "Remove a container",
-        operationId: "Container.Delete",
+        summary: "Delete a container from the file system and jocker.",
+        operationId: "Container.Destroy",
         parameters: [
           parameter(
             :container_id,
@@ -159,7 +151,7 @@ defmodule Jocker.API.Container do
     end
 
     def remove(conn, _opts) do
-      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
       case Container.destroy(conn.params.container_id) do
         {:ok, container_id} ->
@@ -168,13 +160,9 @@ defmodule Jocker.API.Container do
         {:error, :not_found} ->
           send_resp(conn, 404, Utils.error_response("no such container"))
 
-        # Atm. the destroy api automatically stops a container. Docker Engine returns this error.
-        # {:error, :already_started} ->
-        #  send_resp(conn, 409, "you cannot remove a running container")
-
-        unknown_msg ->
-          Logger.warn("unknown error when destroying container #{inspect(unknown_msg)}")
-          send_resp(conn, 500, Utils.error_response("server error"))
+          # Atm. the destroy api automatically stops a container. Docker Engine returns this error.
+          # {:error, :already_started} ->
+          #  send_resp(conn, 409, "you cannot remove a running container")
       end
     end
   end
@@ -217,7 +205,7 @@ defmodule Jocker.API.Container do
     end
 
     def stop(conn, _opts) do
-      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
       case Container.stop(conn.params.container_id) do
         {:ok, id} ->

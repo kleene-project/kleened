@@ -242,12 +242,20 @@ defmodule Jocker.API.Schemas do
     })
   end
 
+  defmodule ContainerSummaryList do
+    OpenApiSpex.schema(%{
+      description: "List of summarised containers.",
+      type: :array,
+      items: Jocker.API.Schemas.ContainerSummary
+    })
+  end
+
   defmodule ErrorResponse do
     OpenApiSpex.schema(%{
       description: "Represents an error",
       type: :object,
       properties: %{
-        message: %Schema{description: "The error message.", type: "string", nullable: false}
+        message: %Schema{description: "The error message.", type: :string, nullable: false}
       },
       example: %{
         message: "Something went wrong."

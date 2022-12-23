@@ -1,5 +1,5 @@
 defmodule WebSocketTest do
-  use ExUnit.Case
+  use Jocker.API.ConnCase
   require Logger
 
   alias Jocker.Engine.{Exec, Container, Network, Image}
@@ -41,9 +41,9 @@ defmodule WebSocketTest do
       initialize_websocket("/exec/nonexisting/start?nonexisting_param=true&start_container=true")
   end
 
-  test "try starting the first execution instance start_container=false" do
-    {:ok, container} =
-      TestHelper.create_container("ws_test_container", %{
+  test "try starting the first execution instance start_container=false", %{api_spec: api_spec} do
+    container =
+      TestHelper.container_create(api_spec, "ws_test_container", %{
         image: "base",
         cmd: ["/bin/sh", "-c", "uname"]
       })
@@ -60,9 +60,9 @@ defmodule WebSocketTest do
     {:ok, ^container_id} = Container.destroy(container_id)
   end
 
-  test "attach to actual container and receive some output from it" do
-    {:ok, container} =
-      TestHelper.create_container("ws_test_container", %{
+  test "attach to actual container and receive some output from it", %{api_spec: api_spec} do
+    container =
+      TestHelper.container_create(api_spec, "ws_test_container", %{
         image: "base",
         cmd: ["/bin/sh", "-c", "uname"]
       })
@@ -75,9 +75,9 @@ defmodule WebSocketTest do
     {:ok, ^container_id} = Container.destroy(container_id)
   end
 
-  test "start container quickly several times to verify reproducibility" do
-    {:ok, container} =
-      TestHelper.create_container("ws_test_container", %{
+  test "start container quickly several times to verify reproducibility", %{api_spec: api_spec} do
+    container =
+      TestHelper.container_create(api_spec, "ws_test_container", %{
         image: "base",
         cmd: ["/bin/sh", "-c", "uname"]
       })
@@ -87,9 +87,9 @@ defmodule WebSocketTest do
     {:ok, ^container_id} = Container.destroy(container_id)
   end
 
-  test "start container without attaching to it" do
-    {:ok, container} =
-      TestHelper.create_container("ws_test_container", %{
+  test "start container without attaching to it", %{api_spec: api_spec} do
+    container =
+      TestHelper.container_create(api_spec, "ws_test_container", %{
         image: "base",
         cmd: ["/bin/sh", "-c", "uname"]
       })
@@ -168,9 +168,6 @@ defmodule WebSocketTest do
 
       :websocket_closed ->
         Enum.reverse(frames)
-
-      unknown_message ->
-        IO.puts("Unknown message received: ", unknown_message)
     end
   end
 
@@ -182,10 +179,6 @@ defmodule WebSocketTest do
 
       {:gun_down, ^conn, :ws, :closed, [], []} ->
         :websocket_closed
-
-      what ->
-        Logger.error("unknown message received #{inspect(what)}")
-        {:error, :unknown_msg}
     after
       1_000 -> {:error, :timeout}
     end
@@ -222,9 +215,6 @@ defmodule WebSocketTest do
 
       {:gun_error, ^conn, _stream_ref, reason} ->
         exit({:ws_upgrade_failed, reason})
-
-      msg ->
-        exit({:ws_upgrade_failed, "unknown message '#{inspect(msg)}' received."})
     end
   end
 

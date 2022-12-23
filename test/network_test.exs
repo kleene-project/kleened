@@ -1,5 +1,5 @@
 defmodule NetworkTest do
-  use ExUnit.Case
+  use Jocker.API.ConnCase
   require Logger
   alias Jocker.Engine.{Network, Utils, MetaData, Container, Exec, OS}
   alias Jocker.API.Schemas.ExecConfig
@@ -65,11 +65,11 @@ defmodule NetworkTest do
              })
   end
 
-  test "try to connect/disconnect twice" do
+  test "try to connect/disconnect twice", %{api_spec: api_spec} do
     {:ok, network} = create_network(%{driver: "loopback"})
 
-    {:ok, container} =
-      TestHelper.create_container("network_test", %{
+    container =
+      TestHelper.container_create(api_spec, "network_test", %{
         cmd: ["/bin/sleep", "10"],
         networks: [network.name]
       })
@@ -82,13 +82,13 @@ defmodule NetworkTest do
     cleanup(container, network)
   end
 
-  test "create a container using the host network" do
+  test "create a container using the host network", %{api_spec: api_spec} do
     opts = %{
       networks: ["host"],
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-i", "-4"]
     }
 
-    {:ok, %Container{id: id}} = TestHelper.create_container("network_test2", opts)
+    %Container{id: id} = TestHelper.container_create(api_spec, "network_test2", opts)
 
     {output_json, 0} = System.cmd("/usr/bin/netstat", ["--libxo", "json", "-i", "-4"])
     ips_before = ips_on_all_interfaces(output_json)
@@ -103,7 +103,7 @@ defmodule NetworkTest do
     Container.destroy(id)
   end
 
-  test "connect loopback network when container is created" do
+  test "connect loopback network when container is created", %{api_spec: api_spec} do
     {:ok, network} =
       create_network(%{subnet: "172.19.0.0/16", ifname: "jocker1", driver: "loopback"})
 
@@ -112,7 +112,7 @@ defmodule NetworkTest do
       networks: [network.name]
     }
 
-    {:ok, %Container{} = container} = TestHelper.create_container("network_test", opts)
+    container = TestHelper.container_create(api_spec, "network_test", opts)
 
     {:ok, exec_id} = exec_run(container.id, %{attach: true, start_container: true})
     %EndPointConfig{ip_addresses: [ip]} = MetaData.get_endpoint_config(container.id, network.id)
@@ -123,7 +123,7 @@ defmodule NetworkTest do
     cleanup(container, network)
   end
 
-  test "connect loopback network after container creation" do
+  test "connect loopback network after container creation", %{api_spec: api_spec} do
     {:ok, network} =
       create_network(%{ifname: "jocker1", subnet: "172.19.0.0/16", driver: "loopback"})
 
@@ -132,7 +132,7 @@ defmodule NetworkTest do
       networks: []
     }
 
-    {:ok, %Container{} = container} = TestHelper.create_container("network_test", opts)
+    container = TestHelper.container_create(api_spec, "network_test", opts)
 
     assert {:ok, %EndPointConfig{ip_addresses: [ip]}} = Network.connect(container.id, "testnet")
     {:ok, exec_id} = exec_run(container.id, %{attach: true, start_container: true})
@@ -143,11 +143,11 @@ defmodule NetworkTest do
     cleanup(container, network)
   end
 
-  test "connect vnet network when container is created" do
+  test "connect vnet network when container is created", %{api_spec: api_spec} do
     {:ok, network} = create_network(%{driver: "vnet"})
 
-    {:ok, %Container{} = container} =
-      TestHelper.create_container("network_test3", %{
+    container =
+      TestHelper.container_create(api_spec, "network_test3", %{
         cmd: ["/bin/sleep", "100"],
         networks: [network.name]
       })
@@ -168,11 +168,11 @@ defmodule NetworkTest do
     cleanup(container, network)
   end
 
-  test "connect vnet network after container creation" do
+  test "connect vnet network after container creation", %{api_spec: api_spec} do
     {:ok, network} = create_network(%{driver: "vnet", ifname: "vnet0"})
 
-    {:ok, %Container{} = container} =
-      TestHelper.create_container("network_test3", %{
+    container =
+      TestHelper.container_create(api_spec, "network_test3", %{
         cmd: ["/bin/sleep", "100"],
         networks: []
       })
@@ -194,7 +194,7 @@ defmodule NetworkTest do
     cleanup(container, network)
   end
 
-  test "try to connect a container to vnet and then loopback network" do
+  test "try to connect a container to vnet and then loopback network", %{api_spec: api_spec} do
     {:ok, network1} =
       create_network(%{driver: "vnet", name: "testnet1", subnet: "10.13.37.0/24", ifname: "vnet1"})
 
@@ -206,8 +206,8 @@ defmodule NetworkTest do
         ifname: "vnet2"
       })
 
-    {:ok, container} =
-      TestHelper.create_container("network_test3", %{
+    container =
+      TestHelper.container_create(api_spec, "network_test3", %{
         cmd: ["/bin/sleep", "10"],
         networks: []
       })
@@ -221,11 +221,12 @@ defmodule NetworkTest do
     cleanup(container, [network1, network2])
   end
 
-  test "connectivity using loopback interface" do
+  test "connectivity using loopback interface", %{api_spec: api_spec} do
     {:ok, network} = create_network(%{driver: "loopback", ifname: "jocker1"})
 
-    {:ok, %Container{} = container} =
-      TestHelper.create_container(
+    container =
+      TestHelper.container_create(
+        api_spec,
         "network_test3",
         %{cmd: @dns_lookup_cmd, networks: ["testnet"]}
       )
@@ -237,11 +238,12 @@ defmodule NetworkTest do
     cleanup(container, network)
   end
 
-  test "connectivity using vnet interface" do
+  test "connectivity using vnet interface", %{api_spec: api_spec} do
     {:ok, network} = create_network(%{driver: "vnet", ifname: "vnet1"})
 
-    {:ok, %Container{} = container} =
-      TestHelper.create_container(
+    container =
+      TestHelper.container_create(
+        api_spec,
         "network_test3",
         %{cmd: @dns_lookup_cmd, networks: ["testnet"]}
       )
@@ -256,11 +258,12 @@ defmodule NetworkTest do
     cleanup(container, network)
   end
 
-  test "disconnect vnet network while the container is running" do
+  test "disconnect vnet network while the container is running", %{api_spec: api_spec} do
     {:ok, network} = create_network(%{driver: "vnet", ifname: "vnet1"})
 
-    {:ok, %Container{} = container} =
-      TestHelper.create_container(
+    container =
+      TestHelper.container_create(
+        api_spec,
         "network_test3",
         %{cmd: ["/bin/sleep", "100"], networks: []}
       )

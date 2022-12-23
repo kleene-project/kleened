@@ -1,5 +1,5 @@
 defmodule ContainerTest do
-  use ExUnit.Case
+  use Jocker.API.ConnCase
   alias Jocker.Engine.{Container, Image, Exec, Utils}
 
   @moduletag :capture_log
@@ -13,31 +13,54 @@ defmodule ContainerTest do
     :ok
   end
 
-  test "plug testing container and fetch metadata" do
-    {:ok, %Container{image_id: img_id}} = TestHelper.create_container("testcont", %{})
+  test "create, destroy and list containers", %{
+    api_spec: api_spec
+  } do
+    assert [] == TestHelper.container_list(api_spec)
+
+    %Container{id: container_id, name: name, image_id: img_id} =
+      TestHelper.container_create(api_spec, "testcont", %{})
+
     %Image{id: id} = Jocker.Engine.MetaData.get_image("base")
     assert id == img_id
+
+    assert [%{id: ^container_id, name: ^name, image_id: ^img_id}] =
+             TestHelper.container_list(api_spec)
+
+    %Container{id: container_id2, name: name2, image_id: ^img_id} =
+      TestHelper.container_create(api_spec, "testcont2", %{})
+
+    assert [%{id: ^container_id2, name: ^name2, image_id: ^img_id}, %{id: ^container_id}] =
+             TestHelper.container_list(api_spec)
+
+    %{id: ^container_id} = TestHelper.container_destroy(api_spec, container_id)
+    assert [%{id: ^container_id2}] = TestHelper.container_list(api_spec)
+
+    %{id: ^container_id2} = TestHelper.container_destroy(api_spec, container_id2)
+    assert [] = TestHelper.container_list(api_spec)
+
+    assert %{message: "lol"} == TestHelper.container_destroy(api_spec, container_id2)
   end
 
-  test "start and stop a container (using devfs)" do
+  test "start and stop a container (using devfs)", %{api_spec: api_spec} do
     config = %{cmd: ["/bin/sleep", "10"]}
 
     {%Container{id: container_id} = cont, exec_id} =
-      TestHelper.start_attached_container("testcont", config)
+      TestHelper.container_start_attached(api_spec, "testcont", config)
 
     assert TestHelper.devfs_mounted(cont)
 
-    assert {:ok, ^container_id} = Exec.stop(exec_id, %{stop_container: true})
+    assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
 
     assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
     refute TestHelper.devfs_mounted(cont)
   end
 
-  test "start a container (using devfs), attach to it and receive output" do
+  test "start a container (using devfs), attach to it and receive output", %{api_spec: api_spec} do
     cmd_expected = ["/bin/echo", "test test"]
 
-    {:ok, %Container{id: container_id, command: command} = container} =
-      TestHelper.create_container("testcont", %{cmd: cmd_expected})
+    %Container{id: container_id, command: command} =
+      container = TestHelper.container_create(api_spec, "testcont", %{cmd: cmd_expected})
 
     assert cmd_expected == command
 
@@ -49,21 +72,24 @@ defmodule ContainerTest do
     refute TestHelper.devfs_mounted(container)
   end
 
-  test "start a container and force-stop it" do
-    {:ok, %Container{id: container_id}} =
-      TestHelper.create_container("testcont", %{cmd: ["/bin/sleep", "10"]})
+  test "start a container and force-stop it", %{api_spec: api_spec} do
+    %Container{id: container_id} =
+      TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
     {:ok, exec_id} = Exec.create(container_id)
     :ok = Exec.start(exec_id, %{attach: false, start_container: true})
 
-    assert {:ok, ^container_id} = Exec.stop(exec_id, %{stop_container: true, force_stop: true})
+    assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
 
     refute Utils.is_container_running?(container_id)
   end
 
-  test "start a second process in a container and receive output from it" do
-    {:ok, %Container{id: container_id}} =
-      TestHelper.create_container("testcont", %{cmd: ["/bin/sleep", "10"]})
+  test "start a second process in a container and receive output from it", %{
+    # FIXME: Exec-test
+    api_spec: api_spec
+  } do
+    %Container{id: container_id} =
+      TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
     {:ok, root_exec_id} = Exec.create(container_id)
     :ok = Exec.start(root_exec_id, %{attach: false, start_container: true})
@@ -83,9 +109,12 @@ defmodule ContainerTest do
     refute Utils.is_container_running?(container_id)
   end
 
-  test "start a second process in a container and terminate it using 'stop_container: false'" do
-    {:ok, %Container{id: container_id}} =
-      TestHelper.create_container("testcont", %{cmd: ["/bin/sleep", "10"]})
+  test "start a second process in a container and terminate it using 'stop_container: false'", %{
+    # FIXME: Exec-test?
+    api_spec: api_spec
+  } do
+    %Container{id: container_id} =
+      TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
     {:ok, root_exec_id} = Exec.create(container_id)
     :ok = Exec.start(root_exec_id, %{attach: false, start_container: true})
@@ -113,9 +142,12 @@ defmodule ContainerTest do
     refute Utils.is_container_running?(container_id)
   end
 
-  test "start a second process in a container and terminate it using 'stop_container: true'" do
-    {:ok, %Container{id: container_id}} =
-      TestHelper.create_container("testcont", %{cmd: ["/bin/sleep", "10"]})
+  test "start a second process in a container and terminate it using 'stop_container: true'", %{
+    # FIXME: Exec-test?
+    api_spec: api_spec
+  } do
+    %Container{id: container_id} =
+      TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
     {:ok, root_exec_id} = Exec.create(container_id)
     :ok = Exec.start(root_exec_id, %{attach: false, start_container: true})
@@ -136,9 +168,12 @@ defmodule ContainerTest do
     refute Utils.is_container_running?(container_id)
   end
 
-  test "use execution instance created with container name instead of container id" do
-    {:ok, %Container{id: container_id}} =
-      TestHelper.create_container("testcont", %{cmd: ["/bin/sleep", "10"]})
+  test "use execution instance created with container name instead of container id", %{
+    # FIXME: Exec-test
+    api_spec: api_spec
+  } do
+    %Container{id: container_id} =
+      TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
     {:ok, root_exec_id} = Exec.create("testcont")
 
@@ -154,9 +189,13 @@ defmodule ContainerTest do
     refute Utils.is_container_running?(container_id)
   end
 
-  test "cases where Exec.* should return errors (e.g., start a non-existing container and start non-existing exec-instance" do
-    {:ok, %Container{id: container_id}} =
-      TestHelper.create_container("testcont", %{cmd: ["/bin/sleep", "10"]})
+  test "cases where Exec.* should return errors (e.g., start a non-existing container and start non-existing exec-instance",
+       # FIXME: Exec-test
+       %{
+         api_spec: api_spec
+       } do
+    %Container{id: container_id} =
+      TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
     assert {:error, "conntainer not found"} == Exec.create("nottestcont")
 
@@ -191,20 +230,21 @@ defmodule ContainerTest do
              Exec.stop(root_exec_id, %{stop_container: true, force_stop: false})
   end
 
-  test "try to start a running executable" do
+  test "try to start a running executable", %{api_spec: api_spec} do
+    # FIXME: Exec-test
     start_opts = %{start_container: true, attach: false}
     stop_opts = %{stop_container: true, force_stop: false}
 
     {%Container{id: container_id}, exec_id} =
-      TestHelper.start_attached_container("testcont", %{cmd: ["/bin/sleep", "10"]})
+      TestHelper.container_start_attached(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
     assert {:error, "executable already started"} == Exec.start(exec_id, start_opts)
     assert {:ok, ^container_id} = Exec.stop(exec_id, stop_opts)
   end
 
-  test "start and stop a container with '/etc/rc' (using devfs)" do
-    stop_opts = %{stop_container: true, force_stop: false}
-
+  test "start and stop a container with '/etc/rc' (using devfs)", %{
+    api_spec: api_spec
+  } do
     config = %{
       cmd: ["/bin/sleep", "10"],
       jail_param: ["mount.devfs", "exec.stop=\"/bin/sh /etc/rc.shutdown\""],
@@ -212,22 +252,25 @@ defmodule ContainerTest do
     }
 
     {%Container{id: container_id} = cont, exec_id} =
-      TestHelper.start_attached_container("testcont", config)
+      TestHelper.container_start_attached(api_spec, "testcont", config)
 
     assert TestHelper.devfs_mounted(cont)
-    assert {:ok, ^container_id} = Exec.stop(exec_id, stop_opts)
+    assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
     assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
     assert not TestHelper.devfs_mounted(cont)
   end
 
-  test "create container from non-existing image" do
-    assert {:error, :image_not_found} ==
-             TestHelper.create_container("testcont", %{image: "nonexisting"})
+  test "create container from non-existing image", %{api_spec: api_spec} do
+    assert %{message: "no such image 'nonexisting'"} ==
+             TestHelper.container_create(api_spec, "testcont", %{image: "nonexisting"})
   end
 
-  test "start a container as non-root" do
+  test "start a container as non-root", %{api_spec: api_spec} do
     {_cont, exec_id} =
-      TestHelper.start_attached_container("testcont", %{cmd: ["/usr/bin/id"], user: "ntpd"})
+      TestHelper.container_start_attached(api_spec, "testcont", %{
+        cmd: ["/usr/bin/id"],
+        user: "ntpd"
+      })
 
     assert_receive {:container, ^exec_id,
                     {:jail_output, "uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"}}
@@ -235,20 +278,20 @@ defmodule ContainerTest do
     assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
   end
 
-  test "start a container with environment variables set" do
+  test "start a container with environment variables set", %{api_spec: api_spec} do
     config = %{
       cmd: ["/bin/sh", "-c", "printenv"],
       env: ["LOL=test", "LOOL=test2"],
       user: "root"
     }
 
-    {_cont, exec_id} = TestHelper.start_attached_container("testcont", config)
+    {_cont, exec_id} = TestHelper.container_start_attached(api_spec, "testcont", config)
 
     assert_receive {:container, ^exec_id, {:jail_output, "PWD=/\nLOOL=test2\nLOL=test\n"}}
     assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
   end
 
-  test "start a container with environment variables" do
+  test "start a container with environment variables", %{api_spec: api_spec} do
     dockerfile = """
     FROM scratch
     ENV TEST=lol
@@ -265,7 +308,7 @@ defmodule ContainerTest do
       cmd: ["/bin/sh", "-c", "printenv"]
     }
 
-    {container, exec_id} = TestHelper.start_attached_container("testcont", config)
+    {container, exec_id} = TestHelper.container_start_attached(api_spec, "testcont", config)
 
     assert_receive {:container, ^exec_id, {:jail_output, env_vars}}
     env_vars_set = String.trim(env_vars, "\n") |> String.split("\n") |> MapSet.new()
@@ -276,7 +319,9 @@ defmodule ContainerTest do
     Image.destroy(image.id)
   end
 
-  test "start a container with environment variables and overwrite one of them" do
+  test "start a container with environment variables and overwrite one of them", %{
+    api_spec: api_spec
+  } do
     dockerfile = """
     FROM scratch
     ENV TEST=lol
@@ -293,7 +338,7 @@ defmodule ContainerTest do
       cmd: ["/bin/sh", "-c", "printenv"]
     }
 
-    {container, exec_id} = TestHelper.start_attached_container("testcont", config)
+    {container, exec_id} = TestHelper.container_start_attached(api_spec, "testcont", config)
 
     assert_receive {:container, ^exec_id, {:jail_output, env_vars}}
     env_vars_set = String.trim(env_vars, "\n") |> String.split("\n") |> MapSet.new()

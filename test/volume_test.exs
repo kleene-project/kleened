@@ -56,14 +56,14 @@ defmodule VolumeTest do
     volume_destroy(api_spec, volume1.name)
   end
 
-  test "verify volume binding" do
+  test "verify volume binding", %{api_spec: api_spec} do
     # use /mnt since this is empty in the basejail by default
     location = "/mnt"
     file = "/mnt/test"
     volume = Volume.create("testvol")
 
-    {:ok, %Container{id: id} = con} =
-      TestHelper.create_container("volume_test", %{cmd: ["/usr/bin/touch", file]})
+    %Container{id: id} =
+      con = TestHelper.container_create(api_spec, "volume_test", %{cmd: ["/usr/bin/touch", file]})
 
     {:ok, exec_id} = Jocker.Engine.Exec.create(id)
     :ok = Volume.bind_volume(con, volume, location)

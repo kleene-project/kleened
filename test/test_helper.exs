@@ -1,4 +1,4 @@
-alias Jocker.Engine.{ZFS, Config, Container, Layer, Exec, Network}
+alias Jocker.Engine.{ZFS, Config, Container, Layer, Exec, Network, MetaData}
 require Logger
 
 Code.put_compiler_option(:warnings_as_errors, true)
@@ -11,33 +11,110 @@ ExUnit.configure(
 )
 
 defmodule TestHelper do
-  def create_container(name, config) when not is_map_key(config, :image) do
-    create_container(name, Map.put(config, :image, "base"))
-  end
+  import ExUnit.Assertions
 
-  def create_container(name, config) when not is_map_key(config, :jail_param) do
-    create_container(name, Map.put(config, :jail_param, ["mount.devfs=true"]))
-  end
+  use Plug.Test
+  import Plug.Conn
+  import OpenApiSpex.TestAssertions
+  alias Jocker.API.Router
 
-  def create_container(name, config) when not is_map_key(config, :networks) do
-    create_container(name, Map.put(config, :networks, ["host"]))
-  end
-
-  def create_container(name, config) do
-    {:ok, container_config} =
-      OpenApiSpex.Cast.cast(
-        Jocker.API.Schemas.ContainerConfig.schema(),
-        config
-      )
-
-    Container.create(name, container_config)
-  end
-
-  def start_attached_container(name, config) do
-    {:ok, %Container{id: container_id} = cont} = create_container(name, config)
+  @opts Router.init([])
+  def container_start_attached(api_spec, name, config) do
+    %Container{id: container_id} = cont = container_create(api_spec, name, config)
     {:ok, exec_id} = Exec.create(container_id)
     :ok = Exec.start(exec_id, %{attach: true, start_container: true})
     {cont, exec_id}
+  end
+
+  def container_create(api_spec, name, config) when not is_map_key(config, :image) do
+    container_create(api_spec, name, Map.put(config, :image, "base"))
+  end
+
+  def container_create(api_spec, name, config) when not is_map_key(config, :jail_param) do
+    container_create(api_spec, name, Map.put(config, :jail_param, ["mount.devfs=true"]))
+  end
+
+  def container_create(api_spec, name, config) when not is_map_key(config, :networks) do
+    container_create(api_spec, name, Map.put(config, :networks, ["host"]))
+  end
+
+  def container_create(api_spec, name, config) do
+    assert_schema(config, "ContainerConfig", api_spec)
+
+    response =
+      conn(:post, "/containers/create?name=#{name}", config)
+      |> put_req_header("content-type", "application/json")
+      |> Router.call(@opts)
+
+    cond do
+      response.status == 201 ->
+        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+        assert_schema(json_body, "IdResponse", api_spec)
+        MetaData.get_container(json_body.id)
+
+      response.status == 404 ->
+        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+        assert_schema(json_body, "ErrorResponse", api_spec)
+        json_body
+
+      true ->
+        assert false
+    end
+  end
+
+  def container_stop(api_spec, name) do
+    response =
+      conn(:post, "/containers/#{name}/stop")
+      |> Router.call(@opts)
+
+    status = response.status
+
+    cond do
+      status == 200 ->
+        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+        assert_schema(json_body, "IdResponse", api_spec)
+        json_body
+
+      status == 304 or status == 404 or status == 500 ->
+        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+        assert_schema(json_body, "ErrorResponse", api_spec)
+        json_body
+
+      true ->
+        assert false
+    end
+  end
+
+  def container_destroy(api_spec, name) do
+    response =
+      conn(:delete, "/containers/#{name}")
+      |> Router.call(@opts)
+
+    cond do
+      response.status == 200 ->
+        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+        assert_schema(json_body, "IdResponse", api_spec)
+        json_body
+
+      response.status == 404 ->
+        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+        assert_schema(json_body, "ErrorResponse", api_spec)
+        json_body
+
+      true ->
+        assert false
+    end
+  end
+
+  def container_list(api_spec, all \\ true) do
+    response =
+      conn(:get, "/containers/list?all=#{all}")
+      |> Router.call(@opts)
+
+    assert response.status == 200
+    json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+    assert_schema(json_body, "ContainerSummaryList", api_spec)
+    json_body
   end
 
   def create_network(config) when not is_map_key(config, :driver) do
@@ -77,11 +154,6 @@ defmodule TestHelper do
 
       {:container, ^exec_id, msg} ->
         collect_container_output_(exec_id, [msg | output])
-
-      unknown ->
-        IO.puts(
-          "\nUnknown message received while collecting container output: #{inspect(unknown)}"
-        )
     end
   end
 
