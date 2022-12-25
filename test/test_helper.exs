@@ -16,9 +16,11 @@ defmodule TestHelper do
   use Plug.Test
   import Plug.Conn
   import OpenApiSpex.TestAssertions
+  alias :gun, as: Gun
   alias Jocker.API.Router
 
   @opts Router.init([])
+
   def container_start_attached(api_spec, name, config) do
     %Container{id: container_id} = cont = container_create(api_spec, name, config)
     {:ok, exec_id} = Exec.create(container_id)
@@ -117,6 +119,178 @@ defmodule TestHelper do
     json_body
   end
 
+  def collect_container_output(exec_id) do
+    output = collect_container_output_(exec_id, [])
+    output |> Enum.reverse() |> Enum.join("")
+  end
+
+  defp collect_container_output_(exec_id, output) do
+    receive do
+      {:container, ^exec_id, {:shutdown, :jail_stopped}} ->
+        output
+
+      {:container, ^exec_id, {:jail_output, msg}} ->
+        collect_container_output_(exec_id, [msg | output])
+
+      {:container, ^exec_id, msg} ->
+        collect_container_output_(exec_id, [msg | output])
+    end
+  end
+
+  def exec_create(api_spec, config) do
+    assert_schema(config, "ExecConfig", api_spec)
+
+    response =
+      conn(:post, "/exec/create", config)
+      |> put_req_header("content-type", "application/json")
+      |> Router.call(@opts)
+
+    cond do
+      response.status == 201 ->
+        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+        assert_schema(json_body, "IdResponse", api_spec)
+        {:ok, json_body.id}
+
+      response.status == 404 ->
+        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+        assert_schema(json_body, "ErrorResponse", api_spec)
+        json_body
+
+      true ->
+        assert false
+    end
+  end
+
+  def exec_start(exec_id, %{attach: attach, start_container: start_container}) do
+    initialize_websocket(
+      "/exec/#{exec_id}/start?attach=#{attach}&start_container=#{start_container}"
+    )
+  end
+
+  def exec_stop(api_spec, exec_id, %{
+        force_stop: force_stop,
+        stop_container: stop_container
+      }) do
+    endpoint = "/exec/#{exec_id}/stop?force_stop=#{force_stop}&stop_container=#{stop_container}"
+
+    response =
+      conn(:post, endpoint)
+      |> put_req_header("content-type", "application/json")
+      |> Router.call(@opts)
+
+    cond do
+      response.status == 200 ->
+        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+        assert_schema(json_body, "IdResponse", api_spec)
+        {:ok, json_body.id}
+
+      response.status == 404 ->
+        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+        assert_schema(json_body, "ErrorResponse", api_spec)
+        json_body
+
+      true ->
+        assert false
+    end
+  end
+
+  def image_build(config) do
+    query_params = Plug.Conn.Query.encode(config)
+    endpoint = "/images/build?#{query_params}"
+    initialize_websocket(endpoint)
+  end
+
+  def initialize_websocket(endpoint) do
+    {:ok, conn} = Gun.open(:binary.bin_to_list("localhost"), 8085)
+
+    receive do
+      {:gun_up, ^conn, :http} -> :ok
+      msg -> Logger.info("connection up! #{inspect(msg)}")
+    end
+
+    :gun.ws_upgrade(conn, :binary.bin_to_list(endpoint))
+
+    receive do
+      {:gun_upgrade, ^conn, _stream_ref, ["websocket"], _headers} ->
+        Logger.info("websocket initialized")
+        {:ok, conn}
+
+      {:gun_response, ^conn, stream_ref, :nofin, 400, _headers} ->
+        Logger.info("Failed with status 400 (invalid parameters). Fetching repsonse data.")
+        response = receive_data(conn, stream_ref, "")
+        {:error, response}
+
+      {:gun_response, ^conn, stream_ref, :nofin, status, _headers} ->
+        Logger.error("failed for a unknown reason with status #{status}. Fetching repsonse data.")
+        response = receive_data(conn, stream_ref, "")
+        {:error, response}
+
+      {:gun_response, ^conn, _stream_ref, :fin, status, headers} = msg ->
+        Logger.error("failed for a unknown reason with no data: #{msg}")
+        exit({:ws_upgrade_failed, status, headers})
+
+      {:gun_error, ^conn, _stream_ref, reason} ->
+        exit({:ws_upgrade_failed, reason})
+    end
+  end
+
+  defp receive_data(conn, stream_ref, buffer) do
+    receive do
+      {:gun_data, ^conn, {:websocket, ^stream_ref, _ws_data, [], %{}}, :fin, data} ->
+        Logger.debug("received data: #{data}")
+        data
+
+      {:gun_data, ^conn, ^stream_ref, :nofin, data} ->
+        Logger.debug("received data (more coming): #{data}")
+        receive_data(conn, stream_ref, buffer <> data)
+
+      unknown ->
+        Logger.warn(
+          "Unknown data received while waiting for websocket initialization data: #{
+            inspect(unknown)
+          }"
+        )
+    after
+      1000 ->
+        exit("timed out while waiting for response data during websocket initialization.")
+    end
+  end
+
+  def receive_frames(conn, frames \\ []) do
+    case receive_frame(conn) do
+      {:text, msg} ->
+        receive_frames(conn, [msg | frames])
+
+      {:close, 1001, ""} ->
+        receive_frames(conn, [:not_attached])
+
+      {:close, 1001, msg} ->
+        receive_frames(conn, [msg | frames])
+
+      {:close, 1000, msg} ->
+        receive_frames(conn, [msg | frames])
+
+      {:gun_down, ^conn, :ws, :closed, [], []} ->
+        Enum.reverse(frames)
+
+      :websocket_closed ->
+        Enum.reverse(frames)
+    end
+  end
+
+  def receive_frame(conn) do
+    receive do
+      {:gun_ws, ^conn, _ref, msg} ->
+        Logger.info("message received from websocket: #{inspect(msg)}")
+        msg
+
+      {:gun_down, ^conn, :ws, :closed, [], []} ->
+        :websocket_closed
+    after
+      1_000 -> {:error, :timeout}
+    end
+  end
+
   def create_network(config) when not is_map_key(config, :driver) do
     exit(:testhelper_error)
   end
@@ -137,24 +311,6 @@ defmodule TestHelper do
       )
 
     Network.create(network_config)
-  end
-
-  def collect_container_output(exec_id) do
-    output = collect_container_output_(exec_id, [])
-    output |> Enum.reverse() |> Enum.join("")
-  end
-
-  defp collect_container_output_(exec_id, output) do
-    receive do
-      {:container, ^exec_id, {:shutdown, :jail_stopped}} ->
-        output
-
-      {:container, ^exec_id, {:jail_output, msg}} ->
-        collect_container_output_(exec_id, [msg | output])
-
-      {:container, ^exec_id, msg} ->
-        collect_container_output_(exec_id, [msg | output])
-    end
   end
 
   def now() do

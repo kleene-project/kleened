@@ -85,7 +85,7 @@ defmodule Jocker.API.ExecStartWebSocket do
   end
 
   def websocket_info({:container, exec_id, {:shutdown, :jailed_process_exited}}, state) do
-    {[{:close, 1001, "container #{exec_id}'s root process exited"}], state}
+    {[{:close, 1001, "#{exec_id} has exited"}], state}
   end
 
   def websocket_info({:container, _container_id, {:jail_output, msg}}, state) do

@@ -15,6 +15,42 @@ defmodule ImageTest do
     :ok
   end
 
+  @tmp_dockerfile "tmp_dockerfile"
+  @tmp_context "./"
+
+  test "building a simple image that generates some text" do
+    dockerfile = """
+    FROM scratch
+    RUN echo "lets test that we receives this!"
+    RUN uname
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+
+    config = %{
+      context: @tmp_context,
+      dockerfile: @tmp_dockerfile,
+      quiet: false,
+      tag: "websock_img:latest"
+    }
+
+    {:ok, conn} = TestHelper.image_build(config)
+    frames = TestHelper.receive_frames(conn)
+    {finish_msg, build_log} = List.pop_at(frames, -1)
+
+    assert build_log == [
+             "OK",
+             "Step 1/3 : FROM scratch\n",
+             "Step 2/3 : RUN echo \"lets test that we receives this!\"\n",
+             "lets test that we receives this!\n",
+             "Step 3/3 : RUN uname\n",
+             "FreeBSD\n"
+           ]
+
+    assert <<"image created with id ", _::binary>> = finish_msg
+    Image.destroy("websock_img")
+  end
+
   test "create an image with a 'RUN' instruction" do
     dockerfile = """
     FROM scratch

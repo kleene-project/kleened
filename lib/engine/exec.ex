@@ -203,8 +203,6 @@ defmodule Jocker.Engine.Exec do
     {jailed_processes, 0} =
       System.cmd("/bin/ps", ~w"--libxo json -o user,pid,ppid,command -d  -ax -p #{jail_pid}")
 
-    Logger.warn("#{jail_pid} : LOL #{inspect(jailed_processes)}")
-
     %{"process-information" => %{"process" => processes}} = Jason.decode!(jailed_processes)
 
     # Locate the process that have our port (i.e. /sbin/jail) as parent.

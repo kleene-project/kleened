@@ -43,7 +43,7 @@ defmodule Jocker.API.Exec do
     end
 
     def create(conn, _opts) do
-      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
       exec_config = conn.body_params
 
@@ -112,9 +112,20 @@ defmodule Jocker.API.Exec do
 
     def stop(conn, _opts) do
       conn = Plug.Conn.fetch_query_params(conn)
-      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
-      stop_container = conn.query_params["stop_container"]
-      force_stop = conn.query_params["force_stop"]
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+
+      stop_container =
+        case conn.query_params["stop_container"] do
+          "true" -> true
+          "false" -> false
+        end
+
+      force_stop =
+        case conn.query_params["force_stop"] do
+          "true" -> true
+          "false" -> false
+        end
+
       exec_id = conn.params.exec_id
 
       case Exec.stop(exec_id, %{stop_container: stop_container, force_stop: force_stop}) do
