@@ -25,56 +25,16 @@ defmodule ExecTest do
     :ok
   end
 
-  test "try starting and attaching to a non-existing execution instance" do
-    {:ok, conn} = TestHelper.exec_start("nonexisting", %{attach: true, start_container: true})
+  test "attach to a container and receive some output from it", %{api_spec: api_spec} do
+    %Container{id: container_id} =
+      TestHelper.container_create(api_spec, "test_container1", %{cmd: ["/bin/sh", "-c", "uname"]})
 
-    assert [
-             "ERROR:could not find a execution instance matching 'nonexisting'",
-             "Failed to execute command."
-           ] == TestHelper.receive_frames(conn)
-  end
-
-  test "try executing a non-existining execution instance with invalid parameters" do
-    {:error, "invalid value/missing parameter(s)"} =
-      TestHelper.exec_start("nonexisting", %{attach: "mustbeboolean", start_container: true})
-
-    {:error, "invalid value/missing parameter(s)"} =
-      TestHelper.initialize_websocket(
-        "/exec/nonexisting/start?nonexisting_param=true&start_container=true"
-      )
-  end
-
-  test "try starting the first execution instance start_container=false", %{api_spec: api_spec} do
-    container =
-      TestHelper.container_create(api_spec, "ws_test_container", %{
-        image: "base",
-        cmd: ["/bin/sh", "-c", "uname"]
-      })
-
-    {:ok, exec_id} = Exec.create(container.id)
-    container_id = container.id
-    {:ok, conn} = TestHelper.exec_start(exec_id, %{attach: true, start_container: false})
-
-    assert [
-             "ERROR:cannot start container when 'start_container' is false.",
-             "Failed to execute command."
-           ] == TestHelper.receive_frames(conn)
-
-    {:ok, ^container_id} = Container.destroy(container_id)
-  end
-
-  test "attach to actual container and receive some output from it", %{api_spec: api_spec} do
-    container =
-      TestHelper.container_create(api_spec, "ws_test_container", %{
-        image: "base",
-        cmd: ["/bin/sh", "-c", "uname"]
-      })
-
-    {:ok, exec_id} = Exec.create(container.id)
+    {:ok, exec_id} = Exec.create(container_id)
     stop_msg = "executable #{exec_id} stopped"
-    container_id = container.id
-    {:ok, conn} = TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
-    assert ["OK", "FreeBSD\n", stop_msg] == TestHelper.receive_frames(conn)
+
+    assert ["OK", "FreeBSD\n", stop_msg] ==
+             TestHelper.exec_start_sync(exec_id, %{attach: true, start_container: true})
+
     {:ok, ^container_id} = Container.destroy(container_id)
   end
 
@@ -152,10 +112,8 @@ defmodule ExecTest do
 
     {:ok, root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
 
-    {:ok, root_conn} =
-      TestHelper.exec_start(root_exec_id, %{attach: false, start_container: true})
-
-    assert [:not_attached] == TestHelper.receive_frames(root_conn)
+    assert [:not_attached] ==
+             TestHelper.exec_start_sync(root_exec_id, %{attach: false, start_container: true})
 
     {:ok, exec_id} =
       TestHelper.exec_create(api_spec, %{
@@ -188,8 +146,8 @@ defmodule ExecTest do
 
     {:ok, exec_id} = TestHelper.exec_create(api_spec, %{container_id: "testcont"})
 
-    {:ok, conn} = TestHelper.exec_start(exec_id, %{attach: false, start_container: true})
-    assert [:not_attached] == TestHelper.receive_frames(conn)
+    assert [:not_attached] ==
+             TestHelper.exec_start_sync(exec_id, %{attach: false, start_container: true})
 
     # seems like '/usr/sbin/jail' returns before the kernel reports it as running?
     :timer.sleep(500)
@@ -205,6 +163,14 @@ defmodule ExecTest do
        %{
          api_spec: api_spec
        } do
+    {:error, "invalid value/missing parameter(s)"} =
+      TestHelper.exec_start("nonexisting", %{attach: "mustbeboolean", start_container: true})
+
+    {:error, "invalid value/missing parameter(s)"} =
+      TestHelper.initialize_websocket(
+        "/exec/nonexisting/start?nonexisting_param=true&start_container=true"
+      )
+
     %Container{id: container_id} =
       TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
@@ -213,33 +179,23 @@ defmodule ExecTest do
 
     {:ok, root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
 
-    {:ok, conn_err} =
-      TestHelper.exec_start("wrongexecid", %{attach: false, start_container: true})
-
     assert [
              "ERROR:could not find a execution instance matching 'wrongexecid'",
              "Failed to execute command."
            ] ==
-             TestHelper.receive_frames(conn_err)
-
-    {:ok, conn_err} =
-      TestHelper.exec_start(root_exec_id, %{attach: false, start_container: false})
+             TestHelper.exec_start_sync("wrongexecid", %{attach: false, start_container: true})
 
     assert [
              "ERROR:cannot start container when 'start_container' is false.",
              "Failed to execute command."
            ] ==
-             TestHelper.receive_frames(conn_err)
+             TestHelper.exec_start_sync(root_exec_id, %{attach: false, start_container: false})
 
-    {:ok, root_conn} =
-      TestHelper.exec_start(root_exec_id, %{attach: false, start_container: true})
-
-    assert [:not_attached] == TestHelper.receive_frames(root_conn)
-
-    {:ok, conn_err} = TestHelper.exec_start(root_exec_id, %{attach: false, start_container: true})
+    assert [:not_attached] ==
+             TestHelper.exec_start_sync(root_exec_id, %{attach: false, start_container: true})
 
     assert ["ERROR:executable already started", "Failed to execute command."] ==
-             TestHelper.receive_frames(conn_err)
+             TestHelper.exec_start_sync(root_exec_id, %{attach: false, start_container: true})
 
     assert Utils.is_container_running?(container_id)
 
@@ -261,6 +217,7 @@ defmodule ExecTest do
              })
 
     refute Utils.is_container_running?(container_id)
+    {:ok, ^container_id} = Container.destroy(container_id)
   end
 
   defp number_of_jailed_processes(container_id) do

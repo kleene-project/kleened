@@ -68,8 +68,9 @@ defmodule ContainerTest do
 
     {:ok, exec_id} = Exec.create(container.id)
 
-    {:ok, conn} = TestHelper.exec_start(exec_id, %{attach: false, start_container: true})
-    assert [:not_attached] == TestHelper.receive_frames(conn)
+    assert [:not_attached] ==
+             TestHelper.exec_start_sync(exec_id, %{attach: false, start_container: true})
+
     {:ok, ^container_id} = Container.destroy(container_id)
   end
 
@@ -227,8 +228,10 @@ defmodule ContainerTest do
   defp start_n_attached_containers_and_receive_output(container_id, number_of_starts) do
     {:ok, exec_id} = Exec.create(container_id)
     stop_msg = "executable #{exec_id} stopped"
-    {:ok, conn} = TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
-    assert ["OK", "FreeBSD\n", stop_msg] == TestHelper.receive_frames(conn)
+
+    assert ["OK", "FreeBSD\n", stop_msg] ==
+             TestHelper.exec_start_sync(exec_id, %{attach: true, start_container: true})
+
     start_n_attached_containers_and_receive_output(container_id, number_of_starts - 1)
   end
 end

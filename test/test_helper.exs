@@ -167,6 +167,11 @@ defmodule TestHelper do
     )
   end
 
+  def exec_start_sync(exec_id, config) do
+    {:ok, conn} = exec_start(exec_id, config)
+    TestHelper.receive_frames(conn)
+  end
+
   def exec_stop(api_spec, exec_id, %{
         force_stop: force_stop,
         stop_container: stop_container
