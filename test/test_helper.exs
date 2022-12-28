@@ -199,10 +199,54 @@ defmodule TestHelper do
     end
   end
 
+  def image_valid_build(config) do
+    frames = image_build(config)
+    {finish_msg, build_log} = List.pop_at(frames, -1)
+    assert <<"image created with id ", image_id::binary>> = finish_msg
+    image = MetaData.get_image(String.trim(image_id))
+    {image, build_log}
+  end
+
+  def image_build(config) when not is_map_key(config, :quiet) do
+    image_build(Map.put(config, :quiet, false))
+  end
+
   def image_build(config) do
     query_params = Plug.Conn.Query.encode(config)
     endpoint = "/images/build?#{query_params}"
-    initialize_websocket(endpoint)
+    {:ok, conn} = initialize_websocket(endpoint)
+    receive_frames(conn)
+  end
+
+  def image_list(api_spec) do
+    response =
+      conn(:get, "/images/list")
+      |> Router.call(@opts)
+
+    json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+    assert_schema(json_body, "ImageList", api_spec)
+    json_body
+  end
+
+  def image_destroy(api_spec, image_id) do
+    response =
+      conn(:delete, "/images/#{image_id}")
+      |> Router.call(@opts)
+
+    cond do
+      response.status == 200 ->
+        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+        assert_schema(json_body, "IdResponse", api_spec)
+        {:ok, json_body.id}
+
+      response.status == 404 ->
+        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+        assert_schema(json_body, "ErrorResponse", api_spec)
+        json_body
+
+      true ->
+        assert false
+    end
   end
 
   def initialize_websocket(endpoint) do

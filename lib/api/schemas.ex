@@ -152,6 +152,14 @@ defmodule Jocker.API.Schemas do
     })
   end
 
+  defmodule ImageList do
+    OpenApiSpex.schema(%{
+      description: "List of images.",
+      type: :array,
+      items: Jocker.API.Schemas.Image
+    })
+  end
+
   defmodule NetworkSummary do
     # Atm. this is actually a mirror of the network itself
     OpenApiSpex.schema(%{

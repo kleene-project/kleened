@@ -1,11 +1,8 @@
 defmodule ImageTest do
-  use ExUnit.Case
+  use Jocker.API.ConnCase
   alias Jocker.Engine.{Config, Image, MetaData, Layer}
 
   @moduletag :capture_log
-
-  @tmp_dockerfile "tmp_dockerfile"
-  @tmp_context "./"
 
   setup do
     on_exit(fn ->
@@ -18,7 +15,7 @@ defmodule ImageTest do
   @tmp_dockerfile "tmp_dockerfile"
   @tmp_context "./"
 
-  test "building a simple image that generates some text" do
+  test "building a simple image that generates some text", %{api_spec: api_spec} do
     dockerfile = """
     FROM scratch
     RUN echo "lets test that we receives this!"
@@ -30,13 +27,10 @@ defmodule ImageTest do
     config = %{
       context: @tmp_context,
       dockerfile: @tmp_dockerfile,
-      quiet: false,
       tag: "websock_img:latest"
     }
 
-    {:ok, conn} = TestHelper.image_build(config)
-    frames = TestHelper.receive_frames(conn)
-    {finish_msg, build_log} = List.pop_at(frames, -1)
+    {%Image{id: image_id}, build_log} = TestHelper.image_valid_build(config)
 
     assert build_log == [
              "OK",
@@ -47,8 +41,10 @@ defmodule ImageTest do
              "FreeBSD\n"
            ]
 
-    assert <<"image created with id ", _::binary>> = finish_msg
-    Image.destroy("websock_img")
+    [%{id: ^image_id}] = TestHelper.image_list(api_spec)
+    assert MetaData.list_containers() == []
+    TestHelper.image_destroy(api_spec, "websock_img")
+    assert TestHelper.image_list(api_spec) == []
   end
 
   test "create an image with a 'RUN' instruction" do
@@ -59,12 +55,15 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {%Image{layer_id: layer_id}, _messages} =
-      TestHelper.build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
+    {%Image{layer_id: layer_id}, _build_log} =
+      TestHelper.image_valid_build(%{
+        context: @tmp_context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:latest"
+      })
 
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "/root/test_1.txt")) == {:ok, "lol1\n"}
-    assert MetaData.list_containers() == []
   end
 
   test "create an image with a 'COPY' instruction" do
@@ -76,12 +75,16 @@ defmodule ImageTest do
     context = create_test_context("test_copy_instruction")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {%Image{layer_id: layer_id}, _messages} =
-      TestHelper.build_and_return_image(context, @tmp_dockerfile, "test:latest")
+    config = %{
+      context: context,
+      dockerfile: @tmp_dockerfile,
+      tag: "test:latest"
+    }
 
+    {%Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
-    assert [] == MetaData.list_containers()
+    assert MetaData.list_containers() == []
   end
 
   test "create an image with a 'COPY' instruction using symlinks" do
@@ -95,8 +98,13 @@ defmodule ImageTest do
     context = create_test_context("test_copy_instruction_symbolic")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {%Image{layer_id: layer_id}, _messages} =
-      TestHelper.build_and_return_image(context, @tmp_dockerfile, "test:latest")
+    config = %{
+      context: context,
+      dockerfile: @tmp_dockerfile,
+      tag: "test:latest"
+    }
+
+    {%Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
 
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     # we cannot check the symbolic link from the host:
@@ -111,8 +119,12 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {_image, _messages} =
-      TestHelper.build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
+    {%Image{}, _build_log} =
+      TestHelper.image_valid_build(%{
+        context: @tmp_context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:latest"
+      })
 
     assert MetaData.list_containers() == []
   end
@@ -127,8 +139,12 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {image, _messages} =
-      TestHelper.build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
+    {image, _build_log} =
+      TestHelper.image_valid_build(%{
+        context: @tmp_context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:latest"
+      })
 
     assert Enum.sort(image.env_vars) == ["TEST2=lool test", "TEST=lol"]
   end
@@ -146,10 +162,15 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {image, messages} =
-      TestHelper.build_and_return_image(@tmp_context, @tmp_dockerfile, "test:latest")
+    {image, build_log} =
+      TestHelper.image_valid_build(%{
+        context: @tmp_context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:latest"
+      })
 
-    expected_messages = [
+    expected_build_log = [
+      "OK",
       "Step 1/7 : FROM scratch\n",
       "Step 2/7 : ENV TEST=testvalue\n",
       "Step 3/7 : RUN printenv\n",
@@ -161,7 +182,7 @@ defmodule ImageTest do
       "Step 7/7 : CMD /bin/ls\n"
     ]
 
-    assert expected_messages == messages
+    assert expected_build_log == build_log
     assert Enum.sort(image.env_vars) == ["TEST2=test2value", "TEST=a new test value for TEST"]
   end
 
@@ -176,8 +197,12 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {%Image{layer_id: layer_id}, _messages} =
-      TestHelper.build_and_return_image(context, @tmp_dockerfile, "test:latest")
+    {%Image{layer_id: layer_id}, _build_log} =
+      TestHelper.image_valid_build(%{
+        context: context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:latest"
+      })
 
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
@@ -198,10 +223,16 @@ defmodule ImageTest do
 
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
-    {:ok, pid} = Image.build(context, @tmp_dockerfile, "test:latest", true)
-    {_img, messages} = TestHelper.receive_imagebuilder_results(pid, [])
 
-    assert messages == []
+    {_image, build_log} =
+      TestHelper.image_valid_build(%{
+        context: context,
+        dockerfile: @tmp_dockerfile,
+        quiet: true,
+        tag: "test:latest"
+      })
+
+    assert build_log == ["OK"]
   end
 
   test "try building an image from a invalid Dockerfile" do
@@ -215,8 +246,17 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    assert {:error, "error parsing: '  \"this should faile because we omitted the '\\' above\"'"} ==
-             Image.build(context, @tmp_dockerfile, "test:latest", true)
+    build_log =
+      TestHelper.image_build(%{
+        context: context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:latest"
+      })
+
+    assert build_log == [
+             "ERROR:error parsing: '  \"this should faile because we omitted the '\\' above\"'",
+             "failed to build image"
+           ]
   end
 
   defp create_test_context(name) do

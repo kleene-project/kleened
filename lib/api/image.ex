@@ -25,11 +25,7 @@ defmodule Jocker.API.Image do
         description: "Returns a list of images.",
         operationId: "Image.List",
         responses: %{
-          200 =>
-            response("no error", "application/json", %Schema{
-              type: :array,
-              items: Schemas.Image
-            })
+          200 => response("no error", "application/json", Schemas.ImageList)
         }
       }
     end
@@ -38,7 +34,7 @@ defmodule Jocker.API.Image do
       image_list = Jocker.Engine.MetaData.list_images() |> Jason.encode!()
 
       conn
-      |> Plug.Conn.put_resp_header("Content-Type", "application/json")
+      |> Plug.Conn.put_resp_header("content-type", "application/json")
       |> Plug.Conn.send_resp(200, image_list)
     end
   end
@@ -76,7 +72,7 @@ defmodule Jocker.API.Image do
     end
 
     def remove(%Plug.Conn{path_params: %{"image_id" => image_id}} = conn, _opts) do
-      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
       case Engine.Image.destroy(image_id) do
         :ok ->
