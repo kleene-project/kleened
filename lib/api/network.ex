@@ -25,18 +25,14 @@ defmodule Jocker.API.Network do
         description: "Returns a list of networks.",
         operationId: "Network.List",
         responses: %{
-          200 =>
-            response("no error", "application/json", %Schema{
-              type: :array,
-              items: Schemas.NetworkSummary
-            }),
+          200 => response("no error", "application/json", Schemas.NetworkSummaryList),
           500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
     end
 
     def list(conn, _opts) do
-      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
       networks_json = Network.list() |> Jason.encode!()
       send_resp(conn, 200, networks_json)
     end
@@ -79,7 +75,7 @@ defmodule Jocker.API.Network do
     end
 
     def create(conn, _opts) do
-      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
       options = conn.body_params
 
       case Network.create(options) do
@@ -126,7 +122,7 @@ defmodule Jocker.API.Network do
     end
 
     def remove(conn, _opts) do
-      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
       id = conn.params.network_id
 
       case Network.remove(id) do
@@ -185,7 +181,7 @@ defmodule Jocker.API.Network do
     end
 
     def connect(conn, _opts) do
-      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
       network_id = conn.params.network_id
       container_id = conn.params.container_id
 
@@ -246,7 +242,7 @@ defmodule Jocker.API.Network do
     end
 
     def disconnect(conn, _opts) do
-      conn = Plug.Conn.put_resp_header(conn, "Content-Type", "application/json")
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
       network_id = conn.params.network_id
       container_id = conn.params.container_id
 

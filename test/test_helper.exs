@@ -1,4 +1,4 @@
-alias Jocker.Engine.{ZFS, Config, Container, Layer, Exec, Network, MetaData}
+alias Jocker.Engine.{ZFS, Config, Container, Layer, Exec, MetaData}
 require Logger
 
 Code.put_compiler_option(:warnings_as_errors, true)
@@ -249,6 +249,94 @@ defmodule TestHelper do
     end
   end
 
+  def network_create(_api_spec, config) when not is_map_key(config, :driver) do
+    exit(:testhelper_error)
+  end
+
+  def network_create(api_spec, config) do
+    config_default = %{
+      name: "testnet",
+      subnet: "172.18.0.0/16",
+      ifname: "vnet0"
+    }
+
+    config = Map.merge(config_default, config)
+    assert_schema(config, "NetworkConfig", api_spec)
+
+    response =
+      conn(:post, "/networks/create", config)
+      |> put_req_header("content-type", "application/json")
+      |> Router.call(@opts)
+
+    validate_response(api_spec, response, %{
+      201 => "IdResponse",
+      409 => "ErrorResponse"
+    })
+  end
+
+  def network_destroy(api_spec, name) do
+    response =
+      conn(:delete, "/networks/#{name}")
+      |> Router.call(@opts)
+
+    validate_response(api_spec, response, %{
+      200 => "IdResponse",
+      404 => "ErrorResponse"
+    })
+  end
+
+  def network_list(api_spec) do
+    response =
+      conn(:get, "/networks/list")
+      |> Router.call(@opts)
+
+    validate_response(api_spec, response, %{
+      200 => "NetworkSummaryList"
+    })
+  end
+
+  def network_connect(api_spec, container_id, network_id) do
+    response =
+      conn(:post, "/networks/#{network_id}/connect/#{container_id}")
+      |> Router.call(@opts)
+
+    validate_response(api_spec, response, %{
+      204 => "",
+      404 => "ErrorResponse",
+      409 => "ErrorResponse"
+    })
+  end
+
+  def network_disconnect(api_spec, container_id, network_id) do
+    response =
+      conn(:post, "/networks/#{network_id}/disconnect/#{container_id}")
+      |> Router.call(@opts)
+
+    validate_response(api_spec, response, %{
+      204 => "",
+      409 => "ErrorResponse"
+    })
+  end
+
+  defp validate_response(api_spec, response, statuscodes_to_specs) do
+    %{status: status, resp_body: resp_body} = response
+
+    response_spec = Map.get(statuscodes_to_specs, status)
+
+    cond do
+      response_spec == nil ->
+        assert false
+
+      response_spec == "" ->
+        :ok
+
+      true ->
+        json_body = Jason.decode!(resp_body, [{:keys, :atoms}])
+        assert_schema(json_body, response_spec, api_spec)
+        json_body
+    end
+  end
+
   def initialize_websocket(endpoint) do
     {:ok, conn} = Gun.open(:binary.bin_to_list("localhost"), 8085)
 
@@ -338,28 +426,6 @@ defmodule TestHelper do
     after
       1_000 -> {:error, :timeout}
     end
-  end
-
-  def create_network(config) when not is_map_key(config, :driver) do
-    exit(:testhelper_error)
-  end
-
-  def create_network(config) do
-    config_default = %{
-      name: "testnet",
-      subnet: "172.18.0.0/16",
-      ifname: "vnet0"
-    }
-
-    config = Map.merge(config_default, config)
-
-    {:ok, network_config} =
-      OpenApiSpex.Cast.cast(
-        Jocker.API.Schemas.NetworkConfig.schema(),
-        config
-      )
-
-    Network.create(network_config)
   end
 
   def now() do

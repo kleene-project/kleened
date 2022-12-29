@@ -185,6 +185,14 @@ defmodule Jocker.API.Schemas do
     })
   end
 
+  defmodule NetworkSummaryList do
+    OpenApiSpex.schema(%{
+      description: "List of networks.",
+      type: :array,
+      items: Jocker.API.Schemas.NetworkSummary
+    })
+  end
+
   defmodule Volume do
     OpenApiSpex.schema(%{
       description: "Volume object used for persistent storage in containers.",

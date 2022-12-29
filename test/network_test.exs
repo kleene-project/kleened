@@ -9,64 +9,65 @@ defmodule NetworkTest do
   @dns_lookup_success "Using domain server:\nName: 1.1.1.1\nAddress: 1.1.1.1#53\nAliases: \n\nfreebsd.org has address 96.47.72.84\n"
   @dns_lookup_failure ";; connection timed out; no servers could be reached\n"
 
-  test "create, get and remove a new network" do
+  test "create, get and remove a new network", %{api_spec: api_spec} do
     Utils.destroy_interface("jocker1")
 
-    {:ok, %Network{name: "testnet"} = network} =
-      create_network(%{ifname: "jocker1", driver: "loopback"})
+    network = create_network(api_spec, %{ifname: "jocker1", driver: "loopback"})
+
+    assert network.name == "testnet"
 
     assert Utils.interface_exists("jocker1")
     assert Network.inspect_(network.name) == network
     assert Network.inspect_(String.slice(network.id, 0, 4)) == network
-    assert Network.remove(network.name) == {:ok, network.id}
+    assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
     assert not Utils.interface_exists("jocker1")
     assert MetaData.get_network(network.id) == :not_found
   end
 
-  test "listing networks" do
+  test "listing networks", %{api_spec: api_spec} do
     Utils.destroy_interface("jocker1")
 
-    assert [%Network{id: "host"}] = Network.list()
+    assert [%{id: "host"}] = TestHelper.network_list(api_spec)
 
-    {:ok, network} = create_network(%{ifname: "jocker1", driver: "loopback"})
+    network = create_network(api_spec, %{ifname: "jocker1", driver: "loopback"})
 
     assert [
-             %Network{id: "host"},
-             %Network{name: "testnet"}
-           ] = Network.list()
+             %{id: "host"},
+             %{name: "testnet"}
+           ] = TestHelper.network_list(api_spec)
 
-    assert Network.remove(network.name) == {:ok, network.id}
+    assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
   end
 
-  test "remove a non-existing network" do
-    {:ok, network} = create_network(%{ifname: "jocker1", driver: "loopback"})
-    assert Network.remove(network.name) == {:ok, network.id}
-    assert Network.remove(network.name) == {:error, "network not found."}
+  test "remove a non-existing network", %{api_spec: api_spec} do
+    network = create_network(api_spec, %{ifname: "jocker1", driver: "loopback"})
+    assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
+    assert TestHelper.network_destroy(api_spec, network.name) == %{message: "network not found."}
   end
 
-  test "create a network with same name twice" do
-    assert {:ok, network} = TestHelper.create_network(%{ifname: "jocker1", driver: "loopback"})
+  test "create a network with same name twice", %{api_spec: api_spec} do
+    network = create_network(api_spec, %{ifname: "jocker1", driver: "loopback"})
 
-    assert {:error, "network name is already taken"} =
-             TestHelper.create_network(%{
+    assert %{message: "network name is already taken"} ==
+             TestHelper.network_create(api_spec, %{
                ifname: "jocker2",
                subnet: "172.19.0.0/16",
                driver: "loopback"
              })
 
-    Network.remove(network.name)
+    assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
   end
 
-  test "try to create a network with a invalid subnet" do
-    assert {:error, "invalid subnet"} =
-             TestHelper.create_network(%{
+  test "try to create a network with a invalid subnet", %{api_spec: api_spec} do
+    assert %{message: "invalid subnet"} =
+             TestHelper.network_create(api_spec, %{
                subnet: "172.18.0.0-16",
                driver: "loopback"
              })
   end
 
-  test "try to connect/disconnect twice", %{api_spec: api_spec} do
-    {:ok, network} = create_network(%{driver: "loopback"})
+  test "try to disconnect twice", %{api_spec: api_spec} do
+    network = create_network(api_spec, %{driver: "loopback"})
 
     container =
       TestHelper.container_create(api_spec, "network_test", %{
@@ -74,12 +75,12 @@ defmodule NetworkTest do
         networks: [network.name]
       })
 
-    assert :ok == Network.disconnect(container.id, network.id)
+    assert :ok == TestHelper.network_disconnect(api_spec, container.id, network.id)
 
-    assert {:error, "endpoint configuration not found"} ==
-             Network.disconnect(container.id, network.id)
+    assert %{message: "endpoint configuration not found"} ==
+             TestHelper.network_disconnect(api_spec, container.id, network.id)
 
-    cleanup(container, network)
+    cleanup(api_spec, container, network)
   end
 
   test "create a container using the host network", %{api_spec: api_spec} do
@@ -104,8 +105,8 @@ defmodule NetworkTest do
   end
 
   test "connect loopback network when container is created", %{api_spec: api_spec} do
-    {:ok, network} =
-      create_network(%{subnet: "172.19.0.0/16", ifname: "jocker1", driver: "loopback"})
+    network =
+      create_network(api_spec, %{subnet: "172.19.0.0/16", ifname: "jocker1", driver: "loopback"})
 
     opts = %{
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network.loopback_if_name],
@@ -120,12 +121,12 @@ defmodule NetworkTest do
     assert %{"statistics" => %{"interface" => [%{"address" => ^ip}]}} = output
     assert ip_not_on_if(ip, network.loopback_if_name)
 
-    cleanup(container, network)
+    cleanup(api_spec, container, network)
   end
 
   test "connect loopback network after container creation", %{api_spec: api_spec} do
-    {:ok, network} =
-      create_network(%{ifname: "jocker1", subnet: "172.19.0.0/16", driver: "loopback"})
+    network =
+      create_network(api_spec, %{ifname: "jocker1", subnet: "172.19.0.0/16", driver: "loopback"})
 
     opts = %{
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network.loopback_if_name],
@@ -134,17 +135,22 @@ defmodule NetworkTest do
 
     container = TestHelper.container_create(api_spec, "network_test", opts)
 
-    assert {:ok, %EndPointConfig{ip_addresses: [ip]}} = Network.connect(container.id, "testnet")
+    assert :ok = TestHelper.network_connect(api_spec, container.id, "testnet")
+
+    assert %{message: "container already connected to the network"} ==
+             TestHelper.network_connect(api_spec, container.id, "testnet")
+
+    %EndPointConfig{ip_addresses: [ip]} = MetaData.get_endpoint_config(container.id, network.id)
     {:ok, exec_id} = exec_run(container.id, %{attach: true, start_container: true})
     {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
     assert %{"statistics" => %{"interface" => [%{"address" => ^ip}]}} = output
     assert ip_not_on_if(ip, network.loopback_if_name)
 
-    cleanup(container, network)
+    cleanup(api_spec, container, network)
   end
 
   test "connect vnet network when container is created", %{api_spec: api_spec} do
-    {:ok, network} = create_network(%{driver: "vnet"})
+    network = create_network(api_spec, %{driver: "vnet"})
 
     container =
       TestHelper.container_create(api_spec, "network_test3", %{
@@ -165,11 +171,11 @@ defmodule NetworkTest do
     assert await_jail_output(exec_id, {:shutdown, :jail_stopped})
     assert not interface_exists?("#{epair}a")
 
-    cleanup(container, network)
+    cleanup(api_spec, container, network)
   end
 
   test "connect vnet network after container creation", %{api_spec: api_spec} do
-    {:ok, network} = create_network(%{driver: "vnet", ifname: "vnet0"})
+    network = create_network(api_spec, %{driver: "vnet", ifname: "vnet0"})
 
     container =
       TestHelper.container_create(api_spec, "network_test3", %{
@@ -177,7 +183,8 @@ defmodule NetworkTest do
         networks: []
       })
 
-    assert {:ok, %EndPointConfig{epair: nil}} = Network.connect(container.id, "testnet")
+    assert :ok == TestHelper.network_connect(api_spec, container.id, "testnet")
+    %EndPointConfig{epair: nil} = MetaData.get_endpoint_config(container.id, network.id)
     {:ok, exec_id} = exec_run(container.id, %{attach: true, start_container: true})
     assert receive_jail_output(exec_id) == "add net default: gateway 172.18.0.0\n"
     %EndPointConfig{epair: epair} = Network.inspect_endpoint(container.id, network.id)
@@ -191,15 +198,20 @@ defmodule NetworkTest do
 
     assert not interface_exists?("#{epair}a")
 
-    cleanup(container, network)
+    cleanup(api_spec, container, network)
   end
 
   test "try to connect a container to vnet and then loopback network", %{api_spec: api_spec} do
-    {:ok, network1} =
-      create_network(%{driver: "vnet", name: "testnet1", subnet: "10.13.37.0/24", ifname: "vnet1"})
+    network1 =
+      create_network(api_spec, %{
+        driver: "vnet",
+        name: "testnet1",
+        subnet: "10.13.37.0/24",
+        ifname: "vnet1"
+      })
 
-    {:ok, network2} =
-      create_network(%{
+    network2 =
+      create_network(api_spec, %{
         driver: "loopback",
         name: "testnet2",
         subnet: "10.13.38.0/24",
@@ -212,17 +224,20 @@ defmodule NetworkTest do
         networks: []
       })
 
-    assert {:ok, %EndPointConfig{}} = Network.connect(container.id, network1.id)
+    assert :ok == TestHelper.network_connect(api_spec, container.id, network1.id)
+    assert %EndPointConfig{} = MetaData.get_endpoint_config(container.id, network1.id)
 
-    assert {:error,
-            "already connected to a vnet network and containers can't be connected to both vnet and loopback networks"} ==
-             Network.connect(container.id, network2.id)
+    assert %{
+             message:
+               "already connected to a vnet network and containers can't be connected to both vnet and loopback networks"
+           } ==
+             TestHelper.network_connect(api_spec, container.id, network2.id)
 
-    cleanup(container, [network1, network2])
+    cleanup(api_spec, container, [network1, network2])
   end
 
   test "connectivity using loopback interface", %{api_spec: api_spec} do
-    {:ok, network} = create_network(%{driver: "loopback", ifname: "jocker1"})
+    network = create_network(api_spec, %{driver: "loopback", ifname: "jocker1"})
 
     container =
       TestHelper.container_create(
@@ -235,11 +250,11 @@ defmodule NetworkTest do
 
     assert receive_jail_output(exec_id) == @dns_lookup_success
 
-    cleanup(container, network)
+    cleanup(api_spec, container, network)
   end
 
   test "connectivity using vnet interface", %{api_spec: api_spec} do
-    {:ok, network} = create_network(%{driver: "vnet", ifname: "vnet1"})
+    network = create_network(api_spec, %{driver: "vnet", ifname: "vnet1"})
 
     container =
       TestHelper.container_create(
@@ -255,11 +270,11 @@ defmodule NetworkTest do
 
     Container.stop(container.id)
 
-    cleanup(container, network)
+    cleanup(api_spec, container, network)
   end
 
   test "disconnect vnet network while the container is running", %{api_spec: api_spec} do
-    {:ok, network} = create_network(%{driver: "vnet", ifname: "vnet1"})
+    network = create_network(api_spec, %{driver: "vnet", ifname: "vnet1"})
 
     container =
       TestHelper.container_create(
@@ -268,14 +283,16 @@ defmodule NetworkTest do
         %{cmd: ["/bin/sleep", "100"], networks: []}
       )
 
-    assert {:ok, %EndPointConfig{epair: _epair}} = Network.connect(container.id, network.name)
+    assert :ok == TestHelper.network_connect(api_spec, container.id, network.name)
+    assert %EndPointConfig{} = MetaData.get_endpoint_config(container.id, network.id)
     {:ok, exec_id} = exec_run(container.id, %{attach: true, start_container: true})
 
     assert receive_jail_output(exec_id) == "add net default: gateway 172.18.0.0\n"
 
     %EndPointConfig{epair: epair} = Network.inspect_endpoint(container.id, network.id)
     assert interface_exists?("#{epair}a")
-    assert :ok = Network.disconnect(container.id, network.name)
+
+    assert :ok == TestHelper.network_disconnect(api_spec, container.id, network.name)
 
     {:ok, exec_id} =
       exec_run(
@@ -286,11 +303,12 @@ defmodule NetworkTest do
     assert receive_jail_output(exec_id) == @dns_lookup_failure
 
     Container.stop(container.id)
-    cleanup(container, network)
+    cleanup(api_spec, container, network)
   end
 
-  defp create_network(options) do
-    {:ok, network} = reply = TestHelper.create_network(options)
+  defp create_network(api_spec, config) do
+    %{id: network_id} = TestHelper.network_create(api_spec, config)
+    network = MetaData.get_network(network_id)
 
     case network.driver do
       "loopback" ->
@@ -303,16 +321,16 @@ defmodule NetworkTest do
         :ok
     end
 
-    reply
+    network
   end
 
-  defp cleanup(container, [network1, network2]) do
-    assert Network.remove(network1.name) == {:ok, network1.id}
-    cleanup(container, network2)
+  defp cleanup(api_spec, container, [network1, network2]) do
+    assert TestHelper.network_destroy(api_spec, network1.name) == %{id: network1.id}
+    cleanup(api_spec, container, network2)
   end
 
-  defp cleanup(container, network) do
-    assert Network.remove(network.name) == {:ok, network.id}
+  defp cleanup(api_spec, container, network) do
+    assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
 
     case network.driver do
       "vnet" -> assert not interface_exists?(network.bridge_if_name)

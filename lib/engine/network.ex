@@ -126,7 +126,7 @@ defmodule Jocker.Engine.Network do
     state = %State{:pf_config_path => pf_conf_path, :gateway_interface => gateway}
 
     # Adding the special 'host' network (meaning use ip4=inherit when jails are connected to it)
-    MetaData.add_network(%Network{id: "host", name: "host", driver: "host"})
+    MetaData.add_network(%Network{id: "host", name: "host", driver: "host", subnet: "n/a"})
 
     enable_pf()
     configure_pf(pf_conf_path, gateway)
@@ -242,12 +242,22 @@ defmodule Jocker.Engine.Network do
     {:reply, {:error, "container not found"}}
   end
 
-  defp connect_(:not_found, _netowrk) do
+  defp connect_(:not_found, _network) do
     Logger.warn("Could not connect container to network: container not found")
     {:reply, {:error, "network not found"}}
   end
 
-  defp connect_(%Container{id: container_id}, %Network{id: "host"} = network) do
+  defp connect_(container, network) do
+    case MetaData.get_endpoint_config(container.id, network.id) do
+      %EndPointConfig{} ->
+        {:error, "container already connected to the network"}
+
+      :not_found ->
+        connect_with_driver(container, network)
+    end
+  end
+
+  defp connect_with_driver(%Container{id: container_id}, %Network{id: "host"} = network) do
     cond do
       Container.is_running?(container_id) ->
         # A jail with 'ip4="new"' (or using a VNET) cannot be modified to use 'ip="inherit"'
@@ -268,7 +278,7 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  defp connect_(%Container{id: container_id}, %Network{driver: "loopback"} = network) do
+  defp connect_with_driver(%Container{id: container_id}, %Network{driver: "loopback"} = network) do
     cond do
       connected_to_host_network?(container_id) ->
         {:error, "connected to host network"}
@@ -296,7 +306,7 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  defp connect_(%Container{} = container, %Network{driver: "vnet"} = network) do
+  defp connect_with_driver(%Container{} = container, %Network{driver: "vnet"} = network) do
     cond do
       connected_to_host_network?(container.id) ->
         {:error, "connected to host network"}
@@ -316,12 +326,14 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  defp connect_(network, container) do
+  defp connect_with_driver(network, container) do
     Logger.warn(
-      "No matches for network '#{inspect(network)}' and container '#{inspect(container)}'"
+      "Unknown error occured when connecting container '#{inspect(container)}' to network '#{
+        inspect(network)
+      }'"
     )
 
-    {:reply, {:error, "unknown input"}}
+    {:reply, {:error, "unknown error"}}
   end
 
   def disconnect_(container_idname, network_idname) do
