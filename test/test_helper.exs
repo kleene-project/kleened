@@ -22,7 +22,8 @@ defmodule TestHelper do
   @opts Router.init([])
 
   def container_start_attached(api_spec, name, config) do
-    %Container{id: container_id} = cont = container_create(api_spec, name, config)
+    %{id: container_id} = container_create(api_spec, name, config)
+    cont = MetaData.get_container(container_id)
     {:ok, exec_id} = Exec.create(container_id)
     :ok = Exec.start(exec_id, %{attach: true, start_container: true})
     {cont, exec_id}
@@ -48,20 +49,10 @@ defmodule TestHelper do
       |> put_req_header("content-type", "application/json")
       |> Router.call(@opts)
 
-    cond do
-      response.status == 201 ->
-        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-        assert_schema(json_body, "IdResponse", api_spec)
-        MetaData.get_container(json_body.id)
-
-      response.status == 404 ->
-        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-        assert_schema(json_body, "ErrorResponse", api_spec)
-        json_body
-
-      true ->
-        assert false
-    end
+    validate_response(api_spec, response, %{
+      201 => "IdResponse",
+      404 => "ErrorResponse"
+    })
   end
 
   def container_stop(api_spec, name) do
@@ -69,22 +60,11 @@ defmodule TestHelper do
       conn(:post, "/containers/#{name}/stop")
       |> Router.call(@opts)
 
-    status = response.status
-
-    cond do
-      status == 200 ->
-        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-        assert_schema(json_body, "IdResponse", api_spec)
-        json_body
-
-      status == 304 or status == 404 or status == 500 ->
-        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-        assert_schema(json_body, "ErrorResponse", api_spec)
-        json_body
-
-      true ->
-        assert false
-    end
+    validate_response(api_spec, response, %{
+      200 => "IdResponse",
+      304 => "ErrorResponse",
+      404 => "ErrorResponse"
+    })
   end
 
   def container_destroy(api_spec, name) do
@@ -92,20 +72,10 @@ defmodule TestHelper do
       conn(:delete, "/containers/#{name}")
       |> Router.call(@opts)
 
-    cond do
-      response.status == 200 ->
-        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-        assert_schema(json_body, "IdResponse", api_spec)
-        json_body
-
-      response.status == 404 ->
-        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-        assert_schema(json_body, "ErrorResponse", api_spec)
-        json_body
-
-      true ->
-        assert false
-    end
+    validate_response(api_spec, response, %{
+      200 => "IdResponse",
+      404 => "ErrorResponse"
+    })
   end
 
   def container_list(api_spec, all \\ true) do
@@ -113,10 +83,9 @@ defmodule TestHelper do
       conn(:get, "/containers/list?all=#{all}")
       |> Router.call(@opts)
 
-    assert response.status == 200
-    json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-    assert_schema(json_body, "ContainerSummaryList", api_spec)
-    json_body
+    validate_response(api_spec, response, %{
+      200 => "ContainerSummaryList"
+    })
   end
 
   def collect_container_output(exec_id) do
@@ -145,20 +114,10 @@ defmodule TestHelper do
       |> put_req_header("content-type", "application/json")
       |> Router.call(@opts)
 
-    cond do
-      response.status == 201 ->
-        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-        assert_schema(json_body, "IdResponse", api_spec)
-        {:ok, json_body.id}
-
-      response.status == 404 ->
-        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-        assert_schema(json_body, "ErrorResponse", api_spec)
-        json_body
-
-      true ->
-        assert false
-    end
+    validate_response(api_spec, response, %{
+      201 => "IdResponse",
+      404 => "ErrorResponse"
+    })
   end
 
   def exec_start(exec_id, %{attach: attach, start_container: start_container}) do
@@ -183,20 +142,10 @@ defmodule TestHelper do
       |> put_req_header("content-type", "application/json")
       |> Router.call(@opts)
 
-    cond do
-      response.status == 200 ->
-        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-        assert_schema(json_body, "IdResponse", api_spec)
-        {:ok, json_body.id}
-
-      response.status == 404 ->
-        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-        assert_schema(json_body, "ErrorResponse", api_spec)
-        json_body
-
-      true ->
-        assert false
-    end
+    validate_response(api_spec, response, %{
+      200 => "IdResponse",
+      404 => "ErrorResponse"
+    })
   end
 
   def image_valid_build(config) do
@@ -233,20 +182,10 @@ defmodule TestHelper do
       conn(:delete, "/images/#{image_id}")
       |> Router.call(@opts)
 
-    cond do
-      response.status == 200 ->
-        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-        assert_schema(json_body, "IdResponse", api_spec)
-        {:ok, json_body.id}
-
-      response.status == 404 ->
-        json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-        assert_schema(json_body, "ErrorResponse", api_spec)
-        json_body
-
-      true ->
-        assert false
-    end
+    validate_response(api_spec, response, %{
+      200 => "IdResponse",
+      404 => "ErrorResponse"
+    })
   end
 
   def network_create(_api_spec, config) when not is_map_key(config, :driver) do

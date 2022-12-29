@@ -62,11 +62,13 @@ defmodule VolumeTest do
     file = "/mnt/test"
     volume = Volume.create("testvol")
 
-    %Container{id: id} =
-      con = TestHelper.container_create(api_spec, "volume_test", %{cmd: ["/usr/bin/touch", file]})
+    %{id: id} =
+      TestHelper.container_create(api_spec, "volume_test", %{cmd: ["/usr/bin/touch", file]})
+
+    container = MetaData.get_container(id)
 
     {:ok, exec_id} = Jocker.Engine.Exec.create(id)
-    :ok = Volume.bind_volume(con, volume, location)
+    :ok = Volume.bind_volume(container, volume, location)
     Jocker.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
 
     receive do

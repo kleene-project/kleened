@@ -1,7 +1,7 @@
 defmodule ContainerTest do
   require Logger
   use Jocker.API.ConnCase
-  alias Jocker.Engine.{Container, Image, Exec, Utils}
+  alias Jocker.Engine.{Container, Image, Exec, Utils, MetaData}
 
   @moduletag :capture_log
 
@@ -20,7 +20,7 @@ defmodule ContainerTest do
     assert [] == TestHelper.container_list(api_spec)
 
     %Container{id: container_id, name: name, image_id: img_id} =
-      TestHelper.container_create(api_spec, "testcont", %{})
+      container_succesfully_create(api_spec, "testcont", %{})
 
     %Image{id: id} = Jocker.Engine.MetaData.get_image("base")
     assert id == img_id
@@ -29,7 +29,7 @@ defmodule ContainerTest do
              TestHelper.container_list(api_spec)
 
     %Container{id: container_id2, name: name2, image_id: ^img_id} =
-      TestHelper.container_create(api_spec, "testcont2", %{})
+      container_succesfully_create(api_spec, "testcont2", %{})
 
     assert [%{id: ^container_id2, name: ^name2, image_id: ^img_id}, %{id: ^container_id}] =
              TestHelper.container_list(api_spec)
@@ -61,7 +61,7 @@ defmodule ContainerTest do
   test "start container without attaching to it", %{api_spec: api_spec} do
     %Container{id: container_id} =
       container =
-      TestHelper.container_create(api_spec, "ws_test_container", %{
+      container_succesfully_create(api_spec, "ws_test_container", %{
         image: "base",
         cmd: ["/bin/sh", "-c", "uname"]
       })
@@ -78,7 +78,7 @@ defmodule ContainerTest do
     cmd_expected = ["/bin/echo", "test test"]
 
     %Container{id: container_id, command: command} =
-      container = TestHelper.container_create(api_spec, "testcont", %{cmd: cmd_expected})
+      container = container_succesfully_create(api_spec, "testcont", %{cmd: cmd_expected})
 
     assert cmd_expected == command
 
@@ -92,7 +92,7 @@ defmodule ContainerTest do
 
   test "start a container and force-stop it", %{api_spec: api_spec} do
     %Container{id: container_id} =
-      TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
+      container_succesfully_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
     {:ok, exec_id} = Exec.create(container_id)
     :ok = Exec.start(exec_id, %{attach: false, start_container: true})
@@ -153,7 +153,7 @@ defmodule ContainerTest do
 
   test "start container quickly several times to verify reproducibility", %{api_spec: api_spec} do
     container =
-      TestHelper.container_create(api_spec, "ws_test_container", %{
+      container_succesfully_create(api_spec, "ws_test_container", %{
         image: "base",
         cmd: ["/bin/sh", "-c", "uname"]
       })
@@ -219,6 +219,11 @@ defmodule ContainerTest do
 
     Container.destroy(container.id)
     Image.destroy(image.id)
+  end
+
+  defp container_succesfully_create(api_spec, name, config) do
+    %{id: container_id} = TestHelper.container_create(api_spec, name, config)
+    MetaData.get_container(container_id)
   end
 
   defp start_n_attached_containers_and_receive_output(_container_id, 0) do

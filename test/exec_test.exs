@@ -26,7 +26,7 @@ defmodule ExecTest do
   end
 
   test "attach to a container and receive some output from it", %{api_spec: api_spec} do
-    %Container{id: container_id} =
+    %{id: container_id} =
       TestHelper.container_create(api_spec, "test_container1", %{cmd: ["/bin/sh", "-c", "uname"]})
 
     {:ok, exec_id} = Exec.create(container_id)
@@ -41,7 +41,7 @@ defmodule ExecTest do
   test "start a second process in a container and receive output from it", %{
     api_spec: api_spec
   } do
-    %Container{id: container_id} =
+    %{id: container_id} =
       TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
     {:ok, root_exec_id} = Exec.create(container_id)
@@ -65,17 +65,17 @@ defmodule ExecTest do
   test "start a second process in a container and terminate it using 'stop_container: false'", %{
     api_spec: api_spec
   } do
-    %Container{id: container_id} =
+    %{id: container_id} =
       TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
-    {:ok, root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
+    %{id: root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
 
     {:ok, root_conn} =
       TestHelper.exec_start(root_exec_id, %{attach: false, start_container: true})
 
     assert [:not_attached] == TestHelper.receive_frames(root_conn)
 
-    {:ok, exec_id} =
+    %{id: exec_id} =
       TestHelper.exec_create(api_spec, %{
         container_id: container_id,
         cmd: ["/bin/sleep", "99"]
@@ -85,7 +85,7 @@ defmodule ExecTest do
     assert {:text, "OK"} == TestHelper.receive_frame(conn)
     assert number_of_jailed_processes(container_id) == 2
 
-    assert {:ok, exec_id} ==
+    assert %{id: exec_id} ==
              TestHelper.exec_stop(api_spec, exec_id, %{stop_container: false, force_stop: false})
 
     error_msg = "#{exec_id} has exited"
@@ -95,7 +95,7 @@ defmodule ExecTest do
 
     assert Utils.is_container_running?(container_id)
 
-    assert {:ok, root_exec_id} ==
+    assert %{id: root_exec_id} ==
              TestHelper.exec_stop(api_spec, root_exec_id, %{
                stop_container: true,
                force_stop: false
@@ -107,15 +107,15 @@ defmodule ExecTest do
   test "start a second process in a container and terminate it using 'stop_container: true'", %{
     api_spec: api_spec
   } do
-    %Container{id: container_id} =
+    %{id: container_id} =
       TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
-    {:ok, root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
+    %{id: root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
 
     assert [:not_attached] ==
              TestHelper.exec_start_sync(root_exec_id, %{attach: false, start_container: true})
 
-    {:ok, exec_id} =
+    %{id: exec_id} =
       TestHelper.exec_create(api_spec, %{
         container_id: container_id,
         cmd: ["/bin/sleep", "11"]
@@ -126,7 +126,7 @@ defmodule ExecTest do
 
     assert number_of_jailed_processes(container_id) == 2
 
-    assert {:ok, ^exec_id} =
+    assert %{id: ^exec_id} =
              TestHelper.exec_stop(api_spec, exec_id, %{
                stop_container: true,
                force_stop: false
@@ -141,10 +141,10 @@ defmodule ExecTest do
   test "use execution instance created with container name instead of container id", %{
     api_spec: api_spec
   } do
-    %Container{id: container_id} =
+    %{id: container_id} =
       TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
-    {:ok, exec_id} = TestHelper.exec_create(api_spec, %{container_id: "testcont"})
+    %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: "testcont"})
 
     assert [:not_attached] ==
              TestHelper.exec_start_sync(exec_id, %{attach: false, start_container: true})
@@ -153,7 +153,7 @@ defmodule ExecTest do
     :timer.sleep(500)
     assert Utils.is_container_running?(container_id)
 
-    assert {:ok, exec_id} ==
+    assert %{id: exec_id} ==
              TestHelper.exec_stop(api_spec, exec_id, %{stop_container: true, force_stop: false})
 
     refute Utils.is_container_running?(container_id)
@@ -171,13 +171,13 @@ defmodule ExecTest do
         "/exec/nonexisting/start?nonexisting_param=true&start_container=true"
       )
 
-    %Container{id: container_id} =
+    %{id: container_id} =
       TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
     assert %{message: "conntainer not found"} ==
              TestHelper.exec_create(api_spec, %{container_id: "nottestcont"})
 
-    {:ok, root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
+    %{id: root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
 
     assert [
              "ERROR:could not find a execution instance matching 'wrongexecid'",
@@ -199,18 +199,18 @@ defmodule ExecTest do
 
     assert Utils.is_container_running?(container_id)
 
-    {:ok, exec_id} =
+    %{id: exec_id} =
       TestHelper.exec_create(api_spec, %{
         container_id: container_id,
         cmd: ["/bin/sleep", "99"]
       })
 
-    assert {:ok, exec_id} ==
+    assert %{id: exec_id} ==
              TestHelper.exec_stop(api_spec, exec_id, %{stop_container: true, force_stop: false})
 
     assert Utils.is_container_running?(container_id)
 
-    assert {:ok, root_exec_id} ==
+    assert %{id: root_exec_id} ==
              TestHelper.exec_stop(api_spec, root_exec_id, %{
                stop_container: true,
                force_stop: false
