@@ -149,6 +149,7 @@ defmodule TestHelper do
   end
 
   def image_valid_build(config) do
+    config = Map.merge(%{quiet: false}, config)
     frames = image_build(config)
     {finish_msg, build_log} = List.pop_at(frames, -1)
     assert <<"image created with id ", image_id::binary>> = finish_msg
@@ -156,15 +157,17 @@ defmodule TestHelper do
     {image, build_log}
   end
 
-  def image_build(config) when not is_map_key(config, :quiet) do
-    image_build(Map.put(config, :quiet, false))
-  end
-
   def image_build(config) do
     query_params = Plug.Conn.Query.encode(config)
     endpoint = "/images/build?#{query_params}"
-    {:ok, conn} = initialize_websocket(endpoint)
-    receive_frames(conn)
+
+    case initialize_websocket(endpoint) do
+      {:ok, conn} ->
+        receive_frames(conn)
+
+      error_msg ->
+        error_msg
+    end
   end
 
   def image_list(api_spec) do

@@ -43,8 +43,39 @@ defmodule ImageTest do
 
     [%{id: ^image_id}] = TestHelper.image_list(api_spec)
     assert MetaData.list_containers() == []
-    TestHelper.image_destroy(api_spec, "websock_img")
+    assert %{id: "websock_img"} == TestHelper.image_destroy(api_spec, "websock_img")
+
+    assert %{message: "Error: No such image: websock_img\n"} ==
+             TestHelper.image_destroy(api_spec, "websock_img")
+
     assert TestHelper.image_list(api_spec) == []
+  end
+
+  test "parsing some invalid input to the image builder" do
+    dockerfile = """
+    FROM scratch
+    RUN echo "lets test that we receives this!"
+    RUN uname
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+
+    config = %{
+      context: @tmp_context,
+      dockerfile: @tmp_dockerfile,
+      tag: "websock_img:latest",
+      quiet: "lol"
+    }
+
+    assert {:error, "invalid value to argument 'quiet'"} == TestHelper.image_build(config)
+
+    config = %{
+      context: @tmp_context,
+      dockerfile: @tmp_dockerfile,
+      quiet: false
+    }
+
+    assert {:error, "missing argument tag"} == TestHelper.image_build(config)
   end
 
   test "create an image with a 'RUN' instruction" do

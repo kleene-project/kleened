@@ -63,20 +63,13 @@ defmodule Jocker.API.ExecStartWebSocket do
     end
   end
 
-  def websocket_handle({:text, "ping"}, state) do
-    # ping messages should be handled by cowboy
-    {:ok, state}
-  end
-
   def websocket_handle({:text, _message}, state) do
-    # Ignore messages from the client (i.e. no interactive possibility atm.
-    Logger.debug("Received input from client. Cannot handle this yet.")
+    # Ignore messages from the client: No interactive possibility atm.
     {:ok, state}
   end
 
-  def websocket_handle(msg, state) do
-    # Ignore messages from the client (i.e. no interactive possibility atm.
-    Logger.warn("Unknown message received: #{inspect(msg)}")
+  def websocket_handle(_msg, state) do
+    # Ignore unknown messages
     {:ok, state}
   end
 
@@ -95,11 +88,5 @@ defmodule Jocker.API.ExecStartWebSocket do
   def websocket_info(message, state) do
     Logger.warn("unknown message received: #{inspect(message)}")
     {:ok, state}
-  end
-
-  # No matter why we terminate, remove all of this pids subscriptions
-  def websocket_terminate(reason, _state) do
-    Logger.info("websocket terminated: #{inspect(reason)}")
-    :ok
   end
 end

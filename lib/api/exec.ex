@@ -53,10 +53,6 @@ defmodule Jocker.API.Exec do
 
         {:error, msg} ->
           send_resp(conn, 404, Utils.error_response(msg))
-
-        unknown_msg ->
-          Logger.warn("unknown error creating container: #{inspect(unknown_msg)}")
-          send_resp(conn, 500, Utils.error_response("server error"))
       end
     end
   end
@@ -134,9 +130,6 @@ defmodule Jocker.API.Exec do
 
         {:error, _msg} ->
           send_resp(conn, 404, Utils.error_response("no such container"))
-
-        _ ->
-          send_resp(conn, 500, Utils.error_response("server error"))
       end
     end
   end

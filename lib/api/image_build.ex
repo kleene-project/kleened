@@ -61,13 +61,8 @@ defmodule Jocker.API.ImageBuild do
     end
   end
 
-  def websocket_handle({:ping, _}, state) do
-    # ping messages should be handled by cowboy
-    {:ok, state}
-  end
-
   def websocket_handle({:text, _message}, state) do
-    # Ignore messages from the client (i.e. no interactive possibility atm.
+    # Ignore messages from the client: No interactive possibility atm.
     {:ok, state}
   end
 
@@ -82,20 +77,5 @@ defmodule Jocker.API.ImageBuild do
 
   def websocket_info({:image_builder, _pid, msg}, state) when is_binary(msg) do
     {[{:text, msg}], state}
-  end
-
-  def websocket_info({:image_builder, _pid, msg}, state) do
-    Logger.warn("unknown message received from image-builder: #{inspect(msg)}")
-    {:ok, state}
-  end
-
-  def websocket_info(message, state) do
-    Logger.warn("unknown message received: #{inspect(message)}")
-    {[{:close, 1000, "unknown error occured while building image"}], state}
-  end
-
-  # No matter why we terminate, remove all of this pids subscriptions
-  def websocket_terminate(_reason, _state) do
-    :ok
   end
 end

@@ -216,13 +216,6 @@ defmodule Jocker.API.Container do
 
         {:error, msg} ->
           send_resp(conn, 404, Utils.error_response(msg))
-
-        unknown_msg ->
-          Logger.warn(
-            "unknown message received while stopping container: #{inspect(unknown_msg)}"
-          )
-
-          send_resp(conn, 500, Utils.error_response("server error"))
       end
     end
   end

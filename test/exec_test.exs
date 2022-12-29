@@ -86,7 +86,7 @@ defmodule ExecTest do
     assert number_of_jailed_processes(container_id) == 2
 
     assert %{id: exec_id} ==
-             TestHelper.exec_stop(api_spec, exec_id, %{stop_container: false, force_stop: false})
+             TestHelper.exec_stop(api_spec, exec_id, %{stop_container: false, force_stop: true})
 
     error_msg = "#{exec_id} has exited"
     assert [error_msg] == TestHelper.receive_frames(conn)
@@ -211,6 +211,12 @@ defmodule ExecTest do
     assert Utils.is_container_running?(container_id)
 
     assert %{id: root_exec_id} ==
+             TestHelper.exec_stop(api_spec, root_exec_id, %{
+               stop_container: true,
+               force_stop: false
+             })
+
+    assert %{message: "no such container"} ==
              TestHelper.exec_stop(api_spec, root_exec_id, %{
                stop_container: true,
                force_stop: false
