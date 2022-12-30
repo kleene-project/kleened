@@ -121,7 +121,7 @@ defmodule Jocker.API.Container do
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,
-      operation_id: "Container.Destroy"
+      operation_id: "Container.Remove"
     )
 
     plug(:remove)
@@ -129,7 +129,7 @@ defmodule Jocker.API.Container do
     def open_api_operation(_) do
       %Operation{
         summary: "Delete a container from the file system and jocker.",
-        operationId: "Container.Destroy",
+        operationId: "Container.Remove",
         parameters: [
           parameter(
             :container_id,
@@ -153,14 +153,14 @@ defmodule Jocker.API.Container do
     def remove(conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
-      case Container.destroy(conn.params.container_id) do
+      case Container.remove(conn.params.container_id) do
         {:ok, container_id} ->
           send_resp(conn, 200, Utils.id_response(container_id))
 
         {:error, :not_found} ->
           send_resp(conn, 404, Utils.error_response("no such container"))
 
-          # Atm. the destroy api automatically stops a container. Docker Engine returns this error.
+          # Atm. the remove api automatically stops a container. Docker Engine returns this error.
           # {:error, :already_started} ->
           #  send_resp(conn, 409, "you cannot remove a running container")
       end

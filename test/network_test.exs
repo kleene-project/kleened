@@ -101,7 +101,7 @@ defmodule NetworkTest do
 
     assert MapSet.size(ips_before) == MapSet.size(ips_after)
 
-    Container.destroy(id)
+    Container.remove(id)
   end
 
   test "connect loopback network when container is created", %{api_spec: api_spec} do
@@ -338,7 +338,7 @@ defmodule NetworkTest do
       _ -> :ok
     end
 
-    Container.destroy(container_id)
+    Container.remove(container_id)
   end
 
   defp exec_run(container_id_or_exec_config, start_opts) do

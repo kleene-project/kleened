@@ -77,7 +77,7 @@ defmodule VolumeTest do
 
     assert {:ok, %File.Stat{:type => :regular}} = File.stat(Path.join(volume.mountpoint, "test"))
     Volume.destroy(volume.name)
-    Container.destroy(id)
+    Container.remove(id)
   end
 
   defp volume_destroy(api_spec, name) do

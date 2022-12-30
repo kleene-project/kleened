@@ -55,10 +55,10 @@ defmodule Jocker.Engine.Container do
     create_(name, options)
   end
 
-  @spec destroy(id_or_name()) :: {:ok, container_id()} | {:error, :not_found}
-  def destroy(id_or_name) do
+  @spec remove(id_or_name()) :: {:ok, container_id()} | {:error, :not_found}
+  def remove(id_or_name) do
     cont = MetaData.get_container(id_or_name)
-    destroy_(cont)
+    remove_(cont)
   end
 
   @spec stop(id_or_name()) :: {:ok, String.t()} | {:error, String.t()}
@@ -144,9 +144,9 @@ defmodule Jocker.Engine.Container do
     end
   end
 
-  defp destroy_(:not_found), do: {:error, :not_found}
+  defp remove_(:not_found), do: {:error, :not_found}
 
-  defp destroy_(%Container{id: container_id, layer_id: layer_id} = cont) do
+  defp remove_(%Container{id: container_id, layer_id: layer_id} = cont) do
     Network.disconnect_all(container_id)
     Volume.destroy_mounts(cont)
     MetaData.delete_container(container_id)

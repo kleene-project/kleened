@@ -19,7 +19,7 @@ defmodule ExecTest do
       Jocker.Engine.Network.remove(testnet.id)
 
       Jocker.Engine.MetaData.list_containers()
-      |> Enum.map(fn %{id: id} -> Container.destroy(id) end)
+      |> Enum.map(fn %{id: id} -> Container.remove(id) end)
     end)
 
     :ok
@@ -35,7 +35,7 @@ defmodule ExecTest do
     assert ["OK", "FreeBSD\n", stop_msg] ==
              TestHelper.exec_start_sync(exec_id, %{attach: true, start_container: true})
 
-    {:ok, ^container_id} = Container.destroy(container_id)
+    {:ok, ^container_id} = Container.remove(container_id)
   end
 
   test "start a second process in a container and receive output from it", %{
@@ -223,7 +223,7 @@ defmodule ExecTest do
              })
 
     refute Utils.is_container_running?(container_id)
-    {:ok, ^container_id} = Container.destroy(container_id)
+    {:ok, ^container_id} = Container.remove(container_id)
   end
 
   defp number_of_jailed_processes(container_id) do

@@ -8,7 +8,7 @@ defmodule ContainerTest do
   setup do
     on_exit(fn ->
       Jocker.Engine.MetaData.list_containers()
-      |> Enum.map(fn %{id: id} -> Container.destroy(id) end)
+      |> Enum.map(fn %{id: id} -> Container.remove(id) end)
     end)
 
     :ok
@@ -34,14 +34,14 @@ defmodule ContainerTest do
     assert [%{id: ^container_id2, name: ^name2, image_id: ^img_id}, %{id: ^container_id}] =
              TestHelper.container_list(api_spec)
 
-    %{id: ^container_id} = TestHelper.container_destroy(api_spec, container_id)
+    %{id: ^container_id} = TestHelper.container_remove(api_spec, container_id)
     assert [%{id: ^container_id2}] = TestHelper.container_list(api_spec)
 
-    %{id: ^container_id2} = TestHelper.container_destroy(api_spec, container_id2)
+    %{id: ^container_id2} = TestHelper.container_remove(api_spec, container_id2)
     assert [] = TestHelper.container_list(api_spec)
 
     assert %{message: "no such container"} ==
-             TestHelper.container_destroy(api_spec, container_id2)
+             TestHelper.container_remove(api_spec, container_id2)
   end
 
   test "start and stop a container (using devfs)", %{api_spec: api_spec} do
@@ -71,7 +71,7 @@ defmodule ContainerTest do
     assert [:not_attached] ==
              TestHelper.exec_start_sync(exec_id, %{attach: false, start_container: true})
 
-    {:ok, ^container_id} = Container.destroy(container_id)
+    {:ok, ^container_id} = Container.remove(container_id)
   end
 
   test "start a container (using devfs), attach to it and receive output", %{api_spec: api_spec} do
@@ -160,7 +160,7 @@ defmodule ContainerTest do
 
     container_id = container.id
     :ok = start_n_attached_containers_and_receive_output(container.id, 20)
-    {:ok, ^container_id} = Container.destroy(container_id)
+    {:ok, ^container_id} = Container.remove(container_id)
   end
 
   test "start a container with environment variables", %{api_spec: api_spec} do
@@ -187,7 +187,7 @@ defmodule ContainerTest do
     expected_set = MapSet.new(["PWD=/", "TEST=lol", "TEST2=lool test", "TEST3=loool"])
     assert MapSet.equal?(env_vars_set, expected_set)
 
-    Container.destroy(container.id)
+    Container.remove(container.id)
     Image.destroy(image.id)
   end
 
@@ -217,7 +217,7 @@ defmodule ContainerTest do
     expected_set = MapSet.new(["PWD=/", "TEST=new_value", "TEST2=lool test"])
     assert MapSet.equal?(env_vars_set, expected_set)
 
-    Container.destroy(container.id)
+    Container.remove(container.id)
     Image.destroy(image.id)
   end
 

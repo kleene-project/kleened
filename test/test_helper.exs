@@ -67,7 +67,7 @@ defmodule TestHelper do
     })
   end
 
-  def container_destroy(api_spec, name) do
+  def container_remove(api_spec, name) do
     response =
       conn(:delete, "/containers/#{name}")
       |> Router.call(@opts)
