@@ -5,6 +5,8 @@ defmodule NetworkTest do
   alias Jocker.API.Schemas.ExecConfig
   alias Network.EndPointConfig
 
+  @moduletag :capture_log
+
   @dns_lookup_cmd ["/usr/bin/host", "-t", "A", "freebsd.org", "1.1.1.1"]
   @dns_lookup_success "Using domain server:\nName: 1.1.1.1\nAddress: 1.1.1.1#53\nAliases: \n\nfreebsd.org has address 96.47.72.84\n"
   @dns_lookup_failure ";; connection timed out; no servers could be reached\n"
