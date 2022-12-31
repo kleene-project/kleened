@@ -5,7 +5,7 @@ openapi.json
 /coveralls/
 
 # The directory Mix will write compiled artifacts to.
-/_build/
+_build/
 
 # If you run "mix test --cover", coverage assets end up here.
 /cover/
@@ -22,8 +22,18 @@ erl_crash.dump
 # Also ignore archive artifacts (built via "mix archive.build").
 *.ez
 
+# Igonore BEAM-files
+*.beam
+
+# Ignore compiled artifacts
+*.o
+*.d
+
 # Ignore package tarball (built via "mix hex.build").
 jocker-*.tar
+
+# Ignore auto-generated test-files
+/tmp_dockerfile
 
 # Ignore vim-session files
 vim_*
