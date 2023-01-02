@@ -66,6 +66,10 @@ defmodule Jocker.API.ImageBuild do
     {:ok, state}
   end
 
+  def websocket_handle({:ping, _}, state) do
+    {:ok, state}
+  end
+
   # Format and forward elixir messages to client
   def websocket_info({:image_builder, _pid, {:image_finished, %Image{id: id}}}, state) do
     {[{:close, 1000, "image created with id #{id}"}], state}

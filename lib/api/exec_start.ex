@@ -68,6 +68,10 @@ defmodule Jocker.API.ExecStartWebSocket do
     {:ok, state}
   end
 
+  def websocket_handle({:ping, _}, state) do
+    {:ok, state}
+  end
+
   def websocket_handle(_msg, state) do
     # Ignore unknown messages
     {:ok, state}

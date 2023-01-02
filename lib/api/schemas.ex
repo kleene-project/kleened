@@ -110,7 +110,8 @@ defmodule Jocker.API.Schemas do
         },
         ifname: %Schema{
           type: :string,
-          description: "Name of the interface that is being used for the network.",
+          description:
+            "Name of the interface that is being used for the network. Ignored unless it uses 'loopback' as the driver.",
           example: "jocker0"
         },
         driver: %Schema{
@@ -120,7 +121,7 @@ defmodule Jocker.API.Schemas do
           example: "loopback"
         }
       },
-      required: [:name, :ifname, :subnet, :driver]
+      required: [:name, :subnet, :driver]
     })
   end
 
