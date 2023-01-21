@@ -2,6 +2,7 @@ defmodule ContainerTest do
   require Logger
   use Jocker.API.ConnCase
   alias Jocker.Engine.{Container, Image, Exec, Utils, MetaData}
+  alias Jocker.API.Schemas
 
   @moduletag :capture_log
 
@@ -22,7 +23,7 @@ defmodule ContainerTest do
     %Container{id: container_id, name: name, image_id: img_id} =
       container_succesfully_create(api_spec, "testcont", %{})
 
-    %Image{id: id} = Jocker.Engine.MetaData.get_image("base")
+    %Schemas.Image{id: id} = Jocker.Engine.MetaData.get_image("base")
     assert id == img_id
 
     assert [%{id: ^container_id, name: ^name, image_id: ^img_id}] =

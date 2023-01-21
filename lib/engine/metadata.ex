@@ -74,13 +74,6 @@ defmodule Jocker.Engine.MetaData do
   INNER JOIN images ON json_extract(containers.container, '$.image_id') = images.id;
   """
 
-  @type jocker_record() ::
-          Layer.t()
-          | Container.container()
-          | Image.image()
-          | Volume.volume()
-          | Mount.mount()
-
   @type db_conn() :: Sqlitex.connection()
 
   @spec start_link([]) :: Agent.on_start()
@@ -108,7 +101,7 @@ defmodule Jocker.Engine.MetaData do
       mountpoint: ""
     }
 
-    base_image = %Image{
+    base_image = %Schemas.Image{
       id: "base",
       layer_id: "base",
       name: "",
@@ -247,7 +240,7 @@ defmodule Jocker.Engine.MetaData do
     :ok
   end
 
-  @spec add_image(%Image{}) :: :ok
+  @spec add_image(Image.t()) :: :ok
   def add_image(image) do
     Agent.get(__MODULE__, fn db -> add_image_transaction(db, image) end)
   end
@@ -360,7 +353,7 @@ defmodule Jocker.Engine.MetaData do
   end
 
   @spec add_image_transaction(db_conn(), Image.t()) :: [term()]
-  defp add_image_transaction(db, %Image{name: new_name, tag: new_tag} = image) do
+  defp add_image_transaction(db, %Schemas.Image{name: new_name, tag: new_tag} = image) do
     query = """
     SELECT id, image FROM images
       WHERE json_extract(image, '$.name') != ''
@@ -439,12 +432,12 @@ defmodule Jocker.Engine.MetaData do
     result
   end
 
-  @spec to_db(Image.t() | Container.t() | %Schemas.Volume{} | %Mount{}) :: String.t()
+  @spec to_db(Schemas.Image.t() | Container.t() | %Schemas.Volume{} | %Mount{}) :: String.t()
   defp to_db(struct) do
     map = Map.from_struct(struct)
 
     case struct.__struct__ do
-      Image ->
+      Schemas.Image ->
         {id, map} = Map.pop(map, :id)
         {:ok, json} = Jason.encode(map)
         {id, json}
@@ -476,7 +469,7 @@ defmodule Jocker.Engine.MetaData do
     end
   end
 
-  @spec from_db(keyword() | {:ok, keyword()}) :: [%Image{}]
+  @spec from_db(keyword() | {:ok, keyword()}) :: [%Schemas.Image{}]
   defp from_db({:ok, rows}) do
     from_db(rows)
   end
@@ -485,14 +478,14 @@ defmodule Jocker.Engine.MetaData do
     rows |> Enum.map(&transform_row(&1))
   end
 
-  @spec transform_row(List.t()) :: %Image{}
+  @spec transform_row(List.t()) :: %Schemas.Image{}
   def transform_row(row) do
     {type, obj} =
       cond do
         Keyword.has_key?(row, :image) ->
           map = from_json(row, :image)
           id = Keyword.get(row, :id)
-          {Image, Map.put(map, :id, id)}
+          {Schemas.Image, Map.put(map, :id, id)}
 
         Keyword.has_key?(row, :layer) ->
           map = from_json(row, :layer)

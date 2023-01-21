@@ -137,6 +137,7 @@ defmodule Jocker.API.Schemas do
           description: "Default command used when creating a container from this image",
           type: :array,
           items: %Schema{type: :string},
+          default: [],
           example: ["/bin/sh", "-c", "/bin/ls"]
         },
         env_vars: %Schema{
@@ -144,6 +145,7 @@ defmodule Jocker.API.Schemas do
             "List of environment variables and their values to set before running command.",
           type: :array,
           items: %Schema{type: :string},
+          default: [],
           example: ["PWD=/roo/", "JAIL_MGMT_ENGINE=jocker"]
         },
         layer_id: %Schema{description: "Id of the layer containing the image", type: :string},

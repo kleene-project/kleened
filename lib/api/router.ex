@@ -46,7 +46,7 @@ defmodule Jocker.API.Router do
       {:_,
        [
          {"/exec/:exec_id/start", API.ExecStartWebSocket, []},
-         {"/images/build", Jocker.API.ImageBuild, []},
+         {"/images/build", API.ImageBuild, []},
          {:_, Plug.Cowboy.Handler, {Jocker.API.Router, []}}
        ]}
     ]

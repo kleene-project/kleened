@@ -1,5 +1,6 @@
 defmodule Jocker.API.ImageBuild do
   alias Jocker.Engine.Image
+  alias Jocker.API.Schemas
   require Logger
 
   # Called on connection initialization
@@ -71,7 +72,7 @@ defmodule Jocker.API.ImageBuild do
   end
 
   # Format and forward elixir messages to client
-  def websocket_info({:image_builder, _pid, {:image_finished, %Image{id: id}}}, state) do
+  def websocket_info({:image_builder, _pid, {:image_finished, %Schemas.Image{id: id}}}, state) do
     {[{:close, 1000, "image created with id #{id}"}], state}
   end
 

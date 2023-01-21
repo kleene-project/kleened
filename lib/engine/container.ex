@@ -20,8 +20,8 @@ defmodule Jocker.Engine.Container do
   alias __MODULE__, as: Container
 
   require Logger
-  alias Jocker.Engine.{MetaData, Volume, Layer, Network, Image, Utils}
-  alias Jocker.API.Schemas.ContainerConfig
+  alias Jocker.Engine.{MetaData, Volume, Layer, Network, Utils}
+  alias Jocker.API.Schemas.{ContainerConfig, Image}
 
   @type t() ::
           %Container{

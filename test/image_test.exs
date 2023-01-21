@@ -1,12 +1,13 @@
 defmodule ImageTest do
   use Jocker.API.ConnCase
   alias Jocker.Engine.{Config, Image, MetaData, Layer}
+  alias Jocker.API.Schemas
 
   @moduletag :capture_log
 
   setup do
     on_exit(fn ->
-      MetaData.list_images() |> Enum.map(fn %Image{id: id} -> Image.destroy(id) end)
+      MetaData.list_images() |> Enum.map(fn %Schemas.Image{id: id} -> Image.destroy(id) end)
     end)
 
     :ok
@@ -30,7 +31,7 @@ defmodule ImageTest do
       tag: "websock_img:latest"
     }
 
-    {%Image{id: image_id}, build_log} = TestHelper.image_valid_build(config)
+    {%Schemas.Image{id: image_id}, build_log} = TestHelper.image_valid_build(config)
 
     assert build_log == [
              "OK",
@@ -86,7 +87,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {%Image{layer_id: layer_id}, _build_log} =
+    {%Schemas.Image{layer_id: layer_id}, _build_log} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
@@ -112,7 +113,7 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
+    {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert MetaData.list_containers() == []
@@ -135,7 +136,7 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
+    {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
 
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     # we cannot check the symbolic link from the host:
@@ -150,7 +151,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {%Image{}, _build_log} =
+    {%Schemas.Image{}, _build_log} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
@@ -228,7 +229,7 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {%Image{layer_id: layer_id}, _build_log} =
+    {%Schemas.Image{layer_id: layer_id}, _build_log} =
       TestHelper.image_valid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile,

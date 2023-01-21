@@ -1,19 +1,7 @@
 defmodule Jocker.Engine.Image do
-  alias Jocker.API.Schemas.{ExecConfig, NetworkConfig}
+  alias Jocker.API.Schemas.{ExecConfig, NetworkConfig, Image}
   alias Jocker.Engine.{ZFS, MetaData, Utils, Container, Layer, Network}
   require Logger
-
-  @derive Jason.Encoder
-  defstruct id: "",
-            name: "",
-            tag: "",
-            command: [],
-            env_vars: [],
-            layer_id: "",
-            user: "",
-            created: ""
-
-  alias __MODULE__, as: Image
 
   defmodule State do
     defstruct context: nil,
