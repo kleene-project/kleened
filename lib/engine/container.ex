@@ -8,7 +8,6 @@ defmodule Jocker.Engine.Container do
   @derive Jason.Encoder
   defstruct id: "",
             name: "",
-            pid: "",
             command: [],
             layer_id: "",
             image_id: "",
@@ -27,7 +26,6 @@ defmodule Jocker.Engine.Container do
           %Container{
             id: String.t(),
             name: String.t(),
-            pid: pid() | String.t(),
             command: [String.t()],
             layer_id: String.t(),
             image_id: String.t(),

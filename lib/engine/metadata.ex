@@ -453,7 +453,6 @@ defmodule Jocker.Engine.MetaData do
         {id, json}
 
       Container ->
-        map = %{map | pid: pid2str(map[:pid])}
         {id, map} = Map.pop(map, :id)
         {:ok, json} = Jason.encode(map)
         {id, json}
@@ -498,10 +497,9 @@ defmodule Jocker.Engine.MetaData do
           {Schemas.Network, Map.put(map, :id, id)}
 
         Keyword.has_key?(row, :container) ->
-          %{pid: pid_str} = map = from_json(row, :container)
+          map = from_json(row, :container)
           id = Keyword.get(row, :id)
-          map = Map.put(map, :id, id)
-          {Container, %{map | pid: str2pid(pid_str)}}
+          {Container, Map.put(map, :id, id)}
 
         Keyword.has_key?(row, :volume) ->
           map = from_json(row, :volume)
