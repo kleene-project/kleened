@@ -111,7 +111,7 @@ defmodule NetworkTest do
       create_network(api_spec, %{subnet: "172.19.0.0/16", ifname: "jocker1", driver: "loopback"})
 
     opts = %{
-      cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network.loopback_if_name],
+      cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network.loopback_if],
       networks: [network.name]
     }
 
@@ -121,7 +121,7 @@ defmodule NetworkTest do
     %EndPointConfig{ip_addresses: [ip]} = MetaData.get_endpoint_config(container_id, network.id)
     {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
     assert %{"statistics" => %{"interface" => [%{"address" => ^ip}]}} = output
-    assert ip_not_on_if(ip, network.loopback_if_name)
+    assert ip_not_on_if(ip, network.loopback_if)
 
     cleanup(api_spec, container_id, network)
   end
@@ -131,7 +131,7 @@ defmodule NetworkTest do
       create_network(api_spec, %{ifname: "jocker1", subnet: "172.19.0.0/16", driver: "loopback"})
 
     opts = %{
-      cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network.loopback_if_name],
+      cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network.loopback_if],
       networks: []
     }
 
@@ -146,7 +146,7 @@ defmodule NetworkTest do
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
     {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
     assert %{"statistics" => %{"interface" => [%{"address" => ^ip}]}} = output
-    assert ip_not_on_if(ip, network.loopback_if_name)
+    assert ip_not_on_if(ip, network.loopback_if)
 
     cleanup(api_spec, container_id, network)
   end
@@ -314,10 +314,10 @@ defmodule NetworkTest do
 
     case network.driver do
       "loopback" ->
-        assert interface_exists?(network.loopback_if_name)
+        assert interface_exists?(network.loopback_if)
 
       "vnet" ->
-        assert interface_exists?(network.bridge_if_name)
+        assert interface_exists?(network.bridge_if)
 
       _ ->
         :ok
@@ -335,8 +335,8 @@ defmodule NetworkTest do
     assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
 
     case network.driver do
-      "vnet" -> assert not interface_exists?(network.bridge_if_name)
-      "loopback" -> assert not interface_exists?(network.loopback_if_name)
+      "vnet" -> assert not interface_exists?(network.bridge_if)
+      "loopback" -> assert not interface_exists?(network.loopback_if)
       _ -> :ok
     end
 

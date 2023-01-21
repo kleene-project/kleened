@@ -2,13 +2,13 @@ defmodule ExecTest do
   require Logger
   use Jocker.API.ConnCase
   alias Jocker.Engine.{Container, Exec, Utils, Network}
-  alias Jocker.API.Schemas.NetworkConfig
+  alias Jocker.API.Schemas
 
   @moduletag :capture_log
 
   setup do
-    {:ok, %Network{name: "default"} = testnet} =
-      Network.create(%NetworkConfig{
+    {:ok, %Schemas.Network{name: "default"} = testnet} =
+      Network.create(%Schemas.NetworkConfig{
         name: "default",
         subnet: "192.168.83.0/24",
         ifname: "jocker1",

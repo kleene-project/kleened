@@ -25,7 +25,7 @@ defmodule Jocker.API.Network do
         description: "Returns a list of networks.",
         operationId: "Network.List",
         responses: %{
-          200 => response("no error", "application/json", Schemas.NetworkSummaryList),
+          200 => response("no error", "application/json", Schemas.NetworkList),
           500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
@@ -79,7 +79,7 @@ defmodule Jocker.API.Network do
       options = conn.body_params
 
       case Network.create(options) do
-        {:ok, %Network{id: id}} ->
+        {:ok, %Schemas.Network{id: id}} ->
           send_resp(conn, 201, Utils.id_response(id))
 
         {:error, msg} ->

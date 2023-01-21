@@ -233,7 +233,7 @@ defmodule TestHelper do
       |> Router.call(@opts)
 
     validate_response(api_spec, response, %{
-      200 => "NetworkSummaryList"
+      200 => "NetworkList"
     })
   end
 

@@ -1,6 +1,6 @@
 defmodule MetaDataTest do
   use ExUnit.Case
-  alias Jocker.Engine.{Config, Container, Network, Volume.Mount, Layer}
+  alias Jocker.Engine.{Config, Container, Volume.Mount, Layer}
   alias Jocker.API.Schemas
   import Jocker.Engine.MetaData
   import TestHelper, only: [now: 0]
@@ -12,8 +12,8 @@ defmodule MetaDataTest do
     assert [host_network] == list_networks(:include_host)
     assert [] == list_networks(:exclude_host)
 
-    network1 = %Network{id: "test_id1", name: "testname1"}
-    network2 = %Network{id: "id2_test", name: "testname2"}
+    network1 = %Schemas.Network{id: "test_id1", name: "testname1"}
+    network2 = %Schemas.Network{id: "id2_test", name: "testname2"}
     assert :ok = add_network(network1)
     assert [network1] == list_networks(:exclude_host)
     assert network1 == get_network("test_id1")

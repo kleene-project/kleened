@@ -118,7 +118,7 @@ defmodule Jocker.Engine.MetaData do
     Agent.stop(__MODULE__)
   end
 
-  @spec add_network(%Network{}) :: :ok
+  @spec add_network(%Schemas.Network{}) :: :ok
   def add_network(network) do
     {id, json} = to_db(network)
     [] = sql("INSERT OR REPLACE INTO networks(id, network) VALUES (?, ?)", [id, json])
@@ -131,7 +131,7 @@ defmodule Jocker.Engine.MetaData do
     :ok
   end
 
-  @spec get_network(String.t()) :: %Network{} | :not_found
+  @spec get_network(String.t()) :: %Schemas.Network{} | :not_found
   def get_network(name_or_id) do
     query = """
     SELECT id, network FROM networks WHERE substr(id, 1, ?) = ?
@@ -145,7 +145,7 @@ defmodule Jocker.Engine.MetaData do
     end
   end
 
-  @spec list_networks(:include_host | :exclude_host) :: [%Network{}]
+  @spec list_networks(:include_host | :exclude_host) :: [%Schemas.Network{}]
   def list_networks(:include_host) do
     sql("SELECT id, network FROM networks ORDER BY json_extract(network, '$.name')")
   end
@@ -447,7 +447,7 @@ defmodule Jocker.Engine.MetaData do
         {:ok, json} = Jason.encode(map)
         {id, json}
 
-      Network ->
+      Schemas.Network ->
         {id, map} = Map.pop(map, :id)
         {:ok, json} = Jason.encode(map)
         {id, json}
@@ -495,7 +495,7 @@ defmodule Jocker.Engine.MetaData do
         Keyword.has_key?(row, :network) ->
           map = from_json(row, :network)
           id = Keyword.get(row, :id)
-          {Network, Map.put(map, :id, id)}
+          {Schemas.Network, Map.put(map, :id, id)}
 
         Keyword.has_key?(row, :container) ->
           %{pid: pid_str} = map = from_json(row, :container)

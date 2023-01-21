@@ -1,7 +1,7 @@
 defmodule Jocker.Engine.Exec do
-  alias Jocker.API.Schemas.ExecConfig
   alias Jocker.Engine.{Container, MetaData, OS, FreeBSD, Layer, Utils, ExecInstances, Network}
   alias Network.EndPointConfig
+  alias Jocker.API.Schemas
 
   defmodule State do
     defstruct config: nil,
@@ -14,7 +14,7 @@ defmodule Jocker.Engine.Exec do
   require Logger
   use GenServer, restart: :transient
 
-  @type execution_config() :: %ExecConfig{}
+  @type execution_config() :: %Schemas.ExecConfig{}
   @type start_options() :: %{:attach => boolean(), :start_container => boolean()}
   @type stop_options() :: %{:force_stop => boolean(), :stop_container => boolean()}
   @type container() :: %Container{}
@@ -24,16 +24,16 @@ defmodule Jocker.Engine.Exec do
 
   @spec create(execution_config() | container_id()) :: {:ok, exec_id()} | {:error, String.t()}
   def create(container_id) when is_binary(container_id) do
-    config = %ExecConfig{container_id: container_id, cmd: [], env: [], user: ""}
+    config = %Schemas.ExecConfig{container_id: container_id, cmd: [], env: [], user: ""}
     create(config)
   end
 
-  def create(%ExecConfig{container_id: container_idname} = config) do
+  def create(%Schemas.ExecConfig{container_id: container_idname} = config) do
     exec_id = Utils.uuid()
 
     case MetaData.get_container(container_idname) do
       %Container{id: container_id} ->
-        config = %ExecConfig{config | container_id: container_id}
+        config = %Schemas.ExecConfig{config | container_id: container_id}
         name = {:via, Registry, {ExecInstances, exec_id, container_id}}
         {:ok, _pid} = GenServer.start_link(Jocker.Engine.Exec, [exec_id, config], name: name)
         Logger.debug("succesfully created new execution instance #{exec_id}")
@@ -245,7 +245,7 @@ defmodule Jocker.Engine.Exec do
            user: default_user,
            env_vars: default_env
          } = cont,
-         %ExecConfig{
+         %Schemas.ExecConfig{
            cmd: exec_cmd,
            user: exec_user,
            env: exec_env
@@ -272,7 +272,7 @@ defmodule Jocker.Engine.Exec do
     if Network.connected_to_vnet_networks?(container_id) do
       destoy_jail_epairs = fn network ->
         config = MetaData.get_endpoint_config(container_id, network.id)
-        FreeBSD.destroy_bridged_epair(config.epair, network.bridge_if_name)
+        FreeBSD.destroy_bridged_epair(config.epair, network.bridge_if)
         config = %EndPointConfig{config | epair: nil}
         MetaData.add_endpoint_config(container_id, network.id, config)
       end
@@ -338,7 +338,7 @@ defmodule Jocker.Engine.Exec do
         ["ip4=inherit"]
 
       :loopback ->
-        network_ids = Enum.map(networks, fn %Network{id: id} -> id end)
+        network_ids = Enum.map(networks, fn %Schemas.Network{id: id} -> id end)
         ips = Enum.reduce(network_ids, [], &extract_ips(container_id, &1, &2))
 
         case Enum.join(ips, ",") do
@@ -352,7 +352,7 @@ defmodule Jocker.Engine.Exec do
   end
 
   defp create_vnet_network_config(
-         [%Network{id: id, bridge_if_name: bridge, subnet: subnet} | rest],
+         [%Schemas.Network{id: id, bridge_if: bridge, subnet: subnet} | rest],
          container_id,
          network_configs
        ) do
@@ -392,9 +392,9 @@ defmodule Jocker.Engine.Exec do
   defp network_type_used(networks) do
     case networks do
       [] -> :no_networks
-      [%Network{driver: "host"}] -> :host
-      [%Network{driver: "loopback"} | _] -> :loopback
-      [%Network{driver: "vnet"} | _] -> :vnet
+      [%Schemas.Network{driver: "host"}] -> :host
+      [%Schemas.Network{driver: "loopback"} | _] -> :loopback
+      [%Schemas.Network{driver: "vnet"} | _] -> :vnet
       invalid_response -> Logger.error("Invalid response: #{inspect(invalid_response)}")
     end
   end

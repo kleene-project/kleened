@@ -163,8 +163,7 @@ defmodule Jocker.API.Schemas do
     })
   end
 
-  defmodule NetworkSummary do
-    # Atm. this is actually a mirror of the network itself
+  defmodule Network do
     OpenApiSpex.schema(%{
       description: "summary description of a network",
       type: :object,
@@ -172,27 +171,29 @@ defmodule Jocker.API.Schemas do
         id: %Schema{description: "The id of the network", type: :string},
         name: %Schema{description: "Name of the network", type: :string},
         subnet: %Schema{description: "Subnet used for the network", type: :string},
-        if_name: %Schema{
-          description: "Name of the loopback interface used for the network",
-          type: :string
-        },
         driver: %Schema{
           description: "Type of network.",
           type: :string
         },
-        default_gw_if: %Schema{
-          description: "interface where the gateway can be reached",
-          type: :boolean
+        loopback_if: %Schema{
+          description: "Name of the loopback interface (used for a 'loopback' network).",
+          type: :string,
+          default: ""
+        },
+        bridge_if: %Schema{
+          description: "Name of the bridge interface (used for a 'vnet' network).",
+          type: :string,
+          default: ""
         }
       }
     })
   end
 
-  defmodule NetworkSummaryList do
+  defmodule NetworkList do
     OpenApiSpex.schema(%{
       description: "List of networks.",
       type: :array,
-      items: Jocker.API.Schemas.NetworkSummary
+      items: Jocker.API.Schemas.Network
     })
   end
 
