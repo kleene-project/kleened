@@ -1,6 +1,6 @@
 defmodule Jocker.Engine.Image do
-  alias Jocker.API.Schemas.{ExecConfig, NetworkConfig, Image}
-  alias Jocker.Engine.{ZFS, MetaData, Utils, Container, Layer, Network}
+  alias Jocker.Engine.{ZFS, MetaData, Utils, Layer, Network}
+  alias Jocker.API.Schemas
   require Logger
 
   defmodule State do
@@ -17,12 +17,12 @@ defmodule Jocker.Engine.Image do
   end
 
   @type t() ::
-          %Image{
+          %Schemas.Image{
             id: String.t(),
             name: String.t(),
             tag: String.t(),
             command: [String.t()],
-            env_vars: [String.t()],
+            env: [String.t()],
             layer_id: String.t(),
             user: String.t(),
             created: String.t()
@@ -41,7 +41,7 @@ defmodule Jocker.Engine.Image do
         build_id = String.slice(Utils.uuid(), 0..5)
 
         {:ok, buildnet} =
-          Network.create(%NetworkConfig{
+          Network.create(%Schemas.NetworkConfig{
             name: "builder" <> build_id,
             subnet: "172.18.0.0/24",
             ifname: build_id,
@@ -74,7 +74,7 @@ defmodule Jocker.Engine.Image do
       :not_found ->
         :not_found
 
-      %Image{id: id, layer_id: layer_id} ->
+      %Schemas.Image{id: id, layer_id: layer_id} ->
         %Layer{dataset: dataset} = MetaData.get_layer(layer_id)
         {_, 0} = ZFS.destroy_force(dataset)
         MetaData.delete_image(id)
@@ -83,11 +83,11 @@ defmodule Jocker.Engine.Image do
 
   def create_image(instructions, state) do
     %State{
-      :container => %Container{
+      :container => %Schemas.Container{
         id: container_id,
         layer_id: layer_id,
         user: user,
-        env_vars: env_vars,
+        env: env,
         command: cmd
       }
     } = Enum.reduce(instructions, state, &process_instructions/2)
@@ -99,14 +99,14 @@ defmodule Jocker.Engine.Image do
     layer = MetaData.get_layer(layer_id)
     Jocker.Engine.Layer.to_image(layer, container_id)
 
-    img = %Image{
+    img = %Schemas.Image{
       id: container_id,
       layer_id: layer_id,
       user: user,
       name: state.image_name,
       tag: state.image_tag,
       command: cmd,
-      env_vars: env_vars,
+      env: env,
       created: DateTime.to_iso8601(DateTime.utc_now())
     }
 
@@ -129,7 +129,7 @@ defmodule Jocker.Engine.Image do
   defp process_instructions({line, {:from, image_reference}}, state) do
     Logger.info("Processing instruction: FROM #{image_reference}")
     state = send_status(line, state)
-    %Image{id: image_id, user: user} = Jocker.Engine.MetaData.get_image(image_reference)
+    %Schemas.Image{id: image_id, user: user} = Jocker.Engine.MetaData.get_image(image_reference)
 
     {:ok, container_config} =
       OpenApiSpex.Cast.cast(
@@ -169,14 +169,14 @@ defmodule Jocker.Engine.Image do
   defp process_instructions({line, {:cmd, cmd}}, %State{:container => cont} = state) do
     Logger.info("Processing instruction: CMD #{inspect(cmd)}")
     state = send_status(line, state)
-    %State{state | :container => %Container{cont | command: cmd}}
+    %State{state | :container => %Schemas.Container{cont | command: cmd}}
   end
 
   defp process_instructions({line, {:env, env_vars}}, %State{:container => cont} = state) do
     Logger.info("Processing instruction: ENV #{inspect(env_vars)}")
     state = send_status(line, state)
-    new_env_vars = Utils.merge_environment_variable_lists(cont.env_vars, [env_vars])
-    %State{state | :container => %Container{cont | env_vars: new_env_vars}}
+    env = Utils.merge_environment_variable_lists(cont.env, [env_vars])
+    %State{state | :container => %Schemas.Container{cont | env: env}}
   end
 
   defp process_instructions({line, {:run, cmd}}, state) do
@@ -203,8 +203,12 @@ defmodule Jocker.Engine.Image do
     %State{state | :current_step => step + 1}
   end
 
-  defp execute_cmd(cmd, user, %State{container: %Container{id: id, env_vars: env}} = state) do
-    config = %ExecConfig{container_id: id, cmd: cmd, env: env, user: user}
+  defp execute_cmd(
+         cmd,
+         user,
+         %State{container: %Schemas.Container{id: id, env: env}} = state
+       ) do
+    config = %Schemas.ExecConfig{container_id: id, cmd: cmd, env: env, user: user}
     {:ok, exec_id} = Jocker.Engine.Exec.create(config)
     Jocker.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
     relay_output_and_await_shutdown(id, exec_id, state)
@@ -234,7 +238,7 @@ defmodule Jocker.Engine.Image do
     end
   end
 
-  defp create_context_dir_in_jail(context, %Container{layer_id: layer_id}) do
+  defp create_context_dir_in_jail(context, %Schemas.Container{layer_id: layer_id}) do
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     context_in_jail = Path.join(mountpoint, "/jocker_temporary_context_store")
     {_output, 0} = System.cmd("/bin/mkdir", [context_in_jail], stderr_to_stdout: true)

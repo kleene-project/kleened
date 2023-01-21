@@ -1,6 +1,6 @@
 defmodule MetaDataTest do
   use ExUnit.Case
-  alias Jocker.Engine.{Config, Container, Volume.Mount, Layer}
+  alias Jocker.Engine.{Config, Volume.Mount, Layer}
   alias Jocker.API.Schemas
   import Jocker.Engine.MetaData
   import TestHelper, only: [now: 0]
@@ -82,11 +82,11 @@ defmodule MetaDataTest do
   end
 
   test "add, get and remove containers" do
-    add_container(%Container{id: "1337", name: "test1", created: now()})
-    add_container(%Container{id: "1338", name: "1337", created: now()})
-    add_container(%Container{id: "1339", name: "1337", created: now()})
-    assert %Container{id: "1337"} = get_container("1337")
-    assert %Container{id: "1337"} = get_container("test1")
+    add_container(%Schemas.Container{id: "1337", name: "test1", created: now()})
+    add_container(%Schemas.Container{id: "1338", name: "1337", created: now()})
+    add_container(%Schemas.Container{id: "1339", name: "1337", created: now()})
+    assert %Schemas.Container{id: "1337"} = get_container("1337")
+    assert %Schemas.Container{id: "1337"} = get_container("test1")
     assert :not_found == get_container("lol")
     delete_container("1338")
     assert :not_found == get_container("1338")
@@ -98,9 +98,9 @@ defmodule MetaDataTest do
   test "list all containers" do
     add_image(%Schemas.Image{id: "lol", created: now()})
     add_image(%Schemas.Image{id: "lel", name: "test", tag: "latest", created: now()})
-    add_container(%Container{id: "1337", image_id: "lol", name: "test1", created: now()})
-    add_container(%Container{id: "1338", image_id: "lel", name: "test2", created: now()})
-    add_container(%Container{id: "1339", image_id: "base", name: "test3", created: now()})
+    add_container(%Schemas.Container{id: "1337", image_id: "lol", name: "test1", created: now()})
+    add_container(%Schemas.Container{id: "1338", image_id: "lel", name: "test2", created: now()})
+    add_container(%Schemas.Container{id: "1339", image_id: "base", name: "test3", created: now()})
     containers = list_containers()
 
     assert [

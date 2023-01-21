@@ -408,7 +408,7 @@ defmodule Jocker.Engine.MetaData do
           db_conn(),
           Volume.t() | Container.t()
         ) :: :ok
-  def remove_mounts_transaction(db, %Container{id: id}) do
+  def remove_mounts_transaction(db, %Schemas.Container{id: id}) do
     result =
       fetch_all(db, "SELECT mount FROM mounts WHERE json_extract(mount, '$.container_id') = ?", [
         id
@@ -432,7 +432,8 @@ defmodule Jocker.Engine.MetaData do
     result
   end
 
-  @spec to_db(Schemas.Image.t() | Container.t() | %Schemas.Volume{} | %Mount{}) :: String.t()
+  @spec to_db(Schemas.Image.t() | Schemas.Container.t() | %Schemas.Volume{} | %Mount{}) ::
+          String.t()
   defp to_db(struct) do
     map = Map.from_struct(struct)
 
@@ -452,7 +453,7 @@ defmodule Jocker.Engine.MetaData do
         {:ok, json} = Jason.encode(map)
         {id, json}
 
-      Container ->
+      Schemas.Container ->
         {id, map} = Map.pop(map, :id)
         {:ok, json} = Jason.encode(map)
         {id, json}
@@ -498,7 +499,7 @@ defmodule Jocker.Engine.MetaData do
       Keyword.has_key?(row, :container) ->
         map = from_json(row, :container)
         id = Keyword.get(row, :id)
-        struct(Container, Map.put(map, :id, id))
+        struct(Schemas.Container, Map.put(map, :id, id))
 
       Keyword.has_key?(row, :volume) ->
         map = from_json(row, :volume)

@@ -20,7 +20,7 @@ defmodule ContainerTest do
   } do
     assert [] == TestHelper.container_list(api_spec)
 
-    %Container{id: container_id, name: name, image_id: img_id} =
+    %Schemas.Container{id: container_id, name: name, image_id: img_id} =
       container_succesfully_create(api_spec, "testcont", %{})
 
     %Schemas.Image{id: id} = Jocker.Engine.MetaData.get_image("base")
@@ -29,7 +29,7 @@ defmodule ContainerTest do
     assert [%{id: ^container_id, name: ^name, image_id: ^img_id}] =
              TestHelper.container_list(api_spec)
 
-    %Container{id: container_id2, name: name2, image_id: ^img_id} =
+    %Schemas.Container{id: container_id2, name: name2, image_id: ^img_id} =
       container_succesfully_create(api_spec, "testcont2", %{})
 
     assert [%{id: ^container_id2, name: ^name2, image_id: ^img_id}, %{id: ^container_id}] =
@@ -48,7 +48,7 @@ defmodule ContainerTest do
   test "start and stop a container (using devfs)", %{api_spec: api_spec} do
     config = %{cmd: ["/bin/sleep", "10"]}
 
-    {%Container{id: container_id} = cont, exec_id} =
+    {%Schemas.Container{id: container_id} = cont, exec_id} =
       TestHelper.container_start_attached(api_spec, "testcont", config)
 
     assert TestHelper.devfs_mounted(cont)
@@ -60,7 +60,7 @@ defmodule ContainerTest do
   end
 
   test "start container without attaching to it", %{api_spec: api_spec} do
-    %Container{id: container_id} =
+    %Schemas.Container{id: container_id} =
       container =
       container_succesfully_create(api_spec, "ws_test_container", %{
         image: "base",
@@ -78,7 +78,7 @@ defmodule ContainerTest do
   test "start a container (using devfs), attach to it and receive output", %{api_spec: api_spec} do
     cmd_expected = ["/bin/echo", "test test"]
 
-    %Container{id: container_id, command: command} =
+    %Schemas.Container{id: container_id, command: command} =
       container = container_succesfully_create(api_spec, "testcont", %{cmd: cmd_expected})
 
     assert cmd_expected == command
@@ -92,7 +92,7 @@ defmodule ContainerTest do
   end
 
   test "start a container and force-stop it", %{api_spec: api_spec} do
-    %Container{id: container_id} =
+    %Schemas.Container{id: container_id} =
       container_succesfully_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
     {:ok, exec_id} = Exec.create(container_id)
@@ -112,7 +112,7 @@ defmodule ContainerTest do
       user: "root"
     }
 
-    {%Container{id: container_id} = cont, exec_id} =
+    {%Schemas.Container{id: container_id} = cont, exec_id} =
       TestHelper.container_start_attached(api_spec, "testcont", config)
 
     assert TestHelper.devfs_mounted(cont)

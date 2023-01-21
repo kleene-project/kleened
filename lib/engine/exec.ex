@@ -17,7 +17,7 @@ defmodule Jocker.Engine.Exec do
   @type execution_config() :: %Schemas.ExecConfig{}
   @type start_options() :: %{:attach => boolean(), :start_container => boolean()}
   @type stop_options() :: %{:force_stop => boolean(), :stop_container => boolean()}
-  @type container() :: %Container{}
+  @type container() :: %Schemas.Container{}
 
   @type exec_id() :: String.t()
   @type container_id() :: String.t()
@@ -32,7 +32,7 @@ defmodule Jocker.Engine.Exec do
     exec_id = Utils.uuid()
 
     case MetaData.get_container(container_idname) do
-      %Container{id: container_id} ->
+      %Schemas.Container{id: container_id} ->
         config = %Schemas.ExecConfig{config | container_id: container_id}
         name = {:via, Registry, {ExecInstances, exec_id, container_id}}
         {:ok, _pid} = GenServer.start_link(Jocker.Engine.Exec, [exec_id, config], name: name)
@@ -218,7 +218,7 @@ defmodule Jocker.Engine.Exec do
 
   defp start_(config, start_container) do
     case MetaData.get_container(config.container_id) do
-      %Container{} = cont ->
+      %Schemas.Container{} = cont ->
         cont = merge_configurations(cont, config)
 
         case {Utils.is_container_running?(cont.id), start_container} do
@@ -240,10 +240,10 @@ defmodule Jocker.Engine.Exec do
   end
 
   defp merge_configurations(
-         %Container{
+         %Schemas.Container{
            command: default_cmd,
            user: default_user,
-           env_vars: default_env
+           env: default_env
          } = cont,
          %Schemas.ExecConfig{
            cmd: exec_cmd,
@@ -265,10 +265,10 @@ defmodule Jocker.Engine.Exec do
         _ -> exec_user
       end
 
-    %Container{cont | user: user, command: cmd, env_vars: env}
+    %Schemas.Container{cont | user: user, command: cmd, env: env}
   end
 
-  defp jail_cleanup(%Container{id: container_id, layer_id: layer_id}) do
+  defp jail_cleanup(%Schemas.Container{id: container_id, layer_id: layer_id}) do
     if Network.connected_to_vnet_networks?(container_id) do
       destoy_jail_epairs = fn network ->
         config = MetaData.get_endpoint_config(container_id, network.id)
@@ -288,27 +288,27 @@ defmodule Jocker.Engine.Exec do
     output |> String.split("\n") |> Enum.map(&umount_container_devfs(&1, mountpoint))
   end
 
-  defp jexec_container(%Container{
+  defp jexec_container(%Schemas.Container{
          id: container_id,
          command: cmd,
          user: user,
-         env_vars: env_vars
+         env: env
        }) do
     # jexec [-l] [-u username | -U username] jail [command ...]
-    args = ~w"-l -u #{user} #{container_id} /usr/bin/env -i" ++ env_vars ++ cmd
+    args = ~w"-l -u #{user} #{container_id} /usr/bin/env -i" ++ env ++ cmd
 
     port = OS.cmd_async(['/usr/sbin/jexec' | args])
     port
   end
 
   defp jail_start_container(
-         %Container{
+         %Schemas.Container{
            id: id,
            layer_id: layer_id,
            command: command,
            user: user,
-           parameters: parameters,
-           env_vars: env_vars
+           jail_param: jail_param,
+           env: env
          } = cont
        ) do
     Logger.info("Starting container #{inspect(cont.id)}")
@@ -320,8 +320,8 @@ defmodule Jocker.Engine.Exec do
     args =
       ~w"-c path=#{path} name=#{id}" ++
         network_config ++
-        parameters ++
-        ~w"exec.jail_user=#{user} command=/usr/bin/env -i" ++ env_vars ++ command
+        jail_param ++
+        ~w"exec.jail_user=#{user} command=/usr/bin/env -i" ++ env ++ command
 
     port = OS.cmd_async(['/usr/sbin/jail' | args])
     port

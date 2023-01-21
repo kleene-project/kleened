@@ -5,37 +5,26 @@ defmodule Jocker.Engine.Container do
               starting_port: nil
   end
 
-  @derive Jason.Encoder
-  defstruct id: "",
-            name: "",
-            command: [],
-            layer_id: "",
-            image_id: "",
-            user: "",
-            parameters: [],
-            env_vars: [],
-            created: ""
-
   alias __MODULE__, as: Container
 
   require Logger
   alias Jocker.Engine.{MetaData, Volume, Layer, Network, Utils}
-  alias Jocker.API.Schemas.{ContainerConfig, Image}
+  alias Jocker.API.Schemas
 
   @type t() ::
-          %Container{
+          %Schemas.Container{
             id: String.t(),
             name: String.t(),
             command: [String.t()],
             layer_id: String.t(),
             image_id: String.t(),
             user: String.t(),
-            parameters: [String.t()],
-            env_vars: [String.t()],
+            jail_param: [String.t()],
+            env: [String.t()],
             created: String.t()
           }
 
-  @type create_opts() :: %ContainerConfig{}
+  @type create_opts() :: %Schemas.ContainerConfig{}
 
   @type list_containers_opts :: [
           {:all, boolean()}
@@ -62,7 +51,7 @@ defmodule Jocker.Engine.Container do
   @spec stop(id_or_name()) :: {:ok, String.t()} | {:error, String.t()}
   def stop(id_or_name) do
     case MetaData.get_container(id_or_name) do
-      %Container{id: container_id} ->
+      %Schemas.Container{id: container_id} ->
         stop_container(container_id)
 
       :not_found ->
@@ -80,10 +69,10 @@ defmodule Jocker.Engine.Container do
   ### ===================================================================
   defp create_(
          name,
-         %ContainerConfig{
+         %Schemas.ContainerConfig{
            image: image_name,
            user: user,
-           env: env_vars,
+           env: env,
            networks: networks,
            volumes: volumes,
            cmd: command,
@@ -94,19 +83,19 @@ defmodule Jocker.Engine.Container do
       :not_found ->
         {:error, :image_not_found}
 
-      %Image{
+      %Schemas.Image{
         id: image_id,
         user: image_user,
         command: image_command,
         layer_id: parent_layer_id,
-        env_vars: img_env_vars
+        env: img_env
       } ->
         Logger.debug("creating container with config: #{inspect(container_config)}")
         container_id = Jocker.Engine.Utils.uuid()
 
         parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
         %Layer{id: layer_id} = Layer.new(parent_layer, container_id)
-        env_vars = Utils.merge_environment_variable_lists(img_env_vars, env_vars)
+        env = Utils.merge_environment_variable_lists(img_env, env)
 
         command =
           case command do
@@ -120,15 +109,15 @@ defmodule Jocker.Engine.Container do
             _ -> user
           end
 
-        cont = %Container{
+        cont = %Schemas.Container{
           id: container_id,
           name: name,
           command: command,
           layer_id: layer_id,
           image_id: image_id,
           user: user,
-          parameters: jail_param,
-          env_vars: env_vars,
+          jail_param: jail_param,
+          env: env,
           created: DateTime.to_iso8601(DateTime.utc_now())
         }
 
@@ -144,7 +133,7 @@ defmodule Jocker.Engine.Container do
 
   defp remove_(:not_found), do: {:error, :not_found}
 
-  defp remove_(%Container{id: container_id, layer_id: layer_id} = cont) do
+  defp remove_(%Schemas.Container{id: container_id, layer_id: layer_id} = cont) do
     Network.disconnect_all(container_id)
     Volume.destroy_mounts(cont)
     MetaData.delete_container(container_id)

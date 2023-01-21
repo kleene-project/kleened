@@ -140,7 +140,7 @@ defmodule Jocker.API.Schemas do
           default: [],
           example: ["/bin/sh", "-c", "/bin/ls"]
         },
-        env_vars: %Schema{
+        env: %Schema{
           description:
             "List of environment variables and their values to set before running command.",
           type: :array,
@@ -230,6 +230,53 @@ defmodule Jocker.API.Schemas do
       description: "List of volumes.",
       type: :array,
       items: Jocker.API.Schemas.Volume
+    })
+  end
+
+  defmodule Container do
+    OpenApiSpex.schema(%{
+      description: "summary description of a container",
+      type: :object,
+      properties: %{
+        id: %Schema{description: "The id of this container", type: :string},
+        name: %Schema{description: "Name of the container", type: :string},
+        image_id: %Schema{
+          description: "The id of the image that this container was created from",
+          type: :string
+        },
+        command: %Schema{
+          description: "Command being used when starting the container",
+          type: :array,
+          items: :string,
+          default: []
+        },
+        layer_id: %Schema{
+          description: "The id of the layer used by the container.",
+          type: :string
+        },
+        user: %Schema{
+          description:
+            "The default user used when creating execution instances in the container.",
+          type: :string
+        },
+        env: %Schema{
+          description:
+            "List of environment variables used when the container is used. This list will be merged with environment variables defined by the image. The values in this list takes precedence if the variable is defined in both places.",
+          type: :array,
+          items: :string,
+          default: [],
+          example: ["DEBUG=0", "LANG=da_DK.UTF-8"]
+        },
+        jail_param: %Schema{
+          description: "List of jail parameters (see jail(8) for details)",
+          type: :array,
+          items: :string,
+          default: [],
+          example: ["allow.raw_sockets=true", "osrelease=jockerjail"]
+        },
+        created: %Schema{description: "When the container was created", type: :string},
+        running: %Schema{description: "whether or not the container is running", type: :boolean}
+      }
     })
   end
 

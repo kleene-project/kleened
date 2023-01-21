@@ -250,7 +250,10 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  defp connect_with_driver(%Container{id: container_id}, %Schemas.Network{id: "host"} = network) do
+  defp connect_with_driver(
+         %Schemas.Container{id: container_id},
+         %Schemas.Network{id: "host"} = network
+       ) do
     cond do
       Container.is_running?(container_id) ->
         # A jail with 'ip4="new"' (or using a VNET) cannot be modified to use 'ip="inherit"'
@@ -272,7 +275,7 @@ defmodule Jocker.Engine.Network do
   end
 
   defp connect_with_driver(
-         %Container{id: container_id},
+         %Schemas.Container{id: container_id},
          %Schemas.Network{driver: "loopback"} = network
        ) do
     cond do
@@ -302,7 +305,10 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  defp connect_with_driver(%Container{} = container, %Schemas.Network{driver: "vnet"} = network) do
+  defp connect_with_driver(
+         %Schemas.Container{} = container,
+         %Schemas.Network{driver: "vnet"} = network
+       ) do
     cond do
       connected_to_host_network?(container.id) ->
         {:error, "connected to host network"}
@@ -333,7 +339,7 @@ defmodule Jocker.Engine.Network do
   end
 
   def disconnect_(container_idname, network_idname) do
-    cont = %Container{id: container_id} = MetaData.get_container(container_idname)
+    cont = %Schemas.Container{id: container_id} = MetaData.get_container(container_idname)
     network = MetaData.get_network(network_idname)
     config = MetaData.get_endpoint_config(container_id, network.id)
 

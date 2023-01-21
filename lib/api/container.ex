@@ -106,7 +106,7 @@ defmodule Jocker.API.Container do
       container_config = conn.body_params
 
       case Container.create(name, container_config) do
-        {:ok, %Container{id: id}} ->
+        {:ok, %Schemas.Container{id: id}} ->
           send_resp(conn, 201, Utils.id_response(id))
 
         {:error, :image_not_found} ->

@@ -1,5 +1,5 @@
 defmodule Jocker.Engine.Volume do
-  alias Jocker.Engine.{ZFS, Config, Utils, Layer, MetaData, Container}
+  alias Jocker.Engine.{ZFS, Config, Utils, Layer, MetaData}
   alias Jocker.API.Schemas
   require Config
   require Logger
@@ -64,20 +64,20 @@ defmodule Jocker.Engine.Volume do
     end
   end
 
-  @spec destroy_mounts(%Container{}) :: :ok
+  @spec destroy_mounts(%Schemas.Container{}) :: :ok
   def destroy_mounts(container) do
     mounts = MetaData.remove_mounts(container)
     Enum.map(mounts, fn %Mount{location: location} -> 0 = Utils.unmount(location) end)
   end
 
   @spec bind_volume(
-          %Container{},
+          %Schemas.Container{},
           Jocker.Engine.Records.volume(),
           String.t(),
           bind_opts()
         ) :: :ok
   def bind_volume(
-        %Container{id: container_id, layer_id: layer_id},
+        %Schemas.Container{id: container_id, layer_id: layer_id},
         %Schemas.Volume{name: volume_name, mountpoint: volume_mountpoint},
         location,
         opts \\ []

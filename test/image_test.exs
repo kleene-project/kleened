@@ -178,7 +178,7 @@ defmodule ImageTest do
         tag: "test:latest"
       })
 
-    assert Enum.sort(image.env_vars) == ["TEST2=lool test", "TEST=lol"]
+    assert Enum.sort(image.env) == ["TEST2=lool test", "TEST=lol"]
   end
 
   test "verify that RUN instructions uses the environment variables set earlier in the Dockerfile" do
@@ -215,7 +215,7 @@ defmodule ImageTest do
     ]
 
     assert expected_build_log == build_log
-    assert Enum.sort(image.env_vars) == ["TEST2=test2value", "TEST=a new test value for TEST"]
+    assert Enum.sort(image.env) == ["TEST2=test2value", "TEST=a new test value for TEST"]
   end
 
   test "create an image using three RUN/COPY instructions" do

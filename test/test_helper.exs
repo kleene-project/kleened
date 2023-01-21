@@ -1,4 +1,5 @@
-alias Jocker.Engine.{ZFS, Config, Container, Layer, Exec, MetaData}
+alias Jocker.Engine.{ZFS, Config, Layer, Exec, MetaData}
+alias Jocker.API.Schemas
 require Logger
 
 Code.put_compiler_option(:warnings_as_errors, true)
@@ -383,7 +384,7 @@ defmodule TestHelper do
     ZFS.create(zroot)
   end
 
-  def devfs_mounted(%Container{layer_id: layer_id}) do
+  def devfs_mounted(%Schemas.Container{layer_id: layer_id}) do
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     devfs_path = Path.join(mountpoint, "dev")
 
