@@ -479,49 +479,43 @@ defmodule Jocker.Engine.MetaData do
 
   @spec transform_row(List.t()) :: %Schemas.Image{}
   def transform_row(row) do
-    {type, obj} =
-      cond do
-        Keyword.has_key?(row, :image) ->
-          map = from_json(row, :image)
-          id = Keyword.get(row, :id)
-          {Schemas.Image, Map.put(map, :id, id)}
-
-        Keyword.has_key?(row, :layer) ->
-          map = from_json(row, :layer)
-          id = Keyword.get(row, :id)
-          {Layer, Map.put(map, :id, id)}
-
-        Keyword.has_key?(row, :network) ->
-          map = from_json(row, :network)
-          id = Keyword.get(row, :id)
-          {Schemas.Network, Map.put(map, :id, id)}
-
-        Keyword.has_key?(row, :container) ->
-          map = from_json(row, :container)
-          id = Keyword.get(row, :id)
-          {Container, Map.put(map, :id, id)}
-
-        Keyword.has_key?(row, :volume) ->
-          map = from_json(row, :volume)
-          name = Keyword.get(row, :name)
-          {Schemas.Volume, Map.put(map, :name, name)}
-
-        Keyword.has_key?(row, :mount) ->
-          {Mount, from_json(row, :mount)}
-
-        Keyword.has_key?(row, :config) ->
-          {EndPointConfig, from_json(row, :config)}
-
-        Keyword.has_key?(row, :container_id) ->
-          {:no_struct, Keyword.get(row, :container_id)}
-
-        Keyword.has_key?(row, :network_id) ->
-          {:no_struct, Keyword.get(row, :network_id)}
-      end
-
     cond do
-      type == :no_struct -> obj
-      true -> struct(type, obj)
+      Keyword.has_key?(row, :image) ->
+        map = from_json(row, :image)
+        id = Keyword.get(row, :id)
+        struct(Schemas.Image, Map.put(map, :id, id))
+
+      Keyword.has_key?(row, :layer) ->
+        map = from_json(row, :layer)
+        id = Keyword.get(row, :id)
+        struct(Layer, Map.put(map, :id, id))
+
+      Keyword.has_key?(row, :network) ->
+        map = from_json(row, :network)
+        id = Keyword.get(row, :id)
+        struct(Schemas.Network, Map.put(map, :id, id))
+
+      Keyword.has_key?(row, :container) ->
+        map = from_json(row, :container)
+        id = Keyword.get(row, :id)
+        struct(Container, Map.put(map, :id, id))
+
+      Keyword.has_key?(row, :volume) ->
+        map = from_json(row, :volume)
+        name = Keyword.get(row, :name)
+        struct(Schemas.Volume, Map.put(map, :name, name))
+
+      Keyword.has_key?(row, :mount) ->
+        struct(Mount, from_json(row, :mount))
+
+      Keyword.has_key?(row, :config) ->
+        struct(EndPointConfig, from_json(row, :config))
+
+      Keyword.has_key?(row, :container_id) ->
+        Keyword.get(row, :container_id)
+
+      Keyword.has_key?(row, :network_id) ->
+        Keyword.get(row, :network_id)
     end
   end
 
