@@ -172,8 +172,14 @@ defmodule ContainerTest do
     CMD /bin/sh -c "printenv"
     """
 
+    config_image = %{
+      context: "./",
+      dockerfile: "tmp_dockerfile",
+      tag: "test:latest"
+    }
+
     TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
-    {image, _messages} = TestHelper.build_and_return_image("./", "tmp_dockerfile", "test:latest")
+    {image, _build_log} = TestHelper.image_valid_build(config_image)
 
     config = %{
       image: image.id,
@@ -202,8 +208,14 @@ defmodule ContainerTest do
     CMD /bin/sh -c "printenv"
     """
 
+    config_image = %{
+      context: "./",
+      dockerfile: "tmp_dockerfile",
+      tag: "test:latest"
+    }
+
     TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
-    {image, _messages} = TestHelper.build_and_return_image("./", "tmp_dockerfile", "test:latest")
+    {image, _build_log} = TestHelper.image_valid_build(config_image)
 
     config = %{
       image: image.id,

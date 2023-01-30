@@ -97,12 +97,12 @@ defmodule Jocker.Engine.Utils do
 
   def merge_environment_variable_lists(envlist1, envlist2) do
     # list2 overwrites environment varibles from list1
-    map1 = env_vars2map(envlist1)
-    map2 = env_vars2map(envlist2)
-    Map.merge(map1, map2) |> map2env_vars()
+    map1 = envlist2map(envlist1)
+    map2 = envlist2map(envlist2)
+    Map.merge(map1, map2) |> map2envlist()
   end
 
-  defp env_vars2map(envs) do
+  def envlist2map(envs) do
     convert = fn envvar ->
       List.to_tuple(String.split(envvar, "=", parts: 2))
     end
@@ -110,7 +110,7 @@ defmodule Jocker.Engine.Utils do
     Map.new(Enum.map(envs, convert))
   end
 
-  defp map2env_vars(env_map) do
+  def map2envlist(env_map) do
     Map.to_list(env_map) |> Enum.map(fn {name, value} -> Enum.join([name, value], "=") end)
   end
 

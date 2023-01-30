@@ -141,12 +141,18 @@ defmodule Jocker.API.Schemas do
           example: ["/bin/sh", "-c", "/bin/ls"]
         },
         env: %Schema{
-          description:
-            "List of environment variables and their values to set before running command.",
+          description: "Environment variables and their values to set before running command.",
           type: :array,
           items: %Schema{type: :string},
           default: [],
           example: ["PWD=/roo/", "JAIL_MGMT_ENGINE=jocker"]
+        },
+        buildargs: %Schema{
+          description:
+            "Object of string pairs for build-time variables. Users pass these values at build-time. Jocker uses the buildargs as the environment context for commands run via the Dockerfile RUN instruction, or for variable expansion in other Dockerfile instructions. This is not meant for passing secret values.",
+          type: :object,
+          default: %{},
+          example: %{"USERNAME" => "Stephen", "JAIL_MGMT_ENGINE" => "jocker"}
         },
         layer_id: %Schema{description: "Id of the layer containing the image", type: :string},
         user: %Schema{description: "user used when executing the command", type: :string},

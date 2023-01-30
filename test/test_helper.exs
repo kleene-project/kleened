@@ -159,6 +159,20 @@ defmodule TestHelper do
   end
 
   def image_build(config) do
+    config =
+      case Map.has_key?(config, :buildargs) do
+        true ->
+          {:ok, buildargs_json} = Jason.encode(config.buildargs)
+          Map.put(config, :buildargs, buildargs_json)
+
+        false ->
+          config
+      end
+
+    image_build_raw(config)
+  end
+
+  def image_build_raw(config) do
     query_params = Plug.Conn.Query.encode(config)
     endpoint = "/images/build?#{query_params}"
 
@@ -391,29 +405,6 @@ defmodule TestHelper do
     case System.cmd("sh", ["-c", "mount | grep \"devfs on #{devfs_path}\""]) do
       {"", 1} -> false
       {_output, 0} -> true
-    end
-  end
-
-  def build_and_return_image(context, dockerfile, tag) do
-    quiet = false
-    {:ok, pid} = Jocker.Engine.Image.build(context, dockerfile, tag, quiet)
-    {_img, _messages} = result = receive_imagebuilder_results(pid, [])
-    result
-  end
-
-  def receive_imagebuilder_results(pid, msg_list) do
-    receive do
-      {:image_builder, ^pid, {:image_finished, img}} ->
-        {img, Enum.reverse(msg_list)}
-
-      {:image_builder, ^pid, {:jail_output, msg}} ->
-        receive_imagebuilder_results(pid, [msg | msg_list])
-
-      {:image_builder, ^pid, msg} ->
-        receive_imagebuilder_results(pid, [msg | msg_list])
-
-      other ->
-        Logger.warn("\nError! Received unkown message #{inspect(other)}")
     end
   end
 
