@@ -9,11 +9,8 @@ defmodule Jocker.Engine.Network do
   defmodule EndPointConfig do
     @derive Jason.Encoder
     defstruct id: nil,
-              name: nil,
-              subnet: nil,
-              if_name: nil,
               epair: nil,
-              ip_addresses: []
+              ip_address: nil
   end
 
   defmodule State do
@@ -264,7 +261,7 @@ defmodule Jocker.Engine.Network do
           # A jail with 'ip4=inherit' cannot use VNET's or impose restrictions on ip-addresses
           # using ip4.addr
           [] ->
-            config = %EndPointConfig{ip_addresses: []}
+            config = %EndPointConfig{}
             MetaData.add_endpoint_config(container_id, network.id, config)
             {:ok, config}
 
@@ -288,7 +285,7 @@ defmodule Jocker.Engine.Network do
 
       true ->
         ip = new_ip(network)
-        config = %EndPointConfig{ip_addresses: [ip]}
+        config = %EndPointConfig{ip_address: ip}
         MetaData.add_endpoint_config(container_id, network.id, config)
 
         case OS.cmd(~w"ifconfig #{network.loopback_if} alias #{ip}/32") do
@@ -322,7 +319,7 @@ defmodule Jocker.Engine.Network do
 
       true ->
         ip = new_ip(network)
-        config = %EndPointConfig{ip_addresses: [ip], if_name: network.name}
+        config = %EndPointConfig{ip_address: ip}
         MetaData.add_endpoint_config(container.id, network.id, config)
         {:ok, config}
     end
@@ -359,10 +356,10 @@ defmodule Jocker.Engine.Network do
 
       network.driver == "loopback" ->
         # Remove ip-addresses from the jail, network interface, and database
-        Enum.map(config.ip_addresses, &ifconfig_remove_alias(&1, network.loopback_if))
+        ifconfig_remove_alias(config.ip_address, network.loopback_if)
 
         if Container.is_running?(container_id) do
-          remove_jail_ips(container_id, config.ip_addresses)
+          remove_jail_ips(container_id, config.ip_address)
         end
 
         MetaData.remove_endpoint_config(container_id, network.id)
@@ -608,8 +605,8 @@ defmodule Jocker.Engine.Network do
     jail_modify_ips(container_id, [ip | ips])
   end
 
-  def remove_jail_ips(container_id, ips) do
-    ips = MapSet.new(ips)
+  def remove_jail_ips(container_id, ip) do
+    ips = MapSet.new([ip])
     ips_old = MapSet.new(get_jail_ips(container_id))
     ips_new = MapSet.to_list(MapSet.difference(ips_old, ips))
     jail_modify_ips(container_id, ips_new)
@@ -668,26 +665,13 @@ defmodule Jocker.Engine.Network do
 
   defp new_ip(%Schemas.Network{driver: "loopback", loopback_if: if_name, subnet: subnet}) do
     ips_in_use = ips_on_interface(if_name)
-    # n_ips_used = length(ips_in_use)
-    # ips_in_use = MapSet.new(Enum.map(ips_in_use, &ip2int(&1)))
-
     %CIDR{:first => first_ip, :last => last_ip} = CIDR.parse(subnet)
     generate_ip(first_ip, last_ip, ips_in_use)
-    # last_ip = ip2int(last)
-    # first_ip = ip2int(first)
-
-    # case first_ip - last_ip do
-    #  n when n > n_ips_used - 1 ->
-    #    :out_of_ips
-
-    #  _ ->
-    #    # next_ip = first_ip
-    # end
   end
 
   defp new_ip(%Schemas.Network{driver: "vnet", id: network_id, subnet: subnet}) do
     configs = MetaData.get_endpoint_configs_from_network(network_id)
-    ips_in_use = MapSet.new(Enum.flat_map(configs, & &1.ip_addresses))
+    ips_in_use = MapSet.new(Enum.map(configs, & &1.ip_address))
     %CIDR{:first => first_ip, :last => last_ip} = CIDR.parse(subnet)
     first_ip = first_ip |> ip2int() |> (&(&1 + 1)).() |> int2ip()
     # next_ip = first_ip

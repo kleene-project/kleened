@@ -118,7 +118,7 @@ defmodule NetworkTest do
     %{id: container_id} = TestHelper.container_create(api_spec, "network_test", opts)
 
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
-    %EndPointConfig{ip_addresses: [ip]} = MetaData.get_endpoint_config(container_id, network.id)
+    %EndPointConfig{ip_address: ip} = MetaData.get_endpoint_config(container_id, network.id)
     {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
     assert %{"statistics" => %{"interface" => [%{"address" => ^ip}]}} = output
     assert ip_not_on_if(ip, network.loopback_if)
@@ -142,7 +142,7 @@ defmodule NetworkTest do
     assert %{message: "container already connected to the network"} ==
              TestHelper.network_connect(api_spec, container_id, "testnet")
 
-    %EndPointConfig{ip_addresses: [ip]} = MetaData.get_endpoint_config(container_id, network.id)
+    %EndPointConfig{ip_address: ip} = MetaData.get_endpoint_config(container_id, network.id)
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
     {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
     assert %{"statistics" => %{"interface" => [%{"address" => ^ip}]}} = output

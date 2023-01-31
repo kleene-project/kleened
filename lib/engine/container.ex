@@ -182,11 +182,6 @@ defmodule Jocker.Engine.Container do
     end
   end
 
-  def extract_ips(container_id, network_id, ip_list) do
-    config = MetaData.get_endpoint_config(container_id, network_id)
-    Enum.concat(config.ip_addresses, ip_list)
-  end
-
   def is_running?(container_id) do
     output = System.cmd("jls", ["--libxo=json", "-j", container_id], stderr_to_stdout: true)
 

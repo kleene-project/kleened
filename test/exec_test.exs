@@ -53,6 +53,7 @@ defmodule ExecTest do
         cmd: ["/bin/echo", "test test"]
       })
 
+    :timer.sleep(100)
     :ok = Exec.start(exec_id, %{attach: true, start_container: false})
     assert_receive {:container, ^exec_id, {:jail_output, "test test\n"}}
     assert_receive {:container, ^exec_id, {:shutdown, :jailed_process_exited}}
@@ -197,6 +198,7 @@ defmodule ExecTest do
     assert ["ERROR:executable already started", "Failed to execute command."] ==
              TestHelper.exec_start_sync(root_exec_id, %{attach: false, start_container: true})
 
+    :timer.sleep(100)
     assert Utils.is_container_running?(container_id)
 
     %{id: exec_id} =
