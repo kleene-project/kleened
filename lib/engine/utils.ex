@@ -20,25 +20,19 @@ defmodule Jocker.Engine.Utils do
         [ipv4_or_host_str, port_str] ->
           port = String.to_integer(port_str)
 
-          result =
-            ipv4_or_host_str
-            |> String.to_charlist()
-            |> :inet.parse_ipv4_address()
+          result = decode_ip(ipv4_or_host_str, :ipv4)
 
           case result do
             {:ok, address} -> {:ipv4, address, port}
-            # We assume that if it is ipv4-address it is probably a hostname instead:
+            # We assume that if it is not a ipv4-address it is probably a hostname instead:
             {:error, _} -> {:hostname, ipv4_or_host_str, port}
           end
 
         ipv6_addressport ->
           {port_str, ipv6address_splitup} = List.pop_at(ipv6_addressport, -1)
 
-          {:ok, address} =
-            ipv6address_splitup
-            |> Enum.join(":")
-            |> String.to_charlist()
-            |> :inet.parse_ipv6_address()
+          ipv6_address = ipv6address_splitup |> Enum.join(":")
+          {:ok, address} = decode_ip(ipv6_address, :ipv6)
 
           port = String.to_integer(port_str)
           {:ipv6, address, port}
@@ -46,6 +40,15 @@ defmodule Jocker.Engine.Utils do
     rescue
       error_msg ->
         {:error, error_msg}
+    end
+  end
+
+  def decode_ip(ip, ver) do
+    ip_charlist = String.to_charlist(ip)
+
+    case ver do
+      :ipv4 -> :inet.parse_ipv4_address(ip_charlist)
+      :ipv6 -> :inet.parse_ipv6_address(ip_charlist)
     end
   end
 

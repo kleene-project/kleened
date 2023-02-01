@@ -126,7 +126,12 @@ defmodule Jocker.Engine.Container do
 
         # Store new container and connect to the networks
         MetaData.add_container(cont)
-        Enum.map(networks, &Network.connect(container_id, &1))
+
+        Map.to_list(networks)
+        |> Enum.map(fn {network_name, config} ->
+          Network.connect(network_name, %Schemas.EndPointConfig{config | container: container_id})
+        end)
+
         {:ok, MetaData.get_container(container_id)}
     end
   end

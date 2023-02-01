@@ -41,10 +41,11 @@ defmodule Jocker.API.Schemas do
           default: []
         },
         networks: %Schema{
-          description: "List of networks that the container should be connected to.",
-          type: :array,
-          items: %Schema{type: :string},
-          default: []
+          description:
+            "A mapping of network name to endpoint configuration for that network. The 'container' property is ignored in each endpoint config and the created container's id is used instead. Use a dummy-string like 'unused_name' for the 'container' property since it is mandatory.",
+          type: :object,
+          additionalProperties: %Schema{type: Jocker.API.Schema.EndPointConfig},
+          default: %{}
         },
         jail_param: %Schema{
           description: "List of jail parameters (see jail(8) for details)",
@@ -90,6 +91,27 @@ defmodule Jocker.API.Schemas do
           example: ["DEBUG=0", "LANG=da_DK.UTF-8"]
         }
       }
+    })
+  end
+
+  defmodule EndPointConfig do
+    OpenApiSpex.schema(%{
+      description: "Configuration of a connection between a network to a container.",
+      type: :object,
+      properties: %{
+        container: %Schema{
+          type: :string,
+          description: "Name or (possibly truncated) id of the container"
+        },
+        ip_address: %Schema{
+          type: :string,
+          description:
+            "The ip(v4) address that should be assigned to the container. If this field is not set (or null) an ip contained in the subnet is auto-generated.",
+          default: nil,
+          example: "10.13.37.33"
+        }
+      },
+      required: [:container]
     })
   end
 

@@ -1,7 +1,7 @@
 defmodule Jocker.Engine.MetaData do
   require Logger
   alias Jocker.Engine.{Config, Layer, Image, Container, Network, Volume, Volume.Mount}
-  alias Jocker.Engine.Network.EndPointConfig
+  alias Jocker.Engine.Network.EndPoint
   alias Jocker.API.Schemas
 
   use Agent
@@ -159,7 +159,7 @@ defmodule Jocker.Engine.MetaData do
   @spec add_endpoint_config(
           Container.container_id(),
           Network.network_id(),
-          %EndPointConfig{}
+          %EndPoint{}
         ) :: :ok
   def add_endpoint_config(container_id, network_id, endpoint_config) do
     sql(
@@ -171,7 +171,7 @@ defmodule Jocker.Engine.MetaData do
   end
 
   @spec get_endpoint_config(Container.container_id(), Network.network_id()) ::
-          %EndPointConfig{} | :not_found
+          %EndPoint{} | :not_found
   def get_endpoint_config(container_id, network_id) do
     reply =
       sql(
@@ -186,7 +186,7 @@ defmodule Jocker.Engine.MetaData do
   end
 
   @spec get_endpoint_configs_from_network(Network.network_id()) ::
-          [%EndPointConfig{}] | :not_found
+          [%EndPoint{}] | :not_found
   def get_endpoint_configs_from_network(network_id) do
     sql(
       "SELECT config FROM endpoint_configs WHERE network_id = ?",
@@ -463,7 +463,7 @@ defmodule Jocker.Engine.MetaData do
         {:ok, json} = Jason.encode(map)
         {name, json}
 
-      type when type == Mount or type == EndPointConfig ->
+      type when type == Mount or type == EndPoint ->
         {:ok, json} = Jason.encode(map)
         json
     end
@@ -510,7 +510,7 @@ defmodule Jocker.Engine.MetaData do
         struct(Mount, from_json(row, :mount))
 
       Keyword.has_key?(row, :config) ->
-        struct(EndPointConfig, from_json(row, :config))
+        struct(EndPoint, from_json(row, :config))
 
       Keyword.has_key?(row, :container_id) ->
         Keyword.get(row, :container_id)

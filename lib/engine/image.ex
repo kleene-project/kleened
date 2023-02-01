@@ -148,7 +148,7 @@ defmodule Jocker.Engine.Image do
           jail_param: ["mount.devfs=true"],
           image: image_id,
           user: "root",
-          networks: [state.network],
+          networks: %{state.network => %Schemas.EndPointConfig{container: "dummy"}},
           cmd: []
         }
       )

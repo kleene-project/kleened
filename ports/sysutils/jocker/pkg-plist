@@ -506,7 +506,7 @@ lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jason.Encoder.Jocker.API.Schemas.Volume
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jason.Encoder.Jocker.Engine.Container.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jason.Encoder.Jocker.Engine.Image.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jason.Encoder.Jocker.Engine.Layer.beam
-lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jason.Encoder.Jocker.Engine.Network.EndPointConfig.beam
+lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jason.Encoder.Jocker.Engine.Network.EndPoint.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jason.Encoder.Jocker.Engine.Network.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jason.Encoder.Jocker.Engine.Volume.Mount.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.API.Container.Create.beam
@@ -562,7 +562,7 @@ lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.Engine.Image.State.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.Engine.Image.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.Engine.Layer.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.Engine.MetaData.beam
-lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.Engine.Network.EndPointConfig.beam
+lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.Engine.Network.EndPoint.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.Engine.Network.State.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.Engine.Network.beam
 lib/jockerd/lib/jocker-0.0.1/ebin/Elixir.Jocker.Engine.OS.beam

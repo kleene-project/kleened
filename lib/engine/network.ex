@@ -6,7 +6,7 @@ defmodule Jocker.Engine.Network do
 
   alias __MODULE__, as: Network
 
-  defmodule EndPointConfig do
+  defmodule EndPoint do
     @derive Jason.Encoder
     defstruct id: nil,
               epair: nil,
@@ -21,7 +21,7 @@ defmodule Jocker.Engine.Network do
   @type t() :: %Schemas.Network{}
   @type network_id() :: String.t()
   @type network_config :: %Schemas.NetworkConfig{}
-  @type endpoint_config() :: %EndPointConfig{}
+  @type endpoint_config() :: %EndPoint{}
 
   @default_pf_configuration """
   # This is the pf(4) configuration file template that is used by Jocker.
@@ -60,9 +60,10 @@ defmodule Jocker.Engine.Network do
     GenServer.call(__MODULE__, {:create, options})
   end
 
-  @spec connect(String.t(), String.t()) :: {:ok, endpoint_config()} | {:error, String.t()}
-  def connect(container_idname, network_idname) do
-    GenServer.call(__MODULE__, {:connect, container_idname, network_idname}, 10_000)
+  @spec connect(String.t(), %Schemas.EndPointConfig{}) ::
+          {:ok, endpoint_config()} | {:error, String.t()}
+  def connect(network_idname, config) do
+    GenServer.call(__MODULE__, {:connect, network_idname, config}, 10_000)
   end
 
   @spec connect(String.t(), String.t()) :: :ok | {:error, String.t()}
@@ -129,10 +130,10 @@ defmodule Jocker.Engine.Network do
     {:reply, reply, state}
   end
 
-  def handle_call({:connect, container_idname, network_idname}, _from, state) do
-    container = MetaData.get_container(container_idname)
+  def handle_call({:connect, network_idname, config}, _from, state) do
+    container = MetaData.get_container(config.container)
     network = MetaData.get_network(network_idname)
-    reply = connect_(container, network)
+    reply = connect_(container, network, config)
     {:reply, reply, state}
   end
 
@@ -227,29 +228,30 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  defp connect_(_container, :not_found) do
+  defp connect_(_container, :not_found, _config) do
     Logger.warn("Could not connect container to network: network not found")
     {:reply, {:error, "container not found"}}
   end
 
-  defp connect_(:not_found, _network) do
+  defp connect_(:not_found, _network, _config) do
     Logger.warn("Could not connect container to network: container not found")
     {:reply, {:error, "network not found"}}
   end
 
-  defp connect_(container, network) do
+  defp connect_(container, network, config) do
     case MetaData.get_endpoint_config(container.id, network.id) do
-      %EndPointConfig{} ->
+      %EndPoint{} ->
         {:error, "container already connected to the network"}
 
       :not_found ->
-        connect_with_driver(container, network)
+        connect_with_driver(container, network, config)
     end
   end
 
   defp connect_with_driver(
          %Schemas.Container{id: container_id},
-         %Schemas.Network{id: "host"} = network
+         %Schemas.Network{id: "host"} = network,
+         _config
        ) do
     cond do
       Container.is_running?(container_id) ->
@@ -261,9 +263,9 @@ defmodule Jocker.Engine.Network do
           # A jail with 'ip4=inherit' cannot use VNET's or impose restrictions on ip-addresses
           # using ip4.addr
           [] ->
-            config = %EndPointConfig{}
-            MetaData.add_endpoint_config(container_id, network.id, config)
-            {:ok, config}
+            endpoint = %EndPoint{}
+            MetaData.add_endpoint_config(container_id, network.id, endpoint)
+            {:ok, endpoint}
 
           _ ->
             {:error, "cannot connect to host network simultaneously with other networks"}
@@ -273,8 +275,11 @@ defmodule Jocker.Engine.Network do
 
   defp connect_with_driver(
          %Schemas.Container{id: container_id},
-         %Schemas.Network{driver: "loopback"} = network
+         %Schemas.Network{driver: "loopback"} = network,
+         config
        ) do
+    {ip, ip_validation_result} = process_ip_address_parameter(config, network)
+
     cond do
       connected_to_host_network?(container_id) ->
         {:error, "connected to host network"}
@@ -283,9 +288,12 @@ defmodule Jocker.Engine.Network do
         {:error,
          "already connected to a vnet network and containers can't be connected to both vnet and loopback networks"}
 
+      ip_validation_result != :ok ->
+        {:error, msg} = ip_validation_result
+        {:error, "could not validate the ipv4 address: #{msg}"}
+
       true ->
-        ip = new_ip(network)
-        config = %EndPointConfig{ip_address: ip}
+        config = %EndPoint{ip_address: ip}
         MetaData.add_endpoint_config(container_id, network.id, config)
 
         case OS.cmd(~w"ifconfig #{network.loopback_if} alias #{ip}/32") do
@@ -304,8 +312,11 @@ defmodule Jocker.Engine.Network do
 
   defp connect_with_driver(
          %Schemas.Container{} = container,
-         %Schemas.Network{driver: "vnet"} = network
+         %Schemas.Network{driver: "vnet"} = network,
+         config
        ) do
+    {ip, ip_validation_result} = process_ip_address_parameter(config, network)
+
     cond do
       connected_to_host_network?(container.id) ->
         {:error, "connected to host network"}
@@ -317,15 +328,18 @@ defmodule Jocker.Engine.Network do
         {:error,
          "already connected to a loopback network and containers can't be connected to both vnet and loopback networks"}
 
+      ip_validation_result != :ok ->
+        {:error, msg} = ip_validation_result
+        {:error, "could not validate the ipv4 address: #{msg}"}
+
       true ->
-        ip = new_ip(network)
-        config = %EndPointConfig{ip_address: ip}
+        config = %EndPoint{ip_address: ip}
         MetaData.add_endpoint_config(container.id, network.id, config)
         {:ok, config}
     end
   end
 
-  defp connect_with_driver(network, container) do
+  defp connect_with_driver(network, container, _config) do
     Logger.warn(
       "Unknown error occured when connecting container '#{inspect(container)}' to network '#{
         inspect(network)
@@ -375,6 +389,28 @@ defmodule Jocker.Engine.Network do
         Logger.error("this should not happen!")
         {:error, "unknown error occured"}
     end
+  end
+
+  defp process_ip_address_parameter(config, network) do
+    ip =
+      case config.ip_address do
+        nil ->
+          new_ip(network)
+
+        _ ->
+          config.ip_address
+      end
+
+    ip_validation =
+      case Utils.decode_ip(ip, :ipv4) do
+        {:error, msg} ->
+          {:error, msg}
+
+        {:ok, _ip_tuple} ->
+          :ok
+      end
+
+    {ip, ip_validation}
   end
 
   defp remove_bridge_members(bridge) do

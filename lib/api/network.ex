@@ -156,15 +156,15 @@ defmodule Jocker.API.Network do
             %Schema{type: :string},
             "ID or name of the network. An initial segment of the id can be supplied if it uniquely determines the network.",
             required: true
-          ),
-          parameter(
-            :container_id,
-            :path,
-            %Schema{type: :string},
-            "ID or name of the container. An initial segment of the id can be supplied if it uniquely determines the network.",
-            required: true
           )
         ],
+        requestBody:
+          request_body(
+            "Connection configuration.",
+            "application/json",
+            Schemas.EndPointConfig,
+            required: true
+          ),
         responses: %{
           # 204 => response("operation was succesful", "application/json", Schemas.IdResponse),
           204 => %Response{description: "operation was succesful"},
@@ -183,9 +183,9 @@ defmodule Jocker.API.Network do
     def connect(conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
       network_id = conn.params.network_id
-      container_id = conn.params.container_id
+      options = conn.body_params
 
-      case Network.connect(container_id, network_id) do
+      case Network.connect(network_id, options) do
         {:ok, _endpoint_config} ->
           send_resp(conn, 204, "")
 

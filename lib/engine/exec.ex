@@ -1,6 +1,6 @@
 defmodule Jocker.Engine.Exec do
   alias Jocker.Engine.{Container, MetaData, OS, FreeBSD, Layer, Utils, ExecInstances, Network}
-  alias Network.EndPointConfig
+  alias Network.EndPoint
   alias Jocker.API.Schemas
 
   defmodule State do
@@ -273,7 +273,7 @@ defmodule Jocker.Engine.Exec do
       destoy_jail_epairs = fn network ->
         config = MetaData.get_endpoint_config(container_id, network.id)
         FreeBSD.destroy_bridged_epair(config.epair, network.bridge_if)
-        config = %EndPointConfig{config | epair: nil}
+        config = %EndPoint{config | epair: nil}
         MetaData.add_endpoint_config(container_id, network.id, config)
       end
 
@@ -339,7 +339,7 @@ defmodule Jocker.Engine.Exec do
 
       :loopback ->
         network_ids = Enum.map(networks, fn %Schemas.Network{id: id} -> id end)
-        ips = Enum.reduce(network_ids, [], &extract_ips(container_id, &1, &2))
+        ips = Enum.map(network_ids, &extract_ip(container_id, &1))
 
         case Enum.join(ips, ",") do
           "" -> []
@@ -359,11 +359,10 @@ defmodule Jocker.Engine.Exec do
     subnet = CIDR.parse(subnet)
     gateway = subnet.first |> :inet.ntoa() |> :binary.list_to_bin()
 
-    %EndPointConfig{ip_addresses: [ip]} =
-      endpoint = MetaData.get_endpoint_config(container_id, id)
+    %EndPoint{ip_address: ip} = endpoint = MetaData.get_endpoint_config(container_id, id)
 
     epair = FreeBSD.create_epair()
-    MetaData.add_endpoint_config(container_id, id, %EndPointConfig{endpoint | epair: epair})
+    MetaData.add_endpoint_config(container_id, id, %EndPoint{endpoint | epair: epair})
     # "exec.start=\"ifconfig #{epair}b name jail0\" " <>
     # "exec.poststop=\"ifconfig #{bridge} deletem #{epair}a\" " <>
     # "exec.poststop=\"ifconfig #{epair}a destroy\""
@@ -384,9 +383,9 @@ defmodule Jocker.Engine.Exec do
     network_configs
   end
 
-  def extract_ips(container_id, network_id, ip_list) do
+  def extract_ip(container_id, network_id) do
     config = MetaData.get_endpoint_config(container_id, network_id)
-    Enum.concat(config.ip_addresses, ip_list)
+    config.ip_address
   end
 
   defp network_type_used(networks) do

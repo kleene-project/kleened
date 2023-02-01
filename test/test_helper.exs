@@ -39,10 +39,24 @@ defmodule TestHelper do
   end
 
   def container_create(api_spec, name, config) when not is_map_key(config, :networks) do
-    container_create(api_spec, name, Map.put(config, :networks, ["host"]))
+    config = Map.put(config, :networks, ["host"])
+
+    container_create(api_spec, name, config)
   end
 
   def container_create(api_spec, name, config) do
+    config =
+      case is_list(config.networks) do
+        true ->
+          networks_map =
+            Map.new(Enum.map(config.networks, &{&1, %Schemas.EndPointConfig{container: "dummy"}}))
+
+          %{config | networks: networks_map}
+
+        false ->
+          config
+      end
+
     assert_schema(config, "ContainerConfig", api_spec)
 
     response =
@@ -252,9 +266,15 @@ defmodule TestHelper do
     })
   end
 
-  def network_connect(api_spec, container_id, network_id) do
+  def network_connect(api_spec, network_id, container_id) when is_binary(container_id) do
+    connect_config = %{container: container_id}
+    network_connect(api_spec, network_id, connect_config)
+  end
+
+  def network_connect(api_spec, network_id, config) do
     response =
-      conn(:post, "/networks/#{network_id}/connect/#{container_id}")
+      conn(:post, "/networks/#{network_id}/connect", config)
+      |> put_req_header("content-type", "application/json")
       |> Router.call(@opts)
 
     validate_response(api_spec, response, %{
