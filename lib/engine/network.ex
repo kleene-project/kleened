@@ -21,7 +21,7 @@ defmodule Jocker.Engine.Network do
   @type t() :: %Schemas.Network{}
   @type network_id() :: String.t()
   @type network_config :: %Schemas.NetworkConfig{}
-  @type endpoint_config() :: %EndPoint{}
+  @type endpoint() :: %EndPoint{}
 
   @default_pf_configuration """
   # This is the pf(4) configuration file template that is used by Jocker.
@@ -61,7 +61,7 @@ defmodule Jocker.Engine.Network do
   end
 
   @spec connect(String.t(), %Schemas.EndPointConfig{}) ::
-          {:ok, endpoint_config()} | {:error, String.t()}
+          {:ok, endpoint()} | {:error, String.t()}
   def connect(network_idname, config) do
     GenServer.call(__MODULE__, {:connect, network_idname, config}, 10_000)
   end
@@ -188,8 +188,8 @@ defmodule Jocker.Engine.Network do
   end
 
   def handle_call({:inspect_endpoint, container_id, network_id}, _from, state) do
-    endpoint_config = MetaData.get_endpoint_config(container_id, network_id)
-    {:reply, endpoint_config, state}
+    endpoint = MetaData.get_endpoint(container_id, network_id)
+    {:reply, endpoint, state}
   end
 
   @impl true
@@ -239,7 +239,7 @@ defmodule Jocker.Engine.Network do
   end
 
   defp connect_(container, network, config) do
-    case MetaData.get_endpoint_config(container.id, network.id) do
+    case MetaData.get_endpoint(container.id, network.id) do
       %EndPoint{} ->
         {:error, "container already connected to the network"}
 
@@ -352,7 +352,7 @@ defmodule Jocker.Engine.Network do
   def disconnect_(container_idname, network_idname) do
     cont = %Schemas.Container{id: container_id} = MetaData.get_container(container_idname)
     network = MetaData.get_network(network_idname)
-    config = MetaData.get_endpoint_config(container_id, network.id)
+    config = MetaData.get_endpoint(container_id, network.id)
 
     cond do
       cont == :not_found ->
@@ -402,12 +402,18 @@ defmodule Jocker.Engine.Network do
       end
 
     ip_validation =
-      case Utils.decode_ip(ip, :ipv4) do
-        {:error, msg} ->
-          {:error, msg}
+      case ip do
+        :out_of_ips ->
+          {:error, "no more ip's left in the network"}
 
-        {:ok, _ip_tuple} ->
-          :ok
+        _ ->
+          case Utils.decode_ip(ip, :ipv4) do
+            {:error, msg} ->
+              {:error, msg}
+
+            {:ok, _ip_tuple} ->
+              :ok
+          end
       end
 
     {ip, ip_validation}
@@ -687,18 +693,6 @@ defmodule Jocker.Engine.Network do
     end
   end
 
-  def ip_added?(ip, iface) do
-    # netstat --libxo json -4 -n -I lo0
-    # {"statistics":
-    #   {"interface": [{"name":"lo0","flags":"0x8049","network":"127.0.0.0/8","address":"127.0.0.1","received-packets":0,"sent-packets":0}, {"name":"lo0","flags":"0x8049","network":"127.0.0.0/8","address":"127.0.0.2","received-packets":0,"sent-packets":0}]}
-    # }
-
-    {output_json, 0} = System.cmd("netstat", ["--libxo", "json", "-4", "-n", "-I", iface])
-    {:ok, output} = Jason.decode(output_json)
-    output = output["statistics"]["interface"]
-    Enum.any?(output, &(&1["address"] == ip))
-  end
-
   defp new_ip(%Schemas.Network{driver: "loopback", loopback_if: if_name, subnet: subnet}) do
     ips_in_use = ips_on_interface(if_name)
     %CIDR{:first => first_ip, :last => last_ip} = CIDR.parse(subnet)
@@ -706,7 +700,7 @@ defmodule Jocker.Engine.Network do
   end
 
   defp new_ip(%Schemas.Network{driver: "vnet", id: network_id, subnet: subnet}) do
-    configs = MetaData.get_endpoint_configs_from_network(network_id)
+    configs = MetaData.get_endpoints_from_network(network_id)
     ips_in_use = MapSet.new(Enum.map(configs, & &1.ip_address))
     %CIDR{:first => first_ip, :last => last_ip} = CIDR.parse(subnet)
     first_ip = first_ip |> ip2int() |> (&(&1 + 1)).() |> int2ip()

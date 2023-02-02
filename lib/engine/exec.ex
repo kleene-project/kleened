@@ -271,7 +271,7 @@ defmodule Jocker.Engine.Exec do
   defp jail_cleanup(%Schemas.Container{id: container_id, layer_id: layer_id}) do
     if Network.connected_to_vnet_networks?(container_id) do
       destoy_jail_epairs = fn network ->
-        config = MetaData.get_endpoint_config(container_id, network.id)
+        config = MetaData.get_endpoint(container_id, network.id)
         FreeBSD.destroy_bridged_epair(config.epair, network.bridge_if)
         config = %EndPoint{config | epair: nil}
         MetaData.add_endpoint_config(container_id, network.id, config)
@@ -359,7 +359,7 @@ defmodule Jocker.Engine.Exec do
     subnet = CIDR.parse(subnet)
     gateway = subnet.first |> :inet.ntoa() |> :binary.list_to_bin()
 
-    %EndPoint{ip_address: ip} = endpoint = MetaData.get_endpoint_config(container_id, id)
+    %EndPoint{ip_address: ip} = endpoint = MetaData.get_endpoint(container_id, id)
 
     epair = FreeBSD.create_epair()
     MetaData.add_endpoint_config(container_id, id, %EndPoint{endpoint | epair: epair})
@@ -384,7 +384,7 @@ defmodule Jocker.Engine.Exec do
   end
 
   def extract_ip(container_id, network_id) do
-    config = MetaData.get_endpoint_config(container_id, network_id)
+    config = MetaData.get_endpoint(container_id, network_id)
     config.ip_address
   end
 

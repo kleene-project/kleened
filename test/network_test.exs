@@ -2,14 +2,28 @@ defmodule NetworkTest do
   use Jocker.API.ConnCase
   require Logger
   alias Jocker.Engine.{Network, Utils, MetaData, Container, Exec, OS}
-  alias Jocker.API.Schemas.ExecConfig
-  alias Network.EndPointConfig
+  alias Jocker.API.Schemas.{EndPointConfig, ExecConfig}
+  alias Network.EndPoint
 
   @moduletag :capture_log
 
   @dns_lookup_cmd ["/usr/bin/host", "-t", "A", "freebsd.org", "1.1.1.1"]
   @dns_lookup_success "Using domain server:\nName: 1.1.1.1\nAddress: 1.1.1.1#53\nAliases: \n\nfreebsd.org has address 96.47.72.84\n"
   @dns_lookup_failure ";; connection timed out; no servers could be reached\n"
+
+  setup do
+    on_exit(fn ->
+      Jocker.Engine.MetaData.list_containers()
+      |> Enum.map(fn %{id: id} -> Container.remove(id) end)
+    end)
+
+    on_exit(fn ->
+      Jocker.Engine.MetaData.list_networks(:exclude_host)
+      |> Enum.map(fn %{id: id} -> Jocker.Engine.Network.remove(id) end)
+    end)
+
+    :ok
+  end
 
   test "create, get and remove a new network", %{api_spec: api_spec} do
     Utils.destroy_interface("jocker1")
@@ -118,7 +132,7 @@ defmodule NetworkTest do
     %{id: container_id} = TestHelper.container_create(api_spec, "network_test", opts)
 
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
-    %EndPointConfig{ip_address: ip} = MetaData.get_endpoint_config(container_id, network.id)
+    %EndPoint{ip_address: ip} = MetaData.get_endpoint(container_id, network.id)
     {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
     assert %{"statistics" => %{"interface" => [%{"address" => ^ip}]}} = output
     assert ip_not_on_if(ip, network.loopback_if)
@@ -137,12 +151,12 @@ defmodule NetworkTest do
 
     %{id: container_id} = TestHelper.container_create(api_spec, "network_test", opts)
 
-    assert :ok = TestHelper.network_connect(api_spec, container_id, "testnet")
+    assert :ok = TestHelper.network_connect(api_spec, "testnet", container_id)
 
     assert %{message: "container already connected to the network"} ==
-             TestHelper.network_connect(api_spec, container_id, "testnet")
+             TestHelper.network_connect(api_spec, "testnet", container_id)
 
-    %EndPointConfig{ip_address: ip} = MetaData.get_endpoint_config(container_id, network.id)
+    %EndPoint{ip_address: ip} = MetaData.get_endpoint(container_id, network.id)
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
     {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
     assert %{"statistics" => %{"interface" => [%{"address" => ^ip}]}} = output
@@ -162,7 +176,7 @@ defmodule NetworkTest do
 
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
     assert receive_jail_output(exec_id) == "add net default: gateway 172.18.0.0\n"
-    %EndPointConfig{epair: epair} = Network.inspect_endpoint(container_id, network.id)
+    %EndPoint{epair: epair} = Network.inspect_endpoint(container_id, network.id)
     assert epair != nil
 
     # This is needed because "jail" adds the epair<N>b AFTER "add net default.." so a race-condition occurs
@@ -185,11 +199,11 @@ defmodule NetworkTest do
         networks: []
       })
 
-    assert :ok == TestHelper.network_connect(api_spec, container_id, "testnet")
-    %EndPointConfig{epair: nil} = MetaData.get_endpoint_config(container_id, network.id)
+    assert :ok == TestHelper.network_connect(api_spec, "testnet", container_id)
+    %EndPoint{epair: nil} = MetaData.get_endpoint(container_id, network.id)
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
     assert receive_jail_output(exec_id) == "add net default: gateway 172.18.0.0\n"
-    %EndPointConfig{epair: epair} = Network.inspect_endpoint(container_id, network.id)
+    %EndPoint{epair: epair} = Network.inspect_endpoint(container_id, network.id)
 
     # This is needed because "jail" adds the epair<N>b AFTER "add net default.." so a race-condition occurs
     :timer.sleep(1_000)
@@ -226,16 +240,66 @@ defmodule NetworkTest do
         networks: []
       })
 
-    assert :ok == TestHelper.network_connect(api_spec, container_id, network1.id)
-    assert %EndPointConfig{} = MetaData.get_endpoint_config(container_id, network1.id)
+    assert :ok == TestHelper.network_connect(api_spec, network1.id, container_id)
+    assert %EndPoint{} = MetaData.get_endpoint(container_id, network1.id)
 
     assert %{
              message:
                "already connected to a vnet network and containers can't be connected to both vnet and loopback networks"
            } ==
-             TestHelper.network_connect(api_spec, container_id, network2.id)
+             TestHelper.network_connect(api_spec, network2.id, container_id)
 
     cleanup(api_spec, container_id, [network1, network2])
+  end
+
+  test "create networks with a user-supplied ips", %{api_spec: api_spec} do
+    Utils.destroy_interface("jocker1")
+
+    network_vnet =
+      create_network(api_spec, %{name: "testvnet", subnet: "10.13.37.0/24", driver: "vnet"})
+
+    network_lo =
+      create_network(api_spec, %{name: "testlonet", subnet: "10.13.38.0/24", driver: "loopback"})
+
+    opts = %{
+      cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-i"],
+      networks: %{
+        "testlonet" => %EndPointConfig{container: "dummy", ip_address: "10.13.38.42"}
+        # "testlonet" => %{container: "dummy", ip_address: "10.13.38.42"}
+      }
+    }
+
+    %{id: container_id} = TestHelper.container_create(api_spec, "network_test", opts)
+    {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
+    {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
+    assert %{"statistics" => %{"interface" => [%{"address" => "10.13.38.42"}]}} = output
+
+    TestHelper.network_disconnect(api_spec, container_id, network_lo.id)
+    {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
+    {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
+    assert %{"statistics" => %{"interface" => []}} == output
+
+    TestHelper.network_connect(api_spec, network_vnet.id, %{
+      container: container_id,
+      ip_address: "10.13.37.22"
+    })
+
+    {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
+    assert receive_jail_output(exec_id) == "add net default: gateway 10.13.37.0\n"
+    {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
+    assert %{"statistics" => %{"interface" => [%{"address" => "10.13.37.22"}]}} = output
+  end
+
+  test "exhaust all ips in a network", %{api_spec: api_spec} do
+    create_network(api_spec, %{name: "smallnet", subnet: "172.19.0.0/30", driver: "loopback"})
+
+    opts = %{cmd: ["/bin/ls"], networks: ["smallnet"]}
+
+    %{id: _container_id} = TestHelper.container_create(api_spec, "exhaust1", opts)
+    %{id: _container_id} = TestHelper.container_create(api_spec, "exhaust2", opts)
+    %{id: _container_id} = TestHelper.container_create(api_spec, "exhaust3", opts)
+    %{id: _container_id} = TestHelper.container_create(api_spec, "exhaust4", opts)
+    %{id: _container_id} = TestHelper.container_create(api_spec, "exhaust5", opts)
   end
 
   test "connectivity using loopback interface", %{api_spec: api_spec} do
@@ -285,13 +349,13 @@ defmodule NetworkTest do
         %{cmd: ["/bin/sleep", "100"], networks: []}
       )
 
-    assert :ok == TestHelper.network_connect(api_spec, container_id, network.name)
-    assert %EndPointConfig{} = MetaData.get_endpoint_config(container_id, network.id)
+    assert :ok == TestHelper.network_connect(api_spec, network.name, container_id)
+    assert %EndPoint{} = MetaData.get_endpoint(container_id, network.id)
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
 
     assert receive_jail_output(exec_id) == "add net default: gateway 172.18.0.0\n"
 
-    %EndPointConfig{epair: epair} = Network.inspect_endpoint(container_id, network.id)
+    %EndPoint{epair: epair} = Network.inspect_endpoint(container_id, network.id)
     assert interface_exists?("#{epair}a")
 
     assert :ok == TestHelper.network_disconnect(api_spec, container_id, network.name)

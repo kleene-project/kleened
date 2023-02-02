@@ -170,9 +170,9 @@ defmodule Jocker.Engine.MetaData do
     :ok
   end
 
-  @spec get_endpoint_config(Container.container_id(), Network.network_id()) ::
+  @spec get_endpoint(Container.container_id(), Network.network_id()) ::
           %EndPoint{} | :not_found
-  def get_endpoint_config(container_id, network_id) do
+  def get_endpoint(container_id, network_id) do
     reply =
       sql(
         "SELECT config FROM endpoint_configs WHERE container_id = ? AND network_id = ?",
@@ -185,9 +185,9 @@ defmodule Jocker.Engine.MetaData do
     end
   end
 
-  @spec get_endpoint_configs_from_network(Network.network_id()) ::
+  @spec get_endpoints_from_network(Network.network_id()) ::
           [%EndPoint{}] | :not_found
-  def get_endpoint_configs_from_network(network_id) do
+  def get_endpoints_from_network(network_id) do
     sql(
       "SELECT config FROM endpoint_configs WHERE network_id = ?",
       [network_id]
