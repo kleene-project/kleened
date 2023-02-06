@@ -44,7 +44,7 @@ defmodule Jocker.API.Schemas do
           description:
             "A mapping of network name to endpoint configuration for that network. The 'container' property is ignored in each endpoint config and the created container's id is used instead. Use a dummy-string like 'unused_name' for the 'container' property since it is mandatory.",
           type: :object,
-          additionalProperties: %Schema{type: Jocker.API.Schema.EndPointConfig},
+          additionalProperties: Jocker.API.Schemas.EndPointConfig,
           default: %{}
         },
         jail_param: %Schema{

@@ -138,6 +138,11 @@ defmodule Jocker.API.Network do
   defmodule Connect do
     use Plug.Builder
 
+    plug(Plug.Parsers,
+      parsers: [:json],
+      json_decoder: Jason
+    )
+
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,
       operation_id: "Network.Connect"
@@ -183,9 +188,9 @@ defmodule Jocker.API.Network do
     def connect(conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
       network_id = conn.params.network_id
-      options = conn.body_params
+      config = conn.body_params
 
-      case Network.connect(network_id, options) do
+      case Network.connect(network_id, config) do
         {:ok, _endpoint_config} ->
           send_resp(conn, 204, "")
 

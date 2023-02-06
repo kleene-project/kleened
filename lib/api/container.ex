@@ -105,6 +105,18 @@ defmodule Jocker.API.Container do
       name = conn.query_params["name"]
       container_config = conn.body_params
 
+      # Casting endpoint config into proper schema (this ensures that all keys is converted from string to atoms)
+      networks =
+        Enum.map(Map.to_list(container_config.networks), fn {network_name, endpoint_config} ->
+          {:ok, endpoint_config} =
+            OpenApiSpex.Cast.cast(Schemas.EndPointConfig.schema(), endpoint_config)
+
+          {network_name, endpoint_config}
+        end)
+        |> Map.new()
+
+      container_config = Map.put(container_config, :networks, networks)
+
       case Container.create(name, container_config) do
         {:ok, %Schemas.Container{id: id}} ->
           send_resp(conn, 201, Utils.id_response(id))

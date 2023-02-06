@@ -128,7 +128,7 @@ defmodule Jocker.Engine.Image do
     {:error, "#{msg} on line: #{line}"}
   end
 
-  defp verify_instructions([{line, {:unparsed, instruction_line}} | _rest]) do
+  defp verify_instructions([{_line, {:unparsed, instruction_line}} | _rest]) do
     {:error, "invalid instruction: #{instruction_line}"}
   end
 

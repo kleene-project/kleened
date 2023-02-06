@@ -179,6 +179,9 @@ defmodule Jocker.Engine.Network do
 
       :not_found ->
         {:reply, {:error, "network not found."}, state}
+
+      %Schemas.Network{driver: "host"} ->
+        {:reply, {:error, "cannot delete host network"}, state}
     end
   end
 

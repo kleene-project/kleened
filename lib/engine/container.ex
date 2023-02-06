@@ -129,7 +129,9 @@ defmodule Jocker.Engine.Container do
 
         Map.to_list(networks)
         |> Enum.map(fn {network_name, config} ->
-          Network.connect(network_name, %Schemas.EndPointConfig{config | container: container_id})
+          config_list = Map.to_list(Map.put(config, :container, container_id))
+          config = struct(Schemas.EndPointConfig, config_list)
+          Network.connect(network_name, config)
         end)
 
         {:ok, MetaData.get_container(container_id)}

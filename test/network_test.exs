@@ -2,7 +2,7 @@ defmodule NetworkTest do
   use Jocker.API.ConnCase
   require Logger
   alias Jocker.Engine.{Network, Utils, MetaData, Container, Exec, OS}
-  alias Jocker.API.Schemas.{EndPointConfig, ExecConfig}
+  alias Jocker.API.Schemas
   alias Network.EndPoint
 
   @moduletag :capture_log
@@ -264,8 +264,8 @@ defmodule NetworkTest do
     opts = %{
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-i"],
       networks: %{
-        "testlonet" => %EndPointConfig{container: "dummy", ip_address: "10.13.38.42"}
-        # "testlonet" => %{container: "dummy", ip_address: "10.13.38.42"}
+        # We don't use %EndPointConfig{} schema struct because we also need to test conversion of keys from strings to atoms.
+        "testlonet" => %{"container" => "dummy", "ip_address" => "10.13.38.42"}
       }
     }
 
@@ -362,7 +362,7 @@ defmodule NetworkTest do
 
     {:ok, exec_id} =
       exec_run(
-        %ExecConfig{container_id: container_id, cmd: @dns_lookup_cmd},
+        %Schemas.ExecConfig{container_id: container_id, cmd: @dns_lookup_cmd},
         %{attach: true, start_container: false}
       )
 
