@@ -69,8 +69,9 @@ defmodule Jocker.API.ImageBuild do
            Utils.map2envlist(args["buildargs"]),
            args["quiet"]
          ) do
-      {:ok, _pid} ->
+      {:ok, pid} ->
         Logger.debug("Building image. Await output.")
+        state = state |> Map.put(:build_pid, pid)
         {[{:text, "OK"}], state}
 
       {:error, msg} ->

@@ -17,17 +17,7 @@ defmodule Jocker.Engine.Image do
               quiet: false
   end
 
-  @type t() ::
-          %Schemas.Image{
-            id: String.t(),
-            name: String.t(),
-            tag: String.t(),
-            command: [String.t()],
-            env: [String.t()],
-            layer_id: String.t(),
-            user: String.t(),
-            created: String.t()
-          }
+  @type t() :: %Schemas.Image{}
 
   @spec build(String.t(), String.t(), String.t(), boolean()) ::
           {:ok, pid()} | {:error, String.t()}
@@ -62,7 +52,7 @@ defmodule Jocker.Engine.Image do
           total_steps: length(instructions)
         }
 
-        {pid, _reference} = Process.spawn(fn -> create_image(instructions, state) end, [:monitor])
+        pid = Process.spawn(fn -> create_image(instructions, state) end, [:link])
         {:ok, pid}
 
       {:error, error_msg} ->
@@ -247,8 +237,8 @@ defmodule Jocker.Engine.Image do
        }) do
     args = merge_buildargs(args_supplied, args_collected)
     env = Utils.merge_environment_variable_lists(args, env)
-    args = ["-i"] ++ env ++ ["/bin/sh", "-c", "echo -n #{string}"]
-    {substituted_string, 0} = OS.cmd(["/usr/bin/env" | args])
+    command = ~w"/usr/bin/env -i" ++ env ++ ["/bin/sh", "-c", "echo -n #{string}"]
+    {substituted_string, 0} = OS.cmd(command)
     substituted_string
   end
 

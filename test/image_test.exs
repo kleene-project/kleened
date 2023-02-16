@@ -188,6 +188,25 @@ defmodule ImageTest do
     assert Enum.sort(image.env) == ["TEST2=lool test", "TEST=lol"]
   end
 
+  test "create an image with a quoted and escaped instruction" do
+    dockerfile = """
+    FROM scratch
+    ENV TEST="\\$5\\$2Fun7BK4thgtd4ao\\$j1kidg9P"
+    CMD  /bin/ls
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+
+    {image, _build_log} =
+      TestHelper.image_valid_build(%{
+        context: @tmp_context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:latest"
+      })
+
+    assert Enum.sort(image.env) == ["TEST=$5$2Fun7BK4thgtd4ao$j1kidg9P"]
+  end
+
   test "verify that RUN instructions uses the environment variables set earlier in the Dockerfile" do
     dockerfile = """
     FROM scratch
