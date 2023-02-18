@@ -596,6 +596,31 @@ defmodule ImageTest do
            ]
   end
 
+  test "try building an image from a invalid Dockerfile (illegal comment)" do
+    dockerfile = """
+    FROM scratch
+    ENV TEST="something" # You cannot make comments like this.
+    """
+
+    # FIXME: HERTIL!
+    context = create_test_context("test_image_builder_three_layers")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    build_log =
+      TestHelper.image_build(%{
+        context: context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:latest"
+      })
+
+    assert build_log == [
+             "OK",
+             "Step 1/2 : FROM scratch\n",
+             "Step 2/2 : ENV TEST=\"something\" # You cannot make comments like this.\n",
+             "image build failed at: failed environment substition of: ENV TEST=\"something\" # You cannot make comments like this."
+           ]
+  end
+
   test "try to build a image with invalid buildargs-input" do
     dockerfile = """
     FROM scratch

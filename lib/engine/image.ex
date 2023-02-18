@@ -116,42 +116,20 @@ defmodule Jocker.Engine.Image do
     process_instructions(rest, %State{state | :container => cont})
   end
 
-  defp process_instructions(
-         [{line, {:copy, src_and_dest}} | rest],
-         %State{container: container, context: context} = state
-       ) do
-    # TODO Elixir have nice wildcard-expansion stuff that we could use here
-    Logger.info("Processing instruction: COPY #{inspect(src_and_dest)}")
+  defp process_instructions([{line, {:env, env_vars}} | rest], %State{:container => cont} = state) do
+    Logger.info("Processing instruction: ENV #{inspect(env_vars)}")
     state = send_status(line, state)
-    context_in_jail = create_context_dir_in_jail(context, container)
-    src_and_dest = Enum.map(src_and_dest, &shell_evaluate_instruction(&1, state))
-    src_and_dest = convert_paths_to_jail_context_dir(src_and_dest)
+    {env_vars, exit_code} = environment_replacement(env_vars, state)
 
-    config = %Schemas.ExecConfig{
-      container_id: container.id,
-      cmd: ["/bin/cp", "-R" | src_and_dest],
-      env: [],
-      user: "root"
-    }
+    case exit_code do
+      0 ->
+        env = Utils.merge_environment_variable_lists(cont.env, [env_vars])
+        state = %State{state | :container => %Schemas.Container{cont | env: env}}
+        process_instructions(rest, state)
 
-    exit_code = execute_cmd(config, state)
-    unmount_context(context_in_jail)
-    validate_result_and_continue_if_valid(exit_code, rest, line, state)
-  end
-
-  defp process_instructions([{line, {:user, user}} | rest], state) do
-    Logger.info("Processing instruction: USER #{user}")
-    state = send_status(line, state)
-    user = shell_evaluate_instruction(user, state)
-    state = %State{state | container: %Schemas.Container{state.container | user: user}}
-    process_instructions(rest, state)
-  end
-
-  defp process_instructions([{line, {:cmd, cmd}} | rest], %State{:container => cont} = state) do
-    Logger.info("Processing instruction: CMD #{inspect(cmd)}")
-    state = send_status(line, state)
-    state = %State{state | :container => %Schemas.Container{cont | command: cmd}}
-    process_instructions(rest, state)
+      _nonzero_exitcode ->
+        send_substitution_failure_and_cleanup(line, state)
+    end
   end
 
   defp process_instructions(
@@ -167,12 +145,49 @@ defmodule Jocker.Engine.Image do
     process_instructions(rest, state)
   end
 
-  defp process_instructions([{line, {:env, env_vars}} | rest], %State{:container => cont} = state) do
-    Logger.info("Processing instruction: ENV #{inspect(env_vars)}")
+  defp process_instructions([{line, {:copy, src_and_dest}} | rest], state) do
+    Logger.info("Processing instruction: COPY #{inspect(src_and_dest)}")
     state = send_status(line, state)
-    env_vars = shell_evaluate_instruction(env_vars, state)
-    env = Utils.merge_environment_variable_lists(cont.env, [env_vars])
-    state = %State{state | :container => %Schemas.Container{cont | env: env}}
+    # TODO Elixir have nice wildcard-expansion stuff that we could use here
+    case environment_replacement_src_and_dest_list(src_and_dest, state, [], line) do
+      {:ok, src_and_dest} ->
+        context_in_jail = create_context_dir_in_jail(state.context, state.container)
+
+        config = %Schemas.ExecConfig{
+          container_id: state.container.id,
+          cmd: ["/bin/cp", "-R" | src_and_dest],
+          env: [],
+          user: "root"
+        }
+
+        exit_code = execute_cmd(config, state)
+        unmount_context(context_in_jail)
+        validate_result_and_continue_if_valid(exit_code, rest, line, state)
+
+      :failed ->
+        :stop
+    end
+  end
+
+  defp process_instructions([{line, {:user, user}} | rest], state) do
+    Logger.info("Processing instruction: USER #{user}")
+    state = send_status(line, state)
+    {user, exit_code} = environment_replacement(user, state)
+
+    case exit_code do
+      0 ->
+        state = %State{state | container: %Schemas.Container{state.container | user: user}}
+        process_instructions(rest, state)
+
+      _nonzero_exitcode ->
+        send_substitution_failure_and_cleanup(line, state)
+    end
+  end
+
+  defp process_instructions([{line, {:cmd, cmd}} | rest], %State{:container => cont} = state) do
+    Logger.info("Processing instruction: CMD #{inspect(cmd)}")
+    state = send_status(line, state)
+    state = %State{state | :container => %Schemas.Container{cont | command: cmd}}
     process_instructions(rest, state)
   end
 
@@ -225,12 +240,39 @@ defmodule Jocker.Engine.Image do
     send_msg(state.msg_receiver, {:image_build_succesfully, img})
   end
 
+  defp environment_replacement_src_and_dest_list([expression | rest], state, evaluated, line) do
+    {evaluated_expr, exit_code} = environment_replacement(expression, state)
+
+    case exit_code do
+      0 ->
+        environment_replacement_src_and_dest_list(rest, state, [evaluated_expr | evaluated], line)
+
+      _nonzero_exitcode ->
+        environment_replacement_src_and_dest_list(:failed, state, evaluated, line)
+    end
+  end
+
+  defp environment_replacement_src_and_dest_list([], state, evaluated, _line) do
+    src_and_dest = Enum.reverse(evaluated)
+    src_and_dest = convert_paths_to_jail_context_dir(src_and_dest)
+    {:ok, src_and_dest}
+  end
+
+  defp environment_replacement_src_and_dest_list(:failed, state, _evaluated, line) do
+    send_substitution_failure_and_cleanup(line, state)
+    :failed
+  end
+
   defp validate_result_and_continue_if_valid(0, rest, _line, state) do
     process_instructions(rest, state)
   end
 
   defp validate_result_and_continue_if_valid(_nonzero_exit_code, _rest, line, state) do
     send_msg(state.msg_receiver, {:image_build_failed, line})
+    cleanup_build_environment(state)
+  end
+
+  defp cleanup_build_environment(state) do
     Container.remove(state.container.id)
     Network.remove(state.network)
   end
@@ -244,7 +286,7 @@ defmodule Jocker.Engine.Image do
     Utils.merge_environment_variable_lists(args, env)
   end
 
-  defp shell_evaluate_instruction(string, %State{
+  defp environment_replacement(string, %State{
          buildargs_collected: args_collected,
          buildargs_supplied: args_supplied,
          container: %Schemas.Container{env: env}
@@ -252,8 +294,16 @@ defmodule Jocker.Engine.Image do
     args = merge_buildargs(args_supplied, args_collected)
     env = Utils.merge_environment_variable_lists(args, env)
     command = ~w"/usr/bin/env -i" ++ env ++ ["/bin/sh", "-c", "echo -n #{string}"]
-    {substituted_string, 0} = OS.cmd(command)
-    substituted_string
+    OS.cmd(command)
+  end
+
+  defp send_substitution_failure_and_cleanup(line, state) do
+    send_msg(
+      state.msg_receiver,
+      {:image_build_failed, "failed environment substition of: #{line}"}
+    )
+
+    cleanup_build_environment(state)
   end
 
   defp merge_buildargs(args_supplied, args_collected) when is_list(args_collected) do
