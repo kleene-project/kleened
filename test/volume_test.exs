@@ -72,7 +72,7 @@ defmodule VolumeTest do
     Jocker.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
 
     receive do
-      {:container, ^exec_id, {:shutdown, :jail_stopped}} -> :ok
+      {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}} -> :ok
     end
 
     assert {:ok, %File.Stat{:type => :regular}} = File.stat(Path.join(volume.mountpoint, "test"))

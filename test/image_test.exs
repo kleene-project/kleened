@@ -554,7 +554,25 @@ defmodule ImageTest do
     assert build_log == ["OK"]
   end
 
-  test "try building an image from a invalid Dockerfile" do
+  test "building an image that stops prematurely from non-zero exitcode from RUN-instruction" do
+    dockerfile = """
+    FROM scratch
+    RUN ls notexist
+    """
+
+    context = create_test_context("test_image_run_nonzero_exitcode")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    assert "RUN ls notexist" ==
+             TestHelper.image_invalid_build(%{
+               context: context,
+               dockerfile: @tmp_dockerfile,
+               quiet: false,
+               tag: "test:latest"
+             })
+  end
+
+  test "try building an image from a invalid Dockerfile (no linebreak)" do
     dockerfile = """
     FROM scratch
     RUN echo

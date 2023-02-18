@@ -30,7 +30,7 @@ defmodule ExecTest do
       TestHelper.container_create(api_spec, "test_container1", %{cmd: ["/bin/sh", "-c", "uname"]})
 
     {:ok, exec_id} = Exec.create(container_id)
-    stop_msg = "executable #{exec_id} stopped"
+    stop_msg = "executable #{exec_id} and its container exited with exit-code 0"
 
     assert ["OK", "FreeBSD\n", stop_msg] ==
              TestHelper.exec_start_sync(exec_id, %{attach: true, start_container: true})
@@ -56,7 +56,7 @@ defmodule ExecTest do
     :timer.sleep(100)
     :ok = Exec.start(exec_id, %{attach: true, start_container: false})
     assert_receive {:container, ^exec_id, {:jail_output, "test test\n"}}
-    assert_receive {:container, ^exec_id, {:shutdown, :jailed_process_exited}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jailed_process_exited, 0}}}
 
     stop_opts = %{stop_container: true, force_stop: false}
     assert {:ok, ^container_id} = Exec.stop(root_exec_id, stop_opts)
@@ -89,7 +89,7 @@ defmodule ExecTest do
     assert %{id: exec_id} ==
              TestHelper.exec_stop(api_spec, exec_id, %{stop_container: false, force_stop: true})
 
-    error_msg = "#{exec_id} has exited"
+    error_msg = "#{exec_id} has exited with exit-code 137"
     assert [error_msg] == TestHelper.receive_frames(conn)
 
     assert number_of_jailed_processes(container_id) == 1
@@ -125,6 +125,7 @@ defmodule ExecTest do
     {:ok, conn} = TestHelper.exec_start(exec_id, %{attach: true, start_container: false})
     assert {:text, "OK"} == TestHelper.receive_frame(conn)
 
+    :timer.sleep(500)
     assert number_of_jailed_processes(container_id) == 2
 
     assert %{id: ^exec_id} =
@@ -133,7 +134,7 @@ defmodule ExecTest do
                force_stop: false
              })
 
-    msg = "executable #{exec_id} stopped"
+    msg = "executable #{exec_id} and its container exited with exit-code 143"
     assert [msg] == TestHelper.receive_frames(conn)
     assert number_of_jailed_processes(container_id) == 0
     refute Utils.is_container_running?(container_id)

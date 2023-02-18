@@ -8,6 +8,7 @@ ExUnit.start()
 ExUnit.configure(
   seed: 0,
   trace: true,
+  # timeout: 5_000,
   max_failures: 1
 )
 
@@ -110,7 +111,7 @@ defmodule TestHelper do
 
   defp collect_container_output_(exec_id, output) do
     receive do
-      {:container, ^exec_id, {:shutdown, :jail_stopped}} ->
+      {:container, ^exec_id, {:shutdown, {:jail_stopped, _exit_code}}} ->
         output
 
       {:container, ^exec_id, {:jail_output, msg}} ->
@@ -161,6 +162,15 @@ defmodule TestHelper do
       200 => "IdResponse",
       404 => "ErrorResponse"
     })
+  end
+
+  def image_invalid_build(config) do
+    config = Map.merge(%{quiet: false}, config)
+    frames = image_build(config)
+    {finish_msg, build_log} = List.pop_at(frames, -1)
+    Logger.warn("WHAAAT #{inspect(build_log)}")
+    assert <<"image build failed at: ", failed_line::binary>> = finish_msg
+    failed_line
   end
 
   def image_valid_build(config) do

@@ -90,8 +90,15 @@ defmodule Jocker.API.ImageBuild do
   end
 
   # Format and forward elixir messages to client
-  def websocket_info({:image_builder, _pid, {:image_finished, %Schemas.Image{id: id}}}, state) do
+  def websocket_info(
+        {:image_builder, _pid, {:image_build_succesfully, %Schemas.Image{id: id}}},
+        state
+      ) do
     {[{:close, 1000, "image created with id #{id}"}], state}
+  end
+
+  def websocket_info({:image_builder, _pid, {:image_build_failed, failed_line}}, state) do
+    {[{:close, 1000, "image build failed at: #{failed_line}"}], state}
   end
 
   def websocket_info({:image_builder, _pid, {:jail_output, msg}}, state) do

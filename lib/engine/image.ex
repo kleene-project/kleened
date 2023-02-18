@@ -1,5 +1,5 @@
 defmodule Jocker.Engine.Image do
-  alias Jocker.Engine.{ZFS, MetaData, Utils, Layer, Network, OS}
+  alias Jocker.Engine.{ZFS, MetaData, Utils, Layer, Network, OS, Container}
   alias Jocker.API.Schemas
   require Logger
 
@@ -52,7 +52,7 @@ defmodule Jocker.Engine.Image do
           total_steps: length(instructions)
         }
 
-        pid = Process.spawn(fn -> create_image(instructions, state) end, [:link])
+        pid = Process.spawn(fn -> process_instructions(instructions, state) end, [:link])
         {:ok, pid}
 
       {:error, error_msg} ->
@@ -71,39 +71,6 @@ defmodule Jocker.Engine.Image do
         {_, 0} = ZFS.destroy_force(dataset)
         MetaData.delete_image(id)
     end
-  end
-
-  def create_image(instructions, state) do
-    %State{
-      :container => %Schemas.Container{
-        id: container_id,
-        layer_id: layer_id,
-        user: user,
-        env: env,
-        command: cmd
-      }
-    } = Enum.reduce(instructions, state, &process_instructions/2)
-
-    Network.disconnect(container_id, state.network)
-    Network.remove(state.network)
-
-    MetaData.delete_container(container_id)
-    layer = MetaData.get_layer(layer_id)
-    Jocker.Engine.Layer.to_image(layer, container_id)
-
-    img = %Schemas.Image{
-      id: container_id,
-      layer_id: layer_id,
-      user: user,
-      name: state.image_name,
-      tag: state.image_tag,
-      command: cmd,
-      env: env,
-      created: DateTime.to_iso8601(DateTime.utc_now())
-    }
-
-    Jocker.Engine.MetaData.add_image(img)
-    send_msg(state.msg_receiver, {:image_finished, img})
   end
 
   defp verify_instructions([]) do
@@ -126,7 +93,7 @@ defmodule Jocker.Engine.Image do
     verify_instructions(rest)
   end
 
-  defp process_instructions({line, {:from, image_reference}}, state) do
+  defp process_instructions([{line, {:from, image_reference}} | rest], state) do
     Logger.info("Processing instruction: FROM #{image_reference}")
     state = send_status(line, state)
     %Schemas.Image{id: image_id} = Jocker.Engine.MetaData.get_image(image_reference)
@@ -146,11 +113,11 @@ defmodule Jocker.Engine.Image do
     name = Utils.uuid()
 
     {:ok, cont} = Jocker.Engine.Container.create(name, container_config)
-    %State{state | :container => cont}
+    process_instructions(rest, %State{state | :container => cont})
   end
 
   defp process_instructions(
-         {line, {:copy, src_and_dest}},
+         [{line, {:copy, src_and_dest}} | rest],
          %State{container: container, context: context} = state
        ) do
     # TODO Elixir have nice wildcard-expansion stuff that we could use here
@@ -167,26 +134,28 @@ defmodule Jocker.Engine.Image do
       user: "root"
     }
 
-    execute_cmd(config, state)
+    exit_code = execute_cmd(config, state)
     unmount_context(context_in_jail)
-    state
+    validate_result_and_continue_if_valid(exit_code, rest, line, state)
   end
 
-  defp process_instructions({line, {:user, user}}, state) do
+  defp process_instructions([{line, {:user, user}} | rest], state) do
     Logger.info("Processing instruction: USER #{user}")
-    user = shell_evaluate_instruction(user, state)
     state = send_status(line, state)
-    %State{state | container: %Schemas.Container{state.container | user: user}}
+    user = shell_evaluate_instruction(user, state)
+    state = %State{state | container: %Schemas.Container{state.container | user: user}}
+    process_instructions(rest, state)
   end
 
-  defp process_instructions({line, {:cmd, cmd}}, %State{:container => cont} = state) do
+  defp process_instructions([{line, {:cmd, cmd}} | rest], %State{:container => cont} = state) do
     Logger.info("Processing instruction: CMD #{inspect(cmd)}")
     state = send_status(line, state)
-    %State{state | :container => %Schemas.Container{cont | command: cmd}}
+    state = %State{state | :container => %Schemas.Container{cont | command: cmd}}
+    process_instructions(rest, state)
   end
 
   defp process_instructions(
-         {line, {:arg, buildarg}},
+         [{line, {:arg, buildarg}} | rest],
          %State{buildargs_collected: buildargs} = state
        ) do
     Logger.info("Processing instruction: ARG #{buildarg}")
@@ -194,18 +163,20 @@ defmodule Jocker.Engine.Image do
     buildargs = Utils.envlist2map(buildargs)
     buildarg = Utils.envlist2map([buildarg])
     buildargs = Map.merge(buildargs, buildarg)
-    %State{state | buildargs_collected: Utils.map2envlist(buildargs)}
+    state = %State{state | buildargs_collected: Utils.map2envlist(buildargs)}
+    process_instructions(rest, state)
   end
 
-  defp process_instructions({line, {:env, env_vars}}, %State{:container => cont} = state) do
+  defp process_instructions([{line, {:env, env_vars}} | rest], %State{:container => cont} = state) do
     Logger.info("Processing instruction: ENV #{inspect(env_vars)}")
     state = send_status(line, state)
     env_vars = shell_evaluate_instruction(env_vars, state)
     env = Utils.merge_environment_variable_lists(cont.env, [env_vars])
-    %State{state | :container => %Schemas.Container{cont | env: env}}
+    state = %State{state | :container => %Schemas.Container{cont | env: env}}
+    process_instructions(rest, state)
   end
 
-  defp process_instructions({line, {:run, cmd}}, %State{container: container} = state) do
+  defp process_instructions([{line, {:run, cmd}} | rest], %State{container: container} = state) do
     Logger.info("Processing instruction: RUN #{inspect(cmd)}")
     state = send_status(line, state)
     env = create_environment_variables(state)
@@ -217,8 +188,51 @@ defmodule Jocker.Engine.Image do
       user: container.user
     }
 
-    execute_cmd(config, state)
-    state
+    exit_code = execute_cmd(config, state)
+    validate_result_and_continue_if_valid(exit_code, rest, line, state)
+  end
+
+  defp process_instructions(
+         [],
+         %State{
+           :container => %Schemas.Container{
+             id: container_id,
+             layer_id: layer_id,
+             user: user,
+             env: env,
+             command: cmd
+           }
+         } = state
+       ) do
+    Network.disconnect(container_id, state.network)
+    Network.remove(state.network)
+    MetaData.delete_container(container_id)
+    layer = MetaData.get_layer(layer_id)
+    Jocker.Engine.Layer.to_image(layer, container_id)
+
+    img = %Schemas.Image{
+      id: container_id,
+      layer_id: layer_id,
+      user: user,
+      name: state.image_name,
+      tag: state.image_tag,
+      command: cmd,
+      env: env,
+      created: DateTime.to_iso8601(DateTime.utc_now())
+    }
+
+    Jocker.Engine.MetaData.add_image(img)
+    send_msg(state.msg_receiver, {:image_build_succesfully, img})
+  end
+
+  defp validate_result_and_continue_if_valid(0, rest, _line, state) do
+    process_instructions(rest, state)
+  end
+
+  defp validate_result_and_continue_if_valid(_nonzero_exit_code, _rest, line, state) do
+    send_msg(state.msg_receiver, {:image_build_failed, line})
+    Container.remove(state.container.id)
+    Network.remove(state.network)
   end
 
   defp create_environment_variables(%State{
@@ -291,8 +305,8 @@ defmodule Jocker.Engine.Image do
 
   defp relay_output_and_await_shutdown(id, exec_id, state) do
     receive do
-      {:container, ^exec_id, {:shutdown, :jail_stopped}} ->
-        :ok
+      {:container, ^exec_id, {:shutdown, {:jail_stopped, exit_code}}} ->
+        exit_code
 
       {:container, ^exec_id, msg} ->
         if not state.quiet do
@@ -337,6 +351,6 @@ defmodule Jocker.Engine.Image do
 
   defp unmount_context(context_in_jail) do
     Utils.unmount(context_in_jail)
-    {_output, 0} = System.cmd("/bin/rm", ["-r", context_in_jail], stderr_to_stdout: true)
+    System.cmd("/bin/rm", ["-r", context_in_jail], stderr_to_stdout: true)
   end
 end

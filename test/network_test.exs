@@ -184,7 +184,7 @@ defmodule NetworkTest do
     assert interface_exists?("#{epair}a")
 
     Container.stop(container_id)
-    assert await_jail_output(exec_id, {:shutdown, :jail_stopped})
+    assert await_jail_output(exec_id, {:shutdown, {:jail_stopped, 1}})
     assert not interface_exists?("#{epair}a")
 
     cleanup(api_spec, container_id, network)
@@ -210,7 +210,7 @@ defmodule NetworkTest do
     assert interface_exists?("#{epair}a")
 
     Container.stop(container_id)
-    assert await_jail_output(exec_id, {:shutdown, :jail_stopped})
+    assert await_jail_output(exec_id, {:shutdown, {:jail_stopped, 1}})
 
     assert not interface_exists?("#{epair}a")
 
@@ -438,7 +438,8 @@ defmodule NetworkTest do
 
   defp await_jail_output(exec_id, msg) do
     receive do
-      {:container, ^exec_id, ^msg} -> true
+      {:container, ^exec_id, ^msg} ->
+        true
     after
       5_000 -> false
     end

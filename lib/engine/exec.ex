@@ -178,7 +178,7 @@ defmodule Jocker.Engine.Exec do
         msg = "#{state.exec_id} stopped with exit code #{exit_code}: {:shutdown, :jail_stopped}"
         Logger.debug(msg)
         jail_cleanup(cont)
-        relay_msg({:shutdown, :jail_stopped}, state)
+        relay_msg({:shutdown, {:jail_stopped, exit_code}}, state)
 
       true ->
         msg =
@@ -186,7 +186,7 @@ defmodule Jocker.Engine.Exec do
 
         Logger.debug(msg)
 
-        relay_msg({:shutdown, :jailed_process_exited}, state)
+        relay_msg({:shutdown, {:jailed_process_exited, exit_code}}, state)
     end
   end
 

@@ -55,7 +55,7 @@ defmodule ContainerTest do
 
     assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
 
-    assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 1}}}
     refute TestHelper.devfs_mounted(cont)
   end
 
@@ -87,7 +87,7 @@ defmodule ContainerTest do
     :ok = Exec.start(exec_id, %{attach: true, start_container: true})
 
     assert_receive {:container, ^exec_id, {:jail_output, "test test\n"}}
-    assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}, 5_000
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}, 5_000
     refute TestHelper.devfs_mounted(container)
   end
 
@@ -117,7 +117,7 @@ defmodule ContainerTest do
 
     assert TestHelper.devfs_mounted(cont)
     assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
-    assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 1}}}
     assert not TestHelper.devfs_mounted(cont)
   end
 
@@ -136,7 +136,7 @@ defmodule ContainerTest do
     assert_receive {:container, ^exec_id,
                     {:jail_output, "uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"}}
 
-    assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
   end
 
   test "start a container with environment variables set", %{api_spec: api_spec} do
@@ -149,7 +149,7 @@ defmodule ContainerTest do
     {_cont, exec_id} = TestHelper.container_start_attached(api_spec, "testcont", config)
 
     assert_receive {:container, ^exec_id, {:jail_output, "PWD=/\nLOOL=test2\nLOL=test\n"}}
-    assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
   end
 
   test "start container quickly several times to verify reproducibility", %{api_spec: api_spec} do
@@ -245,7 +245,7 @@ defmodule ContainerTest do
 
   defp start_n_attached_containers_and_receive_output(container_id, number_of_starts) do
     {:ok, exec_id} = Exec.create(container_id)
-    stop_msg = "executable #{exec_id} stopped"
+    stop_msg = "executable #{exec_id} and its container exited with exit-code 0"
 
     assert ["OK", "FreeBSD\n", stop_msg] ==
              TestHelper.exec_start_sync(exec_id, %{attach: true, start_container: true})
