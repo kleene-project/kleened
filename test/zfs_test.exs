@@ -1,9 +1,12 @@
 defmodule ZFSTest do
+  use ExUnit.Case
+  require Logger
+
   alias Jocker.Engine.Config
   alias Config
   import Jocker.Engine.ZFS
 
-  use ExUnit.Case
+  @moduletag :capture_log
 
   setup_all do
     start_supervised(Config)

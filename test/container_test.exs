@@ -2,13 +2,14 @@ defmodule ContainerTest do
   require Logger
   use Jocker.API.ConnCase
   alias Jocker.Engine.{Container, Image, Exec, Utils, MetaData}
+  alias Jocker.API.Schemas
 
   @moduletag :capture_log
 
   setup do
     on_exit(fn ->
       Jocker.Engine.MetaData.list_containers()
-      |> Enum.map(fn %{id: id} -> Container.destroy(id) end)
+      |> Enum.map(fn %{id: id} -> Container.remove(id) end)
     end)
 
     :ok
@@ -19,47 +20,47 @@ defmodule ContainerTest do
   } do
     assert [] == TestHelper.container_list(api_spec)
 
-    %Container{id: container_id, name: name, image_id: img_id} =
+    %Schemas.Container{id: container_id, name: name, image_id: img_id} =
       container_succesfully_create(api_spec, "testcont", %{})
 
-    %Image{id: id} = Jocker.Engine.MetaData.get_image("base")
+    %Schemas.Image{id: id} = Jocker.Engine.MetaData.get_image("base")
     assert id == img_id
 
     assert [%{id: ^container_id, name: ^name, image_id: ^img_id}] =
              TestHelper.container_list(api_spec)
 
-    %Container{id: container_id2, name: name2, image_id: ^img_id} =
+    %Schemas.Container{id: container_id2, name: name2, image_id: ^img_id} =
       container_succesfully_create(api_spec, "testcont2", %{})
 
     assert [%{id: ^container_id2, name: ^name2, image_id: ^img_id}, %{id: ^container_id}] =
              TestHelper.container_list(api_spec)
 
-    %{id: ^container_id} = TestHelper.container_destroy(api_spec, container_id)
+    %{id: ^container_id} = TestHelper.container_remove(api_spec, container_id)
     assert [%{id: ^container_id2}] = TestHelper.container_list(api_spec)
 
-    %{id: ^container_id2} = TestHelper.container_destroy(api_spec, container_id2)
+    %{id: ^container_id2} = TestHelper.container_remove(api_spec, container_id2)
     assert [] = TestHelper.container_list(api_spec)
 
     assert %{message: "no such container"} ==
-             TestHelper.container_destroy(api_spec, container_id2)
+             TestHelper.container_remove(api_spec, container_id2)
   end
 
   test "start and stop a container (using devfs)", %{api_spec: api_spec} do
     config = %{cmd: ["/bin/sleep", "10"]}
 
-    {%Container{id: container_id} = cont, exec_id} =
+    {%Schemas.Container{id: container_id} = cont, exec_id} =
       TestHelper.container_start_attached(api_spec, "testcont", config)
 
     assert TestHelper.devfs_mounted(cont)
 
     assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
 
-    assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 1}}}
     refute TestHelper.devfs_mounted(cont)
   end
 
   test "start container without attaching to it", %{api_spec: api_spec} do
-    %Container{id: container_id} =
+    %Schemas.Container{id: container_id} =
       container =
       container_succesfully_create(api_spec, "ws_test_container", %{
         image: "base",
@@ -71,13 +72,13 @@ defmodule ContainerTest do
     assert [:not_attached] ==
              TestHelper.exec_start_sync(exec_id, %{attach: false, start_container: true})
 
-    {:ok, ^container_id} = Container.destroy(container_id)
+    {:ok, ^container_id} = Container.remove(container_id)
   end
 
   test "start a container (using devfs), attach to it and receive output", %{api_spec: api_spec} do
     cmd_expected = ["/bin/echo", "test test"]
 
-    %Container{id: container_id, command: command} =
+    %Schemas.Container{id: container_id, command: command} =
       container = container_succesfully_create(api_spec, "testcont", %{cmd: cmd_expected})
 
     assert cmd_expected == command
@@ -86,12 +87,12 @@ defmodule ContainerTest do
     :ok = Exec.start(exec_id, %{attach: true, start_container: true})
 
     assert_receive {:container, ^exec_id, {:jail_output, "test test\n"}}
-    assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}, 5_000
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}, 5_000
     refute TestHelper.devfs_mounted(container)
   end
 
   test "start a container and force-stop it", %{api_spec: api_spec} do
-    %Container{id: container_id} =
+    %Schemas.Container{id: container_id} =
       container_succesfully_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
     {:ok, exec_id} = Exec.create(container_id)
@@ -111,12 +112,12 @@ defmodule ContainerTest do
       user: "root"
     }
 
-    {%Container{id: container_id} = cont, exec_id} =
+    {%Schemas.Container{id: container_id} = cont, exec_id} =
       TestHelper.container_start_attached(api_spec, "testcont", config)
 
     assert TestHelper.devfs_mounted(cont)
     assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
-    assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 1}}}
     assert not TestHelper.devfs_mounted(cont)
   end
 
@@ -135,7 +136,7 @@ defmodule ContainerTest do
     assert_receive {:container, ^exec_id,
                     {:jail_output, "uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"}}
 
-    assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
   end
 
   test "start a container with environment variables set", %{api_spec: api_spec} do
@@ -148,7 +149,7 @@ defmodule ContainerTest do
     {_cont, exec_id} = TestHelper.container_start_attached(api_spec, "testcont", config)
 
     assert_receive {:container, ^exec_id, {:jail_output, "PWD=/\nLOOL=test2\nLOL=test\n"}}
-    assert_receive {:container, ^exec_id, {:shutdown, :jail_stopped}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
   end
 
   test "start container quickly several times to verify reproducibility", %{api_spec: api_spec} do
@@ -160,7 +161,7 @@ defmodule ContainerTest do
 
     container_id = container.id
     :ok = start_n_attached_containers_and_receive_output(container.id, 20)
-    {:ok, ^container_id} = Container.destroy(container_id)
+    {:ok, ^container_id} = Container.remove(container_id)
   end
 
   test "start a container with environment variables", %{api_spec: api_spec} do
@@ -171,8 +172,14 @@ defmodule ContainerTest do
     CMD /bin/sh -c "printenv"
     """
 
+    config_image = %{
+      context: "./",
+      dockerfile: "tmp_dockerfile",
+      tag: "test:latest"
+    }
+
     TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
-    {image, _messages} = TestHelper.build_and_return_image("./", "tmp_dockerfile", "test:latest")
+    {image, _build_log} = TestHelper.image_valid_build(config_image)
 
     config = %{
       image: image.id,
@@ -187,7 +194,7 @@ defmodule ContainerTest do
     expected_set = MapSet.new(["PWD=/", "TEST=lol", "TEST2=lool test", "TEST3=loool"])
     assert MapSet.equal?(env_vars_set, expected_set)
 
-    Container.destroy(container.id)
+    Container.remove(container.id)
     Image.destroy(image.id)
   end
 
@@ -201,8 +208,14 @@ defmodule ContainerTest do
     CMD /bin/sh -c "printenv"
     """
 
+    config_image = %{
+      context: "./",
+      dockerfile: "tmp_dockerfile",
+      tag: "test:latest"
+    }
+
     TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
-    {image, _messages} = TestHelper.build_and_return_image("./", "tmp_dockerfile", "test:latest")
+    {image, _build_log} = TestHelper.image_valid_build(config_image)
 
     config = %{
       image: image.id,
@@ -217,7 +230,7 @@ defmodule ContainerTest do
     expected_set = MapSet.new(["PWD=/", "TEST=new_value", "TEST2=lool test"])
     assert MapSet.equal?(env_vars_set, expected_set)
 
-    Container.destroy(container.id)
+    Container.remove(container.id)
     Image.destroy(image.id)
   end
 
@@ -232,7 +245,7 @@ defmodule ContainerTest do
 
   defp start_n_attached_containers_and_receive_output(container_id, number_of_starts) do
     {:ok, exec_id} = Exec.create(container_id)
-    stop_msg = "executable #{exec_id} stopped"
+    stop_msg = "executable #{exec_id} and its container exited with exit-code 0"
 
     assert ["OK", "FreeBSD\n", stop_msg] ==
              TestHelper.exec_start_sync(exec_id, %{attach: true, start_container: true})

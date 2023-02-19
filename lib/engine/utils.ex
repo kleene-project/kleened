@@ -20,25 +20,19 @@ defmodule Jocker.Engine.Utils do
         [ipv4_or_host_str, port_str] ->
           port = String.to_integer(port_str)
 
-          result =
-            ipv4_or_host_str
-            |> String.to_charlist()
-            |> :inet.parse_ipv4_address()
+          result = decode_ip(ipv4_or_host_str, :ipv4)
 
           case result do
             {:ok, address} -> {:ipv4, address, port}
-            # We assume that if it is ipv4-address it is probably a hostname instead:
+            # We assume that if it is not a ipv4-address it is probably a hostname instead:
             {:error, _} -> {:hostname, ipv4_or_host_str, port}
           end
 
         ipv6_addressport ->
           {port_str, ipv6address_splitup} = List.pop_at(ipv6_addressport, -1)
 
-          {:ok, address} =
-            ipv6address_splitup
-            |> Enum.join(":")
-            |> String.to_charlist()
-            |> :inet.parse_ipv6_address()
+          ipv6_address = ipv6address_splitup |> Enum.join(":")
+          {:ok, address} = decode_ip(ipv6_address, :ipv6)
 
           port = String.to_integer(port_str)
           {:ipv6, address, port}
@@ -46,6 +40,15 @@ defmodule Jocker.Engine.Utils do
     rescue
       error_msg ->
         {:error, error_msg}
+    end
+  end
+
+  def decode_ip(ip, ver) do
+    ip_charlist = String.to_charlist(ip)
+
+    case ver do
+      :ipv4 -> :inet.parse_ipv4_address(ip_charlist)
+      :ipv6 -> :inet.parse_ipv6_address(ip_charlist)
     end
   end
 
@@ -97,12 +100,12 @@ defmodule Jocker.Engine.Utils do
 
   def merge_environment_variable_lists(envlist1, envlist2) do
     # list2 overwrites environment varibles from list1
-    map1 = env_vars2map(envlist1)
-    map2 = env_vars2map(envlist2)
-    Map.merge(map1, map2) |> map2env_vars()
+    map1 = envlist2map(envlist1)
+    map2 = envlist2map(envlist2)
+    Map.merge(map1, map2) |> map2envlist()
   end
 
-  defp env_vars2map(envs) do
+  def envlist2map(envs) do
     convert = fn envvar ->
       List.to_tuple(String.split(envvar, "=", parts: 2))
     end
@@ -110,7 +113,7 @@ defmodule Jocker.Engine.Utils do
     Map.new(Enum.map(envs, convert))
   end
 
-  defp map2env_vars(env_map) do
+  def map2envlist(env_map) do
     Map.to_list(env_map) |> Enum.map(fn {name, value} -> Enum.join([name, value], "=") end)
   end
 

@@ -27,7 +27,7 @@ defmodule Jocker.API.Router do
   get("/networks/list", to: API.Network.List)
   post("/networks/create", to: API.Network.Create)
   delete("/networks/:network_id", to: API.Network.Remove)
-  post("/networks/:network_id/connect/:container_id", to: API.Network.Connect)
+  post("/networks/:network_id/connect", to: API.Network.Connect)
   post("/networks/:network_id/disconnect/:container_id", to: API.Network.Disconnect)
 
   # Volumes:
@@ -46,7 +46,7 @@ defmodule Jocker.API.Router do
       {:_,
        [
          {"/exec/:exec_id/start", API.ExecStartWebSocket, []},
-         {"/images/build", Jocker.API.ImageBuild, []},
+         {"/images/build", API.ImageBuild, []},
          {:_, Plug.Cowboy.Handler, {Jocker.API.Router, []}}
        ]}
     ]

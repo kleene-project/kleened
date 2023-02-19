@@ -5,39 +5,26 @@ defmodule Jocker.Engine.Container do
               starting_port: nil
   end
 
-  @derive Jason.Encoder
-  defstruct id: "",
-            name: "",
-            pid: "",
-            command: [],
-            layer_id: "",
-            image_id: "",
-            user: "",
-            parameters: [],
-            env_vars: [],
-            created: ""
-
   alias __MODULE__, as: Container
 
   require Logger
-  alias Jocker.Engine.{MetaData, Volume, Layer, Network, Image, Utils}
-  alias Jocker.API.Schemas.ContainerConfig
+  alias Jocker.Engine.{MetaData, Volume, Layer, Network, Utils}
+  alias Jocker.API.Schemas
 
   @type t() ::
-          %Container{
+          %Schemas.Container{
             id: String.t(),
             name: String.t(),
-            pid: pid() | String.t(),
             command: [String.t()],
             layer_id: String.t(),
             image_id: String.t(),
             user: String.t(),
-            parameters: [String.t()],
-            env_vars: [String.t()],
+            jail_param: [String.t()],
+            env: [String.t()],
             created: String.t()
           }
 
-  @type create_opts() :: %ContainerConfig{}
+  @type create_opts() :: %Schemas.ContainerConfig{}
 
   @type list_containers_opts :: [
           {:all, boolean()}
@@ -55,16 +42,16 @@ defmodule Jocker.Engine.Container do
     create_(name, options)
   end
 
-  @spec destroy(id_or_name()) :: {:ok, container_id()} | {:error, :not_found}
-  def destroy(id_or_name) do
+  @spec remove(id_or_name()) :: {:ok, container_id()} | {:error, :not_found}
+  def remove(id_or_name) do
     cont = MetaData.get_container(id_or_name)
-    destroy_(cont)
+    remove_(cont)
   end
 
   @spec stop(id_or_name()) :: {:ok, String.t()} | {:error, String.t()}
   def stop(id_or_name) do
     case MetaData.get_container(id_or_name) do
-      %Container{id: container_id} ->
+      %Schemas.Container{id: container_id} ->
         stop_container(container_id)
 
       :not_found ->
@@ -82,10 +69,10 @@ defmodule Jocker.Engine.Container do
   ### ===================================================================
   defp create_(
          name,
-         %ContainerConfig{
+         %Schemas.ContainerConfig{
            image: image_name,
            user: user,
-           env: env_vars,
+           env: env,
            networks: networks,
            volumes: volumes,
            cmd: command,
@@ -96,19 +83,19 @@ defmodule Jocker.Engine.Container do
       :not_found ->
         {:error, :image_not_found}
 
-      %Image{
+      %Schemas.Image{
         id: image_id,
         user: image_user,
         command: image_command,
         layer_id: parent_layer_id,
-        env_vars: img_env_vars
+        env: img_env
       } ->
         Logger.debug("creating container with config: #{inspect(container_config)}")
         container_id = Jocker.Engine.Utils.uuid()
 
         parent_layer = Jocker.Engine.MetaData.get_layer(parent_layer_id)
         %Layer{id: layer_id} = Layer.new(parent_layer, container_id)
-        env_vars = Utils.merge_environment_variable_lists(img_env_vars, env_vars)
+        env = Utils.merge_environment_variable_lists(img_env, env)
 
         command =
           case command do
@@ -122,15 +109,15 @@ defmodule Jocker.Engine.Container do
             _ -> user
           end
 
-        cont = %Container{
+        cont = %Schemas.Container{
           id: container_id,
           name: name,
           command: command,
           layer_id: layer_id,
           image_id: image_id,
           user: user,
-          parameters: jail_param,
-          env_vars: env_vars,
+          jail_param: jail_param,
+          env: env,
           created: DateTime.to_iso8601(DateTime.utc_now())
         }
 
@@ -139,14 +126,21 @@ defmodule Jocker.Engine.Container do
 
         # Store new container and connect to the networks
         MetaData.add_container(cont)
-        Enum.map(networks, &Network.connect(container_id, &1))
+
+        Map.to_list(networks)
+        |> Enum.map(fn {network_name, config} ->
+          config_list = Map.to_list(Map.put(config, :container, container_id))
+          config = struct(Schemas.EndPointConfig, config_list)
+          Network.connect(network_name, config)
+        end)
+
         {:ok, MetaData.get_container(container_id)}
     end
   end
 
-  defp destroy_(:not_found), do: {:error, :not_found}
+  defp remove_(:not_found), do: {:error, :not_found}
 
-  defp destroy_(%Container{id: container_id, layer_id: layer_id} = cont) do
+  defp remove_(%Schemas.Container{id: container_id, layer_id: layer_id} = cont) do
     Network.disconnect_all(container_id)
     Volume.destroy_mounts(cont)
     MetaData.delete_container(container_id)
@@ -193,11 +187,6 @@ defmodule Jocker.Engine.Container do
       true -> containers
       false -> Enum.filter(containers, & &1[:running])
     end
-  end
-
-  def extract_ips(container_id, network_id, ip_list) do
-    config = MetaData.get_endpoint_config(container_id, network_id)
-    Enum.concat(config.ip_addresses, ip_list)
   end
 
   def is_running?(container_id) do

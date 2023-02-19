@@ -105,8 +105,28 @@ defmodule Jocker.API.Container do
       name = conn.query_params["name"]
       container_config = conn.body_params
 
+      # Casting endpoint config into proper schema (this ensures that all keys is converted from string to atoms)
+      networks =
+        Enum.map(
+          Map.to_list(container_config.networks),
+          fn
+            {network_name, endpoint_config}
+            when is_struct(endpoint_config, Schemas.EndPointConfig) ->
+              {network_name, endpoint_config}
+
+            {network_name, endpoint_config} ->
+              {:ok, endpoint_config} =
+                OpenApiSpex.Cast.cast(Schemas.EndPointConfig.schema(), endpoint_config)
+
+              {network_name, endpoint_config}
+          end
+        )
+        |> Map.new()
+
+      container_config = Map.put(container_config, :networks, networks)
+
       case Container.create(name, container_config) do
-        {:ok, %Container{id: id}} ->
+        {:ok, %Schemas.Container{id: id}} ->
           send_resp(conn, 201, Utils.id_response(id))
 
         {:error, :image_not_found} ->
@@ -121,7 +141,7 @@ defmodule Jocker.API.Container do
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,
-      operation_id: "Container.Destroy"
+      operation_id: "Container.Remove"
     )
 
     plug(:remove)
@@ -129,7 +149,7 @@ defmodule Jocker.API.Container do
     def open_api_operation(_) do
       %Operation{
         summary: "Delete a container from the file system and jocker.",
-        operationId: "Container.Destroy",
+        operationId: "Container.Remove",
         parameters: [
           parameter(
             :container_id,
@@ -153,14 +173,14 @@ defmodule Jocker.API.Container do
     def remove(conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
-      case Container.destroy(conn.params.container_id) do
+      case Container.remove(conn.params.container_id) do
         {:ok, container_id} ->
           send_resp(conn, 200, Utils.id_response(container_id))
 
         {:error, :not_found} ->
           send_resp(conn, 404, Utils.error_response("no such container"))
 
-          # Atm. the destroy api automatically stops a container. Docker Engine returns this error.
+          # Atm. the remove api automatically stops a container. Docker Engine returns this error.
           # {:error, :already_started} ->
           #  send_resp(conn, 409, "you cannot remove a running container")
       end

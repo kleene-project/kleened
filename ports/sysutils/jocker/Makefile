@@ -21,7 +21,7 @@ USE_RC_SUBR=	jockerd
 
 USE_GITHUB=		yes
 
-GH_TUPLE=		lgandersen:jocker_dist:b5e676f:DEFAULT
+GH_TUPLE=		lgandersen:jocker:c45cfab:DEFAULT
 
 MIX_TARGET=		release
 ELIXIR_APP_NAME?=	${PORTNAME}
@@ -31,8 +31,8 @@ MIX_ENV_NAME?=		prod
 MIX_CMD?=		${LOCALBASE}/bin/mix
 MIX_COMPILE?=		${SETENV} ${MIX_ENV} LANG=${ELIXIR_LOCALE} LC_ALL=${ELIXIR_LOCALE} MIX_ENV=${MIX_ENV_NAME} ${MIX_CMD} ${MIX_TARGET}
 
-ERTS_VSN=		erts-10.3.5.14
-CRYPTO_VSN=		crypto-4.4.2.2
+ERTS_VSN=		erts-12.3.2.6
+CRYPTO_VSN=		crypto-5.0.6.3
 
 PLIST_SUB=	ERTS_VSN=${ERTS_VSN} CRYPTO_VSN=${CRYPTO_VSN}
 
@@ -42,16 +42,13 @@ RELEASE_BINARIES=	escript dialyzer erlexec beam.smp heart dyn_erl to_erl \
 
 do-build:
 	@cd ${WRKSRC} && ${SETENV} MIX_HOME=${LOCALBASE}/bin ${MIX_COMPILE}
-	@cd ${WRKSRC} && ${SETENV} MIX_HOME=${LOCALBASE}/bin ${MIX_CMD} escript.build
 
 do-install:
 	${INSTALL_DATA} ${WRKSRC}/example/jocker_config.yaml ${STAGEDIR}${PREFIX}/etc/
-	${INSTALL_SCRIPT} ${WRKSRC}/jocker ${STAGEDIR}${PREFIX}/bin/
 	${MKDIR} ${STAGEDIR}${PREFIX}/lib/jockerd/bin
 	${INSTALL_SCRIPT} ${WRKSRC}/_build/prod/rel/jockerd/bin/jockerd ${STAGEDIR}${PREFIX}/lib/jockerd/bin/
 	cd ${RELEASE_PATH}/lib && ${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/lib/jockerd/lib
 	cd ${RELEASE_PATH}/${ERTS_VSN}/bin && ${COPYTREE_BIN} . ${STAGEDIR}${PREFIX}/lib/jockerd/${ERTS_VSN}/bin
-	cd ${RELEASE_PATH}/${ERTS_VSN}/lib && ${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/lib/jockerd/${ERTS_VSN}/lib
 	cd ${RELEASE_PATH}/releases && ${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/lib/jockerd/releases
 	${INSTALL_SCRIPT} ${RELEASE_PATH}/releases/0.0.1/elixir ${STAGEDIR}${PREFIX}/lib/jockerd/releases/0.0.1/
 	${INSTALL_SCRIPT} ${RELEASE_PATH}/releases/0.0.1/iex ${STAGEDIR}${PREFIX}/lib/jockerd/releases/0.0.1/

@@ -49,6 +49,9 @@ defmodule Jocker.Engine.Dockerfile do
         {"ENV", env_var} ->
           {:env, clean_envvar(env_var)}
 
+        {"ARG", arg_var} ->
+          {:arg, clean_argvar(arg_var)}
+
         {"RUN", <<"[", _::binary>> = json_cmd} ->
           {:run, json_decode(json_cmd)}
 
@@ -76,9 +79,9 @@ defmodule Jocker.Engine.Dockerfile do
         {"VOLUME", args} ->
           {:volume, args}
 
-        unknown_instruction ->
-          Logger.info("Invalid instruction: #{instruction_line}")
-          {:unparsed, unknown_instruction}
+        _unknown_instruction ->
+          Logger.debug("Invalid instruction: #{instruction_line}")
+          {:unparsed, instruction_line}
       end
 
     {instruction_line, instr}
@@ -103,8 +106,32 @@ defmodule Jocker.Engine.Dockerfile do
   end
 
   defp clean_envvar(env_var) do
-    [key, value] = String.split(env_var, "=")
+    [varname, value] = String.split(env_var, "=", parts: 2)
     value = String.trim(value, "\"")
-    "#{key}=#{value}"
+
+    validate_env_name(varname, value)
+  end
+
+  defp clean_argvar(arg_var) do
+    arg_var = String.trim(arg_var)
+
+    {varname, value} =
+      case String.split(arg_var, "=", parts: 2) do
+        [varname] -> {varname, ""}
+        [varname, default_value] -> {varname, String.trim(default_value, "\"")}
+      end
+
+    validate_env_name(varname, value)
+  end
+
+  defp validate_env_name(varname, value) do
+    # POSIX requirements for env. variable name:
+    case String.match?(varname, ~r/^[a-zA-Z_][a-zA-Z0-9_]+$/) do
+      true ->
+        "#{varname}=#{value}"
+
+      false ->
+        {:error, "ENV/ARG variable name is invalid"}
+    end
   end
 end

@@ -1,4 +1,5 @@
-alias Jocker.Engine.{ZFS, Config, Container, Layer, Exec, MetaData}
+alias Jocker.Engine.{ZFS, Config, Layer, Exec, MetaData}
+alias Jocker.API.Schemas
 require Logger
 
 Code.put_compiler_option(:warnings_as_errors, true)
@@ -7,6 +8,7 @@ ExUnit.start()
 ExUnit.configure(
   seed: 0,
   trace: true,
+  # timeout: 5_000,
   max_failures: 1
 )
 
@@ -38,10 +40,24 @@ defmodule TestHelper do
   end
 
   def container_create(api_spec, name, config) when not is_map_key(config, :networks) do
-    container_create(api_spec, name, Map.put(config, :networks, ["host"]))
+    config = Map.put(config, :networks, ["host"])
+
+    container_create(api_spec, name, config)
   end
 
   def container_create(api_spec, name, config) do
+    config =
+      case is_list(config.networks) do
+        true ->
+          networks_map =
+            Map.new(Enum.map(config.networks, &{&1, %Schemas.EndPointConfig{container: "dummy"}}))
+
+          %{config | networks: networks_map}
+
+        false ->
+          config
+      end
+
     assert_schema(config, "ContainerConfig", api_spec)
 
     response =
@@ -67,7 +83,7 @@ defmodule TestHelper do
     })
   end
 
-  def container_destroy(api_spec, name) do
+  def container_remove(api_spec, name) do
     response =
       conn(:delete, "/containers/#{name}")
       |> Router.call(@opts)
@@ -95,7 +111,7 @@ defmodule TestHelper do
 
   defp collect_container_output_(exec_id, output) do
     receive do
-      {:container, ^exec_id, {:shutdown, :jail_stopped}} ->
+      {:container, ^exec_id, {:shutdown, {:jail_stopped, _exit_code}}} ->
         output
 
       {:container, ^exec_id, {:jail_output, msg}} ->
@@ -148,6 +164,15 @@ defmodule TestHelper do
     })
   end
 
+  def image_invalid_build(config) do
+    config = Map.merge(%{quiet: false}, config)
+    frames = image_build(config)
+    {finish_msg, build_log} = List.pop_at(frames, -1)
+    Logger.warn("WHAAAT #{inspect(build_log)}")
+    assert <<"image build failed at: ", failed_line::binary>> = finish_msg
+    failed_line
+  end
+
   def image_valid_build(config) do
     config = Map.merge(%{quiet: false}, config)
     frames = image_build(config)
@@ -158,6 +183,20 @@ defmodule TestHelper do
   end
 
   def image_build(config) do
+    config =
+      case Map.has_key?(config, :buildargs) do
+        true ->
+          {:ok, buildargs_json} = Jason.encode(config.buildargs)
+          Map.put(config, :buildargs, buildargs_json)
+
+        false ->
+          config
+      end
+
+    image_build_raw(config)
+  end
+
+  def image_build_raw(config) do
     query_params = Plug.Conn.Query.encode(config)
     endpoint = "/images/build?#{query_params}"
 
@@ -233,13 +272,19 @@ defmodule TestHelper do
       |> Router.call(@opts)
 
     validate_response(api_spec, response, %{
-      200 => "NetworkSummaryList"
+      200 => "NetworkList"
     })
   end
 
-  def network_connect(api_spec, container_id, network_id) do
+  def network_connect(api_spec, network_id, container_id) when is_binary(container_id) do
+    connect_config = %{container: container_id}
+    network_connect(api_spec, network_id, connect_config)
+  end
+
+  def network_connect(api_spec, network_id, config) do
     response =
-      conn(:post, "/networks/#{network_id}/connect/#{container_id}")
+      conn(:post, "/networks/#{network_id}/connect", config)
+      |> put_req_header("content-type", "application/json")
       |> Router.call(@opts)
 
     validate_response(api_spec, response, %{
@@ -383,36 +428,13 @@ defmodule TestHelper do
     ZFS.create(zroot)
   end
 
-  def devfs_mounted(%Container{layer_id: layer_id}) do
+  def devfs_mounted(%Schemas.Container{layer_id: layer_id}) do
     %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
     devfs_path = Path.join(mountpoint, "dev")
 
     case System.cmd("sh", ["-c", "mount | grep \"devfs on #{devfs_path}\""]) do
       {"", 1} -> false
       {_output, 0} -> true
-    end
-  end
-
-  def build_and_return_image(context, dockerfile, tag) do
-    quiet = false
-    {:ok, pid} = Jocker.Engine.Image.build(context, dockerfile, tag, quiet)
-    {_img, _messages} = result = receive_imagebuilder_results(pid, [])
-    result
-  end
-
-  def receive_imagebuilder_results(pid, msg_list) do
-    receive do
-      {:image_builder, ^pid, {:image_finished, img}} ->
-        {img, Enum.reverse(msg_list)}
-
-      {:image_builder, ^pid, {:jail_output, msg}} ->
-        receive_imagebuilder_results(pid, [msg | msg_list])
-
-      {:image_builder, ^pid, msg} ->
-        receive_imagebuilder_results(pid, [msg | msg_list])
-
-      other ->
-        Logger.warn("\nError! Received unkown message #{inspect(other)}")
     end
   end
 

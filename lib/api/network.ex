@@ -25,7 +25,7 @@ defmodule Jocker.API.Network do
         description: "Returns a list of networks.",
         operationId: "Network.List",
         responses: %{
-          200 => response("no error", "application/json", Schemas.NetworkSummaryList),
+          200 => response("no error", "application/json", Schemas.NetworkList),
           500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
@@ -79,7 +79,7 @@ defmodule Jocker.API.Network do
       options = conn.body_params
 
       case Network.create(options) do
-        {:ok, %Network{id: id}} ->
+        {:ok, %Schemas.Network{id: id}} ->
           send_resp(conn, 201, Utils.id_response(id))
 
         {:error, msg} ->
@@ -138,6 +138,11 @@ defmodule Jocker.API.Network do
   defmodule Connect do
     use Plug.Builder
 
+    plug(Plug.Parsers,
+      parsers: [:json],
+      json_decoder: Jason
+    )
+
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,
       operation_id: "Network.Connect"
@@ -156,15 +161,15 @@ defmodule Jocker.API.Network do
             %Schema{type: :string},
             "ID or name of the network. An initial segment of the id can be supplied if it uniquely determines the network.",
             required: true
-          ),
-          parameter(
-            :container_id,
-            :path,
-            %Schema{type: :string},
-            "ID or name of the container. An initial segment of the id can be supplied if it uniquely determines the network.",
-            required: true
           )
         ],
+        requestBody:
+          request_body(
+            "Connection configuration.",
+            "application/json",
+            Schemas.EndPointConfig,
+            required: true
+          ),
         responses: %{
           # 204 => response("operation was succesful", "application/json", Schemas.IdResponse),
           204 => %Response{description: "operation was succesful"},
@@ -183,9 +188,9 @@ defmodule Jocker.API.Network do
     def connect(conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
       network_id = conn.params.network_id
-      container_id = conn.params.container_id
+      config = conn.body_params
 
-      case Network.connect(container_id, network_id) do
+      case Network.connect(network_id, config) do
         {:ok, _endpoint_config} ->
           send_resp(conn, 204, "")
 

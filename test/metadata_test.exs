@@ -1,6 +1,6 @@
 defmodule MetaDataTest do
   use ExUnit.Case
-  alias Jocker.Engine.{Config, Image, Container, Network, Volume.Mount, Layer}
+  alias Jocker.Engine.{Config, Volume.Mount, Layer}
   alias Jocker.API.Schemas
   import Jocker.Engine.MetaData
   import TestHelper, only: [now: 0]
@@ -12,8 +12,8 @@ defmodule MetaDataTest do
     assert [host_network] == list_networks(:include_host)
     assert [] == list_networks(:exclude_host)
 
-    network1 = %Network{id: "test_id1", name: "testname1"}
-    network2 = %Network{id: "id2_test", name: "testname2"}
+    network1 = %Schemas.Network{id: "test_id1", name: "testname1"}
+    network2 = %Schemas.Network{id: "id2_test", name: "testname2"}
     assert :ok = add_network(network1)
     assert [network1] == list_networks(:exclude_host)
     assert network1 == get_network("test_id1")
@@ -38,8 +38,8 @@ defmodule MetaDataTest do
   end
 
   test "adding and getting images" do
-    img1 = %Image{id: "lol", name: "test", tag: "oldest", created: now()}
-    img2 = %Image{id: "lel", name: "test", tag: "latest", created: now()}
+    img1 = %Schemas.Image{id: "lol", name: "test", tag: "oldest", created: now()}
+    img2 = %Schemas.Image{id: "lel", name: "test", tag: "latest", created: now()}
     add_image(img1)
     add_image(img2)
     assert img1 == get_image(img1.id)
@@ -48,7 +48,7 @@ defmodule MetaDataTest do
     assert [img2, img1] == list_images()
 
     # Test that name/tag will be removed from existing image if a new image is added with conflicting nametag
-    img3 = %Image{id: "lel2", name: "test", tag: "latest", created: now()}
+    img3 = %Schemas.Image{id: "lel2", name: "test", tag: "latest", created: now()}
     img2_nametag_removed = %{img2 | name: "", tag: ""}
     add_image(img3)
     assert img2_nametag_removed == get_image("lel")
@@ -59,9 +59,9 @@ defmodule MetaDataTest do
   end
 
   test "empty nametags are avoided in overwrite logic" do
-    img1 = %Image{id: "lol1", name: "", tag: "", created: now()}
-    img2 = %Image{id: "lol2", name: "", tag: "", created: now()}
-    img3 = %Image{id: "lol3", name: "", tag: "", created: now()}
+    img1 = %Schemas.Image{id: "lol1", name: "", tag: "", created: now()}
+    img2 = %Schemas.Image{id: "lol2", name: "", tag: "", created: now()}
+    img3 = %Schemas.Image{id: "lol3", name: "", tag: "", created: now()}
     add_image(img1)
     add_image(img2)
     add_image(img3)
@@ -73,7 +73,7 @@ defmodule MetaDataTest do
 
   test "fetching images that is not there" do
     assert [] = list_images()
-    img1 = %Image{id: "lol", name: "test", tag: "oldest", created: now()}
+    img1 = %Schemas.Image{id: "lol", name: "test", tag: "oldest", created: now()}
     add_image(img1)
     assert [img1] == list_images()
     assert :not_found = get_image("not_here")
@@ -82,11 +82,11 @@ defmodule MetaDataTest do
   end
 
   test "add, get and remove containers" do
-    add_container(%Container{id: "1337", name: "test1", created: now()})
-    add_container(%Container{id: "1338", name: "1337", created: now()})
-    add_container(%Container{id: "1339", name: "1337", created: now()})
-    assert %Container{id: "1337"} = get_container("1337")
-    assert %Container{id: "1337"} = get_container("test1")
+    add_container(%Schemas.Container{id: "1337", name: "test1", created: now()})
+    add_container(%Schemas.Container{id: "1338", name: "1337", created: now()})
+    add_container(%Schemas.Container{id: "1339", name: "1337", created: now()})
+    assert %Schemas.Container{id: "1337"} = get_container("1337")
+    assert %Schemas.Container{id: "1337"} = get_container("test1")
     assert :not_found == get_container("lol")
     delete_container("1338")
     assert :not_found == get_container("1338")
@@ -96,11 +96,11 @@ defmodule MetaDataTest do
   end
 
   test "list all containers" do
-    add_image(%Image{id: "lol", created: now()})
-    add_image(%Image{id: "lel", name: "test", tag: "latest", created: now()})
-    add_container(%Container{id: "1337", image_id: "lol", name: "test1", created: now()})
-    add_container(%Container{id: "1338", image_id: "lel", name: "test2", created: now()})
-    add_container(%Container{id: "1339", image_id: "base", name: "test3", created: now()})
+    add_image(%Schemas.Image{id: "lol", created: now()})
+    add_image(%Schemas.Image{id: "lel", name: "test", tag: "latest", created: now()})
+    add_container(%Schemas.Container{id: "1337", image_id: "lol", name: "test1", created: now()})
+    add_container(%Schemas.Container{id: "1338", image_id: "lel", name: "test2", created: now()})
+    add_container(%Schemas.Container{id: "1339", image_id: "base", name: "test3", created: now()})
     containers = list_containers()
 
     assert [

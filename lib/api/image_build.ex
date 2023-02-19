@@ -1,5 +1,6 @@
 defmodule Jocker.API.ImageBuild do
-  alias Jocker.Engine.Image
+  alias Jocker.Engine.{Image, Utils}
+  alias Jocker.API.Schemas
   require Logger
 
   # Called on connection initialization
@@ -8,7 +9,8 @@ defmodule Jocker.API.ImageBuild do
       # 'tag'-parameter is mandatory
       "context" => "./",
       "dockerfile" => "Dockerfile",
-      "quiet" => "false"
+      "quiet" => "false",
+      "buildargs" => "{}"
     }
 
     values = Plug.Conn.Query.decode(req0.qs)
@@ -26,6 +28,15 @@ defmodule Jocker.API.ImageBuild do
           Map.put(args, "quiet", :invalid_arg)
       end
 
+    {valid_buildargs, args} =
+      case Jason.decode(args["buildargs"]) do
+        {:ok, buildargs_decoded} ->
+          {true, Map.put(args, "buildargs", buildargs_decoded)}
+
+        {:error, error} ->
+          {false, Map.put(args, "buildargs", {:error, inspect(error)})}
+      end
+
     cond do
       not Map.has_key?(args, "tag") ->
         msg = "missing argument tag"
@@ -34,6 +45,12 @@ defmodule Jocker.API.ImageBuild do
 
       not is_boolean(args["quiet"]) ->
         msg = "invalid value to argument 'quiet'"
+        req = :cowboy_req.reply(400, %{"content-type" => "text/plain"}, msg, req0)
+        {:ok, req, %{}}
+
+      not valid_buildargs ->
+        {:error, error_msg} = args["buildargs"]
+        msg = "could not decode 'buildargs' JSON content: #{error_msg}"
         req = :cowboy_req.reply(400, %{"content-type" => "text/plain"}, msg, req0)
         {:ok, req, %{}}
 
@@ -49,10 +66,12 @@ defmodule Jocker.API.ImageBuild do
            args["context"],
            args["dockerfile"],
            args["tag"],
+           Utils.map2envlist(args["buildargs"]),
            args["quiet"]
          ) do
-      {:ok, _pid} ->
+      {:ok, pid} ->
         Logger.debug("Building image. Await output.")
+        state = state |> Map.put(:build_pid, pid)
         {[{:text, "OK"}], state}
 
       {:error, msg} ->
@@ -66,9 +85,20 @@ defmodule Jocker.API.ImageBuild do
     {:ok, state}
   end
 
+  def websocket_handle({:ping, _}, state) do
+    {:ok, state}
+  end
+
   # Format and forward elixir messages to client
-  def websocket_info({:image_builder, _pid, {:image_finished, %Image{id: id}}}, state) do
+  def websocket_info(
+        {:image_builder, _pid, {:image_build_succesfully, %Schemas.Image{id: id}}},
+        state
+      ) do
     {[{:close, 1000, "image created with id #{id}"}], state}
+  end
+
+  def websocket_info({:image_builder, _pid, {:image_build_failed, failed_line}}, state) do
+    {[{:close, 1000, "image build failed at: #{failed_line}"}], state}
   end
 
   def websocket_info({:image_builder, _pid, {:jail_output, msg}}, state) do

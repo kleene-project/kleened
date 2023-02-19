@@ -2,13 +2,13 @@ defmodule ExecTest do
   require Logger
   use Jocker.API.ConnCase
   alias Jocker.Engine.{Container, Exec, Utils, Network}
-  alias Jocker.API.Schemas.NetworkConfig
+  alias Jocker.API.Schemas
 
   @moduletag :capture_log
 
   setup do
-    {:ok, %Network{name: "default"} = testnet} =
-      Network.create(%NetworkConfig{
+    {:ok, %Schemas.Network{name: "default"} = testnet} =
+      Network.create(%Schemas.NetworkConfig{
         name: "default",
         subnet: "192.168.83.0/24",
         ifname: "jocker1",
@@ -19,7 +19,7 @@ defmodule ExecTest do
       Jocker.Engine.Network.remove(testnet.id)
 
       Jocker.Engine.MetaData.list_containers()
-      |> Enum.map(fn %{id: id} -> Container.destroy(id) end)
+      |> Enum.map(fn %{id: id} -> Container.remove(id) end)
     end)
 
     :ok
@@ -30,12 +30,12 @@ defmodule ExecTest do
       TestHelper.container_create(api_spec, "test_container1", %{cmd: ["/bin/sh", "-c", "uname"]})
 
     {:ok, exec_id} = Exec.create(container_id)
-    stop_msg = "executable #{exec_id} stopped"
+    stop_msg = "executable #{exec_id} and its container exited with exit-code 0"
 
     assert ["OK", "FreeBSD\n", stop_msg] ==
              TestHelper.exec_start_sync(exec_id, %{attach: true, start_container: true})
 
-    {:ok, ^container_id} = Container.destroy(container_id)
+    {:ok, ^container_id} = Container.remove(container_id)
   end
 
   test "start a second process in a container and receive output from it", %{
@@ -53,9 +53,10 @@ defmodule ExecTest do
         cmd: ["/bin/echo", "test test"]
       })
 
+    :timer.sleep(100)
     :ok = Exec.start(exec_id, %{attach: true, start_container: false})
     assert_receive {:container, ^exec_id, {:jail_output, "test test\n"}}
-    assert_receive {:container, ^exec_id, {:shutdown, :jailed_process_exited}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jailed_process_exited, 0}}}
 
     stop_opts = %{stop_container: true, force_stop: false}
     assert {:ok, ^container_id} = Exec.stop(root_exec_id, stop_opts)
@@ -88,7 +89,7 @@ defmodule ExecTest do
     assert %{id: exec_id} ==
              TestHelper.exec_stop(api_spec, exec_id, %{stop_container: false, force_stop: true})
 
-    error_msg = "#{exec_id} has exited"
+    error_msg = "#{exec_id} has exited with exit-code 137"
     assert [error_msg] == TestHelper.receive_frames(conn)
 
     assert number_of_jailed_processes(container_id) == 1
@@ -124,6 +125,7 @@ defmodule ExecTest do
     {:ok, conn} = TestHelper.exec_start(exec_id, %{attach: true, start_container: false})
     assert {:text, "OK"} == TestHelper.receive_frame(conn)
 
+    :timer.sleep(500)
     assert number_of_jailed_processes(container_id) == 2
 
     assert %{id: ^exec_id} =
@@ -132,7 +134,7 @@ defmodule ExecTest do
                force_stop: false
              })
 
-    msg = "executable #{exec_id} stopped"
+    msg = "executable #{exec_id} and its container exited with exit-code 143"
     assert [msg] == TestHelper.receive_frames(conn)
     assert number_of_jailed_processes(container_id) == 0
     refute Utils.is_container_running?(container_id)
@@ -197,6 +199,7 @@ defmodule ExecTest do
     assert ["ERROR:executable already started", "Failed to execute command."] ==
              TestHelper.exec_start_sync(root_exec_id, %{attach: false, start_container: true})
 
+    :timer.sleep(100)
     assert Utils.is_container_running?(container_id)
 
     %{id: exec_id} =
@@ -223,7 +226,7 @@ defmodule ExecTest do
              })
 
     refute Utils.is_container_running?(container_id)
-    {:ok, ^container_id} = Container.destroy(container_id)
+    {:ok, ^container_id} = Container.remove(container_id)
   end
 
   defp number_of_jailed_processes(container_id) do

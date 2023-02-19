@@ -23,11 +23,7 @@ defmodule Jocker.API.Volume do
         description: "Returns a compact listing of existing volumes.",
         operationId: "Volume.List",
         responses: %{
-          200 =>
-            response("no error", "application/json", %Schema{
-              type: :array,
-              items: Schemas.VolumeList
-            })
+          200 => response("no error", "application/json", Schemas.VolumeList)
         }
       }
     end

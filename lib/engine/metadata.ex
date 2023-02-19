@@ -1,7 +1,7 @@
 defmodule Jocker.Engine.MetaData do
   require Logger
   alias Jocker.Engine.{Config, Layer, Image, Container, Network, Volume, Volume.Mount}
-  alias Jocker.Engine.Network.EndPointConfig
+  alias Jocker.Engine.Network.EndPoint
   alias Jocker.API.Schemas
 
   use Agent
@@ -74,13 +74,6 @@ defmodule Jocker.Engine.MetaData do
   INNER JOIN images ON json_extract(containers.container, '$.image_id') = images.id;
   """
 
-  @type jocker_record() ::
-          Layer.t()
-          | Container.container()
-          | Image.image()
-          | Volume.volume()
-          | Mount.mount()
-
   @type db_conn() :: Sqlitex.connection()
 
   @spec start_link([]) :: Agent.on_start()
@@ -108,7 +101,7 @@ defmodule Jocker.Engine.MetaData do
       mountpoint: ""
     }
 
-    base_image = %Image{
+    base_image = %Schemas.Image{
       id: "base",
       layer_id: "base",
       name: "",
@@ -125,7 +118,7 @@ defmodule Jocker.Engine.MetaData do
     Agent.stop(__MODULE__)
   end
 
-  @spec add_network(%Network{}) :: :ok
+  @spec add_network(%Schemas.Network{}) :: :ok
   def add_network(network) do
     {id, json} = to_db(network)
     [] = sql("INSERT OR REPLACE INTO networks(id, network) VALUES (?, ?)", [id, json])
@@ -138,7 +131,7 @@ defmodule Jocker.Engine.MetaData do
     :ok
   end
 
-  @spec get_network(String.t()) :: %Network{} | :not_found
+  @spec get_network(String.t()) :: %Schemas.Network{} | :not_found
   def get_network(name_or_id) do
     query = """
     SELECT id, network FROM networks WHERE substr(id, 1, ?) = ?
@@ -152,7 +145,7 @@ defmodule Jocker.Engine.MetaData do
     end
   end
 
-  @spec list_networks(:include_host | :exclude_host) :: [%Network{}]
+  @spec list_networks(:include_host | :exclude_host) :: [%Schemas.Network{}]
   def list_networks(:include_host) do
     sql("SELECT id, network FROM networks ORDER BY json_extract(network, '$.name')")
   end
@@ -166,7 +159,7 @@ defmodule Jocker.Engine.MetaData do
   @spec add_endpoint_config(
           Container.container_id(),
           Network.network_id(),
-          %EndPointConfig{}
+          %EndPoint{}
         ) :: :ok
   def add_endpoint_config(container_id, network_id, endpoint_config) do
     sql(
@@ -177,9 +170,9 @@ defmodule Jocker.Engine.MetaData do
     :ok
   end
 
-  @spec get_endpoint_config(Container.container_id(), Network.network_id()) ::
-          %EndPointConfig{} | :not_found
-  def get_endpoint_config(container_id, network_id) do
+  @spec get_endpoint(Container.container_id(), Network.network_id()) ::
+          %EndPoint{} | :not_found
+  def get_endpoint(container_id, network_id) do
     reply =
       sql(
         "SELECT config FROM endpoint_configs WHERE container_id = ? AND network_id = ?",
@@ -192,9 +185,9 @@ defmodule Jocker.Engine.MetaData do
     end
   end
 
-  @spec get_endpoint_configs_from_network(Network.network_id()) ::
-          [%EndPointConfig{}] | :not_found
-  def get_endpoint_configs_from_network(network_id) do
+  @spec get_endpoints_from_network(Network.network_id()) ::
+          [%EndPoint{}] | :not_found
+  def get_endpoints_from_network(network_id) do
     sql(
       "SELECT config FROM endpoint_configs WHERE network_id = ?",
       [network_id]
@@ -247,7 +240,7 @@ defmodule Jocker.Engine.MetaData do
     :ok
   end
 
-  @spec add_image(%Image{}) :: :ok
+  @spec add_image(Image.t()) :: :ok
   def add_image(image) do
     Agent.get(__MODULE__, fn db -> add_image_transaction(db, image) end)
   end
@@ -360,7 +353,7 @@ defmodule Jocker.Engine.MetaData do
   end
 
   @spec add_image_transaction(db_conn(), Image.t()) :: [term()]
-  defp add_image_transaction(db, %Image{name: new_name, tag: new_tag} = image) do
+  defp add_image_transaction(db, %Schemas.Image{name: new_name, tag: new_tag} = image) do
     query = """
     SELECT id, image FROM images
       WHERE json_extract(image, '$.name') != ''
@@ -415,7 +408,7 @@ defmodule Jocker.Engine.MetaData do
           db_conn(),
           Volume.t() | Container.t()
         ) :: :ok
-  def remove_mounts_transaction(db, %Container{id: id}) do
+  def remove_mounts_transaction(db, %Schemas.Container{id: id}) do
     result =
       fetch_all(db, "SELECT mount FROM mounts WHERE json_extract(mount, '$.container_id') = ?", [
         id
@@ -439,12 +432,13 @@ defmodule Jocker.Engine.MetaData do
     result
   end
 
-  @spec to_db(Image.t() | Container.t() | %Schemas.Volume{} | %Mount{}) :: String.t()
+  @spec to_db(Schemas.Image.t() | Schemas.Container.t() | %Schemas.Volume{} | %Mount{}) ::
+          String.t()
   defp to_db(struct) do
     map = Map.from_struct(struct)
 
     case struct.__struct__ do
-      Image ->
+      Schemas.Image ->
         {id, map} = Map.pop(map, :id)
         {:ok, json} = Jason.encode(map)
         {id, json}
@@ -454,13 +448,12 @@ defmodule Jocker.Engine.MetaData do
         {:ok, json} = Jason.encode(map)
         {id, json}
 
-      Network ->
+      Schemas.Network ->
         {id, map} = Map.pop(map, :id)
         {:ok, json} = Jason.encode(map)
         {id, json}
 
-      Container ->
-        map = %{map | pid: pid2str(map[:pid])}
+      Schemas.Container ->
         {id, map} = Map.pop(map, :id)
         {:ok, json} = Jason.encode(map)
         {id, json}
@@ -470,13 +463,13 @@ defmodule Jocker.Engine.MetaData do
         {:ok, json} = Jason.encode(map)
         {name, json}
 
-      type when type == Mount or type == EndPointConfig ->
+      type when type == Mount or type == EndPoint ->
         {:ok, json} = Jason.encode(map)
         json
     end
   end
 
-  @spec from_db(keyword() | {:ok, keyword()}) :: [%Image{}]
+  @spec from_db(keyword() | {:ok, keyword()}) :: [%Schemas.Image{}]
   defp from_db({:ok, rows}) do
     from_db(rows)
   end
@@ -485,52 +478,45 @@ defmodule Jocker.Engine.MetaData do
     rows |> Enum.map(&transform_row(&1))
   end
 
-  @spec transform_row(List.t()) :: %Image{}
+  @spec transform_row(List.t()) :: %Schemas.Image{}
   def transform_row(row) do
-    {type, obj} =
-      cond do
-        Keyword.has_key?(row, :image) ->
-          map = from_json(row, :image)
-          id = Keyword.get(row, :id)
-          {Image, Map.put(map, :id, id)}
-
-        Keyword.has_key?(row, :layer) ->
-          map = from_json(row, :layer)
-          id = Keyword.get(row, :id)
-          {Layer, Map.put(map, :id, id)}
-
-        Keyword.has_key?(row, :network) ->
-          map = from_json(row, :network)
-          id = Keyword.get(row, :id)
-          {Network, Map.put(map, :id, id)}
-
-        Keyword.has_key?(row, :container) ->
-          %{pid: pid_str} = map = from_json(row, :container)
-          id = Keyword.get(row, :id)
-          map = Map.put(map, :id, id)
-          {Container, %{map | pid: str2pid(pid_str)}}
-
-        Keyword.has_key?(row, :volume) ->
-          map = from_json(row, :volume)
-          name = Keyword.get(row, :name)
-          {Schemas.Volume, Map.put(map, :name, name)}
-
-        Keyword.has_key?(row, :mount) ->
-          {Mount, from_json(row, :mount)}
-
-        Keyword.has_key?(row, :config) ->
-          {EndPointConfig, from_json(row, :config)}
-
-        Keyword.has_key?(row, :container_id) ->
-          {:no_struct, Keyword.get(row, :container_id)}
-
-        Keyword.has_key?(row, :network_id) ->
-          {:no_struct, Keyword.get(row, :network_id)}
-      end
-
     cond do
-      type == :no_struct -> obj
-      true -> struct(type, obj)
+      Keyword.has_key?(row, :image) ->
+        map = from_json(row, :image)
+        id = Keyword.get(row, :id)
+        struct(Schemas.Image, Map.put(map, :id, id))
+
+      Keyword.has_key?(row, :layer) ->
+        map = from_json(row, :layer)
+        id = Keyword.get(row, :id)
+        struct(Layer, Map.put(map, :id, id))
+
+      Keyword.has_key?(row, :network) ->
+        map = from_json(row, :network)
+        id = Keyword.get(row, :id)
+        struct(Schemas.Network, Map.put(map, :id, id))
+
+      Keyword.has_key?(row, :container) ->
+        map = from_json(row, :container)
+        id = Keyword.get(row, :id)
+        struct(Schemas.Container, Map.put(map, :id, id))
+
+      Keyword.has_key?(row, :volume) ->
+        map = from_json(row, :volume)
+        name = Keyword.get(row, :name)
+        struct(Schemas.Volume, Map.put(map, :name, name))
+
+      Keyword.has_key?(row, :mount) ->
+        struct(Mount, from_json(row, :mount))
+
+      Keyword.has_key?(row, :config) ->
+        struct(EndPoint, from_json(row, :config))
+
+      Keyword.has_key?(row, :container_id) ->
+        Keyword.get(row, :container_id)
+
+      Keyword.has_key?(row, :network_id) ->
+        Keyword.get(row, :network_id)
     end
   end
 

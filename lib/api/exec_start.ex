@@ -68,17 +68,27 @@ defmodule Jocker.API.ExecStartWebSocket do
     {:ok, state}
   end
 
+  def websocket_handle({:ping, _}, state) do
+    {:ok, state}
+  end
+
   def websocket_handle(_msg, state) do
     # Ignore unknown messages
     {:ok, state}
   end
 
-  def websocket_info({:container, exec_id, {:shutdown, :jail_stopped}}, state) do
-    {[{:close, 1000, "executable #{exec_id} stopped"}], state}
+  def websocket_info({:container, exec_id, {:shutdown, {:jail_stopped, exit_code}}}, state) do
+    {[
+       {:close, 1000,
+        "executable #{exec_id} and its container exited with exit-code #{exit_code}"}
+     ], state}
   end
 
-  def websocket_info({:container, exec_id, {:shutdown, :jailed_process_exited}}, state) do
-    {[{:close, 1001, "#{exec_id} has exited"}], state}
+  def websocket_info(
+        {:container, exec_id, {:shutdown, {:jailed_process_exited, exit_code}}},
+        state
+      ) do
+    {[{:close, 1001, "#{exec_id} has exited with exit-code #{exit_code}"}], state}
   end
 
   def websocket_info({:container, _container_id, {:jail_output, msg}}, state) do

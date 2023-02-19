@@ -1,7 +1,7 @@
 defmodule Jocker.Engine.Exec do
-  alias Jocker.API.Schemas.ExecConfig
   alias Jocker.Engine.{Container, MetaData, OS, FreeBSD, Layer, Utils, ExecInstances, Network}
-  alias Network.EndPointConfig
+  alias Network.EndPoint
+  alias Jocker.API.Schemas
 
   defmodule State do
     defstruct config: nil,
@@ -14,26 +14,26 @@ defmodule Jocker.Engine.Exec do
   require Logger
   use GenServer, restart: :transient
 
-  @type execution_config() :: %ExecConfig{}
+  @type execution_config() :: %Schemas.ExecConfig{}
   @type start_options() :: %{:attach => boolean(), :start_container => boolean()}
   @type stop_options() :: %{:force_stop => boolean(), :stop_container => boolean()}
-  @type container() :: %Container{}
+  @type container() :: %Schemas.Container{}
 
   @type exec_id() :: String.t()
   @type container_id() :: String.t()
 
   @spec create(execution_config() | container_id()) :: {:ok, exec_id()} | {:error, String.t()}
   def create(container_id) when is_binary(container_id) do
-    config = %ExecConfig{container_id: container_id, cmd: [], env: [], user: ""}
+    config = %Schemas.ExecConfig{container_id: container_id, cmd: [], env: [], user: ""}
     create(config)
   end
 
-  def create(%ExecConfig{container_id: container_idname} = config) do
+  def create(%Schemas.ExecConfig{container_id: container_idname} = config) do
     exec_id = Utils.uuid()
 
     case MetaData.get_container(container_idname) do
-      %Container{id: container_id} ->
-        config = %ExecConfig{config | container_id: container_id}
+      %Schemas.Container{id: container_id} ->
+        config = %Schemas.ExecConfig{config | container_id: container_id}
         name = {:via, Registry, {ExecInstances, exec_id, container_id}}
         {:ok, _pid} = GenServer.start_link(Jocker.Engine.Exec, [exec_id, config], name: name)
         Logger.debug("succesfully created new execution instance #{exec_id}")
@@ -178,7 +178,7 @@ defmodule Jocker.Engine.Exec do
         msg = "#{state.exec_id} stopped with exit code #{exit_code}: {:shutdown, :jail_stopped}"
         Logger.debug(msg)
         jail_cleanup(cont)
-        relay_msg({:shutdown, :jail_stopped}, state)
+        relay_msg({:shutdown, {:jail_stopped, exit_code}}, state)
 
       true ->
         msg =
@@ -186,7 +186,7 @@ defmodule Jocker.Engine.Exec do
 
         Logger.debug(msg)
 
-        relay_msg({:shutdown, :jailed_process_exited}, state)
+        relay_msg({:shutdown, {:jailed_process_exited, exit_code}}, state)
     end
   end
 
@@ -218,7 +218,7 @@ defmodule Jocker.Engine.Exec do
 
   defp start_(config, start_container) do
     case MetaData.get_container(config.container_id) do
-      %Container{} = cont ->
+      %Schemas.Container{} = cont ->
         cont = merge_configurations(cont, config)
 
         case {Utils.is_container_running?(cont.id), start_container} do
@@ -240,12 +240,12 @@ defmodule Jocker.Engine.Exec do
   end
 
   defp merge_configurations(
-         %Container{
+         %Schemas.Container{
            command: default_cmd,
            user: default_user,
-           env_vars: default_env
+           env: default_env
          } = cont,
-         %ExecConfig{
+         %Schemas.ExecConfig{
            cmd: exec_cmd,
            user: exec_user,
            env: exec_env
@@ -265,15 +265,15 @@ defmodule Jocker.Engine.Exec do
         _ -> exec_user
       end
 
-    %Container{cont | user: user, command: cmd, env_vars: env}
+    %Schemas.Container{cont | user: user, command: cmd, env: env}
   end
 
-  defp jail_cleanup(%Container{id: container_id, layer_id: layer_id}) do
+  defp jail_cleanup(%Schemas.Container{id: container_id, layer_id: layer_id}) do
     if Network.connected_to_vnet_networks?(container_id) do
       destoy_jail_epairs = fn network ->
-        config = MetaData.get_endpoint_config(container_id, network.id)
-        FreeBSD.destroy_bridged_epair(config.epair, network.bridge_if_name)
-        config = %EndPointConfig{config | epair: nil}
+        config = MetaData.get_endpoint(container_id, network.id)
+        FreeBSD.destroy_bridged_epair(config.epair, network.bridge_if)
+        config = %EndPoint{config | epair: nil}
         MetaData.add_endpoint_config(container_id, network.id, config)
       end
 
@@ -288,27 +288,27 @@ defmodule Jocker.Engine.Exec do
     output |> String.split("\n") |> Enum.map(&umount_container_devfs(&1, mountpoint))
   end
 
-  defp jexec_container(%Container{
+  defp jexec_container(%Schemas.Container{
          id: container_id,
          command: cmd,
          user: user,
-         env_vars: env_vars
+         env: env
        }) do
     # jexec [-l] [-u username | -U username] jail [command ...]
-    args = ~w"-l -u #{user} #{container_id} /usr/bin/env -i" ++ env_vars ++ cmd
+    args = ~w"-l -u #{user} #{container_id} /usr/bin/env -i" ++ env ++ cmd
 
     port = OS.cmd_async(['/usr/sbin/jexec' | args])
     port
   end
 
   defp jail_start_container(
-         %Container{
+         %Schemas.Container{
            id: id,
            layer_id: layer_id,
            command: command,
            user: user,
-           parameters: parameters,
-           env_vars: env_vars
+           jail_param: jail_param,
+           env: env
          } = cont
        ) do
     Logger.info("Starting container #{inspect(cont.id)}")
@@ -320,8 +320,8 @@ defmodule Jocker.Engine.Exec do
     args =
       ~w"-c path=#{path} name=#{id}" ++
         network_config ++
-        parameters ++
-        ~w"exec.jail_user=#{user} command=/usr/bin/env -i" ++ env_vars ++ command
+        jail_param ++
+        ~w"exec.jail_user=#{user} command=/usr/bin/env -i" ++ env ++ command
 
     port = OS.cmd_async(['/usr/sbin/jail' | args])
     port
@@ -338,8 +338,8 @@ defmodule Jocker.Engine.Exec do
         ["ip4=inherit"]
 
       :loopback ->
-        network_ids = Enum.map(networks, fn %Network{id: id} -> id end)
-        ips = Enum.reduce(network_ids, [], &extract_ips(container_id, &1, &2))
+        network_ids = Enum.map(networks, fn %Schemas.Network{id: id} -> id end)
+        ips = Enum.map(network_ids, &extract_ip(container_id, &1))
 
         case Enum.join(ips, ",") do
           "" -> []
@@ -352,18 +352,17 @@ defmodule Jocker.Engine.Exec do
   end
 
   defp create_vnet_network_config(
-         [%Network{id: id, bridge_if_name: bridge, subnet: subnet} | rest],
+         [%Schemas.Network{id: id, bridge_if: bridge, subnet: subnet} | rest],
          container_id,
          network_configs
        ) do
     subnet = CIDR.parse(subnet)
     gateway = subnet.first |> :inet.ntoa() |> :binary.list_to_bin()
 
-    %EndPointConfig{ip_addresses: [ip]} =
-      endpoint = MetaData.get_endpoint_config(container_id, id)
+    %EndPoint{ip_address: ip} = endpoint = MetaData.get_endpoint(container_id, id)
 
     epair = FreeBSD.create_epair()
-    MetaData.add_endpoint_config(container_id, id, %EndPointConfig{endpoint | epair: epair})
+    MetaData.add_endpoint_config(container_id, id, %EndPoint{endpoint | epair: epair})
     # "exec.start=\"ifconfig #{epair}b name jail0\" " <>
     # "exec.poststop=\"ifconfig #{bridge} deletem #{epair}a\" " <>
     # "exec.poststop=\"ifconfig #{epair}a destroy\""
@@ -384,17 +383,17 @@ defmodule Jocker.Engine.Exec do
     network_configs
   end
 
-  def extract_ips(container_id, network_id, ip_list) do
-    config = MetaData.get_endpoint_config(container_id, network_id)
-    Enum.concat(config.ip_addresses, ip_list)
+  def extract_ip(container_id, network_id) do
+    config = MetaData.get_endpoint(container_id, network_id)
+    config.ip_address
   end
 
   defp network_type_used(networks) do
     case networks do
       [] -> :no_networks
-      [%Network{driver: "host"}] -> :host
-      [%Network{driver: "loopback"} | _] -> :loopback
-      [%Network{driver: "vnet"} | _] -> :vnet
+      [%Schemas.Network{driver: "host"}] -> :host
+      [%Schemas.Network{driver: "loopback"} | _] -> :loopback
+      [%Schemas.Network{driver: "vnet"} | _] -> :vnet
       invalid_response -> Logger.error("Invalid response: #{inspect(invalid_response)}")
     end
   end

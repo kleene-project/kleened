@@ -56,7 +56,7 @@ defmodule Jocker.API.Spec do
           OpenApiSpex.PathItem.from_routes([
             %{verb: :delete, plug: API.Network.Remove, opts: []}
           ]),
-        "/networks/{network_id}/connect/{container_id}" =>
+        "/networks/{network_id}/connect" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :post, plug: API.Network.Connect, opts: []}
           ]),
