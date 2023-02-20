@@ -417,7 +417,7 @@ defmodule ImageTest do
     assert expected_build_log.("uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)") == build_log
   end
 
-  test "create arg-variable and use with COPY instruction" do
+  test "create ARG-variable and use with COPY instruction" do
     dockerfile = """
     FROM scratch
     ARG TESTVAR="test.txt"
@@ -558,6 +558,7 @@ defmodule ImageTest do
     dockerfile = """
     FROM scratch
     RUN ls notexist
+    RUN echo "this should not be executed"
     """
 
     context = create_test_context("test_image_run_nonzero_exitcode")
@@ -602,7 +603,6 @@ defmodule ImageTest do
     ENV TEST="something" # You cannot make comments like this.
     """
 
-    # FIXME: HERTIL!
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
