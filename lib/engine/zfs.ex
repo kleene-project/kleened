@@ -1,6 +1,6 @@
-defmodule Kleened.Engine.ZFS do
+defmodule Kleened.Core.ZFS do
   require Logger
-  alias Kleened.Engine.OS
+  alias Kleened.Core.OS
 
   @spec create(String.t()) :: integer()
   def create(dataset) do
@@ -33,7 +33,7 @@ defmodule Kleened.Engine.ZFS do
 
   @spec rename(String.t(), String.t()) :: integer()
   def rename(dataset, new_dataset) do
-    {exit_code, msg} = cmd("rename -f #{dataset} #{new_dataset}")
+    {_exit_code, _msg} = cmd("rename -f #{dataset} #{new_dataset}")
   end
 
   @spec info(String.t()) :: %{:exists? => boolean(), :mountpoint => String.t() | nil}

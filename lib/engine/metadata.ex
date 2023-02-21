@@ -1,7 +1,7 @@
-defmodule Kleened.Engine.MetaData do
+defmodule Kleened.Core.MetaData do
   require Logger
-  alias Kleened.Engine.{Config, Layer, Image, Container, Network, Volume, Volume.Mount}
-  alias Kleened.Engine.Network.EndPoint
+  alias Kleened.Core.{Config, Layer, Image, Container, Network, Volume, Volume.Mount}
+  alias Kleened.Core.Network.EndPoint
   alias Kleened.API.Schemas
 
   use Agent
@@ -379,7 +379,7 @@ defmodule Kleened.Engine.MetaData do
   @spec get_image_transaction(db_conn(), String.t()) :: [term()]
   defp get_image_transaction(db, id_or_nametag) do
     select_by_id = "SELECT id, image FROM images WHERE id = ?"
-    {name, tag} = Kleened.Engine.Utils.decode_tagname(id_or_nametag)
+    {name, tag} = Kleened.Core.Utils.decode_tagname(id_or_nametag)
 
     select_by_nametag =
       "SELECT id, image FROM images WHERE json_extract(image, '$.name') = ? AND json_extract(image, '$.tag') = ?"

@@ -1,7 +1,7 @@
 defmodule NetworkTest do
   use Kleened.API.ConnCase
   require Logger
-  alias Kleened.Engine.{Network, Utils, MetaData, Container, Exec, OS}
+  alias Kleened.Core.{Network, Utils, MetaData, Container, Exec, OS}
   alias Kleened.API.Schemas
   alias Network.EndPoint
 
@@ -13,13 +13,13 @@ defmodule NetworkTest do
 
   setup do
     on_exit(fn ->
-      Kleened.Engine.MetaData.list_containers()
+      Kleened.Core.MetaData.list_containers()
       |> Enum.map(fn %{id: id} -> Container.remove(id) end)
     end)
 
     on_exit(fn ->
-      Kleened.Engine.MetaData.list_networks(:exclude_host)
-      |> Enum.map(fn %{id: id} -> Kleened.Engine.Network.remove(id) end)
+      Kleened.Core.MetaData.list_networks(:exclude_host)
+      |> Enum.map(fn %{id: id} -> Kleened.Core.Network.remove(id) end)
     end)
 
     :ok
@@ -409,7 +409,7 @@ defmodule NetworkTest do
 
   defp exec_run(container_id_or_exec_config, start_opts) do
     {:ok, exec_id} = Exec.create(container_id_or_exec_config)
-    Kleened.Engine.Exec.start(exec_id, start_opts)
+    Kleened.Core.Exec.start(exec_id, start_opts)
     {:ok, exec_id}
   end
 

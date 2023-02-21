@@ -1,5 +1,5 @@
-defmodule Kleened.Engine.FreeBSD do
-  alias Kleened.Engine.OS
+defmodule Kleened.Core.FreeBSD do
+  alias Kleened.Core.OS
   require Logger
 
   @spec enable_ip_forwarding() :: :ok
@@ -11,7 +11,7 @@ defmodule Kleened.Engine.FreeBSD do
       {"net.inet.ip.forwarding: 0\n", _} ->
         OS.cmd(~w"/sbin/sysctl net.inet.ip.forwarding=1")
 
-      {unknown_output, exitcode} ->
+      {_unknown_output, _exitcode} ->
         Logger.warn(
           "could not understand the output from 'sysctl' when inspecting ip forwarding configuration"
         )

@@ -1,4 +1,4 @@
-alias Kleened.Engine.{ZFS, Config, Layer, Exec, MetaData}
+alias Kleened.Core.{ZFS, Config, Layer, Exec, MetaData}
 alias Kleened.API.Schemas
 require Logger
 
@@ -167,7 +167,7 @@ defmodule TestHelper do
   def image_invalid_build(config) do
     config = Map.merge(%{quiet: false}, config)
     frames = image_build(config)
-    {finish_msg, build_log} = List.pop_at(frames, -1)
+    {finish_msg, _build_log} = List.pop_at(frames, -1)
     assert <<"image build failed at: ", failed_line::binary>> = finish_msg
     failed_line
   end
@@ -428,7 +428,7 @@ defmodule TestHelper do
   end
 
   def devfs_mounted(%Schemas.Container{layer_id: layer_id}) do
-    %Layer{mountpoint: mountpoint} = Kleened.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     devfs_path = Path.join(mountpoint, "dev")
 
     case System.cmd("sh", ["-c", "mount | grep \"devfs on #{devfs_path}\""]) do

@@ -1,4 +1,4 @@
-defmodule Kleened.Engine.Container do
+defmodule Kleened.Core.Container do
   defmodule State do
     defstruct container_id: nil,
               subscribers: nil,
@@ -8,7 +8,7 @@ defmodule Kleened.Engine.Container do
   alias __MODULE__, as: Container
 
   require Logger
-  alias Kleened.Engine.{MetaData, Volume, Layer, Network, Utils}
+  alias Kleened.Core.{MetaData, Volume, Layer, Network, Utils}
   alias Kleened.API.Schemas
 
   @type t() ::
@@ -91,9 +91,9 @@ defmodule Kleened.Engine.Container do
         env: img_env
       } ->
         Logger.debug("creating container with config: #{inspect(container_config)}")
-        container_id = Kleened.Engine.Utils.uuid()
+        container_id = Kleened.Core.Utils.uuid()
 
-        parent_layer = Kleened.Engine.MetaData.get_layer(parent_layer_id)
+        parent_layer = Kleened.Core.MetaData.get_layer(parent_layer_id)
         %Layer{id: layer_id} = Layer.new(parent_layer, container_id)
         env = Utils.merge_environment_variable_lists(img_env, env)
 
@@ -226,7 +226,7 @@ defmodule Kleened.Engine.Container do
   end
 
   defp create_and_bind("", location, opts, cont) do
-    name = Kleened.Engine.Utils.uuid()
+    name = Kleened.Core.Utils.uuid()
     vol = Volume.create(name)
     Volume.bind_volume(cont, vol, location, opts)
   end

@@ -1,6 +1,6 @@
 defmodule Kleened.API.Exec do
   alias OpenApiSpex.{Operation, Schema}
-  alias Kleened.Engine.Exec
+  alias Kleened.Core.Exec
   alias Kleened.API.Schemas
   require Logger
 

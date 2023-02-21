@@ -1,7 +1,7 @@
 defmodule Kleened.API.Volume do
   alias OpenApiSpex.{Operation, Schema}
   alias Kleened.API.Schemas
-  alias Kleened.Engine.Volume
+  alias Kleened.Core.Volume
   require Logger
 
   import OpenApiSpex.Operation,
@@ -29,7 +29,7 @@ defmodule Kleened.API.Volume do
     end
 
     def list(conn, _opts) do
-      volumes = Kleened.Engine.MetaData.list_volumes() |> Jason.encode!()
+      volumes = Kleened.Core.MetaData.list_volumes() |> Jason.encode!()
 
       conn
       |> Plug.Conn.put_resp_header("content-type", "application/json")

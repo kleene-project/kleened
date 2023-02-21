@@ -1,6 +1,6 @@
 defmodule Kleened.API.Image do
   alias OpenApiSpex.{Operation, Schema}
-  alias Kleened.Engine
+  alias Kleened.Core
   alias Kleened.API.Utils
   alias Kleened.API.Schemas
   require Logger
@@ -31,7 +31,7 @@ defmodule Kleened.API.Image do
     end
 
     def list(conn, _opts) do
-      image_list = Kleened.Engine.MetaData.list_images() |> Jason.encode!()
+      image_list = Kleened.Core.MetaData.list_images() |> Jason.encode!()
 
       conn
       |> Plug.Conn.put_resp_header("content-type", "application/json")
@@ -74,7 +74,7 @@ defmodule Kleened.API.Image do
     def remove(%Plug.Conn{path_params: %{"image_id" => image_id}} = conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
-      case Engine.Image.destroy(image_id) do
+      case Core.Image.destroy(image_id) do
         :ok ->
           Plug.Conn.send_resp(conn, 200, Utils.id_response(image_id))
 

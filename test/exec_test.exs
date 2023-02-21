@@ -1,7 +1,7 @@
 defmodule ExecTest do
   require Logger
   use Kleened.API.ConnCase
-  alias Kleened.Engine.{Container, Exec, Utils, Network}
+  alias Kleened.Core.{Container, Exec, Utils, Network}
   alias Kleened.API.Schemas
 
   @moduletag :capture_log
@@ -16,9 +16,9 @@ defmodule ExecTest do
       })
 
     on_exit(fn ->
-      Kleened.Engine.Network.remove(testnet.id)
+      Kleened.Core.Network.remove(testnet.id)
 
-      Kleened.Engine.MetaData.list_containers()
+      Kleened.Core.MetaData.list_containers()
       |> Enum.map(fn %{id: id} -> Container.remove(id) end)
     end)
 

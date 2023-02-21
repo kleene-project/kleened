@@ -1,4 +1,4 @@
-defmodule Kleened.Engine.Application do
+defmodule Kleened.Core.Application do
   # See https://hexdocs.pm/elixir/Application.html
   # for more information on OTP Applications
   @moduledoc false
@@ -12,21 +12,21 @@ defmodule Kleened.Engine.Application do
 
   def start(_type, _args) do
     # FIXME: This is a dirty-hack to fetch "api_socket" before supervisor is started, as it is used to configure ranch supervisor.
-    # To make this properly requires a refactor of the Kleened.Engine.Config:
+    # To make this properly requires a refactor of the Kleened.Core.Config:
     # Load the configuration file at startup and pass configuration parameters in the child
     # in the supervision-tree here: The configuration values are required here before supervisor i started.
-    {:ok, pid} = Kleened.Engine.Config.start_link([])
-    # socket_opts = create_socket_options(Kleened.Engine.Config.get("api_socket"))
+    {:ok, pid} = Kleened.Core.Config.start_link([])
+    # socket_opts = create_socket_options(Kleened.Core.Config.get("api_socket"))
     GenServer.stop(pid)
 
     children = [
-      Kleened.Engine.Config,
-      Kleened.Engine.MetaData,
-      Kleened.Engine.Layer,
-      Kleened.Engine.Network,
-      {Registry, keys: :unique, name: Kleened.Engine.ExecInstances},
+      Kleened.Core.Config,
+      Kleened.Core.MetaData,
+      Kleened.Core.Layer,
+      Kleened.Core.Network,
+      {Registry, keys: :unique, name: Kleened.Core.ExecInstances},
       {DynamicSupervisor,
-       name: Kleened.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0},
+       name: Kleened.Core.ContainerPool, strategy: :one_for_one, max_restarts: 0},
       {Plug.Cowboy,
        scheme: :http,
        plug: HTTP.API,
@@ -35,7 +35,7 @@ defmodule Kleened.Engine.Application do
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: Kleened.Engine.Supervisor]
+    opts = [strategy: :one_for_one, name: Kleened.Core.Supervisor]
 
     case Supervisor.start_link(children, opts) do
       {:ok, pid} ->
@@ -43,7 +43,7 @@ defmodule Kleened.Engine.Application do
 
       {:error,
        {:shutdown,
-        {:failed_to_start_child, Kleened.Engine.Config, {%RuntimeError{message: msg}, _}}}} ->
+        {:failed_to_start_child, Kleened.Core.Config, {%RuntimeError{message: msg}, _}}}} ->
         {:error, "could not start dockerd: #{msg}"}
 
       unknown_return ->

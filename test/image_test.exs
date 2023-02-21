@@ -1,6 +1,6 @@
 defmodule ImageTest do
   use Kleened.API.ConnCase
-  alias Kleened.Engine.{Config, Image, MetaData, Layer}
+  alias Kleened.Core.{Config, Image, MetaData, Layer}
   alias Kleened.API.Schemas
 
   @moduletag :capture_log
@@ -93,7 +93,7 @@ defmodule ImageTest do
         tag: "test:latest"
       })
 
-    %Layer{mountpoint: mountpoint} = Kleened.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "/root/test_1.txt")) == {:ok, "lol1\n"}
   end
 
@@ -113,7 +113,7 @@ defmodule ImageTest do
     }
 
     {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
-    %Layer{mountpoint: mountpoint} = Kleened.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert MetaData.list_containers() == []
   end
@@ -137,7 +137,7 @@ defmodule ImageTest do
 
     {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
 
-    %Layer{mountpoint: mountpoint} = Kleened.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     # we cannot check the symbolic link from the host:
     assert File.read(Path.join(mountpoint, "etc/testdir/test.txt")) == {:ok, "lol\n"}
   end
@@ -165,7 +165,7 @@ defmodule ImageTest do
       TestHelper.container_start_attached(api_spec, "test-cmd-instruc", config)
 
     assert TestHelper.collect_container_output(exec_id) == "lol"
-    Kleened.Engine.Container.remove(container.id)
+    Kleened.Core.Container.remove(container.id)
   end
 
   test "create an image with 'ENV' instructions" do
@@ -347,7 +347,7 @@ defmodule ImageTest do
     config = %{image: image_id}
     {container, exec_id} = TestHelper.container_start_attached(api_spec, "test-arg2env", config)
     assert TestHelper.collect_container_output(exec_id) == "use at runtime"
-    Kleened.Engine.Container.remove(container.id)
+    Kleened.Core.Container.remove(container.id)
   end
 
   test "invalid ENV and ARG variable names" do
@@ -441,7 +441,7 @@ defmodule ImageTest do
     }
 
     {%Schemas.Image{layer_id: layer_id}, build_log} = TestHelper.image_valid_build(config)
-    %Layer{mountpoint: mountpoint} = Kleened.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
 
     assert expected_build_log == build_log
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
@@ -523,7 +523,7 @@ defmodule ImageTest do
         tag: "test:latest"
       })
 
-    %Layer{mountpoint: mountpoint} = Kleened.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test_1.txt")) == {:ok, "lol1\n"}
     assert File.read(Path.join(mountpoint, "root/test_2.txt")) == {:ok, "lol2\n"}
@@ -653,7 +653,7 @@ defmodule ImageTest do
   defp create_test_context(name) do
     dataset = Path.join(Config.get("zroot"), name)
     mountpoint = Path.join("/", dataset)
-    Kleened.Engine.ZFS.create(dataset)
+    Kleened.Core.ZFS.create(dataset)
     {"", 0} = System.cmd("sh", ["-c", "echo 'lol' > #{mountpoint}/test.txt"])
     mountpoint
   end

@@ -1,5 +1,5 @@
-defmodule Kleened.Engine.Config do
-  alias Kleened.Engine.ZFS
+defmodule Kleened.Core.Config do
+  alias Kleened.Core.ZFS
   require Logger
   use Agent
 
@@ -128,7 +128,7 @@ defmodule Kleened.Engine.Config do
         config_error("kleenes root zfs filesystem #{dataset} does not seem to exist. Exiting.")
 
       snapshot_info[:exists?] == false ->
-        Kleened.Engine.ZFS.snapshot(snapshot)
+        Kleened.Core.ZFS.snapshot(snapshot)
 
       true ->
         :ok
@@ -145,7 +145,7 @@ defmodule Kleened.Engine.Config do
   end
 
   defp valid_api_socket(%{"api_socket" => api_socket} = config) do
-    case Kleened.Engine.Utils.decode_socket_address(api_socket) do
+    case Kleened.Core.Utils.decode_socket_address(api_socket) do
       {:error, error} ->
         config_error("failed to decode 'api_socket': #{inspect(error)}")
 

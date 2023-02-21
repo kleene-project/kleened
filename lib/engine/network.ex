@@ -1,6 +1,6 @@
-defmodule Kleened.Engine.Network do
+defmodule Kleened.Core.Network do
   use GenServer
-  alias Kleened.Engine.{Config, Container, Utils, MetaData, OS, FreeBSD}
+  alias Kleened.Core.{Config, Container, Utils, MetaData, OS, FreeBSD}
   alias Kleened.API.Schemas
   require Logger
 
@@ -53,7 +53,7 @@ defmodule Kleened.Engine.Network do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
 
-  ### Docker Engine style API's
+  ### Docker Core style API's
   @spec create(network_config()) ::
           {:ok, Network.t()} | {:error, String.t()}
   def create(options) do

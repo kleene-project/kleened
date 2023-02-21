@@ -1,6 +1,6 @@
 defmodule Kleened.API.Container do
   alias OpenApiSpex.{Operation, Schema}
-  alias Kleened.Engine.Container
+  alias Kleened.Core.Container
   alias Kleened.API.Schemas
   require Logger
 

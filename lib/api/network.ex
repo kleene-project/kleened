@@ -1,6 +1,6 @@
 defmodule Kleened.API.Network do
   alias OpenApiSpex.{Operation, Schema, Response}
-  alias Kleened.Engine.Network
+  alias Kleened.Core.Network
   alias Kleened.API.Utils
   alias Kleened.API.Schemas
   require Logger

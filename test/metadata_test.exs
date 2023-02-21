@@ -1,8 +1,8 @@
 defmodule MetaDataTest do
   use ExUnit.Case
-  alias Kleened.Engine.{Config, Volume.Mount, Layer}
+  alias Kleened.Core.{Config, Volume.Mount, Layer}
   alias Kleened.API.Schemas
-  import Kleened.Engine.MetaData
+  import Kleened.Core.MetaData
   import TestHelper, only: [now: 0]
 
   @moduletag :capture_log

@@ -2,9 +2,9 @@ defmodule ZFSTest do
   use ExUnit.Case
   require Logger
 
-  alias Kleened.Engine.Config
+  alias Kleened.Core.Config
   alias Config
-  import Kleened.Engine.ZFS
+  import Kleened.Core.ZFS
 
   @moduletag :capture_log
 

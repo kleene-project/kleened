@@ -1,14 +1,14 @@
 defmodule ContainerTest do
   require Logger
   use Kleened.API.ConnCase
-  alias Kleened.Engine.{Container, Image, Exec, Utils, MetaData}
+  alias Kleened.Core.{Container, Image, Exec, Utils, MetaData}
   alias Kleened.API.Schemas
 
   @moduletag :capture_log
 
   setup do
     on_exit(fn ->
-      Kleened.Engine.MetaData.list_containers()
+      Kleened.Core.MetaData.list_containers()
       |> Enum.map(fn %{id: id} -> Container.remove(id) end)
     end)
 
@@ -23,7 +23,7 @@ defmodule ContainerTest do
     %Schemas.Container{id: container_id, name: name, image_id: img_id} =
       container_succesfully_create(api_spec, "testcont", %{})
 
-    %Schemas.Image{id: id} = Kleened.Engine.MetaData.get_image("base")
+    %Schemas.Image{id: id} = Kleened.Core.MetaData.get_image("base")
     assert id == img_id
 
     assert [%{id: ^container_id, name: ^name, image_id: ^img_id}] =

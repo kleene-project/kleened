@@ -2,7 +2,7 @@ defmodule VolumeTest do
   use Kleened.API.ConnCase
   require Logger
 
-  alias Kleened.Engine.{MetaData, Container, Volume}
+  alias Kleened.Core.{MetaData, Container, Volume}
   alias Kleened.API.Router
 
   @moduletag :capture_log
@@ -10,7 +10,7 @@ defmodule VolumeTest do
 
   setup do
     on_exit(fn ->
-      Kleened.Engine.MetaData.list_volumes()
+      Kleened.Core.MetaData.list_volumes()
       |> Enum.map(&Volume.destroy(&1.name))
     end)
 
@@ -67,9 +67,9 @@ defmodule VolumeTest do
 
     container = MetaData.get_container(id)
 
-    {:ok, exec_id} = Kleened.Engine.Exec.create(id)
+    {:ok, exec_id} = Kleened.Core.Exec.create(id)
     :ok = Volume.bind_volume(container, volume, location)
-    Kleened.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
+    Kleened.Core.Exec.start(exec_id, %{attach: true, start_container: true})
 
     receive do
       {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}} -> :ok

@@ -1,5 +1,5 @@
-defmodule Kleened.Engine.Volume do
-  alias Kleened.Engine.{ZFS, Config, Utils, Layer, MetaData}
+defmodule Kleened.Core.Volume do
+  alias Kleened.Core.{ZFS, Config, Utils, Layer, MetaData}
   alias Kleened.API.Schemas
   require Config
   require Logger
@@ -51,7 +51,7 @@ defmodule Kleened.Engine.Volume do
 
   @spec destroy(String.t()) :: :ok | {:error, String.t()}
   def destroy(name) do
-    case Kleened.Engine.MetaData.get_volume(name) do
+    case Kleened.Core.MetaData.get_volume(name) do
       :not_found ->
         {:error, "No such volume"}
 
@@ -72,7 +72,7 @@ defmodule Kleened.Engine.Volume do
 
   @spec bind_volume(
           %Schemas.Container{},
-          Kleened.Engine.Records.volume(),
+          Kleened.Core.Records.volume(),
           String.t(),
           bind_opts()
         ) :: :ok

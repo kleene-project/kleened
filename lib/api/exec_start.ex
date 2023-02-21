@@ -1,5 +1,5 @@
 defmodule Kleened.API.ExecStartWebSocket do
-  alias Kleened.Engine.Exec
+  alias Kleened.Core.Exec
   require Logger
 
   # Called on connection initialization

@@ -1,4 +1,4 @@
-defmodule Kleened.Engine.Utils do
+defmodule Kleened.Core.Utils do
   require Logger
 
   def is_container_running?(container_id) do

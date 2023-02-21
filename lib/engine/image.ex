@@ -1,5 +1,5 @@
-defmodule Kleened.Engine.Image do
-  alias Kleened.Engine.{ZFS, MetaData, Utils, Layer, Network, OS, Container}
+defmodule Kleened.Core.Image do
+  alias Kleened.Core.{ZFS, MetaData, Utils, Layer, Network, OS, Container}
   alias Kleened.API.Schemas
   require Logger
 
@@ -23,10 +23,10 @@ defmodule Kleened.Engine.Image do
   @spec build(String.t(), String.t(), String.t(), boolean()) ::
           {:ok, pid()} | {:error, String.t()}
   def build(context_path, dockerfile, tag, buildargs, quiet \\ false) do
-    {name, tag} = Kleened.Engine.Utils.decode_tagname(tag)
+    {name, tag} = Kleened.Core.Utils.decode_tagname(tag)
     dockerfile_path = Path.join(context_path, dockerfile)
     {:ok, dockerfile} = File.read(dockerfile_path)
-    instructions = Kleened.Engine.Dockerfile.parse(dockerfile)
+    instructions = Kleened.Core.Dockerfile.parse(dockerfile)
 
     case verify_instructions(instructions) do
       :ok ->
@@ -101,7 +101,7 @@ defmodule Kleened.Engine.Image do
     state = send_status(line, state)
 
     on_success = fn new_image_ref ->
-      %Schemas.Image{id: image_id} = Kleened.Engine.MetaData.get_image(new_image_ref)
+      %Schemas.Image{id: image_id} = Kleened.Core.MetaData.get_image(new_image_ref)
 
       {:ok, container_config} =
         OpenApiSpex.Cast.cast(
@@ -117,7 +117,7 @@ defmodule Kleened.Engine.Image do
 
       name = Utils.uuid()
 
-      {:ok, container} = Kleened.Engine.Container.create(name, container_config)
+      {:ok, container} = Kleened.Core.Container.create(name, container_config)
 
       process_instructions(%State{state | container: container, instructions: rest})
     end
@@ -247,7 +247,7 @@ defmodule Kleened.Engine.Image do
     Network.remove(state.network)
     MetaData.delete_container(container_id)
     layer = MetaData.get_layer(layer_id)
-    Kleened.Engine.Layer.to_image(layer, container_id)
+    Kleened.Core.Layer.to_image(layer, container_id)
 
     img = %Schemas.Image{
       id: container_id,
@@ -260,7 +260,7 @@ defmodule Kleened.Engine.Image do
       created: DateTime.to_iso8601(DateTime.utc_now())
     }
 
-    Kleened.Engine.MetaData.add_image(img)
+    Kleened.Core.MetaData.add_image(img)
     send_msg(state.msg_receiver, {:image_build_succesfully, img})
   end
 
@@ -388,8 +388,8 @@ defmodule Kleened.Engine.Image do
   end
 
   defp execute_cmd(%Schemas.ExecConfig{container_id: id} = config, state) do
-    {:ok, exec_id} = Kleened.Engine.Exec.create(config)
-    Kleened.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
+    {:ok, exec_id} = Kleened.Core.Exec.create(config)
+    Kleened.Core.Exec.start(exec_id, %{attach: true, start_container: true})
     relay_output_and_await_shutdown(id, exec_id, state)
   end
 
@@ -418,7 +418,7 @@ defmodule Kleened.Engine.Image do
   end
 
   defp create_context_dir_in_jail(context, %Schemas.Container{layer_id: layer_id}) do
-    %Layer{mountpoint: mountpoint} = Kleened.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     context_in_jail = Path.join(mountpoint, "/kleene_temporary_context_store")
     {_output, 0} = System.cmd("/bin/mkdir", [context_in_jail], stderr_to_stdout: true)
     Utils.mount_nullfs([context, context_in_jail])

@@ -1,6 +1,6 @@
-defmodule Kleened.Engine.Layer do
+defmodule Kleened.Core.Layer do
   use GenServer
-  alias Kleened.Engine.{Config, MetaData}
+  alias Kleened.Core.{Config, MetaData}
   require Logger
 
   @derive Jason.Encoder
@@ -58,9 +58,9 @@ defmodule Kleened.Engine.Layer do
   end
 
   defp new_(%Layer{snapshot: parent_snapshot}, container_id) do
-    id = Kleened.Engine.Utils.uuid()
+    id = Kleened.Core.Utils.uuid()
     dataset = Path.join([Config.get("zroot"), "container", container_id])
-    {_, 0} = Kleened.Engine.ZFS.clone(parent_snapshot, dataset)
+    {_, 0} = Kleened.Core.ZFS.clone(parent_snapshot, dataset)
 
     new_layer = %Layer{
       id: id,
@@ -68,14 +68,14 @@ defmodule Kleened.Engine.Layer do
       mountpoint: Path.join("/", dataset)
     }
 
-    Kleened.Engine.MetaData.add_layer(new_layer)
+    Kleened.Core.MetaData.add_layer(new_layer)
     new_layer
   end
 
   defp destroy_(layer_id) do
     case MetaData.get_layer(layer_id) do
       %Layer{dataset: dataset} ->
-        {_, 0} = Kleened.Engine.ZFS.destroy(dataset)
+        {_, 0} = Kleened.Core.ZFS.destroy(dataset)
         MetaData.remove_layer(layer_id)
 
       :not_found ->
@@ -85,11 +85,11 @@ defmodule Kleened.Engine.Layer do
 
   defp to_image_(%Layer{dataset: dataset} = layer, image_id) do
     new_dataset = Path.join([Config.get("zroot"), "image", image_id])
-    Kleened.Engine.ZFS.rename(dataset, new_dataset)
+    Kleened.Core.ZFS.rename(dataset, new_dataset)
 
     snapshot = new_dataset <> "@layer"
     mountpoint = "/" <> new_dataset
-    {_, 0} = Kleened.Engine.ZFS.snapshot(snapshot)
+    {_, 0} = Kleened.Core.ZFS.snapshot(snapshot)
 
     updated_layer = %Layer{
       layer
@@ -98,7 +98,7 @@ defmodule Kleened.Engine.Layer do
         mountpoint: mountpoint
     }
 
-    Kleened.Engine.MetaData.add_layer(updated_layer)
+    Kleened.Core.MetaData.add_layer(updated_layer)
     updated_layer
   end
 end

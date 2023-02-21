@@ -1,5 +1,5 @@
 defmodule DockerfileTest do
-  import Kleened.Engine.Dockerfile
+  import Kleened.Core.Dockerfile
   use ExUnit.Case
 
   @moduletag :capture_log

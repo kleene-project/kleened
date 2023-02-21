@@ -1,6 +1,6 @@
-defmodule EngineUtilsTest do
+defmodule CoreUtilsTest do
   use ExUnit.Case
-  alias Kleened.Engine.Utils
+  alias Kleened.Core.Utils
 
   @moduletag :capture_log
 

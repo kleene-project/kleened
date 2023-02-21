@@ -1,5 +1,5 @@
 defmodule Kleened.API.ImageBuild do
-  alias Kleened.Engine.{Image, Utils}
+  alias Kleened.Core.{Image, Utils}
   alias Kleened.API.Schemas
   require Logger
 

@@ -31,7 +31,7 @@ defmodule Kleened.MixProject do
   def application do
     [
       extra_applications: [:logger, :crypto, :eex, :cowboy, :plug],
-      mod: {Kleened.Engine.Application, []}
+      mod: {Kleened.Core.Application, []}
     ]
   end
 

@@ -8,7 +8,7 @@ defmodule Kleened.API.Spec do
     %OpenApi{
       info: %Info{
         title: "Kleened API",
-        description: "HTTP API for communicating with the Kleened Engine",
+        description: "HTTP API for communicating with Kleened",
         version: "0.0.1"
       },
       paths: %{
