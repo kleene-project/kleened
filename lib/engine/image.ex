@@ -122,7 +122,7 @@ defmodule Kleened.Core.Image do
       process_instructions(%State{state | container: container, instructions: rest})
     end
 
-    environment_replacement_(image_ref, on_success, state)
+    environment_replacement(image_ref, on_success, state)
   end
 
   defp process_instructions(
@@ -141,7 +141,7 @@ defmodule Kleened.Core.Image do
       })
     end
 
-    environment_replacement_(env_vars, on_success, state)
+    environment_replacement(env_vars, on_success, state)
   end
 
   defp process_instructions(
@@ -173,7 +173,7 @@ defmodule Kleened.Core.Image do
       })
     end
 
-    environment_replacement_(user, on_succes, state)
+    environment_replacement(user, on_succes, state)
   end
 
   defp process_instructions(
@@ -210,7 +210,7 @@ defmodule Kleened.Core.Image do
     Logger.info("Processing instruction: COPY #{inspect(src_dest)}")
     state = send_status(line, state)
     # TODO Elixir have nice wildcard-expansion stuff that we could use here
-    case environment_replacement_src_dest(src_dest, [], state) do
+    case environment_replacementsrc_dest(src_dest, [], state) do
       {:ok, src_and_dest} ->
         src_and_dest = convert_paths_to_jail_context_dir(src_and_dest)
         context_in_jail = create_context_dir_in_jail(state.context, state.container)
@@ -264,15 +264,15 @@ defmodule Kleened.Core.Image do
     send_msg(state.msg_receiver, {:image_build_succesfully, img})
   end
 
-  defp environment_replacement_src_dest([expression | rest], evaluated, state) do
+  defp environment_replacementsrc_dest([expression | rest], evaluated, state) do
     on_succes = fn evaluated_expr ->
-      environment_replacement_src_dest(rest, [evaluated_expr | evaluated], state)
+      environment_replacementsrc_dest(rest, [evaluated_expr | evaluated], state)
     end
 
-    environment_replacement_(expression, on_succes, state)
+    environment_replacement(expression, on_succes, state)
   end
 
-  defp environment_replacement_src_dest([], evaluated, _state) do
+  defp environment_replacementsrc_dest([], evaluated, _state) do
     {:ok, Enum.reverse(evaluated)}
   end
 
@@ -302,18 +302,7 @@ defmodule Kleened.Core.Image do
     Utils.merge_environment_variable_lists(args, env)
   end
 
-  defp environment_replacement(string, %State{
-         buildargs_collected: args_collected,
-         buildargs_supplied: args_supplied,
-         container: %Schemas.Container{env: env}
-       }) do
-    args = merge_buildargs(args_supplied, args_collected)
-    env = Utils.merge_environment_variable_lists(args, env)
-    command = ~w"/usr/bin/env -i" ++ env ++ ["/bin/sh", "-c", "echo -n #{string}"]
-    OS.cmd(command)
-  end
-
-  defp environment_replacement_(
+  defp environment_replacement(
          expression,
          on_success,
          %State{
