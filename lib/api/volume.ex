@@ -1,7 +1,7 @@
-defmodule Jocker.API.Volume do
+defmodule Kleened.API.Volume do
   alias OpenApiSpex.{Operation, Schema}
-  alias Jocker.API.Schemas
-  alias Jocker.Engine.Volume
+  alias Kleened.API.Schemas
+  alias Kleened.Engine.Volume
   require Logger
 
   import OpenApiSpex.Operation,
@@ -29,7 +29,7 @@ defmodule Jocker.API.Volume do
     end
 
     def list(conn, _opts) do
-      volumes = Jocker.Engine.MetaData.list_volumes() |> Jason.encode!()
+      volumes = Kleened.Engine.MetaData.list_volumes() |> Jason.encode!()
 
       conn
       |> Plug.Conn.put_resp_header("content-type", "application/json")
@@ -39,7 +39,7 @@ defmodule Jocker.API.Volume do
 
   defmodule Create do
     use Plug.Builder
-    alias Jocker.API.Utils
+    alias Kleened.API.Utils
 
     plug(Plug.Parsers,
       parsers: [:json],
@@ -83,7 +83,7 @@ defmodule Jocker.API.Volume do
 
   defmodule Remove do
     use Plug.Builder
-    alias Jocker.API.Utils
+    alias Kleened.API.Utils
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,

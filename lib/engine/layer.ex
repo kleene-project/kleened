@@ -1,6 +1,6 @@
-defmodule Jocker.Engine.Layer do
+defmodule Kleened.Engine.Layer do
   use GenServer
-  alias Jocker.Engine.{Config, MetaData}
+  alias Kleened.Engine.{Config, MetaData}
   require Logger
 
   @derive Jason.Encoder
@@ -58,9 +58,9 @@ defmodule Jocker.Engine.Layer do
   end
 
   defp new_(%Layer{snapshot: parent_snapshot}, container_id) do
-    id = Jocker.Engine.Utils.uuid()
+    id = Kleened.Engine.Utils.uuid()
     dataset = Path.join([Config.get("zroot"), "container", container_id])
-    {_, 0} = Jocker.Engine.ZFS.clone(parent_snapshot, dataset)
+    {_, 0} = Kleened.Engine.ZFS.clone(parent_snapshot, dataset)
 
     new_layer = %Layer{
       id: id,
@@ -68,14 +68,14 @@ defmodule Jocker.Engine.Layer do
       mountpoint: Path.join("/", dataset)
     }
 
-    Jocker.Engine.MetaData.add_layer(new_layer)
+    Kleened.Engine.MetaData.add_layer(new_layer)
     new_layer
   end
 
   defp destroy_(layer_id) do
     case MetaData.get_layer(layer_id) do
       %Layer{dataset: dataset} ->
-        {_, 0} = Jocker.Engine.ZFS.destroy(dataset)
+        {_, 0} = Kleened.Engine.ZFS.destroy(dataset)
         MetaData.remove_layer(layer_id)
 
       :not_found ->
@@ -85,11 +85,11 @@ defmodule Jocker.Engine.Layer do
 
   defp to_image_(%Layer{dataset: dataset} = layer, image_id) do
     new_dataset = Path.join([Config.get("zroot"), "image", image_id])
-    Jocker.Engine.ZFS.rename(dataset, new_dataset)
+    Kleened.Engine.ZFS.rename(dataset, new_dataset)
 
     snapshot = new_dataset <> "@layer"
     mountpoint = "/" <> new_dataset
-    {_, 0} = Jocker.Engine.ZFS.snapshot(snapshot)
+    {_, 0} = Kleened.Engine.ZFS.snapshot(snapshot)
 
     updated_layer = %Layer{
       layer
@@ -98,7 +98,7 @@ defmodule Jocker.Engine.Layer do
         mountpoint: mountpoint
     }
 
-    Jocker.Engine.MetaData.add_layer(updated_layer)
+    Kleened.Engine.MetaData.add_layer(updated_layer)
     updated_layer
   end
 end

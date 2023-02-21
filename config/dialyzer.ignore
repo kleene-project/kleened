@@ -1,7 +1,7 @@
 The call 'Elixir.Amnesia.Table':create('image',[{'attributes',[atom()]} | {'disc_copies',[]} | {'index',['name',...]},...]) breaks the contract (atom(),c()) -> o()
 The attempt to match a term of type 'Elixir.Amnesia.Table.Select':t() against the pattern [_existing_img@1] breaks the opacity of the term
-The call 'Elixir.Jocker.Engine.MetaData':extract(_result@1::'Elixir.Amnesia.Table.Select':t()) contains an opaque term as 1st argument when a structured term of type atom() | #{'values':=_, _=>_} is expected
+The call 'Elixir.Kleened.Engine.MetaData':extract(_result@1::'Elixir.Amnesia.Table.Select':t()) contains an opaque term as 1st argument when a structured term of type atom() | #{'values':=_, _=>_} is expected
 :0: Unknown function mnesia:transaction/1
-The call 'Elixir.Supervisor':init(_children@1::[#{'id':='Elixir.Jocker.Engine.Container', 'start':={'Elixir.Jocker.Engine.Container','create',[]}},...],[{'strategy','simple_one_for_one'},...]) breaks the contract ([supervisor:child_spec() | {module(),term()} | module()],[init_option()]) -> {'ok',tuple()}
+The call 'Elixir.Supervisor':init(_children@1::[#{'id':='Elixir.Kleened.Engine.Container', 'start':={'Elixir.Kleened.Engine.Container','create',[]}},...],[{'strategy','simple_one_for_one'},...]) breaks the contract ([supervisor:child_spec() | {module(),term()} | module()],[init_option()]) -> {'ok',tuple()}
 Function init/1 has no local return
-The call 'Elixir.Jocker.Engine.MetaData':extract(_result@2::'Elixir.Amnesia.Table.Select':t()) contains an opaque term as 1st argument when a structured term of type atom() | #{'values':=_, _=>_} is expected
+The call 'Elixir.Kleened.Engine.MetaData':extract(_result@2::'Elixir.Amnesia.Table.Select':t()) contains an opaque term as 1st argument when a structured term of type atom() | #{'values':=_, _=>_} is expected

@@ -1,14 +1,14 @@
-defmodule Jocker.API.Spec do
+defmodule Kleened.API.Spec do
   alias OpenApiSpex.{Info, OpenApi}
-  alias Jocker.API
+  alias Kleened.API
   @behaviour OpenApi
 
   @impl OpenApi
   def spec do
     %OpenApi{
       info: %Info{
-        title: "Jockerd API",
-        description: "HTTP API for communicating with the Jocker Engine",
+        title: "Kleened API",
+        description: "HTTP API for communicating with the Kleened Engine",
         version: "0.0.1"
       },
       paths: %{

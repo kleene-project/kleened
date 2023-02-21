@@ -1,9 +1,9 @@
-defmodule Jocker.Engine.Config do
-  alias Jocker.Engine.ZFS
+defmodule Kleened.Engine.Config do
+  alias Kleened.Engine.ZFS
   require Logger
   use Agent
 
-  @default_config_path "/usr/local/etc/jocker_config.yaml"
+  @default_config_path "/usr/local/etc/kleened_config.yaml"
 
   def start_link([]) do
     Agent.start_link(&initialize/0, name: __MODULE__)
@@ -28,10 +28,10 @@ defmodule Jocker.Engine.Config do
     error_if_not_defined(cfg, "api_socket")
     error_if_not_defined(cfg, "base_layer_dataset")
     cfg = valid_api_socket(cfg)
-    cfg = initialize_jocker_root(cfg)
+    cfg = initialize_kleene_root(cfg)
     cfg = initialize_baselayer(cfg)
     cfg = Map.put(cfg, "metadata_db", Path.join(["/", cfg["zroot"], "metadata.sqlite"]))
-    Map.put(cfg, "pf_config_path", Path.join(["/", cfg["zroot"], "pf_jocker.conf"]))
+    Map.put(cfg, "pf_config_path", Path.join(["/", cfg["zroot"], "pf_kleene.conf"]))
   end
 
   def initialize_system() do
@@ -95,16 +95,16 @@ defmodule Jocker.Engine.Config do
     end
   end
 
-  defp initialize_jocker_root(cfg) do
+  defp initialize_kleene_root(cfg) do
     root = Map.get(cfg, "zroot")
     root_status = ZFS.info(root)
 
     case root_status do
       %{"exists?" => false} ->
-        config_error("jockers root zfs filesystem #{root} does not seem to exist. Exiting.")
+        config_error("kleenes root zfs filesystem #{root} does not seem to exist. Exiting.")
 
       %{"mountpoint" => nil} ->
-        config_error("jockers root zfs filesystem #{root} does not have any mountpoint. Exiting.")
+        config_error("kleenes root zfs filesystem #{root} does not have any mountpoint. Exiting.")
 
       _ ->
         :ok
@@ -119,16 +119,16 @@ defmodule Jocker.Engine.Config do
 
   defp initialize_baselayer(cfg) do
     dataset = cfg["base_layer_dataset"]
-    snapshot = cfg["base_layer_dataset"] <> "@jocker"
+    snapshot = cfg["base_layer_dataset"] <> "@kleene"
     info = ZFS.info(cfg["base_layer_dataset"])
     snapshot_info = ZFS.info(snapshot)
 
     cond do
       info[:exists?] == false ->
-        config_error("jockers root zfs filesystem #{dataset} does not seem to exist. Exiting.")
+        config_error("kleenes root zfs filesystem #{dataset} does not seem to exist. Exiting.")
 
       snapshot_info[:exists?] == false ->
-        Jocker.Engine.ZFS.snapshot(snapshot)
+        Kleened.Engine.ZFS.snapshot(snapshot)
 
       true ->
         :ok
@@ -145,7 +145,7 @@ defmodule Jocker.Engine.Config do
   end
 
   defp valid_api_socket(%{"api_socket" => api_socket} = config) do
-    case Jocker.Engine.Utils.decode_socket_address(api_socket) do
+    case Kleened.Engine.Utils.decode_socket_address(api_socket) do
       {:error, error} ->
         config_error("failed to decode 'api_socket': #{inspect(error)}")
 
@@ -166,12 +166,12 @@ defmodule Jocker.Engine.Config do
 
   defp config_error(msg) do
     Logger.error("configuration error: #{msg}")
-    raise "failed to configure jockerd"
+    raise "failed to configure kleened"
   end
 
   defp init_error(msg) do
     Logger.error("initialization error: #{msg}")
-    raise "failed to initialize jockerd"
+    raise "failed to initialize kleened"
   end
 
   defp open_config_file() do

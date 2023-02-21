@@ -1,8 +1,8 @@
 defmodule NetworkTest do
-  use Jocker.API.ConnCase
+  use Kleened.API.ConnCase
   require Logger
-  alias Jocker.Engine.{Network, Utils, MetaData, Container, Exec, OS}
-  alias Jocker.API.Schemas
+  alias Kleened.Engine.{Network, Utils, MetaData, Container, Exec, OS}
+  alias Kleened.API.Schemas
   alias Network.EndPoint
 
   @moduletag :capture_log
@@ -13,39 +13,39 @@ defmodule NetworkTest do
 
   setup do
     on_exit(fn ->
-      Jocker.Engine.MetaData.list_containers()
+      Kleened.Engine.MetaData.list_containers()
       |> Enum.map(fn %{id: id} -> Container.remove(id) end)
     end)
 
     on_exit(fn ->
-      Jocker.Engine.MetaData.list_networks(:exclude_host)
-      |> Enum.map(fn %{id: id} -> Jocker.Engine.Network.remove(id) end)
+      Kleened.Engine.MetaData.list_networks(:exclude_host)
+      |> Enum.map(fn %{id: id} -> Kleened.Engine.Network.remove(id) end)
     end)
 
     :ok
   end
 
   test "create, get and remove a new network", %{api_spec: api_spec} do
-    Utils.destroy_interface("jocker1")
+    Utils.destroy_interface("kleene1")
 
-    network = create_network(api_spec, %{ifname: "jocker1", driver: "loopback"})
+    network = create_network(api_spec, %{ifname: "kleene1", driver: "loopback"})
 
     assert network.name == "testnet"
 
-    assert Utils.interface_exists("jocker1")
+    assert Utils.interface_exists("kleene1")
     assert Network.inspect_(network.name) == network
     assert Network.inspect_(String.slice(network.id, 0, 4)) == network
     assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
-    assert not Utils.interface_exists("jocker1")
+    assert not Utils.interface_exists("kleene1")
     assert MetaData.get_network(network.id) == :not_found
   end
 
   test "listing networks", %{api_spec: api_spec} do
-    Utils.destroy_interface("jocker1")
+    Utils.destroy_interface("kleene1")
 
     assert [%{id: "host"}] = TestHelper.network_list(api_spec)
 
-    network = create_network(api_spec, %{ifname: "jocker1", driver: "loopback"})
+    network = create_network(api_spec, %{ifname: "kleene1", driver: "loopback"})
 
     assert [
              %{id: "host"},
@@ -56,17 +56,17 @@ defmodule NetworkTest do
   end
 
   test "remove a non-existing network", %{api_spec: api_spec} do
-    network = create_network(api_spec, %{ifname: "jocker1", driver: "loopback"})
+    network = create_network(api_spec, %{ifname: "kleene1", driver: "loopback"})
     assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
     assert TestHelper.network_destroy(api_spec, network.name) == %{message: "network not found."}
   end
 
   test "create a network with same name twice", %{api_spec: api_spec} do
-    network = create_network(api_spec, %{ifname: "jocker1", driver: "loopback"})
+    network = create_network(api_spec, %{ifname: "kleene1", driver: "loopback"})
 
     assert %{message: "network name is already taken"} ==
              TestHelper.network_create(api_spec, %{
-               ifname: "jocker2",
+               ifname: "kleene2",
                subnet: "172.19.0.0/16",
                driver: "loopback"
              })
@@ -122,7 +122,7 @@ defmodule NetworkTest do
 
   test "connect loopback network when container is created", %{api_spec: api_spec} do
     network =
-      create_network(api_spec, %{subnet: "172.19.0.0/16", ifname: "jocker1", driver: "loopback"})
+      create_network(api_spec, %{subnet: "172.19.0.0/16", ifname: "kleene1", driver: "loopback"})
 
     opts = %{
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network.loopback_if],
@@ -142,7 +142,7 @@ defmodule NetworkTest do
 
   test "connect loopback network after container creation", %{api_spec: api_spec} do
     network =
-      create_network(api_spec, %{ifname: "jocker1", subnet: "172.19.0.0/16", driver: "loopback"})
+      create_network(api_spec, %{ifname: "kleene1", subnet: "172.19.0.0/16", driver: "loopback"})
 
     opts = %{
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network.loopback_if],
@@ -253,7 +253,7 @@ defmodule NetworkTest do
   end
 
   test "create networks with a user-supplied ips", %{api_spec: api_spec} do
-    Utils.destroy_interface("jocker1")
+    Utils.destroy_interface("kleene1")
 
     network_vnet =
       create_network(api_spec, %{name: "testvnet", subnet: "10.13.37.0/24", driver: "vnet"})
@@ -303,7 +303,7 @@ defmodule NetworkTest do
   end
 
   test "connectivity using loopback interface", %{api_spec: api_spec} do
-    network = create_network(api_spec, %{driver: "loopback", ifname: "jocker1"})
+    network = create_network(api_spec, %{driver: "loopback", ifname: "kleene1"})
 
     %{id: container_id} =
       TestHelper.container_create(
@@ -409,7 +409,7 @@ defmodule NetworkTest do
 
   defp exec_run(container_id_or_exec_config, start_opts) do
     {:ok, exec_id} = Exec.create(container_id_or_exec_config)
-    Jocker.Engine.Exec.start(exec_id, start_opts)
+    Kleened.Engine.Exec.start(exec_id, start_opts)
     {:ok, exec_id}
   end
 

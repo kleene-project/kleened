@@ -1,8 +1,8 @@
-defmodule Jocker.API.Image do
+defmodule Kleened.API.Image do
   alias OpenApiSpex.{Operation, Schema}
-  alias Jocker.Engine
-  alias Jocker.API.Utils
-  alias Jocker.API.Schemas
+  alias Kleened.Engine
+  alias Kleened.API.Utils
+  alias Kleened.API.Schemas
   require Logger
 
   import OpenApiSpex.Operation,
@@ -31,7 +31,7 @@ defmodule Jocker.API.Image do
     end
 
     def list(conn, _opts) do
-      image_list = Jocker.Engine.MetaData.list_images() |> Jason.encode!()
+      image_list = Kleened.Engine.MetaData.list_images() |> Jason.encode!()
 
       conn
       |> Plug.Conn.put_resp_header("content-type", "application/json")

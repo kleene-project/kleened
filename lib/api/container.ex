@@ -1,7 +1,7 @@
-defmodule Jocker.API.Container do
+defmodule Kleened.API.Container do
   alias OpenApiSpex.{Operation, Schema}
-  alias Jocker.Engine.Container
-  alias Jocker.API.Schemas
+  alias Kleened.Engine.Container
+  alias Kleened.API.Schemas
   require Logger
 
   import OpenApiSpex.Operation,
@@ -56,7 +56,7 @@ defmodule Jocker.API.Container do
 
   defmodule Create do
     use Plug.Builder
-    alias Jocker.API.Utils
+    alias Kleened.API.Utils
 
     plug(Plug.Parsers,
       parsers: [:json],
@@ -137,7 +137,7 @@ defmodule Jocker.API.Container do
 
   defmodule Remove do
     use Plug.Builder
-    alias Jocker.API.Utils
+    alias Kleened.API.Utils
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,
@@ -148,7 +148,7 @@ defmodule Jocker.API.Container do
 
     def open_api_operation(_) do
       %Operation{
-        summary: "Delete a container from the file system and jocker.",
+        summary: "Delete a container from the file system and kleene.",
         operationId: "Container.Remove",
         parameters: [
           parameter(
@@ -189,7 +189,7 @@ defmodule Jocker.API.Container do
 
   defmodule Stop do
     use Plug.Builder
-    alias Jocker.API.Utils
+    alias Kleened.API.Utils
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,

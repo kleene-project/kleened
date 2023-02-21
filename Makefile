@@ -7,9 +7,9 @@ test:
 shell:
 	iex -S mix
 
-clear-jocker:
-	zfs destroy -rf zroot/jocker
-	zfs create zroot/jocker
+clear-kleened:
+	zfs destroy -rf zroot/kleene
+	zfs create zroot/kleene
 
 codecov:
 	MIX_ENV=test mix coveralls.html -o ./coveralls --max-failures 5

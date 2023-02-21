@@ -1,8 +1,8 @@
 defmodule ExecTest do
   require Logger
-  use Jocker.API.ConnCase
-  alias Jocker.Engine.{Container, Exec, Utils, Network}
-  alias Jocker.API.Schemas
+  use Kleened.API.ConnCase
+  alias Kleened.Engine.{Container, Exec, Utils, Network}
+  alias Kleened.API.Schemas
 
   @moduletag :capture_log
 
@@ -11,14 +11,14 @@ defmodule ExecTest do
       Network.create(%Schemas.NetworkConfig{
         name: "default",
         subnet: "192.168.83.0/24",
-        ifname: "jocker1",
+        ifname: "kleene1",
         driver: "loopback"
       })
 
     on_exit(fn ->
-      Jocker.Engine.Network.remove(testnet.id)
+      Kleened.Engine.Network.remove(testnet.id)
 
-      Jocker.Engine.MetaData.list_containers()
+      Kleened.Engine.MetaData.list_containers()
       |> Enum.map(fn %{id: id} -> Container.remove(id) end)
     end)
 
@@ -48,7 +48,7 @@ defmodule ExecTest do
     :ok = Exec.start(root_exec_id, %{attach: false, start_container: true})
 
     {:ok, exec_id} =
-      Exec.create(%Jocker.API.Schemas.ExecConfig{
+      Exec.create(%Kleened.API.Schemas.ExecConfig{
         container_id: container_id,
         cmd: ["/bin/echo", "test test"]
       })

@@ -1,4 +1,4 @@
-defmodule Jocker.API.Utils do
+defmodule Kleened.API.Utils do
   def error_response(msg) do
     Jason.encode!(%{message: msg})
   end

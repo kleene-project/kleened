@@ -1,4 +1,4 @@
-defmodule Jocker.API.Schemas do
+defmodule Kleened.API.Schemas do
   require OpenApiSpex
   alias OpenApiSpex.Schema
 
@@ -44,7 +44,7 @@ defmodule Jocker.API.Schemas do
           description:
             "A mapping of network name to endpoint configuration for that network. The 'container' property is ignored in each endpoint config and the created container's id is used instead. Use a dummy-string like 'unused_name' for the 'container' property since it is mandatory.",
           type: :object,
-          additionalProperties: Jocker.API.Schemas.EndPointConfig,
+          additionalProperties: Kleened.API.Schemas.EndPointConfig,
           default: %{}
         },
         jail_param: %Schema{
@@ -52,7 +52,7 @@ defmodule Jocker.API.Schemas do
           type: :array,
           items: %Schema{type: :string},
           default: [],
-          example: ["allow.raw_sockets=true", "osrelease=jockerjail"]
+          example: ["allow.raw_sockets=true", "osrelease=kleenejail"]
         }
       }
     })
@@ -134,7 +134,7 @@ defmodule Jocker.API.Schemas do
           type: :string,
           description:
             "Name of the interface that is being used for the network. Ignored unless it uses 'loopback' as the driver.",
-          example: "jocker0"
+          example: "kleene0"
         },
         driver: %Schema{
           type: :string,
@@ -167,14 +167,14 @@ defmodule Jocker.API.Schemas do
           type: :array,
           items: %Schema{type: :string},
           default: [],
-          example: ["PWD=/roo/", "JAIL_MGMT_ENGINE=jocker"]
+          example: ["PWD=/roo/", "JAIL_MGMT_ENGINE=kleene"]
         },
         buildargs: %Schema{
           description:
-            "Object of string pairs for build-time variables. Users pass these values at build-time. Jocker uses the buildargs as the environment context for commands run via the Dockerfile RUN instruction, or for variable expansion in other Dockerfile instructions. This is not meant for passing secret values.",
+            "Object of string pairs for build-time variables. Users pass these values at build-time. Kleened uses the buildargs as the environment context for commands run via the Dockerfile RUN instruction, or for variable expansion in other Dockerfile instructions. This is not meant for passing secret values.",
           type: :object,
           default: %{},
-          example: %{"USERNAME" => "Stephen", "JAIL_MGMT_ENGINE" => "jocker"}
+          example: %{"USERNAME" => "Stephen", "JAIL_MGMT_ENGINE" => "kleene"}
         },
         layer_id: %Schema{description: "Id of the layer containing the image", type: :string},
         user: %Schema{description: "user used when executing the command", type: :string},
@@ -187,7 +187,7 @@ defmodule Jocker.API.Schemas do
     OpenApiSpex.schema(%{
       description: "List of images.",
       type: :array,
-      items: Jocker.API.Schemas.Image
+      items: Kleened.API.Schemas.Image
     })
   end
 
@@ -221,7 +221,7 @@ defmodule Jocker.API.Schemas do
     OpenApiSpex.schema(%{
       description: "List of networks.",
       type: :array,
-      items: Jocker.API.Schemas.Network
+      items: Kleened.API.Schemas.Network
     })
   end
 
@@ -257,7 +257,7 @@ defmodule Jocker.API.Schemas do
     OpenApiSpex.schema(%{
       description: "List of volumes.",
       type: :array,
-      items: Jocker.API.Schemas.Volume
+      items: Kleened.API.Schemas.Volume
     })
   end
 
@@ -300,7 +300,7 @@ defmodule Jocker.API.Schemas do
           type: :array,
           items: :string,
           default: [],
-          example: ["allow.raw_sockets=true", "osrelease=jockerjail"]
+          example: ["allow.raw_sockets=true", "osrelease=kleenejail"]
         },
         created: %Schema{description: "When the container was created", type: :string},
         running: %Schema{description: "whether or not the container is running", type: :boolean}
@@ -341,7 +341,7 @@ defmodule Jocker.API.Schemas do
     OpenApiSpex.schema(%{
       description: "List of summarised containers.",
       type: :array,
-      items: Jocker.API.Schemas.ContainerSummary
+      items: Kleened.API.Schemas.ContainerSummary
     })
   end
 

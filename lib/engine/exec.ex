@@ -1,7 +1,7 @@
-defmodule Jocker.Engine.Exec do
-  alias Jocker.Engine.{Container, MetaData, OS, FreeBSD, Layer, Utils, ExecInstances, Network}
+defmodule Kleened.Engine.Exec do
+  alias Kleened.Engine.{Container, MetaData, OS, FreeBSD, Layer, Utils, ExecInstances, Network}
   alias Network.EndPoint
-  alias Jocker.API.Schemas
+  alias Kleened.API.Schemas
 
   defmodule State do
     defstruct config: nil,
@@ -35,7 +35,7 @@ defmodule Jocker.Engine.Exec do
       %Schemas.Container{id: container_id} ->
         config = %Schemas.ExecConfig{config | container_id: container_id}
         name = {:via, Registry, {ExecInstances, exec_id, container_id}}
-        {:ok, _pid} = GenServer.start_link(Jocker.Engine.Exec, [exec_id, config], name: name)
+        {:ok, _pid} = GenServer.start_link(Kleened.Engine.Exec, [exec_id, config], name: name)
         Logger.debug("succesfully created new execution instance #{exec_id}")
         {:ok, exec_id}
 
@@ -283,7 +283,7 @@ defmodule Jocker.Engine.Exec do
     # remove any devfs mounts of the jail. If it was closed with 'jail -r <jailname>' devfs should be removed automatically.
     # If the jail stops because there jailed process stops (i.e. 'jail -c <etc> /bin/sleep 10') then devfs is NOT removed.
     # A race condition can also occur such that "jail -r" does not unmount before this call to mount.
-    %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Kleened.Engine.MetaData.get_layer(layer_id)
     {output, _exitcode} = OS.cmd(["mount", "-t", "devfs"])
     output |> String.split("\n") |> Enum.map(&umount_container_devfs(&1, mountpoint))
   end
@@ -315,7 +315,7 @@ defmodule Jocker.Engine.Exec do
 
     network_config = setup_connectivity_configuration(id)
 
-    %Layer{mountpoint: path} = Jocker.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: path} = Kleened.Engine.MetaData.get_layer(layer_id)
 
     args =
       ~w"-c path=#{path} name=#{id}" ++

@@ -1,6 +1,6 @@
-defmodule Jocker.API.ImageBuild do
-  alias Jocker.Engine.{Image, Utils}
-  alias Jocker.API.Schemas
+defmodule Kleened.API.ImageBuild do
+  alias Kleened.Engine.{Image, Utils}
+  alias Kleened.API.Schemas
   require Logger
 
   # Called on connection initialization

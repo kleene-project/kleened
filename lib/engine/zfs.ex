@@ -1,6 +1,6 @@
-defmodule Jocker.Engine.ZFS do
+defmodule Kleened.Engine.ZFS do
   require Logger
-  alias Jocker.Engine.OS
+  alias Kleened.Engine.OS
 
   @spec create(String.t()) :: integer()
   def create(dataset) do

@@ -1,0 +1,13 @@
+---
+# Root ZFS dataset where Jocker stores the images, containers and volumes. Must be set.
+zroot: "zroot/kleene"
+
+# Where kleened listens for commands. Must be set: tcp://[host]:[port] or unix://[/path/to/socket]
+#api_socket: "unix:///var/run/kleened.sock"
+api_socket: tcp://127.0.0.1:8000
+
+# Dataset containg the userland that is used to build images. Must be set.
+base_layer_dataset: "zroot/kleene_basejail"
+
+# Default interface used as default gateway for containers. If omitted kleened tries to detect it automatically.
+# default_gateway_if: "em0"

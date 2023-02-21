@@ -1,7 +1,7 @@
-defmodule Jocker.API.Exec do
+defmodule Kleened.API.Exec do
   alias OpenApiSpex.{Operation, Schema}
-  alias Jocker.Engine.Exec
-  alias Jocker.API.Schemas
+  alias Kleened.Engine.Exec
+  alias Kleened.API.Schemas
   require Logger
 
   import OpenApiSpex.Operation,
@@ -9,7 +9,7 @@ defmodule Jocker.API.Exec do
 
   defmodule Create do
     use Plug.Builder
-    alias Jocker.API.Utils
+    alias Kleened.API.Utils
 
     plug(Plug.Parsers,
       parsers: [:json],
@@ -59,7 +59,7 @@ defmodule Jocker.API.Exec do
 
   defmodule Stop do
     use Plug.Builder
-    alias Jocker.API.Utils
+    alias Kleened.API.Utils
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,

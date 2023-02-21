@@ -1,6 +1,6 @@
-defmodule Jocker.Engine.Image do
-  alias Jocker.Engine.{ZFS, MetaData, Utils, Layer, Network, OS, Container}
-  alias Jocker.API.Schemas
+defmodule Kleened.Engine.Image do
+  alias Kleened.Engine.{ZFS, MetaData, Utils, Layer, Network, OS, Container}
+  alias Kleened.API.Schemas
   require Logger
 
   defmodule State do
@@ -23,10 +23,10 @@ defmodule Jocker.Engine.Image do
   @spec build(String.t(), String.t(), String.t(), boolean()) ::
           {:ok, pid()} | {:error, String.t()}
   def build(context_path, dockerfile, tag, buildargs, quiet \\ false) do
-    {name, tag} = Jocker.Engine.Utils.decode_tagname(tag)
+    {name, tag} = Kleened.Engine.Utils.decode_tagname(tag)
     dockerfile_path = Path.join(context_path, dockerfile)
     {:ok, dockerfile} = File.read(dockerfile_path)
-    instructions = Jocker.Engine.Dockerfile.parse(dockerfile)
+    instructions = Kleened.Engine.Dockerfile.parse(dockerfile)
 
     case verify_instructions(instructions) do
       :ok ->
@@ -101,11 +101,11 @@ defmodule Jocker.Engine.Image do
     state = send_status(line, state)
 
     on_success = fn new_image_ref ->
-      %Schemas.Image{id: image_id} = Jocker.Engine.MetaData.get_image(new_image_ref)
+      %Schemas.Image{id: image_id} = Kleened.Engine.MetaData.get_image(new_image_ref)
 
       {:ok, container_config} =
         OpenApiSpex.Cast.cast(
-          Jocker.API.Schemas.ContainerConfig.schema(),
+          Kleened.API.Schemas.ContainerConfig.schema(),
           %{
             jail_param: ["mount.devfs=true"],
             image: image_id,
@@ -117,7 +117,7 @@ defmodule Jocker.Engine.Image do
 
       name = Utils.uuid()
 
-      {:ok, container} = Jocker.Engine.Container.create(name, container_config)
+      {:ok, container} = Kleened.Engine.Container.create(name, container_config)
 
       process_instructions(%State{state | container: container, instructions: rest})
     end
@@ -247,7 +247,7 @@ defmodule Jocker.Engine.Image do
     Network.remove(state.network)
     MetaData.delete_container(container_id)
     layer = MetaData.get_layer(layer_id)
-    Jocker.Engine.Layer.to_image(layer, container_id)
+    Kleened.Engine.Layer.to_image(layer, container_id)
 
     img = %Schemas.Image{
       id: container_id,
@@ -260,7 +260,7 @@ defmodule Jocker.Engine.Image do
       created: DateTime.to_iso8601(DateTime.utc_now())
     }
 
-    Jocker.Engine.MetaData.add_image(img)
+    Kleened.Engine.MetaData.add_image(img)
     send_msg(state.msg_receiver, {:image_build_succesfully, img})
   end
 
@@ -388,8 +388,8 @@ defmodule Jocker.Engine.Image do
   end
 
   defp execute_cmd(%Schemas.ExecConfig{container_id: id} = config, state) do
-    {:ok, exec_id} = Jocker.Engine.Exec.create(config)
-    Jocker.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
+    {:ok, exec_id} = Kleened.Engine.Exec.create(config)
+    Kleened.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
     relay_output_and_await_shutdown(id, exec_id, state)
   end
 
@@ -418,8 +418,8 @@ defmodule Jocker.Engine.Image do
   end
 
   defp create_context_dir_in_jail(context, %Schemas.Container{layer_id: layer_id}) do
-    %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
-    context_in_jail = Path.join(mountpoint, "/jocker_temporary_context_store")
+    %Layer{mountpoint: mountpoint} = Kleened.Engine.MetaData.get_layer(layer_id)
+    context_in_jail = Path.join(mountpoint, "/kleene_temporary_context_store")
     {_output, 0} = System.cmd("/bin/mkdir", [context_in_jail], stderr_to_stdout: true)
     Utils.mount_nullfs([context, context_in_jail])
     context_in_jail
@@ -429,7 +429,7 @@ defmodule Jocker.Engine.Image do
     {dest, relative_sources} = List.pop_at(srcdest, -1)
 
     sources =
-      Enum.map(relative_sources, fn src -> Path.join("/jocker_temporary_context_store", src) end)
+      Enum.map(relative_sources, fn src -> Path.join("/kleene_temporary_context_store", src) end)
 
     Enum.reverse([dest | sources])
   end

@@ -1,15 +1,15 @@
 defmodule EngineUtilsTest do
   use ExUnit.Case
-  alias Jocker.Engine.Utils
+  alias Kleened.Engine.Utils
 
   @moduletag :capture_log
 
   test "decode addresses" do
-    assert {:unix, "/var/jocker", 0} == Utils.decode_socket_address("unix:///var/jocker")
+    assert {:unix, "/var/kleened", 0} == Utils.decode_socket_address("unix:///var/kleened")
     assert {:ipv4, {10, 0, 0, 1}, 1337} == Utils.decode_socket_address("tcp://10.0.0.1:1337")
 
-    assert {:hostname, "test.jocker.com", 1337} =
-             Utils.decode_socket_address("tcp://test.jocker.com:1337")
+    assert {:hostname, "test.kleene.com", 1337} =
+             Utils.decode_socket_address("tcp://test.kleene.com:1337")
 
     assert {:ipv6, {65152, 0, 0, 0, 4919, 43981, 4919, 65535}, 7000} ==
              Utils.decode_socket_address("tcp://fe80::1337:abcd:1337:ffff:7000")

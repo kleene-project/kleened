@@ -1,7 +1,7 @@
-defmodule Jocker.Engine.Network do
+defmodule Kleened.Engine.Network do
   use GenServer
-  alias Jocker.Engine.{Config, Container, Utils, MetaData, OS, FreeBSD}
-  alias Jocker.API.Schemas
+  alias Kleened.Engine.{Config, Container, Utils, MetaData, OS, FreeBSD}
+  alias Kleened.API.Schemas
   require Logger
 
   alias __MODULE__, as: Network
@@ -24,29 +24,29 @@ defmodule Jocker.Engine.Network do
   @type endpoint() :: %EndPoint{}
 
   @default_pf_configuration """
-  # This is the pf(4) configuration file template that is used by Jocker.
+  # This is the pf(4) configuration file template that is used by Kleened.
   # Feel free to add additional rules as long as the tags (and their ordering) below are preserved.
-  # Modify with care: It can potentially affect Jocker in unpredictable ways.
+  # Modify with care: It can potentially affect Kleened in unpredictable ways.
   # The resulting configuration file that is loaded into pf is defined at the 'pf_config_path'
-  # entry in the jocker engine configuration file (jocker_config.yaml).
+  # entry in the kleene engine configuration file (kleened_config.yaml).
 
-  ### JOCKER MACROS START ###
-  <%= jocker_macros %>
-  ### JOCKER MACROS END #####
+  ### KLEENED MACROS START ###
+  <%= kleene_macros %>
+  ### KLEENED MACROS END #####
 
-  ### JOCKER TRANSLATION RULES START ###
-  <%= jocker_translation %>
-  ### JOCKER TRANSLATION RULES END #####
+  ### KLEENED TRANSLATION RULES START ###
+  <%= kleene_translation %>
+  ### KLEENED TRANSLATION RULES END #####
 
-  ### JOCKER FILTERING RULES START #####
+  ### KLEENED FILTERING RULES START #####
   # block everything
   #block log all
 
   # skip loopback interface(s)
   set skip on lo0
 
-  <%= jocker_filtering %>
-  ### JOCKER FILTERING RULES END #######
+  <%= kleene_filtering %>
+  ### KLEENED FILTERING RULES END #######
   """
 
   def start_link([]) do
@@ -110,7 +110,7 @@ defmodule Jocker.Engine.Network do
     FreeBSD.enable_ip_forwarding()
 
     if not Utils.touch(pf_conf_path) do
-      Logger.error("Unable to access Jockers PF configuration file located at #{pf_conf_path}")
+      Logger.error("Unable to access Kleeneds PF configuration file located at #{pf_conf_path}")
     end
 
     create_loopback_interfaces()
@@ -459,8 +459,8 @@ defmodule Jocker.Engine.Network do
         [%Schemas.Network{driver: "loopback", loopback_if: if_name, subnet: subnet} | rest],
         %{macros: macros, translation: translation} = state
       ) do
-    new_macro = "jocker_loopback_#{if_name}_subnet=\"#{subnet}\""
-    nat_subnet = "nat on $gw_if from $jocker_loopback_#{if_name}_subnet to any -> ($gw_if)"
+    new_macro = "kleene_loopback_#{if_name}_subnet=\"#{subnet}\""
+    nat_subnet = "nat on $gw_if from $kleene_loopback_#{if_name}_subnet to any -> ($gw_if)"
 
     new_state = %{
       state
@@ -475,11 +475,11 @@ defmodule Jocker.Engine.Network do
         [%Schemas.Network{driver: "vnet", bridge_if: bridge_name, subnet: subnet} | rest],
         %{macros: macros, translation: translation} = state
       ) do
-    new_macro1 = "jocker_bridge_#{bridge_name}_subnet=\"#{subnet}\""
-    new_macro2 = "jocker_bridge_#{bridge_name}_if=\"#{bridge_name}\""
+    new_macro1 = "kleene_bridge_#{bridge_name}_subnet=\"#{subnet}\""
+    new_macro2 = "kleene_bridge_#{bridge_name}_if=\"#{bridge_name}\""
 
     nat_bridged_network =
-      "nat on $gw_if inet from ($jocker_bridge_#{bridge_name}_if:network) to any -> ($gw_if)"
+      "nat on $gw_if inet from ($kleene_bridge_#{bridge_name}_if:network) to any -> ($gw_if)"
 
     new_state = %{
       state
@@ -496,9 +496,9 @@ defmodule Jocker.Engine.Network do
         :filtering => filtering
       }) do
     EEx.eval_string(@default_pf_configuration,
-      jocker_macros: Enum.join(macros, "\n"),
-      jocker_translation: Enum.join(translation, "\n"),
-      jocker_filtering: Enum.join(filtering, "\n")
+      kleene_macros: Enum.join(macros, "\n"),
+      kleene_translation: Enum.join(translation, "\n"),
+      kleene_filtering: Enum.join(filtering, "\n")
     )
   end
 
@@ -660,7 +660,7 @@ defmodule Jocker.Engine.Network do
   defp get_jail_ips(container_id) do
     # jls --libxo json -v -j 83 produceres
     # {"__version": "2",
-    #  "jail-information": {"jail": [{"jid":83,"hostname":"","path":"/zroot/jocker_basejail","name":"83","state":"ACTIVE","cpusetid":4, "ipv4_addrs": ["172.17.0.1","172.17.0.2"], "ipv6_addrs": []}]}
+    #  "jail-information": {"jail": [{"jid":83,"hostname":"","path":"/zroot/kleene_basejail","name":"83","state":"ACTIVE","cpusetid":4, "ipv4_addrs": ["172.17.0.1","172.17.0.2"], "ipv6_addrs": []}]}
     # }
     case System.cmd("/usr/sbin/jls", ["--libxo", "json", "-v", "-j", container_id]) do
       {output_json, 0} ->

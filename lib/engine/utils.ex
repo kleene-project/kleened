@@ -1,4 +1,4 @@
-defmodule Jocker.Engine.Utils do
+defmodule Kleened.Engine.Utils do
   require Logger
 
   def is_container_running?(container_id) do
@@ -67,14 +67,14 @@ defmodule Jocker.Engine.Utils do
     {"", 0} = System.cmd("/sbin/mount_nullfs", args)
   end
 
-  def destroy_interface(jocker_if) do
-    if interface_exists(jocker_if) do
-      {"", _exitcode} = System.cmd("ifconfig", [jocker_if, "destroy"])
+  def destroy_interface(kleene_if) do
+    if interface_exists(kleene_if) do
+      {"", _exitcode} = System.cmd("ifconfig", [kleene_if, "destroy"])
     end
   end
 
-  def interface_exists(jocker_if) do
-    {json, 0} = System.cmd("netstat", ["--libxo", "json", "-I", jocker_if])
+  def interface_exists(kleene_if) do
+    {json, 0} = System.cmd("netstat", ["--libxo", "json", "-I", kleene_if])
 
     case Jason.decode(json) do
       {:ok, %{"statistics" => %{"interface" => []}}} -> false

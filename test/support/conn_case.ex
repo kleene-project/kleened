@@ -1,4 +1,4 @@
-defmodule Jocker.API.ConnCase do
+defmodule Kleened.API.ConnCase do
   use ExUnit.CaseTemplate
 
   using do
@@ -12,7 +12,7 @@ defmodule Jocker.API.ConnCase do
 
   setup tags do
     # Added to the context to validate responses with assert_schema/3
-    api_spec = Jocker.API.Spec.spec()
+    api_spec = Kleened.API.Spec.spec()
 
     {:ok, api_spec: api_spec}
   end

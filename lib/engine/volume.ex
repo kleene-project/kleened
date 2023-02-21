@@ -1,6 +1,6 @@
-defmodule Jocker.Engine.Volume do
-  alias Jocker.Engine.{ZFS, Config, Utils, Layer, MetaData}
-  alias Jocker.API.Schemas
+defmodule Kleened.Engine.Volume do
+  alias Kleened.Engine.{ZFS, Config, Utils, Layer, MetaData}
+  alias Kleened.API.Schemas
   require Config
   require Logger
 
@@ -51,7 +51,7 @@ defmodule Jocker.Engine.Volume do
 
   @spec destroy(String.t()) :: :ok | {:error, String.t()}
   def destroy(name) do
-    case Jocker.Engine.MetaData.get_volume(name) do
+    case Kleened.Engine.MetaData.get_volume(name) do
       :not_found ->
         {:error, "No such volume"}
 
@@ -72,7 +72,7 @@ defmodule Jocker.Engine.Volume do
 
   @spec bind_volume(
           %Schemas.Container{},
-          Jocker.Engine.Records.volume(),
+          Kleened.Engine.Records.volume(),
           String.t(),
           bind_opts()
         ) :: :ok

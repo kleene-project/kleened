@@ -1,8 +1,8 @@
 defmodule MetaDataTest do
   use ExUnit.Case
-  alias Jocker.Engine.{Config, Volume.Mount, Layer}
-  alias Jocker.API.Schemas
-  import Jocker.Engine.MetaData
+  alias Kleened.Engine.{Config, Volume.Mount, Layer}
+  alias Kleened.API.Schemas
+  import Kleened.Engine.MetaData
   import TestHelper, only: [now: 0]
 
   @moduletag :capture_log
@@ -185,10 +185,10 @@ defmodule MetaDataTest do
   test "test db creation" do
     db_file = dbfile()
     assert file_exists?(db_file)
-    Application.stop(:jocker)
+    Application.stop(:kleened)
     File.rm(db_file)
     assert not file_exists?(db_file)
-    Application.start(:jocker)
+    Application.start(:kleened)
     assert file_exists?(db_file)
   end
 

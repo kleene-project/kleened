@@ -1,11 +1,11 @@
-defmodule Jocker.API.Router do
+defmodule Kleened.API.Router do
   use Plug.Router
   use Plug.Debugger
   require Logger
-  alias Jocker.API
+  alias Kleened.API
 
   plug(Plug.Logger, log: :debug)
-  plug(OpenApiSpex.Plug.PutApiSpec, module: Jocker.API.Spec)
+  plug(OpenApiSpex.Plug.PutApiSpec, module: Kleened.API.Spec)
   plug(:match)
   plug(:dispatch)
 
@@ -47,7 +47,7 @@ defmodule Jocker.API.Router do
        [
          {"/exec/:exec_id/start", API.ExecStartWebSocket, []},
          {"/images/build", API.ImageBuild, []},
-         {:_, Plug.Cowboy.Handler, {Jocker.API.Router, []}}
+         {:_, Plug.Cowboy.Handler, {Kleened.API.Router, []}}
        ]}
     ]
   end

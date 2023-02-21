@@ -1,4 +1,2 @@
-# Jocker
-Implementing Docker-like containers in FreeBSD.
-
+# Kleened
 WIP.

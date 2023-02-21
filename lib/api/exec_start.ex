@@ -1,5 +1,5 @@
-defmodule Jocker.API.ExecStartWebSocket do
-  alias Jocker.Engine.Exec
+defmodule Kleened.API.ExecStartWebSocket do
+  alias Kleened.Engine.Exec
   require Logger
 
   # Called on connection initialization

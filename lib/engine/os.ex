@@ -1,4 +1,4 @@
-defmodule Jocker.Engine.OS do
+defmodule Kleened.Engine.OS do
   require Logger
 
   def cmd([executable | args] = command, options \\ %{suppress_warning: false}) do

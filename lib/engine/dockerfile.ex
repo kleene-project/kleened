@@ -1,4 +1,4 @@
-defmodule Jocker.Engine.Dockerfile do
+defmodule Kleened.Engine.Dockerfile do
   import String, only: [replace: 3, split: 2, split: 3, trim: 1, to_integer: 1]
   require Logger
 

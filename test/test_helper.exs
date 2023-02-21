@@ -1,5 +1,5 @@
-alias Jocker.Engine.{ZFS, Config, Layer, Exec, MetaData}
-alias Jocker.API.Schemas
+alias Kleened.Engine.{ZFS, Config, Layer, Exec, MetaData}
+alias Kleened.API.Schemas
 require Logger
 
 Code.put_compiler_option(:warnings_as_errors, true)
@@ -19,7 +19,7 @@ defmodule TestHelper do
   import Plug.Conn
   import OpenApiSpex.TestAssertions
   alias :gun, as: Gun
-  alias Jocker.API.Router
+  alias Kleened.API.Router
 
   @opts Router.init([])
 
@@ -428,7 +428,7 @@ defmodule TestHelper do
   end
 
   def devfs_mounted(%Schemas.Container{layer_id: layer_id}) do
-    %Layer{mountpoint: mountpoint} = Jocker.Engine.MetaData.get_layer(layer_id)
+    %Layer{mountpoint: mountpoint} = Kleened.Engine.MetaData.get_layer(layer_id)
     devfs_path = Path.join(mountpoint, "dev")
 
     case System.cmd("sh", ["-c", "mount | grep \"devfs on #{devfs_path}\""]) do

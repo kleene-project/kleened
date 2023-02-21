@@ -1,16 +1,16 @@
 defmodule VolumeTest do
-  use Jocker.API.ConnCase
+  use Kleened.API.ConnCase
   require Logger
 
-  alias Jocker.Engine.{MetaData, Container, Volume}
-  alias Jocker.API.Router
+  alias Kleened.Engine.{MetaData, Container, Volume}
+  alias Kleened.API.Router
 
   @moduletag :capture_log
   @opts Router.init([])
 
   setup do
     on_exit(fn ->
-      Jocker.Engine.MetaData.list_volumes()
+      Kleened.Engine.MetaData.list_volumes()
       |> Enum.map(&Volume.destroy(&1.name))
     end)
 
@@ -67,9 +67,9 @@ defmodule VolumeTest do
 
     container = MetaData.get_container(id)
 
-    {:ok, exec_id} = Jocker.Engine.Exec.create(id)
+    {:ok, exec_id} = Kleened.Engine.Exec.create(id)
     :ok = Volume.bind_volume(container, volume, location)
-    Jocker.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
+    Kleened.Engine.Exec.start(exec_id, %{attach: true, start_container: true})
 
     receive do
       {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}} -> :ok

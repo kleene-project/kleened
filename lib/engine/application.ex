@@ -1,4 +1,4 @@
-defmodule Jocker.Engine.Application do
+defmodule Kleened.Engine.Application do
   # See https://hexdocs.pm/elixir/Application.html
   # for more information on OTP Applications
   @moduledoc false
@@ -12,30 +12,30 @@ defmodule Jocker.Engine.Application do
 
   def start(_type, _args) do
     # FIXME: This is a dirty-hack to fetch "api_socket" before supervisor is started, as it is used to configure ranch supervisor.
-    # To make this properly requires a refactor of the Jocker.Engine.Config:
+    # To make this properly requires a refactor of the Kleened.Engine.Config:
     # Load the configuration file at startup and pass configuration parameters in the child
     # in the supervision-tree here: The configuration values are required here before supervisor i started.
-    {:ok, pid} = Jocker.Engine.Config.start_link([])
-    # socket_opts = create_socket_options(Jocker.Engine.Config.get("api_socket"))
+    {:ok, pid} = Kleened.Engine.Config.start_link([])
+    # socket_opts = create_socket_options(Kleened.Engine.Config.get("api_socket"))
     GenServer.stop(pid)
 
     children = [
-      Jocker.Engine.Config,
-      Jocker.Engine.MetaData,
-      Jocker.Engine.Layer,
-      Jocker.Engine.Network,
-      {Registry, keys: :unique, name: Jocker.Engine.ExecInstances},
+      Kleened.Engine.Config,
+      Kleened.Engine.MetaData,
+      Kleened.Engine.Layer,
+      Kleened.Engine.Network,
+      {Registry, keys: :unique, name: Kleened.Engine.ExecInstances},
       {DynamicSupervisor,
-       name: Jocker.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0},
+       name: Kleened.Engine.ContainerPool, strategy: :one_for_one, max_restarts: 0},
       {Plug.Cowboy,
        scheme: :http,
        plug: HTTP.API,
-       options: [port: 8085, dispatch: Jocker.API.Router.dispatch()]}
+       options: [port: 8085, dispatch: Kleened.API.Router.dispatch()]}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
-    opts = [strategy: :one_for_one, name: Jocker.Engine.Supervisor]
+    opts = [strategy: :one_for_one, name: Kleened.Engine.Supervisor]
 
     case Supervisor.start_link(children, opts) do
       {:ok, pid} ->
@@ -43,11 +43,11 @@ defmodule Jocker.Engine.Application do
 
       {:error,
        {:shutdown,
-        {:failed_to_start_child, Jocker.Engine.Config, {%RuntimeError{message: msg}, _}}}} ->
+        {:failed_to_start_child, Kleened.Engine.Config, {%RuntimeError{message: msg}, _}}}} ->
         {:error, "could not start dockerd: #{msg}"}
 
       unknown_return ->
-        {:error, "could not start jockerd: #{inspect(unknown_return)}"}
+        {:error, "could not start kleened: #{inspect(unknown_return)}"}
     end
   end
 

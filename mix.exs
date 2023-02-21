@@ -1,15 +1,15 @@
-defmodule Jocker.MixProject do
+defmodule Kleened.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :jocker,
+      app: :kleened,
       version: "0.0.1",
       elixir: "~> 1.9",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       releases: [
-        jockerd: [include_executables_for: [:unix]]
+        kleened: [include_executables_for: [:unix]]
       ],
       dialyzer: [
         # plt_ignore_apps: [:amnesia],
@@ -31,7 +31,7 @@ defmodule Jocker.MixProject do
   def application do
     [
       extra_applications: [:logger, :crypto, :eex, :cowboy, :plug],
-      mod: {Jocker.Engine.Application, []}
+      mod: {Kleened.Engine.Application, []}
     ]
   end
 
