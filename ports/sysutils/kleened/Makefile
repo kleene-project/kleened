@@ -21,7 +21,7 @@ USE_RC_SUBR=	kleened
 
 USE_GITHUB=		yes
 
-GH_TUPLE=		lgandersen:kleened:c45cfab:DEFAULT
+GH_TUPLE=		lgandersen:kleened:6d3fc4f:DEFAULT
 
 MIX_TARGET=		release
 ELIXIR_APP_NAME?=	${PORTNAME}
