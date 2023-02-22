@@ -118,6 +118,28 @@ defmodule ImageTest do
     assert MetaData.list_containers() == []
   end
 
+  test "create an image with a wildcard-expandable 'COPY' instruction" do
+    dockerfile = """
+    FROM scratch
+    COPY *.txt /root/
+    """
+
+    context = create_test_context("test_expanded_copy_instruction")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    config = %{
+      context: context,
+      dockerfile: @tmp_dockerfile,
+      tag: "test:latest"
+    }
+
+    {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
+    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
+    assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
+    assert File.read(Path.join(mountpoint, "root/test2.txt")) == {:ok, "lel\n"}
+    assert MetaData.list_containers() == []
+  end
+
   test "create an image with a 'COPY' instruction using symlinks" do
     dockerfile = """
     FROM scratch
@@ -655,6 +677,7 @@ defmodule ImageTest do
     mountpoint = Path.join("/", dataset)
     Kleened.Core.ZFS.create(dataset)
     {"", 0} = System.cmd("sh", ["-c", "echo 'lol' > #{mountpoint}/test.txt"])
+    {"", 0} = System.cmd("sh", ["-c", "echo 'lel' > #{mountpoint}/test2.txt"])
     mountpoint
   end
 end

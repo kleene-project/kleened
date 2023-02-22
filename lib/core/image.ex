@@ -209,10 +209,12 @@ defmodule Kleened.Core.Image do
   defp process_instructions(%State{instructions: [{line, {:copy, src_dest}} | _rest]} = state) do
     Logger.info("Processing instruction: COPY #{inspect(src_dest)}")
     state = send_status(line, state)
-    # TODO Elixir have nice wildcard-expansion stuff that we could use here
+
     case environment_replacementsrc_dest(src_dest, [], state) do
       {:ok, src_and_dest} ->
+        src_and_dest = wildcard_expand_srcs(src_and_dest, state)
         src_and_dest = convert_paths_to_jail_context_dir(src_and_dest)
+
         context_in_jail = create_context_dir_in_jail(state.context, state.container)
 
         config = %Schemas.ExecConfig{
@@ -414,13 +416,29 @@ defmodule Kleened.Core.Image do
     context_in_jail
   end
 
+  defp wildcard_expand_srcs(srcdest, state) do
+    {dest, srcs_relative} = List.pop_at(srcdest, -1)
+    context_depth = length(Path.split(state.context))
+
+    expanded_sources =
+      Enum.flat_map(srcs_relative, fn src_rel ->
+        # Wildcard-expand on the hosts absolute paths
+        src_expanded_list = Path.join(state.context, src_rel) |> Path.wildcard()
+
+        # Remove context-root from expanded paths
+        Enum.map(src_expanded_list, &(Path.split(&1) |> Enum.drop(context_depth) |> Path.join()))
+      end)
+
+    Enum.reverse([dest | expanded_sources])
+  end
+
   defp convert_paths_to_jail_context_dir(srcdest) do
     {dest, relative_sources} = List.pop_at(srcdest, -1)
 
-    sources =
+    absolute_sources =
       Enum.map(relative_sources, fn src -> Path.join("/kleene_temporary_context_store", src) end)
 
-    Enum.reverse([dest | sources])
+    Enum.reverse([dest | absolute_sources])
   end
 
   defp send_msg(pid, msg) do
