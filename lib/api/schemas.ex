@@ -89,7 +89,8 @@ defmodule Kleened.API.Schemas do
           items: %Schema{type: :string},
           default: [],
           example: ["DEBUG=0", "LANG=da_DK.UTF-8"]
-        }
+        },
+        tty: %Schema{description: "Allocate a pseudo-TTY", type: :boolean, default: false}
       }
     })
   end

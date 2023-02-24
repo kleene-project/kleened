@@ -19,14 +19,24 @@ defmodule Kleened.Core.OS do
     return_value
   end
 
-  def cmd_async([executable | args] = command) do
+  def cmd_async(command, use_pty \\ false) do
+    {executable, args} =
+      case use_pty do
+        false ->
+          [executable | args] = command
+          {executable, args}
+
+        true ->
+          {"priv/bin/runpty", command}
+      end
+
     port =
       Port.open(
         {:spawn_executable, executable},
         [:stderr_to_stdout, :binary, :exit_status, {:args, args}]
       )
 
-    Logger.debug("spawned #{inspect(port)} using '#{Enum.join(command, " ")}'")
+    Logger.debug("spawned #{inspect(port)} using '#{Enum.join([executable | args], " ")}'")
     port
   end
 end
