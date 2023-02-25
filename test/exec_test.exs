@@ -140,6 +140,30 @@ defmodule ExecTest do
     refute Utils.is_container_running?(container_id)
   end
 
+  test "Create a exec instance that allocates a pseudo-TTY", %{
+    api_spec: api_spec
+  } do
+    %{id: container_id} =
+      TestHelper.container_create(api_spec, "testcont", %{cmd: ["/usr/bin/tty"]})
+
+    # Start a process without attaching a PTY
+    %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
+
+    {:ok, conn} = TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
+    assert {:text, "OK"} == TestHelper.receive_frame(conn)
+
+    {:text, msg} = TestHelper.receive_frame(conn)
+    assert <<"not a tty\n", _rest::binary>> = msg
+
+    # Start a process with a PTY attach
+    %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id, tty: true})
+
+    {:ok, conn} = TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
+    assert {:text, "OK"} == TestHelper.receive_frame(conn)
+    {:text, msg} = TestHelper.receive_frame(conn)
+    assert <<"/dev/pts/", _rest::binary>> = msg
+  end
+
   test "use execution instance created with container name instead of container id", %{
     api_spec: api_spec
   } do
