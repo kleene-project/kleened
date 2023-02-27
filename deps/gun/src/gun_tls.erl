@@ -1,4 +1,4 @@
-%% Copyright (c) 2011-2018, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) 2011-2023, Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -17,7 +17,6 @@
 -export([name/0]).
 -export([messages/0]).
 -export([connect/3]).
--export([connect/4]).
 -export([send/2]).
 -export([setopts/2]).
 -export([sockname/1]).
@@ -31,14 +30,6 @@ messages() -> {ssl, ssl_closed, ssl_error}.
 	-> {ok, ssl:sslsocket()} | {error, atom()}.
 connect(Socket, Opts, Timeout) ->
 	ssl:connect(Socket, Opts, Timeout).
-
--spec connect(inet:ip_address() | inet:hostname(),
-	inet:port_number(), any(), timeout())
-	-> {ok, ssl:sslsocket()} | {error, atom()}.
-connect(Host, Port, Opts, Timeout) when is_integer(Port) ->
-	ssl:connect(Host, Port,
-		Opts ++ [binary, {active, false}, {packet, raw}],
-		Timeout).
 
 -spec send(ssl:sslsocket(), iodata()) -> ok | {error, atom()}.
 send(Socket, Packet) ->

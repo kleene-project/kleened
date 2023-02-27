@@ -1,4 +1,4 @@
-%% Copyright (c) 2017-2018, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) 2017-2023, Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -25,31 +25,39 @@
 }).
 
 %% @todo In the future we want to allow different media types.
-%% @todo For text/event-stream specifically, the parameters must be ignored.
 
 -spec init(pid(), reference(), _, cow_http:headers(), _)
 	-> {ok, #state{}} | disable.
 init(ReplyTo, StreamRef, _, Headers, _) ->
 	case lists:keyfind(<<"content-type">>, 1, Headers) of
-		{_, <<"text/event-stream">>} ->
-			{ok, #state{reply_to=ReplyTo, stream_ref=StreamRef,
-				sse_state=cow_sse:init()}};
+		{_, ContentType} ->
+			case cow_http_hd:parse_content_type(ContentType) of
+				{<<"text">>, <<"event-stream">>, _Ignored} ->
+					{ok, #state{reply_to=ReplyTo, stream_ref=StreamRef,
+						sse_state=cow_sse:init()}};
+				_ ->
+					disable
+			end;
 		_ ->
 			disable
 	end.
 
--spec handle(_, binary(), State) -> {done, State} when State::#state{}.
-handle(IsFin, Data, State=#state{reply_to=ReplyTo, stream_ref=StreamRef, sse_state=SSE0}) ->
+-spec handle(_, binary(), State) -> {done, non_neg_integer(), State} when State::#state{}.
+handle(IsFin, Data, State) ->
+	handle(IsFin, Data, State, 0).
+
+handle(IsFin, Data, State=#state{reply_to=ReplyTo, stream_ref=StreamRef, sse_state=SSE0}, Flow) ->
 	case cow_sse:parse(Data, SSE0) of
 		{event, Event, SSE} ->
 			ReplyTo ! {gun_sse, self(), StreamRef, Event},
-			handle(IsFin, <<>>, State#state{sse_state=SSE});
+			handle(IsFin, <<>>, State#state{sse_state=SSE}, Flow + 1);
 		{more, SSE} ->
-			_ = case IsFin of
+			Inc = case IsFin of
 				fin ->
-					ReplyTo ! {gun_sse, self(), StreamRef, fin};
+					ReplyTo ! {gun_sse, self(), StreamRef, fin},
+					1;
 				_ ->
-					ok
+					0
 			end,
-			{done, State#state{sse_state=SSE}}
+			{done, Flow + Inc, State#state{sse_state=SSE}}
 	end.

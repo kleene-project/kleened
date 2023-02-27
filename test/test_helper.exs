@@ -143,7 +143,7 @@ defmodule TestHelper do
   end
 
   def exec_start_sync(exec_id, config) do
-    {:ok, conn} = exec_start(exec_id, config)
+    {:ok, _stream_ref, conn} = exec_start(exec_id, config)
     TestHelper.receive_frames(conn)
   end
 
@@ -200,7 +200,7 @@ defmodule TestHelper do
     endpoint = "/images/build?#{query_params}"
 
     case initialize_websocket(endpoint) do
-      {:ok, conn} ->
+      {:ok, _stream_ref, conn} ->
         receive_frames(conn)
 
       error_msg ->
@@ -325,18 +325,14 @@ defmodule TestHelper do
 
   def initialize_websocket(endpoint) do
     {:ok, conn} = Gun.open(:binary.bin_to_list("localhost"), 8085)
-
-    receive do
-      {:gun_up, ^conn, :http} -> :ok
-      msg -> Logger.info("connection up! #{inspect(msg)}")
-    end
+    {:ok, :http} = Gun.await_up(conn)
 
     :gun.ws_upgrade(conn, :binary.bin_to_list(endpoint))
 
     receive do
-      {:gun_upgrade, ^conn, _stream_ref, ["websocket"], _headers} ->
+      {:gun_upgrade, ^conn, stream_ref, ["websocket"], _headers} ->
         Logger.info("websocket initialized")
-        {:ok, conn}
+        {:ok, stream_ref, conn}
 
       {:gun_response, ^conn, stream_ref, :nofin, 400, _headers} ->
         Logger.info("Failed with status 400 (invalid parameters). Fetching repsonse data.")
@@ -357,22 +353,19 @@ defmodule TestHelper do
     end
   end
 
+  defp send_data(conn, stream_ref, data) do
+    Gun.ws_send(conn, stream_ref, {:binary, data})
+  end
+
   defp receive_data(conn, stream_ref, buffer) do
     receive do
-      {:gun_data, ^conn, {:websocket, ^stream_ref, _ws_data, [], %{}}, :fin, data} ->
+      {:gun_data, ^conn, ^stream_ref, :fin, data} ->
         Logger.debug("received data: #{data}")
         data
 
       {:gun_data, ^conn, ^stream_ref, :nofin, data} ->
         Logger.debug("received data (more coming): #{data}")
         receive_data(conn, stream_ref, buffer <> data)
-
-      unknown ->
-        Logger.warn(
-          "Unknown data received while waiting for websocket initialization data: #{
-            inspect(unknown)
-          }"
-        )
     after
       1000 ->
         exit("timed out while waiting for response data during websocket initialization.")
@@ -393,9 +386,6 @@ defmodule TestHelper do
       {:close, 1000, msg} ->
         receive_frames(conn, [msg | frames])
 
-      {:gun_down, ^conn, :ws, :closed, [], []} ->
-        Enum.reverse(frames)
-
       :websocket_closed ->
         Enum.reverse(frames)
     end
@@ -407,7 +397,10 @@ defmodule TestHelper do
         Logger.info("message received from websocket: #{inspect(msg)}")
         msg
 
-      {:gun_down, ^conn, :ws, :closed, [], []} ->
+      {:gun_down, ^conn, :ws, {:error, :closed}, [_stream_ref]} ->
+        :websocket_closed
+
+      {:gun_down, ^conn, :ws, :normal, [_stream_ref]} ->
         :websocket_closed
     after
       1_000 -> {:error, :timeout}

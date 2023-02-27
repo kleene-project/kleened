@@ -71,7 +71,7 @@ defmodule ExecTest do
 
     %{id: root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
 
-    {:ok, root_conn} =
+    {:ok, _stream_ref, root_conn} =
       TestHelper.exec_start(root_exec_id, %{attach: false, start_container: true})
 
     assert [:not_attached] == TestHelper.receive_frames(root_conn)
@@ -82,7 +82,9 @@ defmodule ExecTest do
         cmd: ["/bin/sleep", "99"]
       })
 
-    {:ok, conn} = TestHelper.exec_start(exec_id, %{attach: true, start_container: false})
+    {:ok, _stream_ref, conn} =
+      TestHelper.exec_start(exec_id, %{attach: true, start_container: false})
+
     assert {:text, "OK"} == TestHelper.receive_frame(conn)
     assert number_of_jailed_processes(container_id) == 2
 
@@ -122,7 +124,9 @@ defmodule ExecTest do
         cmd: ["/bin/sleep", "11"]
       })
 
-    {:ok, conn} = TestHelper.exec_start(exec_id, %{attach: true, start_container: false})
+    {:ok, _stream_ref, conn} =
+      TestHelper.exec_start(exec_id, %{attach: true, start_container: false})
+
     assert {:text, "OK"} == TestHelper.receive_frame(conn)
 
     :timer.sleep(500)
@@ -149,7 +153,9 @@ defmodule ExecTest do
     # Start a process without attaching a PTY
     %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
 
-    {:ok, conn} = TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
+    {:ok, _stream_ref, conn} =
+      TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
+
     assert {:text, "OK"} == TestHelper.receive_frame(conn)
 
     {:text, msg} = TestHelper.receive_frame(conn)
