@@ -63,8 +63,8 @@ defmodule Kleened.API.ExecStartWebSocket do
     end
   end
 
-  def websocket_handle({:text, _message}, state) do
-    # Ignore messages from the client: No interactive possibility atm.
+  def websocket_handle({:text, message}, %{exec_id: exec_id} = state) do
+    Exec.send(exec_id, message)
     {:ok, state}
   end
 

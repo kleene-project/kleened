@@ -58,6 +58,17 @@ defmodule Kleened.Core.Exec do
     call(exec_id, {:stop, opts})
   end
 
+  @spec send(exec_id(), String.t()) :: :ok | {:error, String.t()}
+  def send(exec_id, data) do
+    case Registry.lookup(ExecInstances, exec_id) do
+      [{pid, _container_id}] ->
+        Process.send(pid, {self(), {:input_data, data}}, [])
+
+      [] ->
+        {:error, "could not find a execution instance matching '#{exec_id}'"}
+    end
+  end
+
   defp call(exec_id, command) do
     case Registry.lookup(ExecInstances, exec_id) do
       [{pid, _container_id}] ->
@@ -127,6 +138,11 @@ defmodule Kleened.Core.Exec do
       ) do
     shutdown_process(exit_code, state)
     {:stop, :normal, %State{state | :port => nil}}
+  end
+
+  def handle_info({_pid, {:input_data, jail_input}}, %State{:port => port} = state) do
+    Port.command(port, jail_input)
+    {:noreply, state}
   end
 
   def handle_info(unknown_msg, state) do

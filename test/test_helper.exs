@@ -353,8 +353,8 @@ defmodule TestHelper do
     end
   end
 
-  defp send_data(conn, stream_ref, data) do
-    Gun.ws_send(conn, stream_ref, {:binary, data})
+  def send_data(conn, stream_ref, data) do
+    Gun.ws_send(conn, stream_ref, {:text, data})
   end
 
   defp receive_data(conn, stream_ref, buffer) do

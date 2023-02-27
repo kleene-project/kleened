@@ -164,10 +164,37 @@ defmodule ExecTest do
     # Start a process with a PTY attach
     %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id, tty: true})
 
-    {:ok, conn} = TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
+    {:ok, _stream_ref, conn} =
+      TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
+
     assert {:text, "OK"} == TestHelper.receive_frame(conn)
     {:text, msg} = TestHelper.receive_frame(conn)
     assert <<"/dev/pts/", _rest::binary>> = msg
+  end
+
+  test "Create an interactive exec instance (allocatiing a pseudo-TTY)", %{
+    api_spec: api_spec
+  } do
+    %{id: container_id} = TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sh"]})
+
+    # Start a process with a PTY attach
+    %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id, tty: true})
+
+    {:ok, stream_ref, conn} =
+      TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
+
+    assert {:text, "OK"} == TestHelper.receive_frame(conn)
+    assert {:text, "# "} == TestHelper.receive_frame(conn)
+    TestHelper.send_data(conn, stream_ref, "ls && exit\r\n")
+    frames = TestHelper.receive_frames(conn)
+    frames_as_string = Enum.join(frames, "")
+
+    expected =
+      "ls && exit\r\n.cshrc\t\tboot\t\tlibexec\t\tproc\t\tsys\r\n.profile\tdev\t\tmedia\t\trescue\t\ttmp\r\nCOPYRIGHT\tetc\t\tmnt\t\troot\t\tusr\r\nbin\t\tlib\t\tnet\t\tsbin\t\tvar\r\nexecutable #{
+        exec_id
+      } and its container exited with exit-code 0"
+
+    assert expected == frames_as_string
   end
 
   test "use execution instance created with container name instead of container id", %{
