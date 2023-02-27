@@ -58,6 +58,17 @@ defmodule Kleened.Core.Exec do
     call(exec_id, {:stop, opts})
   end
 
+  @spec send(exec_id(), String.t()) :: :ok | {:error, String.t()}
+  def send(exec_id, data) do
+    case Registry.lookup(ExecInstances, exec_id) do
+      [{pid, _container_id}] ->
+        Process.send(pid, {self(), {:input_data, data}}, [])
+
+      [] ->
+        {:error, "could not find a execution instance matching '#{exec_id}'"}
+    end
+  end
+
   defp call(exec_id, command) do
     case Registry.lookup(ExecInstances, exec_id) do
       [{pid, _container_id}] ->
@@ -127,6 +138,11 @@ defmodule Kleened.Core.Exec do
       ) do
     shutdown_process(exit_code, state)
     {:stop, :normal, %State{state | :port => nil}}
+  end
+
+  def handle_info({_pid, {:input_data, jail_input}}, %State{:port => port} = state) do
+    Port.command(port, jail_input)
+    {:noreply, state}
   end
 
   def handle_info(unknown_msg, state) do
@@ -223,11 +239,11 @@ defmodule Kleened.Core.Exec do
 
         case {Utils.is_container_running?(cont.id), start_container} do
           {true, _} ->
-            port = jexec_container(cont)
+            port = jexec_container(cont, config.tty)
             {:ok, port, cont}
 
           {false, true} ->
-            port = jail_start_container(cont)
+            port = jail_start_container(cont, config.tty)
             {:ok, port, cont}
 
           {false, false} ->
@@ -288,16 +304,19 @@ defmodule Kleened.Core.Exec do
     output |> String.split("\n") |> Enum.map(&umount_container_devfs(&1, mountpoint))
   end
 
-  defp jexec_container(%Schemas.Container{
-         id: container_id,
-         command: cmd,
-         user: user,
-         env: env
-       }) do
+  defp jexec_container(
+         %Schemas.Container{
+           id: container_id,
+           command: cmd,
+           user: user,
+           env: env
+         },
+         use_tty
+       ) do
     # jexec [-l] [-u username | -U username] jail [command ...]
     args = ~w"-l -u #{user} #{container_id} /usr/bin/env -i" ++ env ++ cmd
 
-    port = OS.cmd_async(['/usr/sbin/jexec' | args])
+    port = OS.cmd_async(['/usr/sbin/jexec' | args], use_tty)
     port
   end
 
@@ -309,7 +328,8 @@ defmodule Kleened.Core.Exec do
            user: user,
            jail_param: jail_param,
            env: env
-         } = cont
+         } = cont,
+         use_tty
        ) do
     Logger.info("Starting container #{inspect(cont.id)}")
 
@@ -323,7 +343,7 @@ defmodule Kleened.Core.Exec do
         jail_param ++
         ~w"exec.jail_user=#{user} command=/usr/bin/env -i" ++ env ++ command
 
-    port = OS.cmd_async(['/usr/sbin/jail' | args])
+    port = OS.cmd_async(['/usr/sbin/jail' | args], use_tty)
     port
   end
 

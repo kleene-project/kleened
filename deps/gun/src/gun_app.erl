@@ -1,4 +1,4 @@
-%% Copyright (c) 2013-2018, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) 2013-2023, Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -23,6 +23,7 @@
 %% API.
 
 start(_Type, _Args) ->
+	gun_pools = ets:new(gun_pools, [ordered_set, public, named_table]),
 	gun_sup:start_link().
 
 stop(_State) ->

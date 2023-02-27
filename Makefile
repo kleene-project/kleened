@@ -14,4 +14,10 @@ clear-kleened:
 codecov:
 	MIX_ENV=test mix coveralls.html -o ./coveralls --max-failures 5
 
+runpty: c_src/runpty.c
+	$(CC) -o priv/bin/runpty $(CFLAGS) $(LDFLAGS) $<
+
+clean-runpty:
+	rm -rf priv/bin/runpty
+
 .PHONY: test

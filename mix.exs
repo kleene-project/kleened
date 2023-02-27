@@ -1,3 +1,10 @@
+defmodule Mix.Tasks.Compile.RunPty do
+  def run(_args) do
+    {result, _errcode} = System.cmd("make", ["runpty"], stderr_to_stdout: true)
+    IO.binwrite(result)
+  end
+end
+
 defmodule Kleened.MixProject do
   use Mix.Project
 
@@ -6,6 +13,7 @@ defmodule Kleened.MixProject do
       app: :kleened,
       version: "0.0.1",
       elixir: "~> 1.9",
+      compilers: Mix.compilers() ++ [:run_pty],
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
       releases: [
@@ -49,7 +57,7 @@ defmodule Kleened.MixProject do
       {:jason, "~> 1.2"},
       {:yaml_elixir, "~> 2.4"},
       {:cidr, "~> 1.1"},
-      {:cowlib, "~> 2.11", override: true},
+      {:cowlib, "~> 2.12", override: true},
       {:plug, "~> 1.12"},
       {:plug_cowboy, "~> 2.5"},
       {:open_api_spex, "~> 3.10"},
@@ -57,7 +65,7 @@ defmodule Kleened.MixProject do
       {:ex_doc, "~> 0.19", only: :dev},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:excoveralls, "~> 0.15.0", only: :test},
-      {:gun, "~> 1.3", only: :test}
+      {:gun, "~> 2.0", only: :test}
     ]
   end
 
