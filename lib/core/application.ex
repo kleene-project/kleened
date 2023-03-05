@@ -44,7 +44,7 @@ defmodule Kleened.Core.Application do
       {:error,
        {:shutdown,
         {:failed_to_start_child, Kleened.Core.Config, {%RuntimeError{message: msg}, _}}}} ->
-        {:error, "could not start dockerd: #{msg}"}
+        {:error, "could not start kleened: #{msg}"}
 
       unknown_return ->
         {:error, "could not start kleened: #{inspect(unknown_return)}"}
