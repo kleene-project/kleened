@@ -1,5 +1,11 @@
 defmodule Kleened.Core.Utils do
+  alias Kleened.Core.OS
   require Logger
+
+  @spec get_os_pid_of_port(port()) :: String.t()
+  def get_os_pid_of_port(port) do
+    port |> Port.info() |> Keyword.get(:os_pid) |> Integer.to_string()
+  end
 
   def is_container_running?(container_id) do
     output = System.cmd("jls", ["--libxo=json", "-j", container_id], stderr_to_stdout: true)
@@ -7,6 +13,23 @@ defmodule Kleened.Core.Utils do
     case output do
       {_json, 1} -> false
       {_json, 0} -> true
+    end
+  end
+
+  def is_zombie_jail?(container_id) do
+    {msg, _exit_code} =
+      OS.cmd(["/bin/ps" | ~w"--libxo json -ax -J #{container_id}"], %{suppress_warning: true})
+
+    case Jason.decode(msg) do
+      {:ok, %{} = processes} ->
+        case Map.keys(processes) do
+          # No processes are running in the jail => zombie jail
+          [] -> true
+          _ -> false
+        end
+
+      _ ->
+        false
     end
   end
 

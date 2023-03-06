@@ -169,12 +169,12 @@ defmodule Kleened.Core.Exec do
 
   @spec stop_executable(%State{}, stop_options()) :: {:ok, String.t()} | {:error, String.t()}
   defp stop_executable(state, opts) do
-    jailed_process_pid = get_pid_of_jailed_process(state.port)
+    port_pid = Utils.get_os_pid_of_port(state.port)
 
     cmd_args =
       case opts do
-        %{force_stop: true} -> ["-9", jailed_process_pid]
-        %{force_stop: false} -> [jailed_process_pid]
+        %{force_stop: true} -> ["-9", port_pid]
+        %{force_stop: false} -> [port_pid]
       end
 
     case OS.cmd(["/bin/kill" | cmd_args]) do
@@ -205,12 +205,12 @@ defmodule Kleened.Core.Exec do
     end
   end
 
-  defp shutdown_process(exit_code, %State{config: config, container: cont} = state) do
+  defp shutdown_process(exit_code, %State{config: config, container: container} = state) do
     case Utils.is_container_running?(config.container_id) do
       false ->
         msg = "#{state.exec_id} stopped with exit code #{exit_code}: {:shutdown, :jail_stopped}"
         Logger.debug(msg)
-        jail_cleanup(cont)
+        jail_cleanup(container)
         relay_msg({:shutdown, {:jail_stopped, exit_code}}, state)
 
       true ->
@@ -219,34 +219,16 @@ defmodule Kleened.Core.Exec do
 
         Logger.debug(msg)
 
+        case Utils.is_zombie_jail?(container.id) do
+          true ->
+            Container.stop(container.id)
+
+          false ->
+            :ok
+        end
+
         relay_msg({:shutdown, {:jailed_process_exited, exit_code}}, state)
     end
-  end
-
-  @spec get_pid_of_jailed_process(port()) :: String.t()
-  defp get_pid_of_jailed_process(port) do
-    # ps --libxo json -o user,pid,ppid,command -d  -ax -p 2138
-    # {"process-information":
-    #   {"process": [
-    #     {"user":"root","pid":"2138","ppid":"2137","command":"jail -c command=/bin/sh -c /bin/sleep 10"},
-    #     {"user":"root","pid":"2139","ppid":"2138","command":"- /bin/sleep 10"}
-    #   ]}
-    jail_pid = port |> Port.info() |> Keyword.get(:os_pid) |> Integer.to_string()
-
-    {jailed_processes, 0} =
-      System.cmd("/bin/ps", ~w"--libxo json -o user,pid,ppid,command -d  -ax -p #{jail_pid}")
-
-    %{"process-information" => %{"process" => processes}} = Jason.decode!(jailed_processes)
-
-    # Locate the process that have our port (i.e. /sbin/jail) as parent.
-    [jailed_pid] =
-      processes
-      |> Enum.filter(fn %{"pid" => pid} -> pid == jail_pid end)
-      # If you are using /sbin/jail, you need to shutdown the child of the port pid:
-      # |> Enum.filter(fn %{"ppid" => ppid} -> ppid == jail_pid end)
-      |> Enum.map(fn %{"pid" => pid} -> pid end)
-
-    jailed_pid
   end
 
   defp start_(config, start_container) do

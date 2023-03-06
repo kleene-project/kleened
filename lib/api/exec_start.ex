@@ -72,8 +72,9 @@ defmodule Kleened.API.ExecStartWebSocket do
     {:ok, state}
   end
 
-  def websocket_handle(_msg, state) do
+  def websocket_handle(msg, state) do
     # Ignore unknown messages
+    Logger.warn("unknown message received: #{inspect(msg)}")
     {:ok, state}
   end
 
@@ -98,5 +99,23 @@ defmodule Kleened.API.ExecStartWebSocket do
   def websocket_info(message, state) do
     Logger.warn("unknown message received: #{inspect(message)}")
     {:ok, state}
+  end
+
+  def terminate(reason, _partial_req, %{exec_id: exec_id, attach: attach}) do
+    Logger.debug("connection closed #{inspect(reason)}")
+
+    case attach do
+      true ->
+        Logger.debug("stopping container since it is an attached websocket")
+        Exec.stop(exec_id, %{force_stop: false, stop_container: false})
+
+      false ->
+        :ok
+    end
+  end
+
+  def terminate(reason, _partial_req, _state) do
+    Logger.debug("connection closed #{inspect(reason)}")
+    :ok
   end
 end
