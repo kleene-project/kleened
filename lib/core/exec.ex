@@ -34,8 +34,15 @@ defmodule Kleened.Core.Exec do
     case MetaData.get_container(container_idname) do
       %Schemas.Container{id: container_id} ->
         config = %Schemas.ExecConfig{config | container_id: container_id}
-        name = {:via, Registry, {ExecInstances, exec_id, container_id}}
-        {:ok, _pid} = GenServer.start_link(Kleened.Core.Exec, [exec_id, config], name: name)
+
+        child_spec = %{
+          id: Kleened.Core.Exec,
+          start: {GenServer, :start_link, [Kleened.Core.Exec, [exec_id, config]]},
+          restart: :temporary,
+          shutdown: 10_000
+        }
+
+        DynamicSupervisor.start_child(Kleened.Core.ExecPool, child_spec)
         Logger.debug("succesfully created new execution instance #{exec_id}")
         {:ok, exec_id}
 
@@ -69,6 +76,11 @@ defmodule Kleened.Core.Exec do
     end
   end
 
+  @spec inspect_(exec_id()) :: {:ok, %State{}} | {:error, String.t()}
+  def inspect_(exec_id) do
+    call(exec_id, :inspect)
+  end
+
   defp call(exec_id, command) do
     case Registry.lookup(ExecInstances, exec_id) do
       [{pid, _container_id}] ->
@@ -84,6 +96,7 @@ defmodule Kleened.Core.Exec do
   ### ===================================================================
   @impl true
   def init([exec_id, config]) do
+    {:ok, _} = Registry.register(ExecInstances, exec_id, config)
     {:ok, %State{exec_id: exec_id, config: config, subscribers: []}}
   end
 
@@ -123,6 +136,10 @@ defmodule Kleened.Core.Exec do
       {:ok, port, container} when is_port(port) ->
         {:reply, :ok, %State{state | container: container, port: port}}
     end
+  end
+
+  def handle_call(:inspect, _from, state) do
+    {:reply, {:ok, state}, state}
   end
 
   @impl true
