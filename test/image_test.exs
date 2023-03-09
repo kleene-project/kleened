@@ -586,7 +586,7 @@ defmodule ImageTest do
     context = create_test_context("test_image_run_nonzero_exitcode")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    assert "RUN ls notexist" ==
+    assert "executing instruction resulted in non-zero exit code" ==
              TestHelper.image_invalid_build(%{
                context: context,
                dockerfile: @tmp_dockerfile,
@@ -619,6 +619,28 @@ defmodule ImageTest do
            ]
   end
 
+  test "try building an image with an invalid image name in the FROM-instruction" do
+    dockerfile = """
+    FROM nonexisting
+    CMD /bin/ls
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, @tmp_context)
+
+    build_log =
+      TestHelper.image_build(%{
+        context: @tmp_context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:latest"
+      })
+
+    assert build_log == [
+             "OK",
+             "Step 1/2 : FROM nonexisting\n",
+             "image build failed: image not found"
+           ]
+  end
+
   test "try building an image from a invalid Dockerfile (illegal comment)" do
     dockerfile = """
     FROM scratch
@@ -639,7 +661,7 @@ defmodule ImageTest do
              "OK",
              "Step 1/2 : FROM scratch\n",
              "Step 2/2 : ENV TEST=\"something\" # You cannot make comments like this.\n",
-             "image build failed at: failed environment substition of: ENV TEST=\"something\" # You cannot make comments like this."
+             "image build failed: failed environment substition of: ENV TEST=\"something\" # You cannot make comments like this."
            ]
   end
 

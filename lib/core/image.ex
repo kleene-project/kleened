@@ -101,25 +101,30 @@ defmodule Kleened.Core.Image do
     state = send_status(line, state)
 
     on_success = fn new_image_ref ->
-      %Schemas.Image{id: image_id} = Kleened.Core.MetaData.get_image(new_image_ref)
+      case Kleened.Core.MetaData.get_image(new_image_ref) do
+        %Schemas.Image{id: image_id} ->
+          {:ok, container_config} =
+            OpenApiSpex.Cast.cast(
+              Kleened.API.Schemas.ContainerConfig.schema(),
+              %{
+                jail_param: ["mount.devfs=true"],
+                image: image_id,
+                user: "root",
+                networks: %{state.network => %Schemas.EndPointConfig{container: "dummy"}},
+                cmd: []
+              }
+            )
 
-      {:ok, container_config} =
-        OpenApiSpex.Cast.cast(
-          Kleened.API.Schemas.ContainerConfig.schema(),
-          %{
-            jail_param: ["mount.devfs=true"],
-            image: image_id,
-            user: "root",
-            networks: %{state.network => %Schemas.EndPointConfig{container: "dummy"}},
-            cmd: []
-          }
-        )
+          name = Utils.uuid()
 
-      name = Utils.uuid()
+          {:ok, container} = Kleened.Core.Container.create(name, container_config)
 
-      {:ok, container} = Kleened.Core.Container.create(name, container_config)
+          process_instructions(%State{state | container: container, instructions: rest})
 
-      process_instructions(%State{state | container: container, instructions: rest})
+        :not_found ->
+          send_msg(state.msg_receiver, {:image_build_failed, "image not found"})
+          Network.remove(state.network)
+      end
     end
 
     environment_replacement(image_ref, on_success, state)
@@ -235,6 +240,7 @@ defmodule Kleened.Core.Image do
 
   defp process_instructions(
          %State{
+           # No more instructions
            instructions: [],
            container: %Schemas.Container{
              id: container_id,
@@ -286,7 +292,11 @@ defmodule Kleened.Core.Image do
          _nonzero_exit_code,
          %State{instructions: [{line, _instruction} | _]} = state
        ) do
-    send_msg(state.msg_receiver, {:image_build_failed, line})
+    send_msg(
+      state.msg_receiver,
+      {:image_build_failed, "executing instruction resulted in non-zero exit code"}
+    )
+
     cleanup_build_environment(state)
   end
 

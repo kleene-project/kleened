@@ -168,7 +168,7 @@ defmodule TestHelper do
     config = Map.merge(%{quiet: false}, config)
     frames = image_build(config)
     {finish_msg, _build_log} = List.pop_at(frames, -1)
-    assert <<"image build failed at: ", failed_line::binary>> = finish_msg
+    assert <<"image build failed: ", failed_line::binary>> = finish_msg
     failed_line
   end
 
