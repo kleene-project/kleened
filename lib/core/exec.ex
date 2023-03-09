@@ -84,7 +84,10 @@ defmodule Kleened.Core.Exec do
   defp call(exec_id, command) do
     case Registry.lookup(ExecInstances, exec_id) do
       [{pid, _container_id}] ->
-        GenServer.call(pid, command)
+        case Process.alive?(pid) do
+          true -> GenServer.call(pid, command)
+          false -> {:error, "could not find a execution instance matching '#{exec_id}'"}
+        end
 
       [] ->
         {:error, "could not find a execution instance matching '#{exec_id}'"}
