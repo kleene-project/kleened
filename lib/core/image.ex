@@ -100,7 +100,7 @@ defmodule Kleened.Core.Image do
     Logger.info("Processing instruction: FROM #{image_ref}")
     state = send_status(line, state)
 
-    on_success = fn new_image_ref ->
+    on_success_callback = fn new_image_ref ->
       case Kleened.Core.MetaData.get_image(new_image_ref) do
         %Schemas.Image{id: image_id} ->
           {:ok, container_config} =
@@ -127,7 +127,7 @@ defmodule Kleened.Core.Image do
       end
     end
 
-    environment_replacement(image_ref, on_success, state)
+    environment_replacement(image_ref, on_success_callback, state)
   end
 
   defp process_instructions(
@@ -136,7 +136,7 @@ defmodule Kleened.Core.Image do
     Logger.info("Processing instruction: ENV #{inspect(env_vars)}")
     state = send_status(line, state)
 
-    on_success = fn env_vars ->
+    on_success_callback = fn env_vars ->
       env = Utils.merge_environment_variable_lists(container.env, [env_vars])
 
       process_instructions(%State{
@@ -146,7 +146,7 @@ defmodule Kleened.Core.Image do
       })
     end
 
-    environment_replacement(env_vars, on_success, state)
+    environment_replacement(env_vars, on_success_callback, state)
   end
 
   defp process_instructions(
@@ -316,7 +316,7 @@ defmodule Kleened.Core.Image do
 
   defp environment_replacement(
          expression,
-         on_success,
+         on_success_callback,
          %State{
            buildargs_collected: args_collected,
            buildargs_supplied: args_supplied,
@@ -329,7 +329,7 @@ defmodule Kleened.Core.Image do
 
     case OS.cmd(command) do
       {evaluated_expression, 0} ->
-        on_success.(evaluated_expression)
+        on_success_callback.(evaluated_expression)
 
       {_, _nonzero_exit_code} ->
         send_substitution_failure_and_cleanup(state)
