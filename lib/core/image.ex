@@ -290,7 +290,7 @@ defmodule Kleened.Core.Image do
 
   defp validate_result_and_continue_if_valid(
          _nonzero_exit_code,
-         %State{instructions: [{line, _instruction} | _]} = state
+         %State{instructions: [{_line, _instruction} | _]} = state
        ) do
     send_msg(
       state.msg_receiver,

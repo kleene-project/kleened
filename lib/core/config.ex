@@ -27,7 +27,7 @@ defmodule Kleened.Core.Config do
     error_if_not_defined(cfg, "zroot")
     error_if_not_defined(cfg, "api_socket")
     error_if_not_defined(cfg, "base_layer_dataset")
-    cfg = valid_api_socket(cfg)
+    cfg = add_api_listening_options(cfg)
     cfg = initialize_kleene_root(cfg)
     cfg = initialize_baselayer(cfg)
     cfg = Map.put(cfg, "metadata_db", Path.join(["/", cfg["zroot"], "metadata.sqlite"]))
@@ -144,23 +144,95 @@ defmodule Kleened.Core.Config do
     end
   end
 
-  defp valid_api_socket(%{"api_socket" => api_socket} = config) do
-    case Kleened.Core.Utils.decode_socket_address(api_socket) do
-      {:error, error} ->
-        config_error("failed to decode 'api_socket': #{inspect(error)}")
+  defp add_api_listening_options(%{"api_socket" => api_socket} = config) do
+    api_socket = URI.parse(api_socket)
+    # General validation that the URI is relevant for kleened
+    case api_socket do
+      %URI{
+        userinfo: nil,
+        query: nil,
+        fragment: nil
+      } ->
+        :ok
 
-      {:hostname, _, _} ->
-        config_error("failed to decode 'api_socket': #{api_socket}")
+      _ ->
+        config_error("could not parse value of 'api_socket'")
+    end
 
-      {_type, _ipv4_address, _port} = socket ->
-        Map.put(config, "api_socket", socket)
+    # Extract specific listening scenarios (and config_error'ing if it fails)
+    listener_options =
+      case URI.parse(api_socket) do
+        %URI{scheme: "http", host: ip, path: nil, port: port} when is_integer(port) ->
+          [{:port, port} | ip_options(ip)]
+
+        %URI{scheme: "http", host: nil, path: path, port: nil} ->
+          [port: 0, ip: {:local, path}]
+
+        %URI{scheme: "https", host: ip, path: nil, port: port} when is_integer(port) ->
+          [{:port, port} | ip_options(ip)] ++ tls_options(config)
+
+        %URI{scheme: "https", host: nil, path: path, port: nil} ->
+          [port: 0, ip: {:local, path}] ++ tls_options(config)
+
+        _ ->
+          config_error("could not parse value of 'api_socket'")
+      end
+
+    Map.put(config, "api_listener_options", listener_options)
+  end
+
+  def ip_options(ip) do
+    ip_charlist = String.to_charlist(ip)
+
+    case :inet.parse_address(ip_charlist) do
+      {:ok, ip_v4} when tuple_size(ip_v4) == 4 ->
+        [net: :inet, ip: ip_v4]
+
+      {:ok, ip_v6} when tuple_size(ip_v6) == 6 ->
+        [net: :inet6, ip: ip_v6]
+
+      _ ->
+        config_error("Error parsing ip-address in 'api_socket'")
     end
   end
 
-  defp valid_subnet_or_exit(subnet) do
-    case CIDR.is_cidr?(subnet) do
-      true -> :ok
-      false -> config_error("Invalid 'default_subnet' in the configuration file.")
+  def tls_options(config) do
+    []
+    |> parse_tls_file_option(config, :certfile)
+    |> parse_tls_file_option(config, :keyfile)
+    |> parse_tls_file_option(config, :dhfile)
+    |> parse_tls_file_option(config, :cacertfile)
+    |> parse_tls_verify_option(config)
+  end
+
+  def parse_tls_file_option(options, config, name) do
+    name_string = Atom.to_string(name)
+
+    case Map.get(config, name_string) do
+      nil ->
+        options
+
+      path ->
+        case File.exists?(path) do
+          true -> [{name, path} | options]
+          false -> config_error("file in '#{name_string}' does not exist.")
+        end
+    end
+  end
+
+  def parse_tls_verify_option(options, config) do
+    case Map.get(config, "verify") do
+      nil ->
+        [{:verify, :verify_none} | options]
+
+      "verify_none" ->
+        [{:verify, :verify_none} | options]
+
+      "verify_peer" ->
+        [{:verify, :verify_peer} | options]
+
+      _ ->
+        config_error("'verify' options value not understood.")
     end
   end
 

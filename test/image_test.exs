@@ -691,7 +691,7 @@ defmodule ImageTest do
 
     assert TestHelper.image_build_raw(%{config | buildargs: "should-be-JSON"}) ==
              {:error,
-              "could not decode 'buildargs' JSON content: %Jason.DecodeError{data: \"should-be-JSON\", position: 0, token: nil}"}
+              "could not decode 'buildargs' JSON content: %Jason.DecodeError{position: 0, token: nil, data: \"should-be-JSON\"}"}
   end
 
   defp create_test_context(name) do

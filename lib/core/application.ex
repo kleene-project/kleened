@@ -11,12 +11,9 @@ defmodule Kleened.Core.Application do
   end
 
   def start(_type, _args) do
-    # FIXME: This is a dirty-hack to fetch "api_socket" before supervisor is started, as it is used to configure ranch supervisor.
-    # To make this properly requires a refactor of the Kleened.Core.Config:
-    # Load the configuration file at startup and pass configuration parameters in the child
-    # in the supervision-tree here: The configuration values are required here before supervisor i started.
+    # FIXME: This is a dirty-hack to fetch "api_listener_options" before supervisor is started, as it is used to configure ranch supervisor.
     {:ok, pid} = Kleened.Core.Config.start_link([])
-    # socket_opts = create_socket_options(Kleened.Core.Config.get("api_socket"))
+    cowboy_options = Kleened.Core.Config.get("api_listener_options")
     GenServer.stop(pid)
 
     children = [
@@ -29,7 +26,7 @@ defmodule Kleened.Core.Application do
       {Plug.Cowboy,
        scheme: :http,
        plug: HTTP.API,
-       options: [port: 8085, dispatch: Kleened.API.Router.dispatch()]}
+       options: [{:dispatch, Kleened.API.Router.dispatch()} | cowboy_options]}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
@@ -47,17 +44,6 @@ defmodule Kleened.Core.Application do
 
       unknown_return ->
         {:error, "could not start kleened: #{inspect(unknown_return)}"}
-    end
-  end
-
-  defp create_socket_options(api_socket) do
-    case api_socket do
-      {:unix, path, port} ->
-        File.rm(path)
-        [{:port, port}, {:ip, {:local, path}}]
-
-      {_iptype, address, port} ->
-        [{:port, port}, {:ip, address}]
     end
   end
 end
