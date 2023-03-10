@@ -4,28 +4,6 @@ defmodule CoreUtilsTest do
 
   @moduletag :capture_log
 
-  test "decode addresses" do
-    assert {:unix, "/var/kleened", 0} == Utils.decode_socket_address("unix:///var/kleened")
-    assert {:ipv4, {10, 0, 0, 1}, 1337} == Utils.decode_socket_address("tcp://10.0.0.1:1337")
-
-    assert {:hostname, "test.kleene.com", 1337} =
-             Utils.decode_socket_address("tcp://test.kleene.com:1337")
-
-    assert {:ipv6, {65152, 0, 0, 0, 4919, 43981, 4919, 65535}, 7000} ==
-             Utils.decode_socket_address("tcp://fe80::1337:abcd:1337:ffff:7000")
-
-    assert {:error, _} = Utils.decode_socket_address("tcp://fe80::1337:abcd:1337:gggg:7000")
-  end
-
-  test "decode buffer" do
-    term = {:term, "this is in erlang term"}
-    bin = :erlang.term_to_binary(term)
-    part1 = String.slice(bin, 0, 10)
-    assert {^term, ""} = Utils.decode_buffer(bin)
-    assert {:no_full_msg, ^part1} = Utils.decode_buffer(part1)
-    assert {^term, "moredata"} = Utils.decode_buffer(bin <> "moredata")
-  end
-
   test "test duration_to_human_string(now, from)" do
     assert "Less than a second" == Utils.duration_to_human_string(10, 10)
     assert "1 second" == Utils.duration_to_human_string(10, 9)

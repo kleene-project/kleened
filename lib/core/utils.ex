@@ -33,39 +33,6 @@ defmodule Kleened.Core.Utils do
     end
   end
 
-  def decode_socket_address(<<"unix://", unix_socket::binary>>) do
-    {:unix, unix_socket, 0}
-  end
-
-  def decode_socket_address(<<"tcp://", address::binary>>) do
-    try do
-      case String.split(address, ":") do
-        [ipv4_or_host_str, port_str] ->
-          port = String.to_integer(port_str)
-
-          result = decode_ip(ipv4_or_host_str, :ipv4)
-
-          case result do
-            {:ok, address} -> {:ipv4, address, port}
-            # We assume that if it is not a ipv4-address it is probably a hostname instead:
-            {:error, _} -> {:hostname, ipv4_or_host_str, port}
-          end
-
-        ipv6_addressport ->
-          {port_str, ipv6address_splitup} = List.pop_at(ipv6_addressport, -1)
-
-          ipv6_address = ipv6address_splitup |> Enum.join(":")
-          {:ok, address} = decode_ip(ipv6_address, :ipv6)
-
-          port = String.to_integer(port_str)
-          {:ipv6, address, port}
-      end
-    rescue
-      error_msg ->
-        {:error, error_msg}
-    end
-  end
-
   def decode_ip(ip, ver) do
     ip_charlist = String.to_charlist(ip)
 
@@ -148,27 +115,6 @@ defmodule Kleened.Core.Utils do
     case Integer.parse(uuid) do
       {_integer, ""} -> uuid()
       _ -> uuid
-    end
-  end
-
-  def decode_buffer(buffer) do
-    reply =
-      try do
-        :erlang.binary_to_term(buffer)
-      rescue
-        ArgumentError ->
-          :no_full_msg
-      end
-
-    case reply do
-      :no_full_msg ->
-        {:no_full_msg, buffer}
-
-      _full_reply ->
-        buffer_size = byte_size(:erlang.term_to_binary(buffer))
-        used_size = byte_size(:erlang.term_to_binary(reply))
-        new_buffer = String.slice(buffer, used_size, buffer_size)
-        {reply, new_buffer}
     end
   end
 
