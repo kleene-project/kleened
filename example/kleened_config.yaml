@@ -8,19 +8,19 @@ zroot: "zroot/kleene"
 api_socket: "http://127.0.0.1:8085"
 
 # Path to the PEM encoded certificate file. May also contain the private key. Ignored if TLS is not used.
-certfile: "/usr/local/etc/kleened/cert.pem"
+tlscert: "/usr/local/etc/kleened/cert.pem"
 
 # Path to the PEM encoded private key file, if different from the certfile. Ignored if TLS is not used.
-keyfile: "/usr/local/etc/kleened/priv.pem"
+tlskey: "/usr/local/etc/kleened/priv.pem"
 
 # Path to the PEM encoded Diffie-Hellman parameters file. Ignored if TLS is not used.
-dhfile: "/usr/local/etc/kleened/dh.pem"
+tlsdh: "/usr/local/etc/kleened/dh.pem"
 
-# Use "verify_peer" to request a certificate from the client. Defaults to "verify_none". Ignored if TLS is not used.
-verify: "verify_none"
+# Set to 'true' to request a certificate from the client. Defaults to 'false'. Ignored if TLS is not used.
+tlsverify: false
 
 # Path to PEM encoded trusted certificates file used to verify client certificates. Ignored if TLS is not used.
-cacertfile: "/usr/local/etc/kleened/cacert.pem"
+tlscacert: "/usr/local/etc/kleened/cacert.pem"
 
 # Dataset containg the userland that is used to build images. Must be set.
 base_layer_dataset: "zroot/kleene_basejail"

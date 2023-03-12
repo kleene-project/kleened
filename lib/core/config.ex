@@ -210,7 +210,13 @@ defmodule Kleened.Core.Config do
   end
 
   def parse_tls_file_option(options, config, name) do
-    name_string = Atom.to_string(name)
+    name_string =
+      cond do
+        name == :certfile -> "tlscert"
+        name == :keyfile -> "tlskey"
+        name == :dhfile -> "tlsdh"
+        name == :cacertfile -> "tlscacert"
+      end
 
     case Map.get(config, name_string) do
       nil ->
@@ -225,14 +231,14 @@ defmodule Kleened.Core.Config do
   end
 
   def parse_tls_verify_option(options, config) do
-    case Map.get(config, "verify") do
+    case Map.get(config, "tlsverify") do
       nil ->
         [{:verify, :verify_none} | options]
 
-      "verify_none" ->
+      false ->
         [{:verify, :verify_none} | options]
 
-      "verify_peer" ->
+      true ->
         [{:verify, :verify_peer} | options]
 
       _ ->
