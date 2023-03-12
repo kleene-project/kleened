@@ -40,6 +40,19 @@ defmodule Kleened.API.Router do
     send_resp(conn, 404, "not found")
   end
 
+  def child_spec([]) do
+    # Apparantly this function is called before the supervisor begin starting its children, thus the Kleened.Core.Config is not started.
+    {:ok, pid} = Kleened.Core.Config.start_link([])
+    {scheme, cowboy_options} = Kleened.Core.Config.get("api_listener_options")
+    GenServer.stop(pid)
+
+    Plug.Cowboy.child_spec(
+      scheme: scheme,
+      plug: HTTP.API,
+      options: [{:dispatch, dispatch()} | cowboy_options]
+    )
+  end
+
   def dispatch do
     # This is the root routing (cowboy-based) to seperate the rest API from the two websockets
     [

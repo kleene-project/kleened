@@ -160,25 +160,29 @@ defmodule Kleened.Core.Config do
     end
 
     # Extract specific listening scenarios (and config_error'ing if it fails)
-    listener_options =
+    {scheme, listener_options} =
       case URI.parse(api_socket) do
         %URI{scheme: "http", host: ip, path: nil, port: port} when is_integer(port) ->
-          [{:port, port} | ip_options(ip)]
+          opts = [{:port, port} | ip_options(ip)]
+          {:http, opts}
 
         %URI{scheme: "http", host: nil, path: path, port: nil} ->
-          [port: 0, ip: {:local, path}]
+          opts = [port: 0, ip: {:local, path}]
+          {:http, opts}
 
         %URI{scheme: "https", host: ip, path: nil, port: port} when is_integer(port) ->
-          [{:port, port} | ip_options(ip)] ++ tls_options(config)
+          opts = [{:port, port} | ip_options(ip)] ++ tls_options(config)
+          {:https, opts}
 
         %URI{scheme: "https", host: nil, path: path, port: nil} ->
-          [port: 0, ip: {:local, path}] ++ tls_options(config)
+          opts = [port: 0, ip: {:local, path}] ++ tls_options(config)
+          {:https, opts}
 
         _ ->
           config_error("could not parse value of 'api_socket'")
       end
 
-    Map.put(config, "api_listener_options", listener_options)
+    Map.put(config, "api_listener_options", {scheme, listener_options})
   end
 
   def ip_options(ip) do

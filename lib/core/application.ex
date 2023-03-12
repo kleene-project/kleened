@@ -11,11 +11,6 @@ defmodule Kleened.Core.Application do
   end
 
   def start(_type, _args) do
-    # FIXME: This is a dirty-hack to fetch "api_listener_options" before supervisor is started, as it is used to configure ranch supervisor.
-    {:ok, pid} = Kleened.Core.Config.start_link([])
-    cowboy_options = Kleened.Core.Config.get("api_listener_options")
-    GenServer.stop(pid)
-
     children = [
       Kleened.Core.Config,
       Kleened.Core.MetaData,
@@ -23,10 +18,7 @@ defmodule Kleened.Core.Application do
       Kleened.Core.Network,
       {Registry, keys: :unique, name: Kleened.Core.ExecInstances},
       {DynamicSupervisor, name: Kleened.Core.ExecPool, strategy: :one_for_one, max_restarts: 0},
-      {Plug.Cowboy,
-       scheme: :http,
-       plug: HTTP.API,
-       options: [{:dispatch, Kleened.API.Router.dispatch()} | cowboy_options]}
+      Kleened.API.Router
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
