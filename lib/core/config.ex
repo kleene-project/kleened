@@ -25,9 +25,9 @@ defmodule Kleened.Core.Config do
     initialize_system()
     cfg = open_config_file()
     error_if_not_defined(cfg, "zroot")
-    error_if_not_defined(cfg, "api_socket")
+    error_if_not_defined(cfg, "api_listening_sockets")
     error_if_not_defined(cfg, "base_layer_dataset")
-    cfg = add_api_listening_options(cfg)
+    cfg = add_api_listening_options(cfg, [])
     cfg = initialize_kleene_root(cfg)
     cfg = initialize_baselayer(cfg)
     cfg = Map.put(cfg, "metadata_db", Path.join(["/", cfg["zroot"], "metadata.sqlite"]))
@@ -144,10 +144,15 @@ defmodule Kleened.Core.Config do
     end
   end
 
-  defp add_api_listening_options(%{"api_socket" => api_socket} = config) do
-    api_socket = URI.parse(api_socket)
+  defp add_api_listening_options(
+         %{"api_listening_sockets" => [api_socket | rest]} = config,
+         listeners
+       )
+       when is_map(api_socket) do
+    address = URI.parse(api_socket["address"])
+
     # General validation that the URI is relevant for kleened
-    case api_socket do
+    case address do
       %URI{
         userinfo: nil,
         query: nil,
@@ -156,33 +161,58 @@ defmodule Kleened.Core.Config do
         :ok
 
       _ ->
-        config_error("could not parse value of 'api_socket'")
+        config_error("could not verify proper value of 'address': #{inspect(address)}")
     end
 
+    # Remove root path if it exists in tcp-sockets and remove empty hostname i so
+    address =
+      case address do
+        %URI{path: "/"} ->
+          %URI{address | path: nil}
+
+        _ ->
+          address
+      end
+
     # Extract specific listening scenarios (and config_error'ing if it fails)
-    {scheme, listener_options} =
-      case URI.parse(api_socket) do
+    listener =
+      case address do
         %URI{scheme: "http", host: ip, path: nil, port: port} when is_integer(port) ->
           opts = [{:port, port} | ip_options(ip)]
           {:http, opts}
 
-        %URI{scheme: "http", host: nil, path: path, port: nil} ->
+        %URI{scheme: "http", host: "", path: path} ->
           opts = [port: 0, ip: {:local, path}]
           {:http, opts}
 
         %URI{scheme: "https", host: ip, path: nil, port: port} when is_integer(port) ->
-          opts = [{:port, port} | ip_options(ip)] ++ tls_options(config)
+          opts = [{:port, port} | ip_options(ip)] ++ tls_options(api_socket)
           {:https, opts}
 
-        %URI{scheme: "https", host: nil, path: path, port: nil} ->
-          opts = [port: 0, ip: {:local, path}] ++ tls_options(config)
+        %URI{scheme: "https", host: "", path: path} ->
+          opts = [port: 0, ip: {:local, path}] ++ tls_options(api_socket)
           {:https, opts}
 
         _ ->
-          config_error("could not parse value of 'api_socket'")
+          config_error(
+            "Failed to extract correct information from socket URI: #{inspect(address)}"
+          )
       end
 
-    Map.put(config, "api_listener_options", {scheme, listener_options})
+    add_api_listening_options(Map.put(config, "api_listening_sockets", rest), [
+      listener | listeners
+    ])
+  end
+
+  defp add_api_listening_options(
+         %{"api_listening_sockets" => []} = config,
+         listeners
+       ) do
+    Map.put(config, "api_listeners", listeners)
+  end
+
+  defp add_api_listening_options(_config, _listeners) do
+    config_error("could not parse value of 'api_listening_sockets'")
   end
 
   def ip_options(ip) do
@@ -192,11 +222,11 @@ defmodule Kleened.Core.Config do
       {:ok, ip_v4} when tuple_size(ip_v4) == 4 ->
         [net: :inet, ip: ip_v4]
 
-      {:ok, ip_v6} when tuple_size(ip_v6) == 6 ->
+      {:ok, ip_v6} when tuple_size(ip_v6) == 8 ->
         [net: :inet6, ip: ip_v6]
 
-      _ ->
-        config_error("Error parsing ip-address in 'api_socket'")
+      error ->
+        config_error("Error parsing ip-address in 'api_socket': #{inspect(error)}")
     end
   end
 
@@ -218,16 +248,19 @@ defmodule Kleened.Core.Config do
         name == :cacertfile -> "tlscacert"
       end
 
-    case Map.get(config, name_string) do
-      nil ->
-        options
+    tls_option =
+      case Map.get(config, name_string) do
+        nil ->
+          options
 
-      path ->
-        case File.exists?(path) do
-          true -> [{name, path} | options]
-          false -> config_error("file in '#{name_string}' does not exist.")
-        end
-    end
+        path ->
+          case File.exists?(path) do
+            true -> [{name, path} | options]
+            false -> config_error("file in '#{name_string}' does not exist.")
+          end
+      end
+
+    tls_option
   end
 
   def parse_tls_verify_option(options, config) do
