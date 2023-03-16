@@ -24,11 +24,15 @@ api_listening_sockets:
       # Ignored if TLS is not used.
       tlscacert: "/usr/local/etc/kleened/certs/ca.pem"
 
-    ### UNIX-socket using TLS without client authentication and DH-parameters
-    - address: "https:///var/run/kleened.sock"
+    ### UNIX-socket using TLS without client authentication and Diffie-Hellman parameters
+    - address: "https:///var/run/kleened.tlssock"
       tlscert: "/usr/local/etc/kleened/certs/server-cert.pem"
       tlskey: "/usr/local/etc/kleened/certs/server-key.pem"
       tlsverify: false
+      tlscacert: "/usr/local/etc/kleened/certs/ca.pem"
+
+    ### UNIX-socket without TLS without
+    - address: "http:///var/run/kleened.sock"
 
     ### TCP IPv6 socket (localhost) without TLS
     - address: "http://[::1]:8080/"

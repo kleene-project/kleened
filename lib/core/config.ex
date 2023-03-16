@@ -272,7 +272,7 @@ defmodule Kleened.Core.Config do
         [{:verify, :verify_none} | options]
 
       true ->
-        [{:verify, :verify_peer} | options]
+        [{:verify, :verify_peer}, {:fail_if_no_peer_cert, true} | options]
 
       _ ->
         config_error("'verify' options value not understood.")
