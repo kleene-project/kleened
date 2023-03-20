@@ -3,7 +3,7 @@ defmodule Kleened.Core.Config do
   require Logger
   use Agent
 
-  @default_config_path "/usr/local/etc/kleened_config.yaml"
+  @default_config_path "/usr/local/etc/kleened/config.yaml"
 
   def start_link([]) do
     Agent.start_link(&initialize/0, name: __MODULE__)

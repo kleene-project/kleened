@@ -46,9 +46,11 @@ Vagrant.configure("2") do |config|
 
     dev.vm.provision "shell", inline: <<-SHELL
       ## Setup my development environment
-      ln -s #{$host}/kleened/example/kleened_config.yaml /usr/local/etc/kleened_config.yaml
+      mkdir -p /usr/local/etc/kleened
+      ln -s #{$host}/kleened/example/kleened_config.yaml /usr/local/etc/kleened/config.yaml
       ln -s #{$host}/kleened /home/vagrant/kleened
       ln -s #{$host}/klee /home/vagrant/klee
+      ln -s /host/kleened/test/data/test_certs /usr/local/etc/kleened/certs
 
       ## Install packages
       ## Use 'erlang-wx' instead of 'erlang', if the observer gui is needed.
