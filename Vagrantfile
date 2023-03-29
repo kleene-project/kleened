@@ -71,17 +71,28 @@ Vagrant.configure("2") do |config|
     SHELL
   end
 
-  ######################################################
-  ### VM used for testing a build from a ports file ####
-  ######################################################
-  config.vm.define "test", autostart: false do |test|
-    test.vm.hostname = "kleene-test"
+  #####################################
+  ### VM used for testing-purposes ####
+  #####################################
+  config.vm.define "testing", autostart: false do |testing|
+    testing.vm.hostname = "kleene-test"
 
-    test.vm.provision "shell", inline: <<-SHELL
-      pkg install -y git-lite erlang elixir elixir-hex
-      cp -r #{$host}/kleened/ports /home/vagrant/
-      cd /home/vagrant/kleened
-      portsnap --interactive fetch extract
+    testing.vm.provision "shell", inline: <<-SHELL
+      ## Setup kleened
+      mkdir -p /usr/local/etc/kleened
+      ln -s #{$host}/kleened/example/kleened_config.yaml /usr/local/etc/kleened/config.yaml
+      ln -s /host/kleened/test/data/test_certs /usr/local/etc/kleened/certs
+
+      ## Install packages
+      pkg install -y py39-pipx zsh bash tmux git-lite vim elixir elixir-hex jq
+
+      ## Setup dotfiles
+      pw usermod -s /usr/local/bin/zsh -n vagrant
+      export HOME=/home/vagrant
+      rm ~/.profile # we remove this to avoid error from yadm
+      git clone -b with_my_bootstrap https://github.com/lgandersen/yadm.git ~/.yadm-project
+      .yadm-project/bootstrap_dotfiles.sh
+      chown -R vagrant /home/vagrant/.vim_runtime
     SHELL
   end
 end

@@ -10,6 +10,7 @@ shell:
 clear-kleened:
 	zfs destroy -rf zroot/kleene
 	zfs create zroot/kleene
+	rm /var/run/kleened.*
 
 codecov:
 	MIX_ENV=test mix coveralls.html -o ./coveralls --max-failures 5
