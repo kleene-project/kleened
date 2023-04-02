@@ -53,8 +53,12 @@ defmodule Kleened.Core.Utils do
     DateTime.to_iso8601(DateTime.utc_now())
   end
 
+  def mkdir(path) do
+    {"", 0} = OS.cmd(["/bin/mkdir", "-p", path])
+  end
+
   def mount_nullfs(args) do
-    {"", 0} = System.cmd("/sbin/mount_nullfs", args)
+    {"", 0} = OS.cmd(["/sbin/mount_nullfs" | args])
   end
 
   def destroy_interface(kleene_if) do

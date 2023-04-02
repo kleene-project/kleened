@@ -83,21 +83,22 @@ defmodule Kleened.Core.Volume do
         opts \\ []
       ) do
     %Layer{mountpoint: container_mountpoint} = MetaData.get_layer(layer_id)
-    absolute_location = Path.join(container_mountpoint, location)
+    host_location = Path.join(container_mountpoint, location)
+    Utils.mkdir(host_location)
     read_only = Keyword.get(opts, :ro, false)
 
     case read_only do
       false ->
-        Utils.mount_nullfs([volume_mountpoint, absolute_location])
+        Utils.mount_nullfs([volume_mountpoint, host_location])
 
       true ->
-        Utils.mount_nullfs(["-o", "ro", volume_mountpoint, absolute_location])
+        Utils.mount_nullfs(["-o", "ro", volume_mountpoint, host_location])
     end
 
     mnt = %Mount{
       container_id: container_id,
       volume_name: volume_name,
-      location: absolute_location,
+      location: host_location,
       read_only: read_only
     }
 
