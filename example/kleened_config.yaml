@@ -25,6 +25,7 @@ api_listening_sockets:
       tlscacert: "/usr/local/etc/kleened/certs/ca.pem"
 
     ### UNIX-socket using TLS without client authentication and Diffie-Hellman parameters
+    ### NOTE: Any previous sockets/files will be overwritten
     - address: "https:///var/run/kleened.tlssock"
       tlscert: "/usr/local/etc/kleened/certs/server-cert.pem"
       tlskey: "/usr/local/etc/kleened/certs/server-key.pem"

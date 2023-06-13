@@ -182,6 +182,7 @@ defmodule Kleened.Core.Config do
           {:http, opts}
 
         %URI{scheme: "http", host: "", path: path} ->
+          delete_file_if_exists(path)
           opts = [port: 0, ip: {:local, path}]
           {:http, opts}
 
@@ -190,6 +191,7 @@ defmodule Kleened.Core.Config do
           {:https, opts}
 
         %URI{scheme: "https", host: "", path: path} ->
+          delete_file_if_exists(path)
           opts = [port: 0, ip: {:local, path}] ++ tls_options(api_socket)
           {:https, opts}
 
@@ -281,12 +283,12 @@ defmodule Kleened.Core.Config do
 
   defp config_error(msg) do
     Logger.error("configuration error: #{msg}")
-    raise "failed to configure kleened"
+    raise RuntimeError, message: "failed to configure kleened"
   end
 
   defp init_error(msg) do
     Logger.error("initialization error: #{msg}")
-    raise "failed to initialize kleened"
+    raise RuntimeError, message: "failed to initialize kleened"
   end
 
   defp open_config_file() do
@@ -303,7 +305,9 @@ defmodule Kleened.Core.Config do
 
       other_msg ->
         Logger.warn(
-          "there was an error when trying to open #{@default_config_path} #{inspect(other_msg)}"
+          "an error occurred while trying to open config file #{@default_config_path}: #{
+            inspect(other_msg)
+          }"
         )
 
         %{}
@@ -314,6 +318,35 @@ defmodule Kleened.Core.Config do
     case is_map(config) do
       true -> :yes
       false -> :no
+    end
+  end
+
+  defp delete_file_if_exists(path) do
+    case File.stat(path) do
+      {:error, :enoent} ->
+        :ok
+
+      {:error, reason} ->
+        config_error("an error occurred while trying to open unix-socket #{path}: #{reason}.")
+
+      {:ok, %File.Stat{type: :regular}} ->
+        remove_socket(path)
+
+      {:ok, %File.Stat{type: :other}} ->
+        remove_socket(path)
+
+      {:ok, %File.Stat{type: non_file}} ->
+        config_error("The unix-socket path #{path} is not a file but a #{non_file}.")
+    end
+  end
+
+  defp remove_socket(path) do
+    case File.rm(path) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        config_error("an error occurred while trying to remove unix-socket #{path}: #{reason}.")
     end
   end
 end
