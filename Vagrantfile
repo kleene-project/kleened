@@ -7,7 +7,7 @@ $configure_zfs = <<-SCRIPT
 kldload zfs
 sysrc -f /boot/loader.conf zfs_load="YES"
 sysrc zfs_enable="YES"
-truncate -s 1700M /home/vagrant/zpool.disk
+truncate -s 3000M /home/vagrant/zpool.disk
 zpool create -f zroot /home/vagrant/zpool.disk
 zfs create -o compression=gzip-9 -o mountpoint=/zroot/kleene zroot/kleene
 zfs create zroot/kleene_basejail
@@ -82,6 +82,8 @@ Vagrant.configure("2") do |config|
       mkdir -p /usr/local/etc/kleened
       ln -s #{$host}/kleened/example/kleened_config.yaml /usr/local/etc/kleened/config.yaml
       ln -s /host/kleened/test/data/test_certs /usr/local/etc/kleened/certs
+      ln -s #{$host}/kleened /home/vagrant/kleened
+      ln -s #{$host}/klee /home/vagrant/klee
 
       ## Install packages
       pkg install -y py39-pipx zsh bash tmux git-lite vim elixir elixir-hex jq
