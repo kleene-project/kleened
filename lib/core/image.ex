@@ -110,7 +110,6 @@ defmodule Kleened.Core.Image do
                 jail_param: ["mount.devfs=true"],
                 image: image_id,
                 user: "root",
-                networks: %{state.network => %Schemas.EndPointConfig{container: "dummy"}},
                 cmd: []
               }
             )
@@ -118,6 +117,7 @@ defmodule Kleened.Core.Image do
           name = Utils.uuid()
 
           {:ok, container} = Kleened.Core.Container.create(name, container_config)
+          Network.connect(state.network, %Schemas.EndPointConfig{container: container.id})
 
           process_instructions(%State{state | container: container, instructions: rest})
 

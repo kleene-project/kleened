@@ -263,13 +263,17 @@ defmodule NetworkTest do
 
     opts = %{
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-i"],
-      networks: %{
-        # We don't use %EndPointConfig{} schema struct because we also need to test conversion of keys from strings to atoms.
-        "testlonet" => %{"container" => "dummy", "ip_address" => "10.13.38.42"}
-      }
+      networks: []
     }
 
     %{id: container_id} = TestHelper.container_create(api_spec, "network_test", opts)
+
+    :ok =
+      TestHelper.network_connect(api_spec, "testlonet", %{
+        container: container_id,
+        ip_address: "10.13.38.42"
+      })
+
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
     {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
     assert %{"statistics" => %{"interface" => [%{"address" => "10.13.38.42"}]}} = output

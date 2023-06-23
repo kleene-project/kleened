@@ -40,13 +40,6 @@ defmodule Kleened.API.Schemas do
           items: %Schema{type: :string},
           default: []
         },
-        networks: %Schema{
-          description:
-            "A mapping of network name to endpoint configuration for that network. The 'container' property is ignored in each endpoint config and the created container's id is used instead. Use a dummy-string like 'unused_name' for the 'container' property since it is mandatory.",
-          type: :object,
-          additionalProperties: Kleened.API.Schemas.EndPointConfig,
-          default: %{}
-        },
         jail_param: %Schema{
           description: "List of jail parameters (see jail(8) for details)",
           type: :array,

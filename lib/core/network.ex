@@ -63,7 +63,7 @@ defmodule Kleened.Core.Network do
   @spec connect(String.t(), %Schemas.EndPointConfig{}) ::
           {:ok, endpoint()} | {:error, String.t()}
   def connect(network_idname, config) do
-    GenServer.call(__MODULE__, {:connect, network_idname, config}, 10_000)
+    GenServer.call(__MODULE__, {:connect, network_idname, config}, 30_000)
   end
 
   @spec connect(String.t(), String.t()) :: :ok | {:error, String.t()}
@@ -82,7 +82,7 @@ defmodule Kleened.Core.Network do
 
   @spec remove(String.t()) :: {:ok, Network.network_id()} | {:error, String.t()}
   def remove(idname) do
-    GenServer.call(__MODULE__, {:remove, idname})
+    GenServer.call(__MODULE__, {:remove, idname}, 30_000)
   end
 
   def inspect_(network_idname) do
@@ -233,12 +233,12 @@ defmodule Kleened.Core.Network do
 
   defp connect_(_container, :not_found, _config) do
     Logger.warn("Could not connect container to network: network not found")
-    {:reply, {:error, "container not found"}}
+    {:error, "network not found"}
   end
 
   defp connect_(:not_found, _network, _config) do
     Logger.warn("Could not connect container to network: container not found")
-    {:reply, {:error, "network not found"}}
+    {:error, "container not found"}
   end
 
   defp connect_(container, network, config) do

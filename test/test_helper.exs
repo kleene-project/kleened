@@ -1,5 +1,5 @@
 alias Kleened.Core.{ZFS, Config, Layer, Exec, MetaData}
-alias Kleened.API.Schemas
+# alias Kleened.API.Schemas
 require Logger
 
 Code.put_compiler_option(:warnings_as_errors, true)
@@ -20,6 +20,9 @@ defmodule TestHelper do
   import OpenApiSpex.TestAssertions
   alias :gun, as: Gun
   alias Kleened.API.Router
+  alias Kleened.API.Schemas
+
+  @kleened_host {0, 0, 0, 0, 0, 0, 0, 1}
 
   @opts Router.init([])
 
@@ -46,18 +49,7 @@ defmodule TestHelper do
   end
 
   def container_create(api_spec, name, config) do
-    config =
-      case is_list(config.networks) do
-        true ->
-          networks_map =
-            Map.new(Enum.map(config.networks, &{&1, %Schemas.EndPointConfig{container: "dummy"}}))
-
-          %{config | networks: networks_map}
-
-        false ->
-          config
-      end
-
+    {networks, config} = Map.pop(config, :networks)
     assert_schema(config, "ContainerConfig", api_spec)
 
     response =
@@ -65,10 +57,17 @@ defmodule TestHelper do
       |> put_req_header("content-type", "application/json")
       |> Router.call(@opts)
 
-    validate_response(api_spec, response, %{
-      201 => "IdResponse",
-      404 => "ErrorResponse"
-    })
+    case validate_response(api_spec, response, %{
+           201 => "IdResponse",
+           404 => "ErrorResponse"
+         }) do
+      %{id: container_id} = resp ->
+        Enum.map(networks, &network_connect(api_spec, &1, container_id))
+        resp
+
+      resp ->
+        resp
+    end
   end
 
   def container_stop(api_spec, name) do
@@ -276,8 +275,7 @@ defmodule TestHelper do
   end
 
   def network_connect(api_spec, network_id, container_id) when is_binary(container_id) do
-    connect_config = %{container: container_id}
-    network_connect(api_spec, network_id, connect_config)
+    network_connect(api_spec, network_id, %{container: container_id})
   end
 
   def network_connect(api_spec, network_id, config) do
@@ -324,7 +322,8 @@ defmodule TestHelper do
   end
 
   def initialize_websocket(endpoint) do
-    {:ok, conn} = Gun.open(:binary.bin_to_list("localhost"), 8085)
+    {:ok, conn} = Gun.open(@kleened_host, 8080, %{protocols: [:http]})
+
     {:ok, :http} = Gun.await_up(conn)
 
     :gun.ws_upgrade(conn, :binary.bin_to_list(endpoint))
@@ -345,7 +344,7 @@ defmodule TestHelper do
         {:error, response}
 
       {:gun_response, ^conn, _stream_ref, :fin, status, headers} = msg ->
-        Logger.error("failed for a unknown reason with no data: #{msg}")
+        Logger.error("failed for a unknown reason with no data: #{inspect(msg)}")
         exit({:ws_upgrade_failed, status, headers})
 
       {:gun_error, ^conn, _stream_ref, reason} ->
@@ -421,6 +420,7 @@ defmodule TestHelper do
   end
 
   def devfs_mounted(%Schemas.Container{layer_id: layer_id}) do
+    :timer.sleep(500)
     %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     devfs_path = Path.join(mountpoint, "dev")
 

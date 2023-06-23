@@ -73,7 +73,6 @@ defmodule Kleened.Core.Container do
            image: image_name,
            user: user,
            env: env,
-           networks: networks,
            volumes: volumes,
            cmd: command,
            jail_param: jail_param
@@ -124,15 +123,8 @@ defmodule Kleened.Core.Container do
         # Mount volumes into container (if any have been provided)
         bind_volumes(volumes, cont)
 
-        # Store new container and connect to the networks
+        # Store new container
         MetaData.add_container(cont)
-
-        Map.to_list(networks)
-        |> Enum.map(fn {network_name, config} ->
-          config_list = Map.to_list(Map.put(config, :container, container_id))
-          config = struct(Schemas.EndPointConfig, config_list)
-          Network.connect(network_name, config)
-        end)
 
         {:ok, MetaData.get_container(container_id)}
     end
