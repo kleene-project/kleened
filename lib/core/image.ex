@@ -4,7 +4,8 @@ defmodule Kleened.Core.Image do
   require Logger
 
   defmodule State do
-    defstruct context: nil,
+    defstruct build_id: nil,
+              context: nil,
               image_name: nil,
               image_tag: nil,
               network: nil,
@@ -41,6 +42,7 @@ defmodule Kleened.Core.Image do
           })
 
         state = %State{
+          build_id: build_id,
           context: context_path,
           quiet: quiet,
           image_name: name,
@@ -56,7 +58,7 @@ defmodule Kleened.Core.Image do
         }
 
         pid = Process.spawn(fn -> process_instructions(state) end, [:link])
-        {:ok, pid}
+        {:ok, build_id, pid}
 
       {:error, error_msg} ->
         {:error, error_msg}
@@ -114,8 +116,7 @@ defmodule Kleened.Core.Image do
               }
             )
 
-          name = Utils.uuid()
-
+          name = "build_#{state.build_id}"
           {:ok, container} = Kleened.Core.Container.create(name, container_config)
           Network.connect(state.network, %Schemas.EndPointConfig{container: container.id})
 

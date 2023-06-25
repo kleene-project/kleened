@@ -31,10 +31,9 @@ defmodule ImageTest do
       tag: "websock_img:latest"
     }
 
-    {%Schemas.Image{id: image_id}, build_log} = TestHelper.image_valid_build(config)
+    {%Schemas.Image{id: image_id}, _build_id, build_log} = TestHelper.image_valid_build(config)
 
     assert build_log == [
-             "OK",
              "Step 1/3 : FROM scratch\n",
              "Step 2/3 : RUN echo \"lets test that we receives this!\"\n",
              "lets test that we receives this!\n",
@@ -86,7 +85,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {%Schemas.Image{layer_id: layer_id}, _build_log} =
+    {%Schemas.Image{layer_id: layer_id}, _build_id, _build_log} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
@@ -112,7 +111,9 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
+    {%Schemas.Image{layer_id: layer_id}, _build_id, _build_log} =
+      TestHelper.image_valid_build(config)
+
     %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert MetaData.list_containers() == []
@@ -133,7 +134,9 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
+    {%Schemas.Image{layer_id: layer_id}, _build_id, _build_log} =
+      TestHelper.image_valid_build(config)
+
     %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test2.txt")) == {:ok, "lel\n"}
@@ -157,7 +160,8 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
+    {%Schemas.Image{layer_id: layer_id}, _build_id, _build_log} =
+      TestHelper.image_valid_build(config)
 
     %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     # we cannot check the symbolic link from the host:
@@ -172,7 +176,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {%Schemas.Image{id: image_id}, _build_log} =
+    {%Schemas.Image{id: image_id}, _build_id, _build_log} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
@@ -200,7 +204,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {image, _build_log} =
+    {image, _build_id, _build_log} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
@@ -219,7 +223,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {image, _build_log} =
+    {image, _build_id, _build_log} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
@@ -242,7 +246,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {image, build_log} =
+    {image, _build_id, build_log} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
@@ -250,7 +254,6 @@ defmodule ImageTest do
       })
 
     expected_build_log = [
-      "OK",
       "Step 1/7 : FROM scratch\n",
       "Step 2/7 : ENV TEST=testvalue\n",
       "Step 3/7 : RUN printenv\n",
@@ -282,7 +285,6 @@ defmodule ImageTest do
 
     expected_build_log = fn x, y ->
       [
-        "OK",
         "Step 1/4 : FROM scratch\n",
         "Step 2/4 : ARG testvar\n",
         "Step 3/4 : RUN echo \"lol:\$testvar\"\n",
@@ -294,11 +296,11 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {_image, build_log} = TestHelper.image_valid_build(config)
+    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
     assert expected_build_log.("lol:", "lol:empty") == build_log
 
     config = Map.put(config, :buildargs, %{"testvar" => "testval"})
-    {_image, build_log} = TestHelper.image_valid_build(config)
+    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
 
     assert expected_build_log.("lol:testval", "lol:testval") == build_log
   end
@@ -319,7 +321,6 @@ defmodule ImageTest do
 
     expected_build_log = fn x ->
       [
-        "OK",
         "Step 1/4 : FROM scratch\n",
         "Step 2/4 : ARG testvar1=testval1\n",
         "Step 3/4 : ARG testvar2=\"test val2\"\n",
@@ -330,11 +331,11 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {_image, build_log} = TestHelper.image_valid_build(config)
+    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
     assert expected_build_log.("testval1:test val2") == build_log
 
     config = Map.put(config, :buildargs, %{"testvar1" => "newval1", "testvar2" => "newval2"})
-    {_image, build_log} = TestHelper.image_valid_build(config)
+    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
 
     assert expected_build_log.("newval1:newval2") == build_log
   end
@@ -354,7 +355,6 @@ defmodule ImageTest do
     }
 
     expected_build_log = [
-      "OK",
       "Step 1/4 : FROM scratch\n",
       "Step 2/4 : ARG TESTVAR=\"use at runtime\"\n",
       "Step 3/4 : ENV TESTENVVAR=$TESTVAR\n",
@@ -363,7 +363,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {%Schemas.Image{id: image_id}, build_log} = TestHelper.image_valid_build(config)
+    {%Schemas.Image{id: image_id}, _build_id, build_log} = TestHelper.image_valid_build(config)
     assert expected_build_log == build_log
 
     config = %{image: image_id}
@@ -424,7 +424,6 @@ defmodule ImageTest do
 
     expected_build_log = fn x ->
       [
-        "OK",
         "Step 1/4 : FROM scratch\n",
         "Step 2/4 : ARG TESTVAR=ntpd\n",
         "Step 3/4 : USER $TESTVAR\n",
@@ -435,7 +434,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {_image, build_log} = TestHelper.image_valid_build(config)
+    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
     assert expected_build_log.("uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)") == build_log
   end
 
@@ -447,7 +446,6 @@ defmodule ImageTest do
     """
 
     expected_build_log = [
-      "OK",
       "Step 1/3 : FROM scratch\n",
       "Step 2/3 : ARG TESTVAR=\"test.txt\"\n",
       "Step 3/3 : COPY $TESTVAR /root/\n"
@@ -462,7 +460,9 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, build_log} = TestHelper.image_valid_build(config)
+    {%Schemas.Image{layer_id: layer_id}, _build_id, build_log} =
+      TestHelper.image_valid_build(config)
+
     %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
 
     assert expected_build_log == build_log
@@ -484,7 +484,6 @@ defmodule ImageTest do
     }
 
     expected_build_log = [
-      "OK",
       "Step 1/4 : FROM scratch\n",
       "Step 2/4 : ARG testvar=should_be_overwritten\n",
       "Step 3/4 : ARG testvar\n",
@@ -494,7 +493,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {_image, build_log} = TestHelper.image_valid_build(config)
+    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
     assert expected_build_log == build_log
   end
 
@@ -513,7 +512,6 @@ defmodule ImageTest do
     }
 
     expected_build_log = [
-      "OK",
       "Step 1/4 : FROM scratch\n",
       "Step 2/4 : ARG CONT_IMG_VER\n",
       "Step 3/4 : ENV CONT_IMG_VER=v1.0.0\n",
@@ -523,7 +521,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {_image, build_log} = TestHelper.image_valid_build(config)
+    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
     assert expected_build_log == build_log
   end
 
@@ -538,7 +536,7 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {%Schemas.Image{layer_id: layer_id}, _build_log} =
+    {%Schemas.Image{layer_id: layer_id}, _build_id, _build_log} =
       TestHelper.image_valid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile,
@@ -565,7 +563,7 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {_image, build_log} =
+    {_image, _build_id, build_log} =
       TestHelper.image_valid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile,
@@ -573,7 +571,7 @@ defmodule ImageTest do
         tag: "test:latest"
       })
 
-    assert build_log == ["OK"]
+    assert build_log == []
   end
 
   test "building an image that stops prematurely from non-zero exitcode from RUN-instruction" do
@@ -627,15 +625,16 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, @tmp_context)
 
-    build_log =
+    [build_id | build_log] =
       TestHelper.image_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
         tag: "test:latest"
       })
 
+    assert <<"OK:", _id::binary>> = build_id
+
     assert build_log == [
-             "OK",
              "Step 1/2 : FROM nonexisting\n",
              "image build failed: image not found"
            ]
@@ -650,15 +649,16 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    build_log =
+    [build_id | build_log] =
       TestHelper.image_build(%{
         context: context,
         dockerfile: @tmp_dockerfile,
         tag: "test:latest"
       })
 
+    assert <<"OK:", _id::binary>> = build_id
+
     assert build_log == [
-             "OK",
              "Step 1/2 : FROM scratch\n",
              "Step 2/2 : ENV TEST=\"something\" # You cannot make comments like this.\n",
              "image build failed: failed environment substition of: ENV TEST=\"something\" # You cannot make comments like this."
@@ -681,10 +681,9 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {_, build_log} = TestHelper.image_valid_build(config)
+    {_, _build_id, build_log} = TestHelper.image_valid_build(config)
 
     assert build_log == [
-             "OK",
              "Step 1/2 : FROM scratch\n",
              "Step 2/2 : CMD /usr/bin/uname\n"
            ]

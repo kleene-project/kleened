@@ -174,10 +174,19 @@ defmodule TestHelper do
   def image_valid_build(config) do
     config = Map.merge(%{quiet: false}, config)
     frames = image_build(config)
-    {finish_msg, build_log} = List.pop_at(frames, -1)
+    {finish_msg, build_log_raw} = List.pop_at(frames, -1)
+    {build_id, build_log} = extract_build_id(build_log_raw)
     assert <<"image created with id ", image_id::binary>> = finish_msg
     image = MetaData.get_image(String.trim(image_id))
-    {image, build_log}
+    {image, build_id, build_log}
+  end
+
+  def extract_build_id([<<"OK:", build_id::binary>> | build_log]) do
+    {build_id, build_log}
+  end
+
+  def extract_build_id(_other) do
+    :error_extracting_buildlog
   end
 
   def image_build(config) do

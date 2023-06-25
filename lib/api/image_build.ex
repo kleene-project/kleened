@@ -69,10 +69,10 @@ defmodule Kleened.API.ImageBuild do
            Utils.map2envlist(args["buildargs"]),
            args["quiet"]
          ) do
-      {:ok, pid} ->
+      {:ok, build_id, pid} ->
         Logger.debug("Building image. Await output.")
         state = state |> Map.put(:build_pid, pid)
-        {[{:text, "OK"}], state}
+        {[{:text, "OK:#{build_id}"}], state}
 
       {:error, msg} ->
         Logger.info("Error building image. Closing websocket.")

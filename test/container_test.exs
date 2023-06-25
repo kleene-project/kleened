@@ -179,7 +179,7 @@ defmodule ContainerTest do
     }
 
     TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
-    {image, _build_log} = TestHelper.image_valid_build(config_image)
+    {image, _build_id, _build_log} = TestHelper.image_valid_build(config_image)
 
     config = %{
       image: image.id,
@@ -215,7 +215,7 @@ defmodule ContainerTest do
     }
 
     TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
-    {image, _build_log} = TestHelper.image_valid_build(config_image)
+    {image, _build_id, _build_log} = TestHelper.image_valid_build(config_image)
 
     config = %{
       image: image.id,
