@@ -10,6 +10,7 @@ defmodule Kleened.API.ImageBuild do
       "context" => "./",
       "dockerfile" => "Dockerfile",
       "quiet" => "false",
+      "cleanup" => "true",
       "buildargs" => "{}"
     }
 
@@ -26,6 +27,18 @@ defmodule Kleened.API.ImageBuild do
 
         _ ->
           Map.put(args, "quiet", :invalid_arg)
+      end
+
+    args =
+      case String.downcase(args["cleanup"]) do
+        "false" ->
+          Map.put(args, "cleanup", false)
+
+        "true" ->
+          Map.put(args, "cleanup", true)
+
+        _ ->
+          Map.put(args, "cleanup", :invalid_arg)
       end
 
     {valid_buildargs, args} =
@@ -67,6 +80,7 @@ defmodule Kleened.API.ImageBuild do
            args["dockerfile"],
            args["tag"],
            Utils.map2envlist(args["buildargs"]),
+           args["cleanup"],
            args["quiet"]
          ) do
       {:ok, build_id, pid} ->

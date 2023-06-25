@@ -574,7 +574,7 @@ defmodule ImageTest do
     assert build_log == []
   end
 
-  test "building an image that stops prematurely from non-zero exitcode from RUN-instruction" do
+  test "image-build stops prematurely from non-zero exitcode from RUN-instruction" do
     dockerfile = """
     FROM scratch
     RUN ls notexist
@@ -584,13 +584,43 @@ defmodule ImageTest do
     context = create_test_context("test_image_run_nonzero_exitcode")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    assert "executing instruction resulted in non-zero exit code" ==
-             TestHelper.image_invalid_build(%{
-               context: context,
-               dockerfile: @tmp_dockerfile,
-               quiet: false,
-               tag: "test:latest"
-             })
+    {failed_line, _build_id, _build_log} =
+      TestHelper.image_invalid_build(%{
+        context: context,
+        dockerfile: @tmp_dockerfile,
+        quiet: false,
+        tag: "test:latest"
+      })
+
+    assert "executing instruction resulted in non-zero exit code" == failed_line
+  end
+
+  test "image-build stops prematurely from non-zero exitcode that keeps build-container" do
+    dockerfile = """
+    FROM scratch
+    RUN echo "test" > /etc/testing
+    RUN ls notexist
+    """
+
+    context = create_test_context("test_image_run_nonzero_exitcode")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    {failed_line, build_id, _build_log} =
+      TestHelper.image_invalid_build(%{
+        context: context,
+        dockerfile: @tmp_dockerfile,
+        quiet: false,
+        cleanup: false,
+        tag: "test:latest"
+      })
+
+    assert "executing instruction resulted in non-zero exit code" == failed_line
+
+    %Schemas.Container{layer_id: layer_id} =
+      Kleened.Core.MetaData.get_container("build_#{build_id}")
+
+    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
+    assert File.read(Path.join(mountpoint, "/etc/testing")) == {:ok, "test\n"}
   end
 
   test "try building an image from a invalid Dockerfile (no linebreak)" do

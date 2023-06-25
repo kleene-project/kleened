@@ -16,14 +16,15 @@ defmodule Kleened.Core.Image do
               instructions: nil,
               total_steps: nil,
               container: nil,
+              cleanup: true,
               quiet: false
   end
 
   @type t() :: %Schemas.Image{}
 
-  @spec build(String.t(), String.t(), String.t(), boolean()) ::
+  @spec build(String.t(), String.t(), String.t(), boolean(), boolean()) ::
           {:ok, pid()} | {:error, String.t()}
-  def build(context_path, dockerfile, tag, buildargs, quiet \\ false) do
+  def build(context_path, dockerfile, tag, buildargs, cleanup, quiet \\ false) do
     {name, tag} = Kleened.Core.Utils.decode_tagname(tag)
     dockerfile_path = Path.join(context_path, dockerfile)
     {:ok, dockerfile} = File.read(dockerfile_path)
@@ -45,6 +46,7 @@ defmodule Kleened.Core.Image do
           build_id: build_id,
           context: context_path,
           quiet: quiet,
+          cleanup: cleanup,
           image_name: name,
           image_tag: tag,
           container: %Schemas.Container{env: []},
@@ -302,7 +304,10 @@ defmodule Kleened.Core.Image do
   end
 
   defp cleanup_build_environment(state) do
-    Container.remove(state.container.id)
+    cond do
+      state.cleanup -> Container.remove(state.container.id)
+    end
+
     Network.remove(state.network)
   end
 

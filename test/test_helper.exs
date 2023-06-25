@@ -164,15 +164,16 @@ defmodule TestHelper do
   end
 
   def image_invalid_build(config) do
-    config = Map.merge(%{quiet: false}, config)
+    config = Map.merge(%{quiet: false, cleanup: true}, config)
     frames = image_build(config)
-    {finish_msg, _build_log} = List.pop_at(frames, -1)
+    {finish_msg, build_log_raw} = List.pop_at(frames, -1)
+    {build_id, build_log} = extract_build_id(build_log_raw)
     assert <<"image build failed: ", failed_line::binary>> = finish_msg
-    failed_line
+    {failed_line, build_id, build_log}
   end
 
   def image_valid_build(config) do
-    config = Map.merge(%{quiet: false}, config)
+    config = Map.merge(%{quiet: false, cleanup: true}, config)
     frames = image_build(config)
     {finish_msg, build_log_raw} = List.pop_at(frames, -1)
     {build_id, build_log} = extract_build_id(build_log_raw)
