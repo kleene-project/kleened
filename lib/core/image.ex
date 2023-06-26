@@ -36,7 +36,7 @@ defmodule Kleened.Core.Image do
 
         {:ok, buildnet} =
           Network.create(%Schemas.NetworkConfig{
-            name: "builder" <> build_id,
+            name: "build" <> build_id,
             subnet: "172.18.0.0/24",
             ifname: build_id,
             driver: "loopback"
@@ -118,7 +118,7 @@ defmodule Kleened.Core.Image do
               }
             )
 
-          name = "build_#{state.build_id}"
+          name = "build_" <> state.build_id
           {:ok, container} = Kleened.Core.Container.create(name, container_config)
           Network.connect(state.network, %Schemas.EndPointConfig{container: container.id})
 
@@ -306,6 +306,7 @@ defmodule Kleened.Core.Image do
   defp cleanup_build_environment(state) do
     cond do
       state.cleanup -> Container.remove(state.container.id)
+      true -> :ok
     end
 
     Network.remove(state.network)
