@@ -1,5 +1,5 @@
 ---
-# Root ZFS dataset where Jocker stores the images, containers and volumes. Must be set.
+# Root ZFS dataset where Kleened stores the images, containers, and volumes. Must be set.
 zroot: "zroot/kleene"
 
 # Sockets where the kleened-API is listenening.

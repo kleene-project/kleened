@@ -143,7 +143,7 @@ defmodule TestHelper do
 
   def exec_start_sync(exec_id, config) do
     {:ok, _stream_ref, conn} = exec_start(exec_id, config)
-    TestHelper.receive_frames(conn)
+    receive_frames(conn)
   end
 
   def exec_stop(api_spec, exec_id, %{
@@ -209,11 +209,18 @@ defmodule TestHelper do
     endpoint = "/images/build?#{query_params}"
 
     case initialize_websocket(endpoint) do
-      {:ok, _stream_ref, conn} ->
-        receive_frames(conn)
+      {:ok, _stream_ref, conn} -> receive_frames(conn)
+      error_msg -> error_msg
+    end
+  end
 
-      error_msg ->
-        error_msg
+  def image_create(config) do
+    query_params = Plug.Conn.Query.encode(config)
+    endpoint = "/images/create?#{query_params}"
+
+    case initialize_websocket(endpoint) do
+      {:ok, _stream_ref, conn} -> receive_frames(conn, 20_000)
+      error_msg -> error_msg
     end
   end
 
@@ -381,29 +388,33 @@ defmodule TestHelper do
     end
   end
 
-  def receive_frames(conn, frames \\ []) do
-    case receive_frame(conn) do
+  def receive_frames(conn, timeout \\ 5_000) do
+    receive_frames_(conn, [], timeout)
+  end
+
+  defp receive_frames_(conn, frames, timeout) do
+    case receive_frame(conn, timeout) do
       {:text, msg} ->
-        receive_frames(conn, [msg | frames])
+        receive_frames_(conn, [msg | frames], timeout)
 
       {:close, 1001, ""} ->
-        receive_frames(conn, [:not_attached])
+        receive_frames_(conn, [:not_attached], timeout)
 
       {:close, 1001, msg} ->
-        receive_frames(conn, [msg | frames])
+        receive_frames_(conn, [msg | frames], timeout)
 
       {:close, 1000, msg} ->
-        receive_frames(conn, [msg | frames])
+        receive_frames_(conn, [msg | frames], timeout)
 
       :websocket_closed ->
         Enum.reverse(frames)
     end
   end
 
-  def receive_frame(conn) do
+  def receive_frame(conn, timeout \\ 5_000) do
     receive do
       {:gun_ws, ^conn, _ref, msg} ->
-        Logger.info("message received from websocket: #{inspect(msg)}")
+        Logger.debug("message received from websocket: #{inspect(msg)}")
         msg
 
       {:gun_down, ^conn, :ws, {:error, :closed}, [_stream_ref]} ->
@@ -412,7 +423,7 @@ defmodule TestHelper do
       {:gun_down, ^conn, :ws, :normal, [_stream_ref]} ->
         :websocket_closed
     after
-      1_000 -> {:error, :timeout}
+      timeout -> {:error, :timeout}
     end
   end
 

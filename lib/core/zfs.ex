@@ -2,38 +2,38 @@ defmodule Kleened.Core.ZFS do
   require Logger
   alias Kleened.Core.OS
 
-  @spec create(String.t()) :: integer()
+  @spec create(String.t()) :: {String.t(), integer()}
   def create(dataset) do
     # zfs create [-pu] [-o property=value]... filesystem
     cmd("create #{dataset}")
   end
 
-  @spec destroy(String.t()) :: integer()
+  @spec destroy(String.t()) :: {String.t(), integer()}
   def destroy(dataset) do
     # zfs destroy [-dnpRrv] snapshot[%snapname][,...]
     # zfs destroy [-fnpRrv] filesystem|volume
     cmd("destroy -f #{dataset}")
   end
 
-  @spec destroy_force(String.t()) :: integer()
+  @spec destroy_force(String.t()) :: {String.t(), integer()}
   def destroy_force(dataset) do
     cmd("destroy -rf #{dataset}")
   end
 
-  @spec snapshot(String.t()) :: integer()
+  @spec snapshot(String.t()) :: {String.t(), integer()}
   def snapshot(name) do
     # zfs snapshot|snap [-r] [-o property=value]
     cmd("snapshot #{name}")
   end
 
-  @spec clone(String.t(), String.t()) :: integer()
+  @spec clone(String.t(), String.t()) :: {String.t(), integer()}
   def clone(snapshot, clonename) do
     cmd("clone #{snapshot} #{clonename}")
   end
 
-  @spec rename(String.t(), String.t()) :: integer()
+  @spec rename(String.t(), String.t()) :: {String.t(), integer()}
   def rename(dataset, new_dataset) do
-    {_exit_code, _msg} = cmd("rename -f #{dataset} #{new_dataset}")
+    cmd("rename -f #{dataset} #{new_dataset}")
   end
 
   @spec info(String.t()) :: %{:exists? => boolean(), :mountpoint => String.t() | nil}

@@ -258,7 +258,7 @@ defmodule Kleened.Core.Image do
     Network.remove(state.network)
     MetaData.delete_container(container_id)
     layer = MetaData.get_layer(layer_id)
-    Kleened.Core.Layer.to_image(layer, container_id)
+    Kleened.Core.Layer.to_image_from_layer(layer, container_id)
 
     img = %Schemas.Image{
       id: container_id,

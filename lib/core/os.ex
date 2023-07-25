@@ -1,6 +1,7 @@
 defmodule Kleened.Core.OS do
   require Logger
 
+  @spec cmd([String.t()], %{}) :: {String.t(), integer()}
   def cmd([executable | args] = command, options \\ %{suppress_warning: false}) do
     {stdout, exit_code} = return_value = System.cmd(executable, args, stderr_to_stdout: true)
 

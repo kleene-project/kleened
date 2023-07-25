@@ -47,6 +47,7 @@ defmodule Kleened.API.Router do
        [
          {"/exec/:exec_id/start", API.ExecStartWebSocket, []},
          {"/images/build", API.ImageBuild, []},
+         {"/images/create", API.ImageCreate, []},
          {:_, Plug.Cowboy.Handler, {Kleened.API.Router, []}}
        ]}
     ]

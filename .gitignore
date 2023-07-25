@@ -44,6 +44,10 @@ vim_*
 # Ignore sqlite database files
 *.sqlite
 
+# Ignore test data blobs
+test/data/base.txz
+test/data/base_rescue.txz
+
 # Ignore vagrant directory
 /.vagrant/
 

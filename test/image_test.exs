@@ -1,12 +1,13 @@
 defmodule ImageTest do
   use Kleened.API.ConnCase
-  alias Kleened.Core.{Config, Image, MetaData, Layer}
+  alias Kleened.Core.{Config, Image, MetaData, Layer, Container}
   alias Kleened.API.Schemas
 
   @moduletag :capture_log
 
   setup do
     on_exit(fn ->
+      MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
       MetaData.list_images() |> Enum.map(fn %Schemas.Image{id: id} -> Image.destroy(id) end)
     end)
 
@@ -721,6 +722,58 @@ defmodule ImageTest do
     assert TestHelper.image_build_raw(%{config | buildargs: "should-be-JSON"}) ==
              {:error,
               "could not decode 'buildargs' JSON content: %Jason.DecodeError{position: 0, token: nil, data: \"should-be-JSON\"}"}
+  end
+
+  test "create base image using a method 'zfs'", %{api_spec: api_spec} do
+    config = %{
+      method: "zfs",
+      zfs_dataset: "zroot/kleene_basejail",
+      tag: "FreeBSD:testing-remote"
+    }
+
+    frames = TestHelper.image_create(config)
+    {last_frame, _rest} = List.pop_at(frames, -1)
+    <<"ok:", image_id::binary>> = last_frame
+
+    {_cont, exec_id} =
+      TestHelper.container_start_attached(api_spec, "testcont", %{
+        image: image_id,
+        cmd: ["/usr/bin/id"],
+        jail_param: [],
+        user: "root"
+      })
+
+    assert_receive {:container, ^exec_id, {:jail_output, jail_output}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
+    assert jail_output == "uid=0(root) gid=0(wheel) groups=0(wheel),5(operator)\n"
+  end
+
+  test "create base image using a method 'fetch'", %{api_spec: api_spec} do
+    # The "rescue" system does not work since it needs /etc/master.passwd (and probably other stuff as well). Thus, any bunch of files in a .txz-file could be used to pass this test.
+    # Consider making a special test with a real userland that can be filtered out during development? Could be nice with a more realistic test that uses a full userland (and takes some time to extract).
+    config = %{
+      # method-name should be "url"
+      method: "fetch",
+      url: "file://./test/data/base_rescue.txz",
+      # url: "file://./test/data/base.txz",
+      tag: "FreeBSD:testing"
+    }
+
+    frames = TestHelper.image_create(config)
+    {last_frame, _rest} = List.pop_at(frames, -1)
+    <<"ok:", image_id::binary>> = last_frame
+
+    {_cont, exec_id} =
+      TestHelper.container_start_attached(api_spec, "testcont", %{
+        image: image_id,
+        cmd: ["/bin/id"],
+        jail_param: [],
+        user: "root"
+      })
+
+    assert_receive {:container, ^exec_id, {:jail_output, jail_output}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 1}}}
+    assert String.slice(jail_output, 0, 46) == "jail: getpwnam root: No such file or directory"
   end
 
   defp create_test_context(name) do

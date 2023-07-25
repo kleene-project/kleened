@@ -177,6 +177,43 @@ defmodule Kleened.API.Schemas do
     })
   end
 
+  defmodule ImageCreateConfig do
+    OpenApiSpex.schema(%{
+      description: "Configuration for the creation of base images.",
+      type: :object,
+      required: [:method],
+      properties: %{
+        tag: %Schema{
+          description: "Name and optionally a tag in the 'name:tag' format",
+          type: :string,
+          default: ""
+        },
+        method: %Schema{
+          description:
+            "Method used for creating a new base image: If 'fetch' is selected, kleened will fetch a release/snapshot of the base system and use it for image creation. When 'zfs' is used, a copy of the supplied zfs dataset is used for the image.",
+          type: :string,
+          enum: ["fetch", "zfs"]
+        },
+        zfs_dataset: %Schema{
+          description:
+            "Dataset path on the host used for the image (required for method 'zfs' only).",
+          type: :string
+        },
+        url: %Schema{
+          description:
+            "URL to a remote location where the base system (as a base.txz file) is stored. If an empty string is supplied kleened will try to fetch a version of the base sytem from download.freebsd.org using information from uname(1) (required for method 'fetch').",
+          type: :string,
+          default: ""
+        },
+        force: %Schema{
+          description:
+            "Ignore any discrepancies detected when using uname(1) to fetch the base system (method 'fetch' only).",
+          type: :boolean
+        }
+      }
+    })
+  end
+
   defmodule ImageList do
     OpenApiSpex.schema(%{
       description: "List of images.",
@@ -260,8 +297,8 @@ defmodule Kleened.API.Schemas do
       description: "summary description of a container",
       type: :object,
       properties: %{
-        id: %Schema{description: "The id of this container", type: :string},
-        name: %Schema{description: "Name of the container", type: :string},
+        id: %Schema{description: "The id of the container", type: :string},
+        name: %Schema{description: "Name of the container.", type: :string},
         image_id: %Schema{
           description: "The id of the image that this container was created from",
           type: :string
