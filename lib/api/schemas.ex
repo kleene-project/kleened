@@ -4,13 +4,14 @@ defmodule Kleened.API.Schemas do
 
   defmodule ContainerConfig do
     OpenApiSpex.schema(%{
-      description:
+      summary:
         "Configuration for a container. Some of the configuration parameters will overwrite the corresponding parameters in the specified image.",
       type: :object,
       properties: %{
         image: %Schema{
           type: :string,
-          description: "The name of the image to use when creating the container"
+          description: "The name or id of the image used for creating the container",
+          example: "FreeBSD-13.0"
         },
         cmd: %Schema{
           description:
@@ -28,7 +29,7 @@ defmodule Kleened.API.Schemas do
         },
         env: %Schema{
           description:
-            "List of environment variables used when the container is used. This list will be merged with environment variables defined by the image. The values in this list takes precedence if the variable is defined in both places.",
+            "List of environment variables when using the container. This list will be merged with environment variables defined by the image. The values in this list takes precedence if the variable is defined in both.",
           type: :array,
           items: %Schema{type: :string},
           default: [],
@@ -41,7 +42,7 @@ defmodule Kleened.API.Schemas do
           default: []
         },
         jail_param: %Schema{
-          description: "List of jail parameters (see jail(8) for details)",
+          description: "List of `jail(8)` parameters to use for the container.",
           type: :array,
           items: %Schema{type: :string},
           default: [],
@@ -54,12 +55,12 @@ defmodule Kleened.API.Schemas do
   defmodule ExecConfig do
     OpenApiSpex.schema(%{
       description:
-        "Configuration of an executable to run within a container. Some of the configuration parameters will overwrite the corresponding parameters in the container.",
+        "Configuration of an executable to run within a container. Some of the configuration parameters will overwrite the corresponding parameters if they are defined in the container.",
       type: :object,
       properties: %{
         container_id: %Schema{
           type: :string,
-          description: "Id of the container that this exec instance belongs to."
+          description: "Id of the container used for creating the exec instance."
         },
         cmd: %Schema{
           description:
@@ -72,12 +73,15 @@ defmodule Kleened.API.Schemas do
         user: %Schema{
           type: :string,
           description:
-            "User that executes the command. If no user is set the user from the container will be used.",
+            "User that executes the command in the container. If no user is set the user from the container will be used.",
           default: ""
         },
         env: %Schema{
-          description:
-            "List of environment variables that is set when the command is executed. This list will be merged with environment variables defined by the container. The values in this list takes precedence iif the variable is defined in both places.",
+          description: """
+          A list of environment variables in the form `["VAR=value", ...]` that is set when the command is executed.
+          This list will be merged with environment variables defined by the container.
+          The values in this list takes precedence if the variable is defined in both places.",
+          """,
           type: :array,
           items: %Schema{type: :string},
           default: [],
@@ -100,7 +104,7 @@ defmodule Kleened.API.Schemas do
         ip_address: %Schema{
           type: :string,
           description:
-            "The ip(v4) address that should be assigned to the container. If this field is not set (or null) an ip contained in the subnet is auto-generated.",
+            "The ip(v4) address that should be assigned to the container. If this field is not set (or null) an unused ip contained in the subnet is auto-generated.",
           default: nil,
           example: "10.13.37.33"
         }
@@ -127,14 +131,16 @@ defmodule Kleened.API.Schemas do
         ifname: %Schema{
           type: :string,
           description:
-            "Name of the interface that is being used for the network. Ignored unless it uses 'loopback' as the driver.",
+            "Name of the loopback interface that is being used for the network. Only used with the 'loopback' driver.",
           example: "kleene0"
         },
         driver: %Schema{
           type: :string,
-          description:
-            "Network type to use. Possible values are 'loopback' and 'vnet'. See the documentation on networking for details.",
-          example: "loopback"
+          description: """
+          Which driver to use for the network. Possible values are 'vnet', 'loopback', and 'host'.
+          See jails(8) and the networking documentation for details.
+          """,
+          example: "vnet"
         }
       },
       required: [:name, :subnet, :driver]

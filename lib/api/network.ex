@@ -20,9 +20,14 @@ defmodule Kleened.API.Network do
 
     def open_api_operation(_) do
       %Operation{
-        # tags: ["users"],
-        summary: "List networks",
-        description: "Returns a list of networks.",
+        summary: "network list",
+        description: """
+        Returns a list of networks. Use [network inspect endpoint](#operation/Network.Inspect)
+        for detailed information about a specific network.
+
+        Note that it uses a different, smaller representation of a network than
+        inspecting a single network.
+        """,
         operationId: "Network.List",
         responses: %{
           200 => response("no error", "application/json", Schemas.NetworkList),
@@ -56,12 +61,12 @@ defmodule Kleened.API.Network do
     def open_api_operation(_) do
       %Operation{
         # tags: ["users"],
-        summary: "Create network",
-        description: "Create a network. Only type 'loopback' networks are supported atm.",
+        summary: "network create",
+        description: "Create a network.",
         operationId: "Network.Create",
         requestBody:
           request_body(
-            "Network configuration to use when creating the network.",
+            "Configuration used for the network.",
             "application/json",
             Schemas.NetworkConfig,
             required: true
@@ -102,7 +107,8 @@ defmodule Kleened.API.Network do
 
     def open_api_operation(_) do
       %Operation{
-        summary: "Remove a network",
+        summary: "network remove",
+        description: "Remove a network",
         operationId: "Network.Remove",
         parameters: [
           parameter(
@@ -152,7 +158,8 @@ defmodule Kleened.API.Network do
 
     def open_api_operation(_) do
       %Operation{
-        summary: "Connect a container to a network",
+        summary: "network connect",
+        description: "Connect a container to a network",
         operationId: "Network.Connect",
         parameters: [
           parameter(
@@ -215,7 +222,8 @@ defmodule Kleened.API.Network do
 
     def open_api_operation(_) do
       %Operation{
-        summary: "Disconnect a container from a network",
+        summary: "network disconnect",
+        description: "Disconnect a container from a network",
         operationId: "Network.Disconnect",
         parameters: [
           parameter(

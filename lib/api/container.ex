@@ -20,8 +20,15 @@ defmodule Kleened.API.Container do
     def open_api_operation(_) do
       %Operation{
         # tags: ["users"],
-        summary: "List containers",
-        description: "Returns a compact listing of containers.",
+        summary: "container list",
+        description: """
+        Returns a list of containers. For details on the format, see
+        [inspect endpoint](#operation/ContainerInspect) for detailed information
+        about a container.
+
+        Note that it uses a different, smaller representation of a container
+        than inspecting a single container.
+        """,
         operationId: "Container.List",
         parameters: [
           parameter(
@@ -72,7 +79,7 @@ defmodule Kleened.API.Container do
 
     def open_api_operation(_) do
       %Operation{
-        summary: "Create a container",
+        summary: "container create",
         operationId: "Container.Create",
         parameters: [
           parameter(
@@ -85,7 +92,7 @@ defmodule Kleened.API.Container do
         ],
         requestBody:
           request_body(
-            "Container configuration to use when creating the container",
+            "Container configuration.",
             "application/json",
             Schemas.ContainerConfig,
             required: true
@@ -128,7 +135,8 @@ defmodule Kleened.API.Container do
 
     def open_api_operation(_) do
       %Operation{
-        summary: "Delete a container from the file system and kleene.",
+        summary: "container remove",
+        description: "Delete a container.",
         operationId: "Container.Remove",
         parameters: [
           parameter(
@@ -180,7 +188,8 @@ defmodule Kleened.API.Container do
 
     def open_api_operation(_) do
       %Operation{
-        summary:
+        summary: "container stop",
+        description:
           "Stop a container. Alle execution instances running in the container will be shut down.",
         operationId: "Container.Stop",
         parameters: [

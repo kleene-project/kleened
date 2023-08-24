@@ -19,7 +19,7 @@ defmodule Kleened.API.Volume do
 
     def open_api_operation(_) do
       %Operation{
-        summary: "List volumes",
+        summary: "volume list",
         description: "Returns a compact listing of existing volumes.",
         operationId: "Volume.List",
         responses: %{
@@ -55,7 +55,9 @@ defmodule Kleened.API.Volume do
 
     def open_api_operation(_) do
       %Operation{
-        summary: "Create a volume",
+        summary: "volume create",
+        description:
+          "Create a volume. The underlying volume zfs dataset will be located at `{kleened root path}/volumes`.",
         operationId: "Volume.Create",
         requestBody:
           request_body(
@@ -94,7 +96,8 @@ defmodule Kleened.API.Volume do
 
     def open_api_operation(_) do
       %Operation{
-        summary: "Remove a volume",
+        summary: "volume remove",
+        description: "Remove a volume",
         operationId: "Volume.Remove",
         parameters: [
           parameter(

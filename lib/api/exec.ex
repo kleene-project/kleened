@@ -25,11 +25,12 @@ defmodule Kleened.API.Exec do
 
     def open_api_operation(_) do
       %Operation{
-        summary: "Create an execution instance",
+        summary: "exec create",
+        description: "Create an execution instance within a container.",
         operationId: "Exec.Create",
         requestBody:
           request_body(
-            "Configuration to use when creating the execution instance",
+            "Configuration to use when creating the execution instance.",
             "application/json",
             Schemas.ExecConfig,
             required: true
@@ -70,7 +71,8 @@ defmodule Kleened.API.Exec do
 
     def open_api_operation(_) do
       %Operation{
-        summary: "Stop and/or destroy a execution instance.",
+        summary: "exec stop",
+        description: "Stop and/or destroy an execution instance.",
         operationId: "Exec.Stop",
         parameters: [
           parameter(
@@ -84,14 +86,14 @@ defmodule Kleened.API.Exec do
             :force_stop,
             :query,
             %Schema{type: :boolean},
-            "Whether or not to force stop the running process (using 'kill -9')",
+            "Whether or not to force stop the running process (using `kill -9`).",
             required: true
           ),
           parameter(
             :stop_container,
             :query,
             %Schema{type: :boolean},
-            "Whether or not to stop the entire container or just the specific execution instance",
+            "Whether or not to stop the entire container or just the specific execution instance.",
             required: true
           )
         ],

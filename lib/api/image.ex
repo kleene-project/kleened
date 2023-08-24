@@ -21,8 +21,9 @@ defmodule Kleened.API.Image do
     def open_api_operation(_) do
       %Operation{
         # tags: ["users"],
-        summary: "List images",
-        description: "Returns a list of images.",
+        summary: "image list",
+        description:
+          "Returns a list of images on the server. Note that it uses a different, smaller representation of an image than inspecting a single image.",
         operationId: "Image.List",
         responses: %{
           200 => response("no error", "application/json", Schemas.ImageList)
@@ -52,8 +53,13 @@ defmodule Kleened.API.Image do
     def open_api_operation(_) do
       %Operation{
         # tags: ["users"],
-        summary: "Remove image",
-        description: "Returns a list of images.",
+        summary: "image remove",
+        description: """
+        Remove an image.
+
+        Images can't be removed if they have descendant images or are being
+        used by a running container.
+        """,
         operationId: "Image.Remove",
         parameters: [
           parameter(
