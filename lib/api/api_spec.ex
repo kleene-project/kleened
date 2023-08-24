@@ -32,9 +32,19 @@ defmodule Kleened.API.Spec do
           OpenApiSpex.PathItem.from_routes([
             %{verb: :post, plug: API.Exec.Create, opts: []}
           ]),
+        # websocket
+        "/exec/{exec_id}/start" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :post, plug: API.ExecStartWebSocket, opts: []}
+          ]),
         "/exec/{exec_id}/stop" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :post, plug: API.Exec.Stop, opts: []}
+          ]),
+        # websocket
+        "/images/build" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :get, plug: API.ImageBuild, opts: []}
           ]),
         "/images/list" =>
           OpenApiSpex.PathItem.from_routes([

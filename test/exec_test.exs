@@ -233,7 +233,7 @@ defmodule ExecTest do
     %{id: container_id} =
       TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
 
-    assert %{message: "conntainer not found"} ==
+    assert %{message: "container not found"} ==
              TestHelper.exec_create(api_spec, %{container_id: "nottestcont"})
 
     %{id: root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})

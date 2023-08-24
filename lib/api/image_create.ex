@@ -5,18 +5,14 @@ defmodule Kleened.API.ImageCreate do
 
   # Called on connection initialization
   def init(req0, _state) do
-    default_values = %{
-      "method" => "fetch",
-      "tag" => "",
-      "force" => "false",
-      "zfs_dataset" => ""
-    }
+    case validate_request(req0) do
+      {:ok, state} ->
+        {:cowboy_websocket, req0, state, %{idle_timeout: 60000}}
 
-    values = Plug.Conn.Query.decode(req0.qs)
-    args = Map.merge(default_values, values)
-    {:ok, args} = OpenApiSpex.Cast.cast(Schemas.ImageCreateConfig.schema(), args)
-    state = %{args: args, request: req0}
-    {:cowboy_websocket, req0, state, %{idle_timeout: 60000}}
+      {:error, msg} ->
+        req = :cowboy_req.reply(400, %{"content-type" => "text/plain"}, msg, req0)
+        {:ok, req, %{}}
+    end
   end
 
   def websocket_init(%{args: args} = state) do
@@ -52,6 +48,21 @@ defmodule Kleened.API.ImageCreate do
 
   def websocket_info(unknown_msg, state) do
     Logger.warn("unknown message received:received:  #{inspect(unknown_msg)}")
+    {:ok, state}
+  end
+
+  defp validate_request(req0) do
+    default_values = %{
+      "method" => "fetch",
+      "tag" => "",
+      "force" => "false",
+      "zfs_dataset" => ""
+    }
+
+    values = Plug.Conn.Query.decode(req0.qs)
+    args = Map.merge(default_values, values)
+    {:ok, args} = OpenApiSpex.Cast.cast(Schemas.ImageCreateConfig.schema(), args)
+    state = %{args: args, request: req0}
     {:ok, state}
   end
 end
