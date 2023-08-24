@@ -47,7 +47,7 @@ defmodule Kleened.Core.Exec do
         {:ok, exec_id}
 
       :not_found ->
-        {:error, "conntainer not found"}
+        {:error, "container not found"}
     end
   end
 
