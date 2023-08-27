@@ -45,8 +45,8 @@ defmodule Kleened.API.ImageBuild do
         parameter(:buildargs, :query, %Schema{type: :string}, "description here", required: true)
       ],
       responses: %{
-        200 => response("no error", "application/json", Schemas.IdResponse),
-        404 => response("no such image", "application/json", Schemas.ErrorResponse)
+        200 => response("no error", "application/json", Schemas.IdMessage),
+        404 => response("no such image", "application/json", Schemas.ErrorMessage)
       }
     }
   end

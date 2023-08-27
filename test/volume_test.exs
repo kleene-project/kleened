@@ -87,7 +87,7 @@ defmodule VolumeTest do
 
     assert response.status == 200
     json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-    assert_schema(json_body, "IdResponse", api_spec)
+    assert_schema(json_body, "IdMessage", api_spec)
   end
 
   defp volume_create(api_spec, name) do
@@ -98,7 +98,7 @@ defmodule VolumeTest do
 
     assert response.status == 201
     json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-    assert_schema(json_body, "IdResponse", api_spec)
+    assert_schema(json_body, "IdMessage", api_spec)
     MetaData.get_volume(json_body.id) |> Map.drop([:__struct__])
   end
 

@@ -31,7 +31,7 @@ defmodule Kleened.API.Network do
         operationId: "Network.List",
         responses: %{
           200 => response("no error", "application/json", Schemas.NetworkList),
-          500 => response("server error", "application/json", Schemas.ErrorResponse)
+          500 => response("server error", "application/json", Schemas.ErrorMessage)
         }
       }
     end
@@ -72,9 +72,9 @@ defmodule Kleened.API.Network do
             required: true
           ),
         responses: %{
-          201 => response("no error", "application/json", Schemas.IdResponse),
-          409 => response("could not create network", "application/json", Schemas.ErrorResponse),
-          500 => response("server error", "application/json", Schemas.ErrorResponse)
+          201 => response("no error", "application/json", Schemas.IdMessage),
+          409 => response("could not create network", "application/json", Schemas.ErrorMessage),
+          500 => response("server error", "application/json", Schemas.ErrorMessage)
         }
       }
     end
@@ -120,9 +120,9 @@ defmodule Kleened.API.Network do
           )
         ],
         responses: %{
-          200 => response("no error", "application/json", Schemas.IdResponse),
-          404 => response("no such network", "application/json", Schemas.ErrorResponse),
-          500 => response("server error", "application/json", Schemas.ErrorResponse)
+          200 => response("no error", "application/json", Schemas.IdMessage),
+          404 => response("no such network", "application/json", Schemas.ErrorMessage),
+          500 => response("server error", "application/json", Schemas.ErrorMessage)
         }
       }
     end
@@ -178,16 +178,16 @@ defmodule Kleened.API.Network do
             required: true
           ),
         responses: %{
-          # 204 => response("operation was succesful", "application/json", Schemas.IdResponse),
+          # 204 => response("operation was succesful", "application/json", Schemas.IdMessage),
           204 => %Response{description: "operation was succesful"},
-          404 => response("no such network", "application/json", Schemas.ErrorResponse),
+          404 => response("no such network", "application/json", Schemas.ErrorMessage),
           409 =>
             response(
               "operation not possible with the present configuration",
               "application/json",
-              Schemas.ErrorResponse
+              Schemas.ErrorMessage
             ),
-          500 => response("server error", "application/json", Schemas.ErrorResponse)
+          500 => response("server error", "application/json", Schemas.ErrorMessage)
         }
       }
     end
@@ -247,9 +247,9 @@ defmodule Kleened.API.Network do
             response(
               "no such network and/or container",
               "application/json",
-              Schemas.ErrorResponse
+              Schemas.ErrorMessage
             ),
-          500 => response("server error", "application/json", Schemas.ErrorResponse)
+          500 => response("server error", "application/json", Schemas.ErrorMessage)
         }
       }
     end

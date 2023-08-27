@@ -36,9 +36,9 @@ defmodule Kleened.API.Exec do
             required: true
           ),
         responses: %{
-          201 => response("no error", "application/json", Schemas.IdResponse),
-          404 => response("container not found", "application/json", Schemas.ErrorResponse),
-          500 => response("server error", "application/json", Schemas.ErrorResponse)
+          201 => response("no error", "application/json", Schemas.IdMessage),
+          404 => response("container not found", "application/json", Schemas.ErrorMessage),
+          500 => response("server error", "application/json", Schemas.ErrorMessage)
         }
       }
     end
@@ -98,12 +98,12 @@ defmodule Kleened.API.Exec do
           )
         ],
         responses: %{
-          200 => response("no error", "application/json", Schemas.IdResponse),
+          200 => response("no error", "application/json", Schemas.IdMessage),
           404 =>
-            response("no such container", "application/json", Schemas.ErrorResponse,
+            response("no such container", "application/json", Schemas.ErrorMessage,
               example: %{message: "container not running"}
             ),
-          500 => response("server error", "application/json", Schemas.ErrorResponse)
+          500 => response("server error", "application/json", Schemas.ErrorMessage)
         }
       }
     end

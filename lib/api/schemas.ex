@@ -92,6 +92,28 @@ defmodule Kleened.API.Schemas do
     })
   end
 
+  defmodule ExecStartConfig do
+    OpenApiSpex.schema(%{
+      description: "Options for starting an execution instance.",
+      type: :object,
+      properties: %{
+        exec_id: %Schema{
+          type: :string,
+          description: "id of the execution instance to start"
+        },
+        attach: %Schema{
+          description: "Whether to receive output from `stdin` and `stderr`.",
+          type: :boolean
+        },
+        start_container: %Schema{
+          type: :boolean,
+          description: "Whether to start the container if it is not running."
+        }
+      },
+      required: [:exec_id, :attach, :start_container]
+    })
+  end
+
   defmodule EndPointConfig do
     OpenApiSpex.schema(%{
       description: "Configuration of a connection between a network to a container.",
@@ -382,12 +404,53 @@ defmodule Kleened.API.Schemas do
     })
   end
 
-  defmodule ErrorResponse do
+  defmodule StartingMessage do
     OpenApiSpex.schema(%{
-      description: "Represents an error",
+      description: "A websocket has started processing the request.",
       type: :object,
       properties: %{
-        message: %Schema{description: "The error message.", type: :string, nullable: false}
+        data: %Schema{
+          description:
+            "Any data that might have been created in pre-processing (e.g., a build_id).",
+          type: :string,
+          nullable: true
+        }
+      },
+      required: [:data]
+    })
+  end
+
+  defmodule ClosingMessage do
+    OpenApiSpex.schema(%{
+      description: "A websocket is done processing the request and is closing the connection.",
+      type: :object,
+      properties: %{
+        reason: %Schema{
+          description: "Reason for closing the connection - success or failure?",
+          type: :string,
+          nullable: true
+        },
+        data: %Schema{
+          description:
+            "Any data that might have been created as a result of processing the request (e.g., a `image_id`).",
+          type: :string,
+          nullable: true
+        }
+      },
+      required: [:data]
+    })
+  end
+
+  defmodule ErrorMessage do
+    OpenApiSpex.schema(%{
+      description: "Represents an error and (possibly) its reason.",
+      type: :object,
+      properties: %{
+        message: %Schema{
+          description: "The error message, if any.",
+          type: :string,
+          nullable: false
+        }
       },
       example: %{
         message: "Something went wrong."
@@ -396,9 +459,9 @@ defmodule Kleened.API.Schemas do
     })
   end
 
-  defmodule IdResponse do
+  defmodule IdMessage do
     OpenApiSpex.schema(%{
-      title: "IdResponse",
+      title: "IdMessage",
       description: "Response to an API call that returns just an Id",
       type: :object,
       properties: %{

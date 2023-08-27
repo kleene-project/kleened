@@ -58,8 +58,8 @@ defmodule TestHelper do
       |> Router.call(@opts)
 
     case validate_response(api_spec, response, %{
-           201 => "IdResponse",
-           404 => "ErrorResponse"
+           201 => "IdMessage",
+           404 => "ErrorMessage"
          }) do
       %{id: container_id} = resp ->
         Enum.map(networks, &network_connect(api_spec, &1, container_id))
@@ -76,9 +76,9 @@ defmodule TestHelper do
       |> Router.call(@opts)
 
     validate_response(api_spec, response, %{
-      200 => "IdResponse",
-      304 => "ErrorResponse",
-      404 => "ErrorResponse"
+      200 => "IdMessage",
+      304 => "ErrorMessage",
+      404 => "ErrorMessage"
     })
   end
 
@@ -88,8 +88,8 @@ defmodule TestHelper do
       |> Router.call(@opts)
 
     validate_response(api_spec, response, %{
-      200 => "IdResponse",
-      404 => "ErrorResponse"
+      200 => "IdMessage",
+      404 => "ErrorMessage"
     })
   end
 
@@ -130,8 +130,8 @@ defmodule TestHelper do
       |> Router.call(@opts)
 
     validate_response(api_spec, response, %{
-      201 => "IdResponse",
-      404 => "ErrorResponse"
+      201 => "IdMessage",
+      404 => "ErrorMessage"
     })
   end
 
@@ -158,8 +158,8 @@ defmodule TestHelper do
       |> Router.call(@opts)
 
     validate_response(api_spec, response, %{
-      200 => "IdResponse",
-      404 => "ErrorResponse"
+      200 => "IdMessage",
+      404 => "ErrorMessage"
     })
   end
 
@@ -240,8 +240,8 @@ defmodule TestHelper do
       |> Router.call(@opts)
 
     validate_response(api_spec, response, %{
-      200 => "IdResponse",
-      404 => "ErrorResponse"
+      200 => "IdMessage",
+      404 => "ErrorMessage"
     })
   end
 
@@ -265,8 +265,8 @@ defmodule TestHelper do
       |> Router.call(@opts)
 
     validate_response(api_spec, response, %{
-      201 => "IdResponse",
-      409 => "ErrorResponse"
+      201 => "IdMessage",
+      409 => "ErrorMessage"
     })
   end
 
@@ -276,8 +276,8 @@ defmodule TestHelper do
       |> Router.call(@opts)
 
     validate_response(api_spec, response, %{
-      200 => "IdResponse",
-      404 => "ErrorResponse"
+      200 => "IdMessage",
+      404 => "ErrorMessage"
     })
   end
 
@@ -303,8 +303,8 @@ defmodule TestHelper do
 
     validate_response(api_spec, response, %{
       204 => "",
-      404 => "ErrorResponse",
-      409 => "ErrorResponse"
+      404 => "ErrorMessage",
+      409 => "ErrorMessage"
     })
   end
 
@@ -315,7 +315,7 @@ defmodule TestHelper do
 
     validate_response(api_spec, response, %{
       204 => "",
-      409 => "ErrorResponse"
+      409 => "ErrorMessage"
     })
   end
 
