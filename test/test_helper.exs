@@ -1,5 +1,10 @@
+alias OpenApiSpex.Cast
 alias Kleened.Core.{ZFS, Config, Layer, Exec, MetaData}
-# alias Kleened.API.Schemas
+alias :gun, as: Gun
+alias Kleened.API.Router
+alias Kleened.API.Schemas
+alias Schemas.WebSocketMessage, as: Msg
+
 require Logger
 
 Code.put_compiler_option(:warnings_as_errors, true)
@@ -14,16 +19,11 @@ ExUnit.configure(
 
 defmodule TestHelper do
   import ExUnit.Assertions
-
   use Plug.Test
   import Plug.Conn
   import OpenApiSpex.TestAssertions
-  alias :gun, as: Gun
-  alias Kleened.API.Router
-  alias Kleened.API.Schemas
 
   @kleened_host {0, 0, 0, 0, 0, 0, 0, 1}
-
   @opts Router.init([])
 
   def container_start_attached(api_spec, name, config) do
@@ -135,10 +135,27 @@ defmodule TestHelper do
     })
   end
 
-  def exec_start(exec_id, %{attach: attach, start_container: start_container}) do
-    initialize_websocket(
-      "/exec/#{exec_id}/start?attach=#{attach}&start_container=#{start_container}"
-    )
+  def exec_start(exec_id, config) do
+    {:ok, stream_ref, conn} = initialize_websocket("/exec/#{exec_id}/start")
+
+    config = Map.put(config, :exec_id, exec_id)
+    send_data(conn, stream_ref, Jason.encode!(config))
+
+    case config.attach do
+      true ->
+        {:text, starting_frame} = receive_frame(conn, 1_000)
+
+        assert {:ok, %{msg_type: "starting"}} =
+                 Cast.cast(
+                   Msg.schema(),
+                   Jason.decode!(starting_frame, keys: :atoms!)
+                 )
+
+      false ->
+        :ok
+    end
+
+    {:ok, stream_ref, conn}
   end
 
   def exec_start_sync(exec_id, config) do
@@ -165,62 +182,49 @@ defmodule TestHelper do
 
   def image_invalid_build(config) do
     config = Map.merge(%{quiet: false, cleanup: true}, config)
-    frames = image_build(config)
-    {finish_msg, build_log_raw} = List.pop_at(frames, -1)
-    {build_id, build_log} = extract_build_id(build_log_raw)
-    assert <<"image build failed: ", failed_line::binary>> = finish_msg
-    {failed_line, build_id, build_log}
+    build_log_raw = image_build(config)
+    process_failed_buildlog(build_log_raw)
   end
 
   def image_valid_build(config) do
     config = Map.merge(%{quiet: false, cleanup: true}, config)
-    frames = image_build(config)
-    {finish_msg, build_log_raw} = List.pop_at(frames, -1)
-    {build_id, build_log} = extract_build_id(build_log_raw)
-    assert <<"image created with id ", image_id::binary>> = finish_msg
-    image = MetaData.get_image(String.trim(image_id))
+    build_log_raw = image_build(config)
+    {image_id, build_id, build_log} = process_buildlog(build_log_raw)
+    image = MetaData.get_image(image_id)
     {image, build_id, build_log}
   end
 
-  def extract_build_id([<<"OK:", build_id::binary>> | build_log]) do
-    {build_id, build_log}
+  def process_failed_buildlog([msg_json | rest]) do
+    {:ok, %Msg{data: build_id}} = Cast.cast(Msg.schema(), Jason.decode!(msg_json, keys: :atoms!))
+    {{1011, %Msg{msg_type: "error", message: error_msg}}, build_log} = List.pop_at(rest, -1)
+    {error_msg, build_id, build_log}
   end
 
-  def extract_build_id(_other) do
-    :error_extracting_buildlog
+  def process_buildlog([msg_json | rest]) do
+    {:ok, %Msg{data: build_id}} = Cast.cast(Msg.schema(), Jason.decode!(msg_json, keys: :atoms!))
+    {{1000, %Msg{data: image_id}}, build_log} = List.pop_at(rest, -1)
+    {image_id, build_id, build_log}
   end
 
   def image_build(config) do
-    config =
-      case Map.has_key?(config, :buildargs) do
-        true ->
-          {:ok, buildargs_json} = Jason.encode(config.buildargs)
-          Map.put(config, :buildargs, buildargs_json)
+    case initialize_websocket("/images/build") do
+      {:ok, stream_ref, conn} ->
+        send_data(conn, stream_ref, Jason.encode!(config))
+        receive_frames(conn)
 
-        false ->
-          config
-      end
-
-    image_build_raw(config)
-  end
-
-  def image_build_raw(config) do
-    query_params = Plug.Conn.Query.encode(config)
-    endpoint = "/images/build?#{query_params}"
-
-    case initialize_websocket(endpoint) do
-      {:ok, _stream_ref, conn} -> receive_frames(conn)
-      error_msg -> error_msg
+      error_msg ->
+        error_msg
     end
   end
 
   def image_create(config) do
-    query_params = Plug.Conn.Query.encode(config)
-    endpoint = "/images/create?#{query_params}"
+    case initialize_websocket("/images/create") do
+      {:ok, stream_ref, conn} ->
+        send_data(conn, stream_ref, Jason.encode!(config))
+        receive_frames(conn, 20_000)
 
-    case initialize_websocket(endpoint) do
-      {:ok, _stream_ref, conn} -> receive_frames(conn, 20_000)
-      error_msg -> error_msg
+      error_msg ->
+        error_msg
     end
   end
 
@@ -350,11 +354,6 @@ defmodule TestHelper do
         Logger.info("websocket initialized")
         {:ok, stream_ref, conn}
 
-      {:gun_response, ^conn, stream_ref, :nofin, 400, _headers} ->
-        Logger.info("Failed with status 400 (invalid parameters). Fetching repsonse data.")
-        response = receive_data(conn, stream_ref, "")
-        {:error, response}
-
       {:gun_response, ^conn, stream_ref, :nofin, status, _headers} ->
         Logger.error("failed for a unknown reason with status #{status}. Fetching repsonse data.")
         response = receive_data(conn, stream_ref, "")
@@ -397,14 +396,13 @@ defmodule TestHelper do
       {:text, msg} ->
         receive_frames_(conn, [msg | frames], timeout)
 
-      {:close, 1001, ""} ->
-        receive_frames_(conn, [:not_attached], timeout)
+      {:close, close_code, msg} ->
+        {:ok, msg} = Cast.cast(Msg.schema(), Jason.decode!(msg))
+        receive_frames_(conn, [{close_code, msg} | frames], timeout)
 
-      {:close, 1001, msg} ->
-        receive_frames_(conn, [msg | frames], timeout)
-
-      {:close, 1000, msg} ->
-        receive_frames_(conn, [msg | frames], timeout)
+      {:error, reason} ->
+        Logger.warn("receiving frames failed: #{reason}")
+        :error
 
       :websocket_closed ->
         Enum.reverse(frames)
@@ -422,8 +420,11 @@ defmodule TestHelper do
 
       {:gun_down, ^conn, :ws, :normal, [_stream_ref]} ->
         :websocket_closed
+
+      {:gun_down, ^conn, :ws, :closed, [_stream_ref]} ->
+        {:error, "websocket closed unexpectedly"}
     after
-      timeout -> {:error, :timeout}
+      timeout -> {:error, "timed out while waiting for websocket frames"}
     end
   end
 

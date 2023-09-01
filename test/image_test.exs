@@ -2,6 +2,7 @@ defmodule ImageTest do
   use Kleened.API.ConnCase
   alias Kleened.Core.{Config, Image, MetaData, Layer, Container}
   alias Kleened.API.Schemas
+  alias Schemas.WebSocketMessage, as: Message
 
   @moduletag :capture_log
 
@@ -53,29 +54,17 @@ defmodule ImageTest do
   end
 
   test "parsing some invalid input to the image builder" do
-    dockerfile = """
-    FROM scratch
-    RUN uname
-    """
+    # Using string instead of boolean in parameter 'quiet'
+    assert ["Invalid boolean. Got: string", {1002, %Message{message: "invalid parameters"}}] =
+             TestHelper.image_build(%{context: "./", quiet: "lol"})
 
-    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+    # Omitting only necessary parameter 'context'
+    assert ["Missing field: context", {1002, %Message{message: "invalid parameters"}}] =
+             TestHelper.image_build(%{dockerfile: "Dockerfile"})
 
-    config = %{
-      context: @tmp_context,
-      dockerfile: @tmp_dockerfile,
-      tag: "websock_img:latest",
-      quiet: "lol"
-    }
-
-    assert {:error, "invalid value to argument 'quiet'"} == TestHelper.image_build(config)
-
-    config = %{
-      context: @tmp_context,
-      dockerfile: @tmp_dockerfile,
-      quiet: false
-    }
-
-    assert {:error, "missing argument tag"} == TestHelper.image_build(config)
+    # Using invalid buildargs-input
+    assert ["Invalid object. Got: string", {1002, %Message{message: "invalid parameters"}}] =
+             TestHelper.image_build(%{context: "./", buildargs: "should-be-JSON"})
   end
 
   test "create an image with a 'RUN' instruction" do
@@ -374,6 +363,7 @@ defmodule ImageTest do
   end
 
   test "invalid ENV and ARG variable names" do
+    # FIXME: Hertil: sudo mix test --seed 0 --trace --max-failures 1 test/image_test.exs:365
     dockerfile = """
     FROM scratch
     ARG TEST-VAR="this should fail"
@@ -381,32 +371,31 @@ defmodule ImageTest do
 
     config = %{
       context: @tmp_context,
-      dockerfile: @tmp_dockerfile,
-      tag: "test:latest"
+      dockerfile: @tmp_dockerfile
     }
 
-    expected_build_log = [
-      "ERROR:ENV/ARG variable name is invalid on line: ARG TEST-VAR=\"this should fail\"",
-      "failed to build image"
-    ]
-
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
-    build_log = TestHelper.image_build(config)
-    assert expected_build_log == build_log
+    {error, _build_id, build_log} = TestHelper.image_invalid_build(config)
+
+    assert build_log == [
+             "ENV/ARG variable name is invalid on line: ARG TEST-VAR=\"this should fail\""
+           ]
+
+    assert error == "failed to process Dockerfile"
 
     dockerfile = """
     FROM scratch
     ENV TEST-VAR="this should fail"
     """
 
-    expected_build_log = [
-      "ERROR:ENV/ARG variable name is invalid on line: ENV TEST-VAR=\"this should fail\"",
-      "failed to build image"
-    ]
-
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
-    build_log = TestHelper.image_build(config)
-    assert expected_build_log == build_log
+    {error, _build_id, build_log} = TestHelper.image_invalid_build(config)
+
+    assert build_log == [
+             "ENV/ARG variable name is invalid on line: ENV TEST-VAR=\"this should fail\""
+           ]
+
+    assert error == "failed to process Dockerfile"
   end
 
   test "create arg-variable and use with USER-instruction" do
@@ -585,15 +574,14 @@ defmodule ImageTest do
     context = create_test_context("test_image_run_nonzero_exitcode")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {failed_line, _build_id, _build_log} =
+    {error, _build_id, build_log} =
       TestHelper.image_invalid_build(%{
         context: context,
-        dockerfile: @tmp_dockerfile,
-        quiet: false,
-        tag: "test:latest"
+        dockerfile: @tmp_dockerfile
       })
 
-    assert "executing instruction resulted in non-zero exit code" == failed_line
+    assert last_log_entry(build_log) == "executing instruction resulted in non-zero exit code"
+    assert error == "image build failed"
   end
 
   test "image-build stops prematurely from non-zero exitcode that keeps build-container" do
@@ -606,7 +594,7 @@ defmodule ImageTest do
     context = create_test_context("test_image_run_nonzero_exitcode")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {failed_line, build_id, _build_log} =
+    {error, build_id, build_log} =
       TestHelper.image_invalid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile,
@@ -615,7 +603,8 @@ defmodule ImageTest do
         tag: "test:latest"
       })
 
-    assert "executing instruction resulted in non-zero exit code" == failed_line
+    assert last_log_entry(build_log) == "executing instruction resulted in non-zero exit code"
+    assert error == "image build failed"
 
     %Schemas.Container{layer_id: layer_id} =
       Kleened.Core.MetaData.get_container("build_#{build_id}")
@@ -635,17 +624,16 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    build_log =
-      TestHelper.image_build(%{
+    {error, _build_id, build_log} =
+      TestHelper.image_invalid_build(%{
         context: context,
-        dockerfile: @tmp_dockerfile,
-        tag: "test:latest"
+        dockerfile: @tmp_dockerfile
       })
 
-    assert build_log == [
-             "ERROR:invalid instruction:   \"this should faile because we omitted the '\\' above\"",
-             "failed to build image"
-           ]
+    assert error == "failed to process Dockerfile"
+
+    assert last_log_entry(build_log) ==
+             "invalid instruction:   \"this should faile because we omitted the '\\' above\""
   end
 
   test "try building an image with an invalid image name in the FROM-instruction" do
@@ -656,19 +644,14 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, @tmp_context)
 
-    [build_id | build_log] =
-      TestHelper.image_build(%{
+    {error, _build_id, build_log} =
+      TestHelper.image_invalid_build(%{
         context: @tmp_context,
-        dockerfile: @tmp_dockerfile,
-        tag: "test:latest"
+        dockerfile: @tmp_dockerfile
       })
 
-    assert <<"OK:", _id::binary>> = build_id
-
-    assert build_log == [
-             "Step 1/2 : FROM nonexisting\n",
-             "image build failed: image not found"
-           ]
+    assert build_log == ["Step 1/2 : FROM nonexisting\n", "image not found"]
+    assert error == "image build failed"
   end
 
   test "try building an image from a invalid Dockerfile (illegal comment)" do
@@ -680,48 +663,20 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    [build_id | build_log] =
-      TestHelper.image_build(%{
+    {error, _build_id, build_log} =
+      TestHelper.image_invalid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile,
         tag: "test:latest"
       })
 
-    assert <<"OK:", _id::binary>> = build_id
+    assert error == "image build failed"
 
     assert build_log == [
              "Step 1/2 : FROM scratch\n",
              "Step 2/2 : ENV TEST=\"something\" # You cannot make comments like this.\n",
-             "image build failed: failed environment substition of: ENV TEST=\"something\" # You cannot make comments like this."
+             "failed environment substition of: ENV TEST=\"something\" # You cannot make comments like this."
            ]
-  end
-
-  test "try to build a image with invalid buildargs-input" do
-    dockerfile = """
-    FROM scratch
-    CMD /usr/bin/uname
-    """
-
-    context = create_test_context("test_image_builder_three_layers")
-    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
-
-    config = %{
-      context: context,
-      dockerfile: @tmp_dockerfile,
-      buildargs: %{},
-      tag: "test:latest"
-    }
-
-    {_, _build_id, build_log} = TestHelper.image_valid_build(config)
-
-    assert build_log == [
-             "Step 1/2 : FROM scratch\n",
-             "Step 2/2 : CMD /usr/bin/uname\n"
-           ]
-
-    assert TestHelper.image_build_raw(%{config | buildargs: "should-be-JSON"}) ==
-             {:error,
-              "could not decode 'buildargs' JSON content: %Jason.DecodeError{position: 0, token: nil, data: \"should-be-JSON\"}"}
   end
 
   test "create base image using a method 'zfs'", %{api_spec: api_spec} do
@@ -732,12 +687,12 @@ defmodule ImageTest do
     }
 
     frames = TestHelper.image_create(config)
-    {last_frame, _rest} = List.pop_at(frames, -1)
-    <<"ok:", image_id::binary>> = last_frame
+    {{1000, closing_msg}, _rest} = List.pop_at(frames, -1)
+    assert %Message{data: _, message: "image created", msg_type: "closing"} = closing_msg
 
     {_cont, exec_id} =
       TestHelper.container_start_attached(api_spec, "testcont", %{
-        image: image_id,
+        image: closing_msg.data,
         cmd: ["/usr/bin/id"],
         jail_param: [],
         user: "root"
@@ -749,7 +704,7 @@ defmodule ImageTest do
   end
 
   test "create base image using a method 'fetch'", %{api_spec: api_spec} do
-    # The "rescue" system does not work since it needs /etc/master.passwd (and probably other stuff as well). Thus, any bunch of files in a .txz-file could be used to pass this test.
+    # The "rescue" system does not work as a jail since it needs /etc/master.passwd (and probably other stuff as well). Thus, any bunch of files in a .txz-file could be used to pass this test.
     # Consider making a special test with a real userland that can be filtered out during development? Could be nice with a more realistic test that uses a full userland (and takes some time to extract).
     config = %{
       # method-name should be "url"
@@ -760,12 +715,13 @@ defmodule ImageTest do
     }
 
     frames = TestHelper.image_create(config)
-    {last_frame, _rest} = List.pop_at(frames, -1)
-    <<"ok:", image_id::binary>> = last_frame
+    {{1000, closing_msg}, _rest} = List.pop_at(frames, -1)
+
+    assert %Message{data: _, message: "image created", msg_type: "closing"} = closing_msg
 
     {_cont, exec_id} =
       TestHelper.container_start_attached(api_spec, "testcont", %{
-        image: image_id,
+        image: closing_msg.data,
         cmd: ["/bin/id"],
         jail_param: [],
         user: "root"
@@ -783,5 +739,10 @@ defmodule ImageTest do
     {"", 0} = System.cmd("sh", ["-c", "echo 'lol' > #{mountpoint}/test.txt"])
     {"", 0} = System.cmd("sh", ["-c", "echo 'lel' > #{mountpoint}/test2.txt"])
     mountpoint
+  end
+
+  defp last_log_entry(log) do
+    [last_log_entry | _] = Enum.reverse(log)
+    last_log_entry
   end
 end

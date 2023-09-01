@@ -22,9 +22,9 @@ defmodule Kleened.Core.Image do
 
   @type t() :: %Schemas.Image{}
 
-  @spec build(String.t(), String.t(), String.t(), boolean(), boolean()) ::
+  @spec build(String.t(), String.t(), String.t(), String.t(), boolean(), boolean()) ::
           {:ok, pid()} | {:error, String.t()}
-  def build(context_path, dockerfile, tag, buildargs, cleanup, quiet \\ false) do
+  def build(build_id, context_path, dockerfile, tag, buildargs, cleanup, quiet \\ false) do
     {name, tag} = Kleened.Core.Utils.decode_tagname(tag)
     dockerfile_path = Path.join(context_path, dockerfile)
     {:ok, dockerfile} = File.read(dockerfile_path)
@@ -32,8 +32,6 @@ defmodule Kleened.Core.Image do
 
     case verify_instructions(instructions) do
       :ok ->
-        build_id = String.slice(Utils.uuid(), 0..5)
-
         {:ok, buildnet} =
           Network.create(%Schemas.NetworkConfig{
             name: "build" <> build_id,

@@ -1,27 +1,63 @@
 defmodule Kleened.API.ImageCreate do
   alias Kleened.Core
   alias Kleened.API.Schemas
+  alias Kleened.API.Utils
+  alias OpenApiSpex.{Operation, Cast}
+
+  import OpenApiSpex.Operation,
+    only: [response: 3, request_body: 4]
+
   require Logger
+
+  def open_api_operation(_) do
+    %Operation{
+      summary: "image create",
+      description: "make a description of the websocket endpoint here.",
+      operationId: "ImageCreate",
+      requestBody:
+        request_body(
+          "Image building configuration.",
+          "application/json",
+          Schemas.ImageCreateConfig,
+          required: true
+        ),
+      responses: %{
+        200 => response("no error", "application/json", Schemas.IdMessage)
+      }
+    }
+  end
 
   # Called on connection initialization
   def init(req0, _state) do
-    case validate_request(req0) do
-      {:ok, state} ->
-        {:cowboy_websocket, req0, state, %{idle_timeout: 60000}}
+    {:cowboy_websocket, req0, %{handshaking: true}, %{idle_timeout: 60000}}
+  end
 
-      {:error, msg} ->
-        req = :cowboy_req.reply(400, %{"content-type" => "text/plain"}, msg, req0)
-        {:ok, req, %{}}
+  def websocket_init(state) do
+    {[], state}
+  end
+
+  def websocket_handle({:text, message_raw}, %{handshaking: true} = state) do
+    case Jason.decode(message_raw) do
+      {:ok, message} ->
+        case Cast.cast(Schemas.ImageCreateConfig.schema(), message) do
+          {:ok, config} ->
+            Core.ImageCreate.start_image_creation(config)
+            Logger.debug("Creating image with config #{inspect(config)}. Await output.")
+            {[{:text, Utils.starting_message()}], %{handshaking: false}}
+
+          {:error, [openapispex_error | _rest]} ->
+            error_message = Cast.Error.message(openapispex_error)
+            error = Utils.error_message("invalid parameters")
+            {[{:text, error_message}, {:close, 1002, error}], state}
+        end
+
+      {:error, json_error} ->
+        error = Utils.error_message("invalid json")
+        {[{:text, json_error}, {:close, 1002, error}], state}
     end
   end
 
-  def websocket_init(%{args: args} = state) do
-    Core.ImageCreate.start_image_creation(args)
-    Logger.debug("Creating image with config #{inspect(args)}. Await output.")
-    {:ok, state}
-  end
-
-  def websocket_handle({:text, _message}, state) do
+  def websocket_handle({:text, _message}, %{handshaking: false} = state) do
     {:ok, state}
   end
 
@@ -30,12 +66,14 @@ defmodule Kleened.API.ImageCreate do
   end
 
   # Format and forward elixir messages to client
-  def websocket_info({:image_creator, _pid, {:ok, %Schemas.Image{} = image}}, state) do
-    {[{:close, 1000, "ok:#{image.id}"}], state}
+  def websocket_info({:image_creator, _pid, {:ok, %Schemas.Image{id: id}}}, state) do
+    closing = Utils.closing_message("image created", id)
+    {[{:close, 1000, closing}], state}
   end
 
   def websocket_info({:image_creator, _pid, {:error, reason}}, state) do
-    {[{:close, 1000, "image creation failed: #{reason}"}], state}
+    error = Utils.error_message("image creation failed")
+    {[{:text, reason}, {:close, 1011, error}], state}
   end
 
   def websocket_info({:image_creator, _pid, {:info, msg}}, state) do
@@ -43,26 +81,12 @@ defmodule Kleened.API.ImageCreate do
   end
 
   def websocket_info({:EXIT, _pid, _reason}, state) do
-    {[{:close, 1000, "image creation failed"}], state}
+    error = Utils.error_message("image creation failed")
+    {[{:close, 1011, error}], state}
   end
 
   def websocket_info(unknown_msg, state) do
     Logger.warn("unknown message received:received:  #{inspect(unknown_msg)}")
-    {:ok, state}
-  end
-
-  defp validate_request(req0) do
-    default_values = %{
-      "method" => "fetch",
-      "tag" => "",
-      "force" => "false",
-      "zfs_dataset" => ""
-    }
-
-    values = Plug.Conn.Query.decode(req0.qs)
-    args = Map.merge(default_values, values)
-    {:ok, args} = OpenApiSpex.Cast.cast(Schemas.ImageCreateConfig.schema(), args)
-    state = %{args: args, request: req0}
     {:ok, state}
   end
 end

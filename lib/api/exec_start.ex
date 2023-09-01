@@ -1,10 +1,16 @@
 defmodule Kleened.API.ExecStartWebSocket do
-  alias OpenApiSpex.{Operation, Schema}
+  alias OpenApiSpex.{Operation, Cast}
   alias Kleened.Core.Exec
+  alias Kleened.API.{Schemas, Utils}
   require Logger
 
   import OpenApiSpex.Operation,
-    only: [parameter: 5, response: 3]
+    only: [response: 3, request_body: 4]
+
+  defmodule State do
+    defstruct handshaking: nil,
+              exec_id: nil
+  end
 
   def open_api_operation(_) do
     %Operation{
@@ -12,70 +18,69 @@ defmodule Kleened.API.ExecStartWebSocket do
       summary: "exec start",
       description: "make a description of the websocket endpoint here.",
       operationId: "ExecStartWebSocket",
-      parameters: [
-        parameter(
-          :exec_id,
-          :path,
-          %Schema{type: :string},
-          "id of the execution instance being started",
+      requestBody:
+        request_body(
+          "Execution starting configuration.",
+          "application/json",
+          Schemas.ExecStartConfig,
           required: true
         ),
-        parameter(
-          :attach,
-          :query,
-          %Schema{type: :boolean},
-          "Whether to receive output from `stdin` and `stderr`.",
-          required: true
-        ),
-        parameter(
-          :start_container,
-          :query,
-          %Schema{type: :boolean},
-          "Whether to start the container if it is not running.",
-          required: true
-        )
-      ],
       responses: %{
-        1000 => response("invalid parameters", "text/plain", nil)
+        400 => response("invalid parameters", "text/plain", nil)
       }
     }
   end
 
   # Called on connection initialization
   def init(req0, _opts) do
-    case validate_request(req0) do
-      {:ok, state} ->
-        {:cowboy_websocket, req0, state, %{idle_timeout: 60000}}
-
-      {:error, msg} ->
-        req = :cowboy_req.reply(400, %{"content-type" => "text/plain"}, msg, req0)
-        {:ok, req, %{}}
-    end
+    {:cowboy_websocket, req0, %State{handshaking: true}, %{idle_timeout: 60000}}
   end
 
   # Called on websocket connection initialization.
-  def websocket_init(
-        %{exec_id: exec_id, attach: attach, start_container: start_container} = state
-      ) do
-    case Exec.start(exec_id, %{attach: attach, start_container: start_container}) do
-      :ok ->
-        case attach do
-          true ->
-            Logger.debug("succesfully started executable #{exec_id}. Await output.")
-            {[{:text, "OK"}], state}
+  def websocket_init(state) do
+    {[], state}
+  end
 
-          false ->
-            Logger.debug("succesfully started executable #{exec_id}. Closing websocket.")
-            {[{:close, 1001, ""}], state}
+  def websocket_handle({:text, message_raw}, %{handshaking: true} = state) do
+    case Jason.decode(message_raw) do
+      {:ok, message} ->
+        case Cast.cast(Schemas.ExecStartConfig.schema(), message) do
+          {:ok, %{exec_id: exec_id, attach: attach, start_container: start_container}} ->
+            result = Exec.start(exec_id, %{attach: attach, start_container: start_container})
+
+            case {result, attach} do
+              {:ok, true} ->
+                Logger.debug("succesfully started executable #{exec_id}. Await output.")
+                {[{:text, Utils.starting_message()}], %State{state | handshaking: false}}
+
+              {:ok, false} ->
+                Logger.debug("succesfully started executable #{exec_id}. Closing websocket.")
+
+                closing =
+                  Utils.closing_message("succesfully started execution instance in detached mode")
+
+                {[{:close, 1001, closing}], state}
+
+              {:error, reason} ->
+                Logger.debug("could not start attached executable #{exec_id}: #{reason}")
+                error = Utils.error_message(reason)
+                {[{:close, 1011, error}], state}
+            end
+
+          {:error, openapispex_error} ->
+            error_message = Cast.Error.message(openapispex_error)
+
+            error = Utils.error_message("invalid parameters: #{error_message}")
+            {[{:close, 1002, error}], state}
         end
 
-      {:error, msg} ->
-        Logger.debug("could not start attached executable #{exec_id}: #{msg}")
-        {[{:text, "ERROR:#{msg}"}, {:close, 1000, "Failed to execute command."}], state}
+      {:error, json_error} ->
+        error = Utils.error_message("invalid json: #{json_error}")
+        {[{:close, 1002, error}], state}
     end
   end
 
-  def websocket_handle({:text, message}, %{exec_id: exec_id} = state) do
+  def websocket_handle({:text, message}, %{exec_id: exec_id, handshaking: false} = state) do
     Exec.send(exec_id, message)
     {:ok, state}
   end
@@ -91,17 +96,20 @@ defmodule Kleened.API.ExecStartWebSocket do
   end
 
   def websocket_info({:container, exec_id, {:shutdown, {:jail_stopped, exit_code}}}, state) do
-    {[
-       {:close, 1000,
-        "executable #{exec_id} and its container exited with exit-code #{exit_code}"}
-     ], state}
+    msg =
+      Utils.closing_message(
+        "executable #{exec_id} and its container exited with exit-code #{exit_code}"
+      )
+
+    {[{:close, 1000, msg}], state}
   end
 
   def websocket_info(
         {:container, exec_id, {:shutdown, {:jailed_process_exited, exit_code}}},
         state
       ) do
-    {[{:close, 1001, "#{exec_id} has exited with exit-code #{exit_code}"}], state}
+    msg = Utils.closing_message("#{exec_id} has exited with exit-code #{exit_code}")
+    {[{:close, 1000, msg}], state}
   end
 
   def websocket_info({:container, _container_id, {:jail_output, msg}}, state) do
@@ -129,42 +137,5 @@ defmodule Kleened.API.ExecStartWebSocket do
   def terminate(reason, _partial_req, _state) do
     Logger.debug("connection closed #{inspect(reason)}")
     :ok
-  end
-
-  defp validate_request(%{bindings: %{exec_id: exec_id}} = req0) do
-    opts =
-      :cowboy_req.parse_qs(req0)
-      |> Enum.sort()
-      |> Enum.map(fn {key, value} -> {key, string2bool(value)} end)
-
-    case opts do
-      # Everything should be good, proceed with the websocket!
-      [{"attach", attach}, {"start_container", start_container}]
-      when is_boolean(attach) and is_boolean(start_container) ->
-        state = %{
-          request: req0,
-          attach: attach,
-          start_container: start_container,
-          exec_id: exec_id
-        }
-
-        {:ok, state}
-
-      _invalid_parameter_tuple ->
-        msg = "invalid value/missing parameter(s)"
-        {:error, msg}
-    end
-  end
-
-  defp string2bool("true") do
-    true
-  end
-
-  defp string2bool("false") do
-    false
-  end
-
-  defp string2bool(invalid) do
-    invalid
   end
 end

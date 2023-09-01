@@ -169,6 +169,67 @@ defmodule Kleened.API.Schemas do
     })
   end
 
+  defmodule ImageBuildConfig do
+    OpenApiSpex.schema(%{
+      description: "make a description of the websocket endpoint here.",
+      type: :object,
+      properties: %{
+        context: %Schema{type: :string, description: "description here"},
+        dockerfile: %Schema{type: :string, description: "description here", default: "Dockerfile"},
+        quiet: %Schema{type: :boolean, description: "description here", default: false},
+        cleanup: %Schema{type: :boolean, description: "description here", default: true},
+        tag: %Schema{type: :string, description: "description here", default: ""},
+        buildargs: %Schema{
+          description:
+            "Object of string pairs for build-time variables. Users pass these values at build-time. Kleened uses the buildargs as the environment context for commands run via the Dockerfile RUN instruction, or for variable expansion in other Dockerfile instructions. This is not meant for passing secret values.",
+          type: :object,
+          default: %{},
+          example: %{"USERNAME" => "Stephen", "JAIL_MGMT_ENGINE" => "kleene"}
+        }
+      },
+      required: [:context]
+    })
+  end
+
+  defmodule ImageCreateConfig do
+    OpenApiSpex.schema(%{
+      description: "Configuration for the creation of base images.",
+      type: :object,
+      required: [:method],
+      properties: %{
+        tag: %Schema{
+          description: "Name and optionally a tag in the 'name:tag' format",
+          type: :string,
+          default: ""
+        },
+        method: %Schema{
+          description:
+            "Method used for creating a new base image: If 'fetch' is selected, kleened will fetch a release/snapshot of the base system and use it for image creation. When 'zfs' is used, a copy of the supplied zfs dataset is used for the image.",
+          type: :string,
+          enum: ["fetch", "zfs"]
+        },
+        zfs_dataset: %Schema{
+          description:
+            "Dataset path on the host used for the image (required for method 'zfs' only).",
+          type: :string,
+          default: ""
+        },
+        url: %Schema{
+          description:
+            "URL to a remote location where the base system (as a base.txz file) is stored. If an empty string is supplied kleened will try to fetch a version of the base sytem from download.freebsd.org using information from uname(1) (required for method 'fetch').",
+          type: :string,
+          default: ""
+        },
+        force: %Schema{
+          description:
+            "Ignore any discrepancies detected when using uname(1) to fetch the base system (method 'fetch' only).",
+          type: :boolean,
+          default: false
+        }
+      }
+    })
+  end
+
   defmodule Image do
     OpenApiSpex.schema(%{
       description: "the image metadata",
@@ -201,43 +262,6 @@ defmodule Kleened.API.Schemas do
         layer_id: %Schema{description: "Id of the layer containing the image", type: :string},
         user: %Schema{description: "user used when executing the command", type: :string},
         created: %Schema{description: "When the image was created", type: :string}
-      }
-    })
-  end
-
-  defmodule ImageCreateConfig do
-    OpenApiSpex.schema(%{
-      description: "Configuration for the creation of base images.",
-      type: :object,
-      required: [:method],
-      properties: %{
-        tag: %Schema{
-          description: "Name and optionally a tag in the 'name:tag' format",
-          type: :string,
-          default: ""
-        },
-        method: %Schema{
-          description:
-            "Method used for creating a new base image: If 'fetch' is selected, kleened will fetch a release/snapshot of the base system and use it for image creation. When 'zfs' is used, a copy of the supplied zfs dataset is used for the image.",
-          type: :string,
-          enum: ["fetch", "zfs"]
-        },
-        zfs_dataset: %Schema{
-          description:
-            "Dataset path on the host used for the image (required for method 'zfs' only).",
-          type: :string
-        },
-        url: %Schema{
-          description:
-            "URL to a remote location where the base system (as a base.txz file) is stored. If an empty string is supplied kleened will try to fetch a version of the base sytem from download.freebsd.org using information from uname(1) (required for method 'fetch').",
-          type: :string,
-          default: ""
-        },
-        force: %Schema{
-          description:
-            "Ignore any discrepancies detected when using uname(1) to fetch the base system (method 'fetch' only).",
-          type: :boolean
-        }
       }
     })
   end
@@ -404,40 +428,30 @@ defmodule Kleened.API.Schemas do
     })
   end
 
-  defmodule StartingMessage do
+  defmodule WebSocketMessage do
     OpenApiSpex.schema(%{
-      description: "A websocket has started processing the request.",
+      description: "The request have been validated and the request is being processed.",
       type: :object,
       properties: %{
+        msg_type: %Schema{
+          description:
+            "Any data that might have been created in pre-processing (e.g., a build_id).",
+          type: :string
+        },
+        message: %Schema{
+          description:
+            "Any data that might have been created in pre-processing (e.g., a build_id).",
+          type: :string,
+          default: ""
+        },
         data: %Schema{
           description:
             "Any data that might have been created in pre-processing (e.g., a build_id).",
           type: :string,
-          nullable: true
+          default: ""
         }
       },
-      required: [:data]
-    })
-  end
-
-  defmodule ClosingMessage do
-    OpenApiSpex.schema(%{
-      description: "A websocket is done processing the request and is closing the connection.",
-      type: :object,
-      properties: %{
-        reason: %Schema{
-          description: "Reason for closing the connection - success or failure?",
-          type: :string,
-          nullable: true
-        },
-        data: %Schema{
-          description:
-            "Any data that might have been created as a result of processing the request (e.g., a `image_id`).",
-          type: :string,
-          nullable: true
-        }
-      },
-      required: [:data]
+      required: [:msg_type, :message, :data]
     })
   end
 
