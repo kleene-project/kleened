@@ -26,7 +26,8 @@ defmodule Kleened.API.ExecStartWebSocket do
           required: true
         ),
       responses: %{
-        400 => response("invalid parameters", "text/plain", nil)
+        200 => response("no error", "application/json", Schemas.WebSocketMessage),
+        400 => response("no error", "application/json", Schemas.WebSocketMessage)
       }
     }
   end

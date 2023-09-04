@@ -455,7 +455,7 @@ defmodule Kleened.API.Schemas do
     })
   end
 
-  defmodule ErrorMessage do
+  defmodule ErrorResponse do
     OpenApiSpex.schema(%{
       description: "Represents an error and (possibly) its reason.",
       type: :object,
@@ -473,9 +473,9 @@ defmodule Kleened.API.Schemas do
     })
   end
 
-  defmodule IdMessage do
+  defmodule IdResponse do
     OpenApiSpex.schema(%{
-      title: "IdMessage",
+      title: "IdResponse",
       description: "Response to an API call that returns just an Id",
       type: :object,
       properties: %{

@@ -98,9 +98,9 @@ defmodule Kleened.API.Container do
             required: true
           ),
         responses: %{
-          201 => response("no error", "application/json", Schemas.IdMessage),
-          404 => response("no such image", "application/json", Schemas.ErrorMessage),
-          500 => response("server error", "application/json", Schemas.ErrorMessage)
+          201 => response("no error", "application/json", Schemas.IdResponse),
+          404 => response("no such image", "application/json", Schemas.ErrorResponse),
+          500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
     end
@@ -148,12 +148,12 @@ defmodule Kleened.API.Container do
           )
         ],
         responses: %{
-          200 => response("no error", "application/json", Schemas.IdMessage),
+          200 => response("no error", "application/json", Schemas.IdResponse),
           404 =>
-            response("no such container", "application/json", Schemas.ErrorMessage,
+            response("no such container", "application/json", Schemas.ErrorResponse,
               example: %{message: "No such container: df6ed453357b"}
             ),
-          500 => response("server error", "application/json", Schemas.ErrorMessage)
+          500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
     end
@@ -202,13 +202,13 @@ defmodule Kleened.API.Container do
           )
         ],
         responses: %{
-          200 => response("no error", "application/json", Schemas.IdMessage),
-          304 => response("container not running", "application/json", Schemas.ErrorMessage),
+          200 => response("no error", "application/json", Schemas.IdResponse),
+          304 => response("container not running", "application/json", Schemas.ErrorResponse),
           404 =>
-            response("no such container", "application/json", Schemas.ErrorMessage,
+            response("no such container", "application/json", Schemas.ErrorResponse,
               example: %{message: "no such container"}
             ),
-          500 => response("server error", "application/json", Schemas.ErrorMessage)
+          500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
     end

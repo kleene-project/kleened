@@ -22,7 +22,8 @@ defmodule Kleened.API.ImageCreate do
           required: true
         ),
       responses: %{
-        200 => response("no error", "application/json", Schemas.IdMessage)
+        200 => response("no error", "application/json", Schemas.WebSocketMessage),
+        400 => response("no error", "application/json", Schemas.WebSocketMessage)
       }
     }
   end
