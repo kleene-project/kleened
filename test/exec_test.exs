@@ -3,6 +3,7 @@ defmodule ExecTest do
   use Kleened.API.ConnCase
   alias Kleened.Core.{Container, Exec, Utils, Network}
   alias Kleened.API.Schemas
+  alias Schemas.WebSocketMessage, as: Message
 
   @moduletag :capture_log
 
@@ -30,10 +31,11 @@ defmodule ExecTest do
       TestHelper.container_create(api_spec, "test_container1", %{cmd: ["/bin/sh", "-c", "uname"]})
 
     {:ok, exec_id} = Exec.create(container_id)
+
     stop_msg = "executable #{exec_id} and its container exited with exit-code 0"
 
-    assert ["OK", "FreeBSD\n", stop_msg] ==
-             TestHelper.exec_start_sync(exec_id, %{attach: true, start_container: true})
+    assert {stop_msg, ["FreeBSD\n"]} ==
+             TestHelper.valid_execution(%{exec_id: exec_id, attach: true, start_container: true})
 
     {:ok, ^container_id} = Container.remove(container_id)
   end
@@ -74,7 +76,14 @@ defmodule ExecTest do
     {:ok, _stream_ref, root_conn} =
       TestHelper.exec_start(root_exec_id, %{attach: false, start_container: true})
 
-    assert [:not_attached] == TestHelper.receive_frames(root_conn)
+    closing_msg =
+      {1001,
+       %Message{
+         message: "succesfully started execution instance in detached mode",
+         msg_type: "closing"
+       }}
+
+    assert [closing_msg] == TestHelper.receive_frames(root_conn)
 
     %{id: exec_id} =
       TestHelper.exec_create(api_spec, %{
@@ -85,13 +94,14 @@ defmodule ExecTest do
     {:ok, _stream_ref, conn} =
       TestHelper.exec_start(exec_id, %{attach: true, start_container: false})
 
-    assert {:text, "OK"} == TestHelper.receive_frame(conn)
     assert number_of_jailed_processes(container_id) == 2
 
     assert %{id: exec_id} ==
              TestHelper.exec_stop(api_spec, exec_id, %{stop_container: false, force_stop: true})
 
-    error_msg = "#{exec_id} has exited with exit-code 137"
+    error_msg =
+      {1000, %Message{message: "#{exec_id} has exited with exit-code 137", msg_type: "closing"}}
+
     assert [error_msg] == TestHelper.receive_frames(conn)
 
     assert number_of_jailed_processes(container_id) == 1
@@ -115,8 +125,10 @@ defmodule ExecTest do
 
     %{id: root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
 
-    assert [:not_attached] ==
-             TestHelper.exec_start_sync(root_exec_id, %{attach: false, start_container: true})
+    config = %{exec_id: root_exec_id, attach: false, start_container: true}
+
+    assert "succesfully started execution instance in detached mode" ==
+             TestHelper.valid_execution(config)
 
     %{id: exec_id} =
       TestHelper.exec_create(api_spec, %{
@@ -126,8 +138,6 @@ defmodule ExecTest do
 
     {:ok, _stream_ref, conn} =
       TestHelper.exec_start(exec_id, %{attach: true, start_container: false})
-
-    assert {:text, "OK"} == TestHelper.receive_frame(conn)
 
     :timer.sleep(500)
     assert number_of_jailed_processes(container_id) == 2
@@ -139,7 +149,10 @@ defmodule ExecTest do
              })
 
     msg = "executable #{exec_id} and its container exited with exit-code 143"
-    assert [msg] == TestHelper.receive_frames(conn)
+
+    assert [{1000, %Message{message: msg, msg_type: "closing"}}] ==
+             TestHelper.receive_frames(conn)
+
     assert number_of_jailed_processes(container_id) == 0
     refute Utils.is_container_running?(container_id)
   end
@@ -156,8 +169,6 @@ defmodule ExecTest do
     {:ok, _stream_ref, conn} =
       TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
 
-    assert {:text, "OK"} == TestHelper.receive_frame(conn)
-
     {:text, msg} = TestHelper.receive_frame(conn)
     assert <<"not a tty\n", _rest::binary>> = msg
 
@@ -167,7 +178,6 @@ defmodule ExecTest do
     {:ok, _stream_ref, conn} =
       TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
 
-    assert {:text, "OK"} == TestHelper.receive_frame(conn)
     {:text, msg} = TestHelper.receive_frame(conn)
     assert <<"/dev/pts/", _rest::binary>> = msg
   end
@@ -176,25 +186,24 @@ defmodule ExecTest do
     api_spec: api_spec
   } do
     %{id: container_id} = TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sh"]})
-
     # Start a process with a PTY attach
     %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id, tty: true})
+    start_config = %{attach: true, start_container: true}
+    {:ok, stream_ref, conn} = TestHelper.exec_start(exec_id, start_config)
 
-    {:ok, stream_ref, conn} =
-      TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
-
-    assert {:text, "OK"} == TestHelper.receive_frame(conn)
     assert {:text, "# "} == TestHelper.receive_frame(conn)
     TestHelper.send_data(conn, stream_ref, "ls && exit\r\n")
     frames = TestHelper.receive_frames(conn)
+
+    {last_frame, frames} = List.pop_at(frames, -1)
+    msg = "executable #{exec_id} and its container exited with exit-code 0"
+    assert {1000, %Message{msg_type: "closing", message: msg, data: ""}} == last_frame
     frames_as_string = Enum.join(frames, "")
 
-    expected =
-      "ls && exit\r\n.cshrc\t\tboot\t\tlibexec\t\tproc\t\tsys\r\n.profile\tdev\t\tmedia\t\trescue\t\ttmp\r\nCOPYRIGHT\tetc\t\tmnt\t\troot\t\tusr\r\nbin\t\tlib\t\tnet\t\tsbin\t\tvar\r\nexecutable #{
-        exec_id
-      } and its container exited with exit-code 0"
+    expected_output =
+      "ls && exit\r\n.cshrc\t\tboot\t\tlibexec\t\tproc\t\tsys\r\n.profile\tdev\t\tmedia\t\trescue\t\ttmp\r\nCOPYRIGHT\tetc\t\tmnt\t\troot\t\tusr\r\nbin\t\tlib\t\tnet\t\tsbin\t\tvar\r\n"
 
-    assert expected == frames_as_string
+    assert expected_output == frames_as_string
   end
 
   test "use execution instance created with container name instead of container id", %{
@@ -205,8 +214,8 @@ defmodule ExecTest do
 
     %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: "testcont"})
 
-    assert [:not_attached] ==
-             TestHelper.exec_start_sync(exec_id, %{attach: false, start_container: true})
+    assert "succesfully started execution instance in detached mode" ==
+             TestHelper.valid_execution(%{exec_id: exec_id, attach: false, start_container: true})
 
     # seems like '/usr/sbin/jail' returns before the kernel reports it as running?
     :timer.sleep(500)
@@ -222,13 +231,25 @@ defmodule ExecTest do
        %{
          api_spec: api_spec
        } do
-    {:error, "invalid value/missing parameter(s)"} =
-      TestHelper.exec_start("nonexisting", %{attach: "mustbeboolean", start_container: true})
+    frames =
+      TestHelper.exec_start_raw(%{
+        exec_id: "nonexisting",
+        attach: "mustbeboolean",
+        start_container: true
+      })
 
-    {:error, "invalid value/missing parameter(s)"} =
-      TestHelper.initialize_websocket(
-        "/exec/nonexisting/start?nonexisting_param=true&start_container=true"
-      )
+    assert [{1002, %Message{msg_type: "error", message: msg}}] = frames
+    assert "invalid parameters: Invalid boolean. Got: string" == msg
+
+    frames =
+      TestHelper.exec_start_raw(%{
+        exec_id: "nonexisting",
+        nonexisting_param: true,
+        start_container: true
+      })
+
+    assert [{1002, %Message{msg_type: "error", message: msg}}] = frames
+    assert "invalid parameters: Missing field: attach" == msg
 
     %{id: container_id} =
       TestHelper.container_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
@@ -239,22 +260,39 @@ defmodule ExecTest do
     %{id: root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
 
     assert [
-             "ERROR:could not find a execution instance matching 'wrongexecid'",
-             "Failed to execute command."
-           ] ==
-             TestHelper.exec_start_sync("wrongexecid", %{attach: false, start_container: true})
+             "error: could not find a execution instance matching 'wrongid'",
+             {1011, %Message{message: "error starting exec instance", msg_type: "error"}}
+           ] =
+             TestHelper.exec_start_raw(%{exec_id: "wrongid", attach: false, start_container: true})
 
     assert [
-             "ERROR:cannot start container when 'start_container' is false.",
-             "Failed to execute command."
+             "error: cannot start container when 'start_container' is false.",
+             {1011, %Message{message: "error starting exec instance", msg_type: "error"}}
+           ] =
+             TestHelper.exec_start_raw(%{
+               exec_id: root_exec_id,
+               attach: false,
+               start_container: false
+             })
+
+    assert [{1001, %Message{message: msg, msg_type: "closing"}}] =
+             TestHelper.exec_start_raw(%{
+               exec_id: root_exec_id,
+               attach: false,
+               start_container: true
+             })
+
+    assert msg == "succesfully started execution instance in detached mode"
+
+    assert [
+             "error: executable already started",
+             {1011, %Message{message: "error starting exec instance", msg_type: "error"}}
            ] ==
-             TestHelper.exec_start_sync(root_exec_id, %{attach: false, start_container: false})
-
-    assert [:not_attached] ==
-             TestHelper.exec_start_sync(root_exec_id, %{attach: false, start_container: true})
-
-    assert ["ERROR:executable already started", "Failed to execute command."] ==
-             TestHelper.exec_start_sync(root_exec_id, %{attach: false, start_container: true})
+             TestHelper.exec_start_raw(%{
+               exec_id: root_exec_id,
+               attach: false,
+               start_container: true
+             })
 
     :timer.sleep(100)
     assert Utils.is_container_running?(container_id)

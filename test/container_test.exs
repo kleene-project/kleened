@@ -2,7 +2,6 @@ defmodule ContainerTest do
   require Logger
   use Kleened.API.ConnCase
   alias Kleened.Core.{Container, Image, Exec, Utils, MetaData}
-  alias Kleened.API.Schemas.WebSocketMessage, as: Msg
   alias Kleened.API.Schemas
 
   @moduletag :capture_log
@@ -69,11 +68,10 @@ defmodule ContainerTest do
       })
 
     {:ok, exec_id} = Exec.create(container.id)
+    config = %{exec_id: exec_id, attach: false, start_container: true}
 
-    [{1001, %Msg{message: reason, msg_type: "closing"}}] =
-      TestHelper.exec_start_sync(exec_id, %{attach: false, start_container: true})
-
-    assert reason == "succesfully started execution instance in detached mode"
+    assert "succesfully started execution instance in detached mode" ==
+             TestHelper.valid_execution(config)
 
     {:ok, ^container_id} = Container.remove(container_id)
   end
@@ -250,11 +248,8 @@ defmodule ContainerTest do
     {:ok, exec_id} = Exec.create(container_id)
     stop_msg = "executable #{exec_id} and its container exited with exit-code 0"
 
-    assert [
-             "FreeBSD\n",
-             {1000, %Msg{data: "", message: stop_msg, msg_type: "closing"}}
-           ] ==
-             TestHelper.exec_start_sync(exec_id, %{attach: true, start_container: true})
+    assert {stop_msg, ["FreeBSD\n"]} ==
+             TestHelper.valid_execution(%{exec_id: exec_id, attach: true, start_container: true})
 
     start_n_attached_containers_and_receive_output(container_id, number_of_starts - 1)
   end

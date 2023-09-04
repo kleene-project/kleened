@@ -42,7 +42,7 @@ defmodule Kleened.API.ExecStartWebSocket do
   end
 
   def websocket_handle({:text, message_raw}, %{handshaking: true} = state) do
-    case Jason.decode(message_raw) do
+    case Jason.decode(message_raw, keys: :atoms!) do
       {:ok, message} ->
         case Cast.cast(Schemas.ExecStartConfig.schema(), message) do
           {:ok, %{exec_id: exec_id, attach: attach, start_container: start_container}} ->
@@ -51,23 +51,25 @@ defmodule Kleened.API.ExecStartWebSocket do
             case {result, attach} do
               {:ok, true} ->
                 Logger.debug("succesfully started executable #{exec_id}. Await output.")
-                {[{:text, Utils.starting_message()}], %State{state | handshaking: false}}
+                state = %State{state | handshaking: false, exec_id: exec_id}
+                {[{:text, Utils.starting_message()}], state}
 
               {:ok, false} ->
                 Logger.debug("succesfully started executable #{exec_id}. Closing websocket.")
+                msg = "succesfully started execution instance in detached mode"
+                {[{:close, 1001, Utils.closing_message(msg)}], state}
 
-                closing =
-                  Utils.closing_message("succesfully started execution instance in detached mode")
-
-                {[{:close, 1001, closing}], state}
-
-              {:error, reason} ->
+              {{:error, reason}, _} ->
                 Logger.debug("could not start attached executable #{exec_id}: #{reason}")
-                error = Utils.error_message(reason)
-                {[{:close, 1011, error}], state}
+                error = Utils.error_message("error starting exec instance")
+
+                {[
+                   {:text, "error: #{reason}"},
+                   {:close, 1011, error}
+                 ], state}
             end
 
-          {:error, openapispex_error} ->
+          {:error, [openapispex_error | _rest]} ->
             error_message = Cast.Error.message(openapispex_error)
 
             error = Utils.error_message("invalid parameters: #{error_message}")
@@ -81,7 +83,7 @@ defmodule Kleened.API.ExecStartWebSocket do
   end
 
   def websocket_handle({:text, message}, %{exec_id: exec_id, handshaking: false} = state) do
-    Exec.send(exec_id, message)
+    :ok = Exec.send(exec_id, message)
     {:ok, state}
   end
 

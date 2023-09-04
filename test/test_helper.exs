@@ -136,9 +136,8 @@ defmodule TestHelper do
   end
 
   def exec_start(exec_id, config) do
-    {:ok, stream_ref, conn} = initialize_websocket("/exec/#{exec_id}/start")
-
     config = Map.put(config, :exec_id, exec_id)
+    {:ok, stream_ref, conn} = initialize_websocket("/exec/start")
     send_data(conn, stream_ref, Jason.encode!(config))
 
     case config.attach do
@@ -158,9 +157,32 @@ defmodule TestHelper do
     {:ok, stream_ref, conn}
   end
 
-  def exec_start_sync(exec_id, config) do
-    {:ok, _stream_ref, conn} = exec_start(exec_id, config)
-    receive_frames(conn)
+  def valid_execution(%{attach: true} = config) do
+    [msg_json | rest] = exec_start_raw(config)
+
+    assert {:ok, %Msg{data: "", message: "", msg_type: "starting"}} ==
+             Cast.cast(Msg.schema(), Jason.decode!(msg_json, keys: :atoms!))
+
+    {{1000, %Msg{msg_type: "closing", message: closing_msg}}, process_output} =
+      List.pop_at(rest, -1)
+
+    {closing_msg, process_output}
+  end
+
+  def valid_execution(%{attach: false} = config) do
+    [{1001, %Msg{msg_type: "closing", message: closing_msg}}] = exec_start_raw(config)
+    closing_msg
+  end
+
+  def exec_start_raw(config) do
+    case initialize_websocket("/exec/start") do
+      {:ok, stream_ref, conn} ->
+        send_data(conn, stream_ref, Jason.encode!(config))
+        receive_frames(conn)
+
+      error_msg ->
+        error_msg
+    end
   end
 
   def exec_stop(api_spec, exec_id, %{
@@ -182,13 +204,13 @@ defmodule TestHelper do
 
   def image_invalid_build(config) do
     config = Map.merge(%{quiet: false, cleanup: true}, config)
-    build_log_raw = image_build(config)
+    build_log_raw = image_build_raw(config)
     process_failed_buildlog(build_log_raw)
   end
 
   def image_valid_build(config) do
     config = Map.merge(%{quiet: false, cleanup: true}, config)
-    build_log_raw = image_build(config)
+    build_log_raw = image_build_raw(config)
     {image_id, build_id, build_log} = process_buildlog(build_log_raw)
     image = MetaData.get_image(image_id)
     {image, build_id, build_log}
@@ -206,7 +228,7 @@ defmodule TestHelper do
     {image_id, build_id, build_log}
   end
 
-  def image_build(config) do
+  def image_build_raw(config) do
     case initialize_websocket("/images/build") do
       {:ok, stream_ref, conn} ->
         send_data(conn, stream_ref, Jason.encode!(config))

@@ -56,15 +56,15 @@ defmodule ImageTest do
   test "parsing some invalid input to the image builder" do
     # Using string instead of boolean in parameter 'quiet'
     assert ["Invalid boolean. Got: string", {1002, %Message{message: "invalid parameters"}}] =
-             TestHelper.image_build(%{context: "./", quiet: "lol"})
+             TestHelper.image_build_raw(%{context: "./", quiet: "lol"})
 
     # Omitting only necessary parameter 'context'
     assert ["Missing field: context", {1002, %Message{message: "invalid parameters"}}] =
-             TestHelper.image_build(%{dockerfile: "Dockerfile"})
+             TestHelper.image_build_raw(%{dockerfile: "Dockerfile"})
 
     # Using invalid buildargs-input
     assert ["Invalid object. Got: string", {1002, %Message{message: "invalid parameters"}}] =
-             TestHelper.image_build(%{context: "./", buildargs: "should-be-JSON"})
+             TestHelper.image_build_raw(%{context: "./", buildargs: "should-be-JSON"})
   end
 
   test "create an image with a 'RUN' instruction" do
