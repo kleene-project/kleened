@@ -112,7 +112,7 @@ defmodule Kleened.Core.ImageCreate do
   end
 
   defp fetch_file_from_url(url, output_file, receiver) do
-    port = OS.cmd_async(["/usr/bin/fetch", url, "-o", output_file])
+    port = OS.cmd_async(["/usr/bin/fetch", url, "-o", output_file], true)
 
     case process_messages(port, receiver) do
       :ok -> :ok
