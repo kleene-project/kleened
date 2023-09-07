@@ -12,7 +12,12 @@ defmodule Kleened.API.ImageBuild do
   def open_api_operation(_) do
     %Operation{
       summary: "image build",
-      description: "make a description of the websocket endpoint here.",
+      description: """
+      #{Utils.general_websocket_description()}
+
+      * The `data` field in the starting-message contains the `build_id`.
+      * If the build process is successful, the `data` field in the closing-message contains the `image_id`.
+      """,
       operationId: "ImageBuild",
       requestBody:
         request_body(

@@ -16,7 +16,15 @@ defmodule Kleened.API.ExecStartWebSocket do
     %Operation{
       # tags: ["users"],
       summary: "exec start",
-      description: "make a description of the websocket endpoint here.",
+      description: """
+      #{Utils.general_websocket_description()}
+
+      * The starting-message does not have any content.
+      * If the exec-instance is started with `attach: false` the starting-message is followed by a
+        Close frame with Close Code 1001.
+      * When the executed process exits the closing-message in the Close frame tells wether the
+        entire container has been stopped or just the exec-instance.
+      """,
       operationId: "ExecStartWebSocket",
       requestBody:
         request_body(
@@ -26,8 +34,7 @@ defmodule Kleened.API.ExecStartWebSocket do
           required: true
         ),
       responses: %{
-        200 => response("no error", "application/json", Schemas.WebSocketMessage),
-        400 => response("no error", "application/json", Schemas.WebSocketMessage)
+        200 => response("no error", "application/json", Schemas.WebSocketMessage)
       }
     }
   end

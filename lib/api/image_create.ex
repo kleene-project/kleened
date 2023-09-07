@@ -12,7 +12,13 @@ defmodule Kleened.API.ImageCreate do
   def open_api_operation(_) do
     %Operation{
       summary: "image create",
-      description: "make a description of the websocket endpoint here.",
+      description: """
+      #{Utils.general_websocket_description()}
+
+      * The starting-message does not have any content.
+      * If the image creation process finishes succesfully, the ID of the newly built image is stored in the
+        `data` field of the closing-message.
+      """,
       operationId: "ImageCreate",
       requestBody:
         request_body(

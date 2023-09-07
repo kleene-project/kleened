@@ -171,17 +171,38 @@ defmodule Kleened.API.Schemas do
 
   defmodule ImageBuildConfig do
     OpenApiSpex.schema(%{
-      description: "make a description of the websocket endpoint here.",
+      description: "Configuration for an image build.",
       type: :object,
       properties: %{
-        context: %Schema{type: :string, description: "description here"},
-        dockerfile: %Schema{type: :string, description: "description here", default: "Dockerfile"},
-        quiet: %Schema{type: :boolean, description: "description here", default: false},
-        cleanup: %Schema{type: :boolean, description: "description here", default: true},
-        tag: %Schema{type: :string, description: "description here", default: ""},
+        context: %Schema{
+          type: :string,
+          description: "Path on the Kleened host of the context that is used for the build."
+        },
+        dockerfile: %Schema{
+          type: :string,
+          description:
+            "Path of the Dockerfile used for the build. The path is relative to the context path.",
+          default: "Dockerfile"
+        },
+        quiet: %Schema{
+          type: :boolean,
+          description: "Whether or not to emit status messages of the build process.",
+          default: false
+        },
+        cleanup: %Schema{
+          type: :boolean,
+          description: "Whether or not to cleanup the build-container in case of failure.",
+          default: true
+        },
+        tag: %Schema{
+          type: :string,
+          description:
+            "A name and optional tag to apply to the image in the name:tag format. If you omit the tag the default latest value is assumed.",
+          default: ""
+        },
         buildargs: %Schema{
           description:
-            "Object of string pairs for build-time variables. Users pass these values at build-time. Kleened uses the buildargs as the environment context for commands run via the Dockerfile RUN instruction, or for variable expansion in other Dockerfile instructions. This is not meant for passing secret values.",
+            "Object of string pairs for build-time ARG-variables. Kleened uses the buildargs as the environment variables for, e.g., the RUN instruction, or for variable expansion in other Dockerfile instructions. This is not meant for passing secret values.",
           type: :object,
           default: %{},
           example: %{"USERNAME" => "Stephen", "JAIL_MGMT_ENGINE" => "kleene"}
@@ -198,31 +219,31 @@ defmodule Kleened.API.Schemas do
       required: [:method],
       properties: %{
         tag: %Schema{
-          description: "Name and optionally a tag in the 'name:tag' format",
+          description: "Name and optionally a tag in the `name:tag` format",
           type: :string,
           default: ""
         },
         method: %Schema{
           description:
-            "Method used for creating a new base image: If 'fetch' is selected, kleened will fetch a release/snapshot of the base system and use it for image creation. When 'zfs' is used, a copy of the supplied zfs dataset is used for the image.",
+            "Method used for creating a new base image: If `\"fetch\"` is selected, kleened will fetch a release/snapshot of the base system and use it for image creation. When `\"zfs\"` is used, a copy of the supplied zfs dataset is used for the image.",
           type: :string,
           enum: ["fetch", "zfs"]
         },
         zfs_dataset: %Schema{
           description:
-            "Dataset path on the host used for the image (required for method 'zfs' only).",
+            "Dataset path on the host used for the image (required for method `\"zfs\"` only).",
           type: :string,
           default: ""
         },
         url: %Schema{
           description:
-            "URL to a remote location where the base system (as a base.txz file) is stored. If an empty string is supplied kleened will try to fetch a version of the base sytem from download.freebsd.org using information from uname(1) (required for method 'fetch').",
+            "URL to a remote location where the base system (as a base.txz file) is stored. If an empty string is supplied kleened will try to fetch a version of the base sytem from download.freebsd.org using information from `uname(1)` (required for method 'fetch').",
           type: :string,
           default: ""
         },
         force: %Schema{
           description:
-            "Ignore any discrepancies detected when using uname(1) to fetch the base system (method 'fetch' only).",
+            "Ignore any discrepancies detected when using `uname(1)` to fetch the base system (method `\"fetch\"` only).",
           type: :boolean,
           default: false
         }
@@ -434,24 +455,28 @@ defmodule Kleened.API.Schemas do
       type: :object,
       properties: %{
         msg_type: %Schema{
-          description:
-            "Any data that might have been created in pre-processing (e.g., a build_id).",
-          type: :string
+          description: "Which type of message.",
+          type: :string,
+          enum: ["starting", "closing", "error"]
         },
         message: %Schema{
-          description:
-            "Any data that might have been created in pre-processing (e.g., a build_id).",
+          description: "A useful message to tell the client what has happened.",
           type: :string,
           default: ""
         },
         data: %Schema{
           description:
-            "Any data that might have been created in pre-processing (e.g., a build_id).",
+            "Any data that might have been created by the process such as an image id.",
           type: :string,
           default: ""
         }
       },
-      required: [:msg_type, :message, :data]
+      required: [:msg_type, :message, :data],
+      example: %{
+        msg_type: "closing",
+        message: "succesfully started execution instance in detached mode",
+        data: ""
+      }
     })
   end
 
