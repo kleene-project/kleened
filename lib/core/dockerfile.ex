@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Dockerfile do
-  import String, only: [replace: 3, split: 2, split: 3, trim: 1, to_integer: 1]
+  import String, only: [replace: 3, split: 2, split: 3, trim: 1]
   require Logger
 
   def parse(dockerfile) do
@@ -43,6 +43,9 @@ defmodule Kleened.Core.Dockerfile do
 
     instr =
       case {instruction, args} do
+        {"FROM", args} ->
+          decode_from_args(args)
+
         {"USER", user} ->
           {:user, trim(user)}
 
@@ -52,11 +55,14 @@ defmodule Kleened.Core.Dockerfile do
         {"ARG", arg_var} ->
           {:arg, clean_argvar(arg_var)}
 
+        {"WORKDIR", workdir} ->
+          {:workdir, workdir}
+
         {"RUN", <<"[", _::binary>> = json_cmd} ->
-          {:run, json_decode(json_cmd)}
+          {:run, {:exec_form, json_decode(json_cmd)}}
 
         {"RUN", shellform} ->
-          {:run, ["/bin/sh", "-c", shellform]}
+          {:run, {:shell_form, ["/bin/sh", "-c", shellform]}}
 
         {"CMD", <<"[", _::binary>> = json_cmd} ->
           {:cmd, json_decode(json_cmd)}
@@ -69,15 +75,6 @@ defmodule Kleened.Core.Dockerfile do
 
         {"COPY", args} ->
           {:copy, split(args, " ")}
-
-        {"EXPOSE", port} ->
-          {:expose, to_integer(port)}
-
-        {"FROM", args} ->
-          decode_from_args(args)
-
-        {"VOLUME", args} ->
-          {:volume, args}
 
         _unknown_instruction ->
           Logger.debug("Invalid instruction: #{instruction_line}")

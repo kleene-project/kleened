@@ -16,6 +16,7 @@ defmodule Kleened.Core.Image do
               instructions: nil,
               total_steps: nil,
               container: nil,
+              workdir: nil,
               cleanup: true,
               quiet: false
   end
@@ -43,18 +44,19 @@ defmodule Kleened.Core.Image do
         state = %State{
           build_id: build_id,
           context: context_path,
-          quiet: quiet,
-          cleanup: cleanup,
           image_name: name,
           image_tag: tag,
-          container: %Schemas.Container{env: []},
           network: buildnet.id,
           buildargs_supplied: buildargs,
           buildargs_collected: [],
           msg_receiver: self(),
           current_step: 1,
           instructions: instructions,
-          total_steps: length(instructions)
+          total_steps: length(instructions),
+          container: %Schemas.Container{env: []},
+          workdir: "/",
+          cleanup: cleanup,
+          quiet: quiet
         }
 
         pid = Process.spawn(fn -> process_instructions(state) end, [:link])
@@ -182,6 +184,30 @@ defmodule Kleened.Core.Image do
     environment_replacement(user, on_succes, state)
   end
 
+  defp process_instructions(%State{instructions: [{line, {:workdir, workdir}} | _rest]} = state) do
+    Logger.info("Processing instruction: WORKDIR #{inspect(workdir)}")
+    state = send_status(line, state)
+
+    new_workdir =
+      case String.starts_with?(workdir, "/") do
+        true -> workdir
+        false -> Path.join(state.workdir, workdir)
+      end
+
+    exit_code =
+      execute_cmd(
+        %Schemas.ExecConfig{
+          container_id: state.container.id,
+          cmd: ["/bin/mkdir", "-p", new_workdir],
+          env: [],
+          user: "root"
+        },
+        state
+      )
+
+    validate_result_and_continue_if_valid(exit_code, %State{state | workdir: new_workdir})
+  end
+
   defp process_instructions(
          %State{instructions: [{line, {:cmd, cmd}} | rest], container: container} = state
        ) do
@@ -201,6 +227,8 @@ defmodule Kleened.Core.Image do
     Logger.info("Processing instruction: RUN #{inspect(cmd)}")
     state = send_status(line, state)
 
+    cmd = adapt_run_command_to_workdir(cmd, state.workdir)
+
     config = %Schemas.ExecConfig{
       container_id: container.id,
       cmd: cmd,
@@ -219,7 +247,7 @@ defmodule Kleened.Core.Image do
     case environment_replacementsrc_dest(src_dest, [], state) do
       {:ok, src_and_dest} ->
         src_and_dest = wildcard_expand_srcs(src_and_dest, state)
-        src_and_dest = convert_paths_to_jail_context_dir(src_and_dest)
+        src_and_dest = convert_paths_to_jail_context_dir_and_workdir(src_and_dest, state.workdir)
 
         context_in_jail = create_context_dir_in_jail(state.context, state.container)
 
@@ -443,6 +471,19 @@ defmodule Kleened.Core.Image do
     end
   end
 
+  defp adapt_run_command_to_workdir(cmd, workdir) do
+    case {cmd, workdir} do
+      {{_cmd_type, cmd}, "/"} ->
+        cmd
+
+      {{:shell_form, ["/bin/sh", "-c", cmd]}, workdir} ->
+        ["/bin/sh", "-c", "cd #{workdir} && #{cmd}"]
+
+      {{:exec_form, cmd}, _} ->
+        cmd
+    end
+  end
+
   defp create_context_dir_in_jail(context, %Schemas.Container{layer_id: layer_id}) do
     %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     context_in_jail = Path.join(mountpoint, "/kleene_temporary_context_store")
@@ -467,8 +508,9 @@ defmodule Kleened.Core.Image do
     Enum.reverse([dest | expanded_sources])
   end
 
-  defp convert_paths_to_jail_context_dir(srcdest) do
+  defp convert_paths_to_jail_context_dir_and_workdir(srcdest, workdir) do
     {dest, relative_sources} = List.pop_at(srcdest, -1)
+    dest = Path.join(workdir, dest)
 
     absolute_sources =
       Enum.map(relative_sources, fn src -> Path.join("/kleene_temporary_context_store", src) end)

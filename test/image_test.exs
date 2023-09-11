@@ -86,6 +86,87 @@ defmodule ImageTest do
     assert File.read(Path.join(mountpoint, "/root/test_1.txt")) == {:ok, "lol1\n"}
   end
 
+  test "verify 'WORKDIR' behaviour: Absolute path and auto-creation" do
+    dockerfile = """
+    FROM scratch
+    # Create directory and test RUN-instruction
+    WORKDIR /testdir
+    RUN pwd
+    RUN echo "lol" > testfile
+
+    # Use existing directory and test COPY-instruction
+    WORKDIR /home/
+    RUN pwd
+    COPY test.txt .
+    """
+
+    context = create_test_context("test_copy_instruction")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    config = %{
+      context: context,
+      dockerfile: @tmp_dockerfile,
+      tag: "test:latest"
+    }
+
+    {%Schemas.Image{layer_id: layer_id}, _build_id, build_log} =
+      TestHelper.image_valid_build(config)
+
+    expected_log = [
+      "Step 1/7 : FROM scratch\n",
+      "Step 2/7 : WORKDIR /testdir\n",
+      "Step 3/7 : RUN pwd\n",
+      "/testdir\n",
+      "Step 4/7 : RUN echo \"lol\" > testfile\n",
+      "Step 5/7 : WORKDIR /home/\n",
+      "Step 6/7 : RUN pwd\n",
+      "/home\n",
+      "Step 7/7 : COPY test.txt .\n"
+    ]
+
+    assert expected_log == build_log
+    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
+    assert File.read(Path.join(mountpoint, "/testdir/testfile")) == {:ok, "lol\n"}
+    assert File.read(Path.join(mountpoint, "/home/test.txt")) == {:ok, "lol\n"}
+  end
+
+  test "verify 'WORKDIR' behaviour: Relative path" do
+    dockerfile = """
+    FROM scratch
+    WORKDIR /a
+    WORKDIR b
+    WORKDIR c
+    RUN pwd
+    WORKDIR /home
+    RUN pwd
+    """
+
+    context = create_test_context("test_copy_instruction")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    config = %{
+      context: context,
+      dockerfile: @tmp_dockerfile,
+      tag: "test:latest"
+    }
+
+    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
+
+    expected_log = [
+      "Step 1/7 : FROM scratch\n",
+      "Step 2/7 : WORKDIR /a\n",
+      "Step 3/7 : WORKDIR b\n",
+      "Step 4/7 : WORKDIR c\n",
+      "Step 5/7 : RUN pwd\n",
+      "/a/b/c\n",
+      "Step 6/7 : WORKDIR /home\n",
+      "Step 7/7 : RUN pwd\n",
+      "/home\n"
+    ]
+
+    assert expected_log == build_log
+  end
+
   test "create an image with a 'COPY' instruction" do
     dockerfile = """
     FROM scratch
