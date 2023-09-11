@@ -223,16 +223,33 @@ defmodule Kleened.Core.Image do
 
         context_in_jail = create_context_dir_in_jail(state.context, state.container)
 
+        # Create <dest> directory if it does not exist
+        dest = List.last(src_and_dest)
+
         config = %Schemas.ExecConfig{
           container_id: state.container.id,
-          cmd: ["/bin/cp", "-R" | src_and_dest],
+          cmd: ["/bin/mkdir", "-p", dest],
           env: [],
           user: "root"
         }
 
-        exit_code = execute_cmd(config, state)
-        unmount_context(context_in_jail)
-        validate_result_and_continue_if_valid(exit_code, state)
+        case execute_cmd(config, state) do
+          0 ->
+            # Create <dest> directory if it does not exist
+            config = %Schemas.ExecConfig{
+              container_id: state.container.id,
+              cmd: ["/bin/cp", "-R" | src_and_dest],
+              env: [],
+              user: "root"
+            }
+
+            exit_code = execute_cmd(config, state)
+            unmount_context(context_in_jail)
+            validate_result_and_continue_if_valid(exit_code, state)
+
+          _ ->
+            handle_failed_execution(state)
+        end
 
       :failed ->
         send_substitution_failure_and_cleanup(state)
@@ -285,14 +302,17 @@ defmodule Kleened.Core.Image do
     {:ok, Enum.reverse(evaluated)}
   end
 
-  defp validate_result_and_continue_if_valid(0, %State{instructions: [_ | rest]} = state) do
-    process_instructions(%State{state | instructions: rest})
+  defp validate_result_and_continue_if_valid(exit_code, %State{instructions: [_ | rest]} = state) do
+    cond do
+      exit_code == 0 ->
+        process_instructions(%State{state | instructions: rest})
+
+      true ->
+        handle_failed_execution(state)
+    end
   end
 
-  defp validate_result_and_continue_if_valid(
-         _nonzero_exit_code,
-         %State{instructions: [{_line, _instruction} | _]} = state
-       ) do
+  defp handle_failed_execution(state) do
     send_msg(
       state.msg_receiver,
       {:image_build_failed, "executing instruction resulted in non-zero exit code"}

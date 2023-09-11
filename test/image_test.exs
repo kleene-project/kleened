@@ -109,6 +109,29 @@ defmodule ImageTest do
     assert MetaData.list_containers() == []
   end
 
+  test "create an image with a 'COPY' instruction where <dest> does exist yet" do
+    dockerfile = """
+    FROM scratch
+    COPY test.txt /root/lol/
+    """
+
+    context = create_test_context("test_copy_instruction")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    config = %{
+      context: context,
+      dockerfile: @tmp_dockerfile,
+      tag: "test:latest"
+    }
+
+    {%Schemas.Image{layer_id: layer_id}, _build_id, _build_log} =
+      TestHelper.image_valid_build(config)
+
+    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
+    assert File.read(Path.join(mountpoint, "root/lol/test.txt")) == {:ok, "lol\n"}
+    assert MetaData.list_containers() == []
+  end
+
   test "create an image with a wildcard-expandable 'COPY' instruction" do
     dockerfile = """
     FROM scratch
