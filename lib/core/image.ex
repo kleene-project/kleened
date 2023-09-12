@@ -405,8 +405,8 @@ defmodule Kleened.Core.Image do
     merge_buildargs(args_supplied, args_collected)
   end
 
-  defp merge_buildargs([buildarg | rest], args_collected) when is_map(args_collected) do
-    [name, value] = String.split(buildarg, "=", parts: 2)
+  defp merge_buildargs([arg_supplied | rest], args_collected) when is_map(args_collected) do
+    [name, value] = String.split(arg_supplied, "=", parts: 2)
 
     args =
       case Map.has_key?(args_collected, name) do

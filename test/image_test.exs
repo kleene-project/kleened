@@ -288,31 +288,32 @@ defmodule ImageTest do
     Kleened.Core.Container.remove(container.id)
   end
 
-  test "create an image with 'ENV' instructions" do
+  test "create an image with 'ENV' instructions using basic notations" do
     dockerfile = """
     FROM scratch
-    ENV TEST=lol
-    ENV TEST2="lool test"
-    CMD  /bin/ls
+    ENV TEST1=lol
+    ENV TEST2="testing test"
+    ENV TEST3=test\ test
+    RUN  printenv
     """
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {image, _build_id, _build_log} =
+    {image, _build_id, build_log} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
         tag: "test:latest"
       })
 
-    assert Enum.sort(image.env) == ["TEST2=lool test", "TEST=lol"]
+    assert List.last(build_log) == "PWD=/\nTEST1=lol\nTEST2=testing test\nTEST3=test test\n"
+    assert Enum.sort(image.env) == ["TEST1=lol", "TEST2=testing test", "TEST3=test test"]
   end
 
-  test "create an image with a quoted and escaped instruction" do
+  test "create an image with a quoted and escaped ENV-instruction" do
     dockerfile = """
     FROM scratch
     ENV TEST="\\$5\\$2Fun7BK4thgtd4ao\\$j1kidg9P"
-    CMD  /bin/ls
     """
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
@@ -327,7 +328,7 @@ defmodule ImageTest do
     assert Enum.sort(image.env) == ["TEST=$5$2Fun7BK4thgtd4ao$j1kidg9P"]
   end
 
-  test "verify that RUN instructions uses the environment variables set earlier in the Dockerfile" do
+  test "verify that RUN instructions uses the ENV variables set earlier in the Dockerfile" do
     dockerfile = """
     FROM scratch
     ENV TEST=testvalue
@@ -434,13 +435,83 @@ defmodule ImageTest do
     assert expected_build_log.("newval1:newval2") == build_log
   end
 
-  test "create arg-variable and use with ENV-instruction", %{api_spec: api_spec} do
+  test "test precedenice ARG-variable definition: Client vs. Dockerfile" do
     dockerfile = """
     FROM scratch
-    ARG TESTVAR="use at runtime"
-    ENV TESTENVVAR=$TESTVAR
-    CMD echo -n $TESTENVVAR
+    USER ${username:-ntpd}
+    ARG username
+    RUN whoami
+    USER $username
+    RUN whoami
     """
+
+    expected_build_log = [
+      "Step 1/6 : FROM scratch\n",
+      "Step 2/6 : USER ${username:-ntpd}\n",
+      "Step 3/6 : ARG username\n",
+      "Step 4/6 : RUN whoami\n",
+      "ntpd\n",
+      "Step 5/6 : USER $username\n",
+      "Step 6/6 : RUN whoami\n",
+      "games\n"
+    ]
+
+    config = %{
+      context: @tmp_context,
+      dockerfile: @tmp_dockerfile,
+      tag: "test:latest",
+      buildargs: %{"username" => "games"}
+    }
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
+    assert expected_build_log == build_log
+  end
+
+  test "test that ENV-instruction always override an ARG-instruction" do
+    dockerfile = """
+    FROM scratch
+    ARG CONT_IMG_VER
+    ENV CONT_IMG_VER=v1.0.0
+    RUN echo $CONT_IMG_VER
+    """
+
+    expected_build_log = [
+      "Step 1/4 : FROM scratch\n",
+      "Step 2/4 : ARG CONT_IMG_VER\n",
+      "Step 3/4 : ENV CONT_IMG_VER=v1.0.0\n",
+      "Step 4/4 : RUN echo $CONT_IMG_VER\n",
+      "v1.0.0\n"
+    ]
+
+    config = %{
+      context: @tmp_context,
+      dockerfile: @tmp_dockerfile,
+      tag: "test:latest",
+      buildargs: %{"CONT_IMG_VER" => "v2.0.1"}
+    }
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
+    assert expected_build_log == build_log
+  end
+
+  test "Test ARG-variable persistence using ENV-variable and CMD environement substitution", %{
+    api_spec: api_spec
+  } do
+    dockerfile = """
+    FROM scratch
+    ARG CONT_IMG_VER
+    ENV CONT_IMG_VER=${CONT_IMG_VER:-v1.0.0}
+    CMD echo $CONT_IMG_VER
+    """
+
+    expected_build_log = [
+      "Step 1/4 : FROM scratch\n",
+      "Step 2/4 : ARG CONT_IMG_VER\n",
+      "Step 3/4 : ENV CONT_IMG_VER=${CONT_IMG_VER:-v1.0.0}\n",
+      "Step 4/4 : CMD echo $CONT_IMG_VER\n"
+    ]
 
     config = %{
       context: @tmp_context,
@@ -448,26 +519,31 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    expected_build_log = [
-      "Step 1/4 : FROM scratch\n",
-      "Step 2/4 : ARG TESTVAR=\"use at runtime\"\n",
-      "Step 3/4 : ENV TESTENVVAR=$TESTVAR\n",
-      "Step 4/4 : CMD echo -n $TESTENVVAR\n"
-    ]
-
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {%Schemas.Image{id: image_id}, _build_id, build_log} = TestHelper.image_valid_build(config)
+    # Build and run _without_ supplied buildarg
+    {image, _build_id, build_log} = TestHelper.image_valid_build(config)
     assert expected_build_log == build_log
 
-    config = %{image: image_id}
-    {container, exec_id} = TestHelper.container_start_attached(api_spec, "test-arg2env", config)
-    assert TestHelper.collect_container_output(exec_id) == "use at runtime"
+    {container, exec_id} =
+      TestHelper.container_start_attached(api_spec, "test-arg2env", %{image: image.id})
+
+    assert TestHelper.collect_container_output(exec_id) == "v1.0.0\n"
+    Kleened.Core.Container.remove(container.id)
+
+    # Build and run _with_ supplied buildarg
+    config = Map.put(config, :buildargs, %{"CONT_IMG_VER" => "v.2.0.1"})
+    {image, _build_id, build_log} = TestHelper.image_valid_build(config)
+    assert expected_build_log == build_log
+
+    {container, exec_id} =
+      TestHelper.container_start_attached(api_spec, "test-arg2env", %{image: image.id})
+
+    assert TestHelper.collect_container_output(exec_id) == "v.2.0.1\n"
     Kleened.Core.Container.remove(container.id)
   end
 
   test "invalid ENV and ARG variable names" do
-    # FIXME: Hertil: sudo mix test --seed 0 --trace --max-failures 1 test/image_test.exs:365
     dockerfile = """
     FROM scratch
     ARG TEST-VAR="this should fail"
