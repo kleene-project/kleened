@@ -92,26 +92,7 @@ defmodule Kleened.Core.MetaData do
       end
 
     create_tables(db)
-    on_start = Agent.start_link(fn -> db end, name: __MODULE__)
-
-    base_layer = %Layer{
-      id: "base",
-      dataset: Config.get("base_layer_dataset"),
-      snapshot: Config.get("base_layer_snapshot"),
-      mountpoint: ""
-    }
-
-    base_image = %Schemas.Image{
-      id: "base",
-      layer_id: "base",
-      name: "",
-      tag: "",
-      user: "root"
-    }
-
-    add_layer(base_layer)
-    add_image(base_image)
-    on_start
+    Agent.start_link(fn -> db end, name: __MODULE__)
   end
 
   def stop() do

@@ -17,6 +17,8 @@ ExUnit.configure(
   max_failures: 1
 )
 
+TestInitialization.create_test_base_image()
+
 defmodule TestHelper do
   import ExUnit.Assertions
   use Plug.Test

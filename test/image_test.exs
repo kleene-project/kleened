@@ -20,7 +20,7 @@ defmodule ImageTest do
 
   test "building a simple image that generates some text", %{api_spec: api_spec} do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     RUN echo "lets test that we receives this!"
     RUN uname
     """
@@ -36,7 +36,7 @@ defmodule ImageTest do
     {%Schemas.Image{id: image_id}, _build_id, build_log} = TestHelper.image_valid_build(config)
 
     assert build_log == [
-             "Step 1/3 : FROM scratch\n",
+             "Step 1/3 : FROM FreeBSD:testing\n",
              "Step 2/3 : RUN echo \"lets test that we receives this!\"\n",
              "lets test that we receives this!\n",
              "Step 3/3 : RUN uname\n",
@@ -69,7 +69,7 @@ defmodule ImageTest do
 
   test "create an image with a 'RUN' instruction" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     RUN echo "lol1" > /root/test_1.txt
     """
 
@@ -88,7 +88,7 @@ defmodule ImageTest do
 
   test "verify 'WORKDIR' behaviour: Absolute path and auto-creation" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     # Create directory and test RUN-instruction
     WORKDIR /testdir
     RUN pwd
@@ -113,7 +113,7 @@ defmodule ImageTest do
       TestHelper.image_valid_build(config)
 
     expected_log = [
-      "Step 1/7 : FROM scratch\n",
+      "Step 1/7 : FROM FreeBSD:testing\n",
       "Step 2/7 : WORKDIR /testdir\n",
       "Step 3/7 : RUN pwd\n",
       "/testdir\n",
@@ -132,7 +132,7 @@ defmodule ImageTest do
 
   test "verify 'WORKDIR' behaviour: Relative path" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     WORKDIR /a
     WORKDIR b
     WORKDIR c
@@ -153,7 +153,7 @@ defmodule ImageTest do
     {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
 
     expected_log = [
-      "Step 1/7 : FROM scratch\n",
+      "Step 1/7 : FROM FreeBSD:testing\n",
       "Step 2/7 : WORKDIR /a\n",
       "Step 3/7 : WORKDIR b\n",
       "Step 4/7 : WORKDIR c\n",
@@ -169,7 +169,7 @@ defmodule ImageTest do
 
   test "create an image with a 'COPY' instruction" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     COPY test.txt /root/
     """
 
@@ -192,7 +192,7 @@ defmodule ImageTest do
 
   test "create an image with a 'COPY' instruction where <dest> does exist yet" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     COPY test.txt /root/lol/
     """
 
@@ -215,7 +215,7 @@ defmodule ImageTest do
 
   test "create an image with a wildcard-expandable 'COPY' instruction" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     COPY *.txt /root/
     """
 
@@ -239,7 +239,7 @@ defmodule ImageTest do
 
   test "create an image with a 'COPY' instruction using symlinks" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     RUN mkdir /etc/testdir
     RUN ln -s /etc/testdir /etc/symbolic_testdir
     COPY test.txt /etc/symbolic_testdir/
@@ -264,7 +264,7 @@ defmodule ImageTest do
 
   test "create an image with a 'CMD' instruction", %{api_spec: api_spec} do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     CMD  echo -n "lol"
     """
 
@@ -290,7 +290,7 @@ defmodule ImageTest do
 
   test "create an image with 'ENV' instructions using basic notations" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ENV TEST1=lol
     ENV TEST2="testing test"
     ENV TEST3=test\ test
@@ -312,7 +312,7 @@ defmodule ImageTest do
 
   test "create an image with a quoted and escaped ENV-instruction" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ENV TEST="\\$5\\$2Fun7BK4thgtd4ao\\$j1kidg9P"
     """
 
@@ -330,7 +330,7 @@ defmodule ImageTest do
 
   test "verify that RUN instructions uses the ENV variables set earlier in the Dockerfile" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ENV TEST=testvalue
     RUN printenv
     ENV TEST="a new test value for TEST"
@@ -349,7 +349,7 @@ defmodule ImageTest do
       })
 
     expected_build_log = [
-      "Step 1/7 : FROM scratch\n",
+      "Step 1/7 : FROM FreeBSD:testing\n",
       "Step 2/7 : ENV TEST=testvalue\n",
       "Step 3/7 : RUN printenv\n",
       "PWD=/\nTEST=testvalue\n",
@@ -366,7 +366,7 @@ defmodule ImageTest do
 
   test "create image with ARG-variable without an explicit default value, thus empty string" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ARG testvar
     RUN echo "lol:$testvar"
     RUN echo "lol:${testvar:-empty}"
@@ -380,7 +380,7 @@ defmodule ImageTest do
 
     expected_build_log = fn x, y ->
       [
-        "Step 1/4 : FROM scratch\n",
+        "Step 1/4 : FROM FreeBSD:testing\n",
         "Step 2/4 : ARG testvar\n",
         "Step 3/4 : RUN echo \"lol:\$testvar\"\n",
         "#{x}\n",
@@ -402,7 +402,7 @@ defmodule ImageTest do
 
   test "create image with ARG-variable with default value" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ARG testvar1=testval1
     ARG testvar2="test val2"
     RUN echo "$testvar1:$testvar2"
@@ -416,7 +416,7 @@ defmodule ImageTest do
 
     expected_build_log = fn x ->
       [
-        "Step 1/4 : FROM scratch\n",
+        "Step 1/4 : FROM FreeBSD:testing\n",
         "Step 2/4 : ARG testvar1=testval1\n",
         "Step 3/4 : ARG testvar2=\"test val2\"\n",
         "Step 4/4 : RUN echo \"$testvar1:$testvar2\"\n",
@@ -437,7 +437,7 @@ defmodule ImageTest do
 
   test "test precedenice ARG-variable definition: Client vs. Dockerfile" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     USER ${username:-ntpd}
     ARG username
     RUN whoami
@@ -446,7 +446,7 @@ defmodule ImageTest do
     """
 
     expected_build_log = [
-      "Step 1/6 : FROM scratch\n",
+      "Step 1/6 : FROM FreeBSD:testing\n",
       "Step 2/6 : USER ${username:-ntpd}\n",
       "Step 3/6 : ARG username\n",
       "Step 4/6 : RUN whoami\n",
@@ -470,14 +470,14 @@ defmodule ImageTest do
 
   test "test that ENV-instruction always override an ARG-instruction" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ARG CONT_IMG_VER
     ENV CONT_IMG_VER=v1.0.0
     RUN echo $CONT_IMG_VER
     """
 
     expected_build_log = [
-      "Step 1/4 : FROM scratch\n",
+      "Step 1/4 : FROM FreeBSD:testing\n",
       "Step 2/4 : ARG CONT_IMG_VER\n",
       "Step 3/4 : ENV CONT_IMG_VER=v1.0.0\n",
       "Step 4/4 : RUN echo $CONT_IMG_VER\n",
@@ -500,14 +500,14 @@ defmodule ImageTest do
     api_spec: api_spec
   } do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ARG CONT_IMG_VER
     ENV CONT_IMG_VER=${CONT_IMG_VER:-v1.0.0}
     CMD echo $CONT_IMG_VER
     """
 
     expected_build_log = [
-      "Step 1/4 : FROM scratch\n",
+      "Step 1/4 : FROM FreeBSD:testing\n",
       "Step 2/4 : ARG CONT_IMG_VER\n",
       "Step 3/4 : ENV CONT_IMG_VER=${CONT_IMG_VER:-v1.0.0}\n",
       "Step 4/4 : CMD echo $CONT_IMG_VER\n"
@@ -545,7 +545,7 @@ defmodule ImageTest do
 
   test "invalid ENV and ARG variable names" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ARG TEST-VAR="this should fail"
     """
 
@@ -564,7 +564,7 @@ defmodule ImageTest do
     assert error == "failed to process Dockerfile"
 
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ENV TEST-VAR="this should fail"
     """
 
@@ -580,7 +580,7 @@ defmodule ImageTest do
 
   test "create arg-variable and use with USER-instruction" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ARG TESTVAR=ntpd
     USER $TESTVAR
     RUN echo "$(/usr/bin/id)"
@@ -594,7 +594,7 @@ defmodule ImageTest do
 
     expected_build_log = fn x ->
       [
-        "Step 1/4 : FROM scratch\n",
+        "Step 1/4 : FROM FreeBSD:testing\n",
         "Step 2/4 : ARG TESTVAR=ntpd\n",
         "Step 3/4 : USER $TESTVAR\n",
         "Step 4/4 : RUN echo \"$(/usr/bin/id)\"\n",
@@ -610,13 +610,13 @@ defmodule ImageTest do
 
   test "create ARG-variable and use with COPY instruction" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ARG TESTVAR="test.txt"
     COPY $TESTVAR /root/
     """
 
     expected_build_log = [
-      "Step 1/3 : FROM scratch\n",
+      "Step 1/3 : FROM FreeBSD:testing\n",
       "Step 2/3 : ARG TESTVAR=\"test.txt\"\n",
       "Step 3/3 : COPY $TESTVAR /root/\n"
     ]
@@ -641,7 +641,7 @@ defmodule ImageTest do
 
   test "declaring a ARG-variable a second time overrides the first value" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ARG testvar=should_be_overwritten
     ARG testvar
     RUN echo -n "empty:$testvar"
@@ -654,7 +654,7 @@ defmodule ImageTest do
     }
 
     expected_build_log = [
-      "Step 1/4 : FROM scratch\n",
+      "Step 1/4 : FROM FreeBSD:testing\n",
       "Step 2/4 : ARG testvar=should_be_overwritten\n",
       "Step 3/4 : ARG testvar\n",
       "Step 4/4 : RUN echo -n \"empty:$testvar\"\n",
@@ -669,7 +669,7 @@ defmodule ImageTest do
 
   test "ENV instructions takes precedence over ARG-instructions" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ARG CONT_IMG_VER
     ENV CONT_IMG_VER=v1.0.0
     RUN echo $CONT_IMG_VER
@@ -682,7 +682,7 @@ defmodule ImageTest do
     }
 
     expected_build_log = [
-      "Step 1/4 : FROM scratch\n",
+      "Step 1/4 : FROM FreeBSD:testing\n",
       "Step 2/4 : ARG CONT_IMG_VER\n",
       "Step 3/4 : ENV CONT_IMG_VER=v1.0.0\n",
       "Step 4/4 : RUN echo $CONT_IMG_VER\n",
@@ -697,7 +697,7 @@ defmodule ImageTest do
 
   test "create an image using three RUN/COPY instructions" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     COPY test.txt /root/
     RUN echo 'lol1' > /root/test_1.txt
     RUN echo 'lol2' > /root/test_2.txt
@@ -722,7 +722,7 @@ defmodule ImageTest do
 
   test "building an image quietly" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     COPY test.txt /root/
     RUN echo \
       "this should be relayed back to the parent process"
@@ -746,7 +746,7 @@ defmodule ImageTest do
 
   test "image-build stops prematurely from non-zero exitcode from RUN-instruction" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     RUN ls notexist
     RUN echo "this should not be executed"
     """
@@ -766,7 +766,7 @@ defmodule ImageTest do
 
   test "image-build stops prematurely from non-zero exitcode that keeps build-container" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     RUN echo "test" > /etc/testing
     RUN ls notexist
     """
@@ -795,7 +795,7 @@ defmodule ImageTest do
 
   test "try building an image from a invalid Dockerfile (no linebreak)" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     RUN echo
       "this should faile because we omitted the '\\' above"
     CMD /usr/bin/uname
@@ -836,7 +836,7 @@ defmodule ImageTest do
 
   test "try building an image from a invalid Dockerfile (illegal comment)" do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ENV TEST="something" # You cannot make comments like this.
     """
 
@@ -853,7 +853,7 @@ defmodule ImageTest do
     assert error == "image build failed"
 
     assert build_log == [
-             "Step 1/2 : FROM scratch\n",
+             "Step 1/2 : FROM FreeBSD:testing\n",
              "Step 2/2 : ENV TEST=\"something\" # You cannot make comments like this.\n",
              "failed environment substition of: ENV TEST=\"something\" # You cannot make comments like this."
            ]

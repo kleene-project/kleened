@@ -190,6 +190,7 @@ defmodule MetaDataTest do
     assert not file_exists?(db_file)
     Application.start(:kleened)
     assert file_exists?(db_file)
+    TestInitialization.create_test_base_image()
   end
 
   defp dbfile() do

@@ -114,7 +114,8 @@ defmodule Kleened.Core.Image do
                 jail_param: ["mount.devfs=true"],
                 image: image_id,
                 user: "root",
-                cmd: []
+                cmd: [],
+                env: []
               }
             )
 
@@ -377,6 +378,7 @@ defmodule Kleened.Core.Image do
          } = state
        ) do
     args = merge_buildargs(args_supplied, args_collected)
+
     env = Utils.merge_environment_variable_lists(args, env)
     command = ~w"/usr/bin/env -i" ++ env ++ ["/bin/sh", "-c", "echo -n #{expression}"]
 

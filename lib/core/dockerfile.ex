@@ -86,9 +86,6 @@ defmodule Kleened.Core.Dockerfile do
 
   defp decode_from_args(args) do
     case split(args, " AS ") do
-      ["scratch"] ->
-        {:from, "base"}
-
       [image] ->
         {:from, image}
 

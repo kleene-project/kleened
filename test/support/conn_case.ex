@@ -10,7 +10,7 @@ defmodule Kleened.API.ConnCase do
     end
   end
 
-  setup tags do
+  setup _tags do
     # Added to the context to validate responses with assert_schema/3
     api_spec = Kleened.API.Spec.spec()
 

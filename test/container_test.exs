@@ -168,7 +168,7 @@ defmodule ContainerTest do
 
   test "start a container with environment variables", %{api_spec: api_spec} do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ENV TEST=lol
     ENV TEST2="lool test"
     CMD /bin/sh -c "printenv"
@@ -204,7 +204,7 @@ defmodule ContainerTest do
     api_spec: api_spec
   } do
     dockerfile = """
-    FROM scratch
+    FROM FreeBSD:testing
     ENV TEST=lol
     ENV TEST2="lool test"
     CMD /bin/sh -c "printenv"
