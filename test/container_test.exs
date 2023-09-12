@@ -99,6 +99,7 @@ defmodule ContainerTest do
     {:ok, exec_id} = Exec.create(container_id)
     :ok = Exec.start(exec_id, %{attach: false, start_container: true})
 
+    :timer.sleep(500)
     assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
 
     refute Utils.is_container_running?(container_id)
