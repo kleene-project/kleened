@@ -2,9 +2,14 @@ defmodule TestInitialization do
   alias Kleened.Core.{ZFS, Layer, MetaData}
   alias Kleened.API.Schemas
 
-  def create_test_base_image() do
+  def test_base_dataset() do
     dataset = "zroot/kleene_basejail"
     snapshot = "#{dataset}@kleene"
+    {dataset, snapshot}
+  end
+
+  def create_test_base_image() do
+    {dataset, snapshot} = test_base_dataset()
     info = ZFS.info(dataset)
     snapshot_info = ZFS.info(snapshot)
 

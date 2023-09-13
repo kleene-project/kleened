@@ -16,7 +16,8 @@ defmodule ZFSTest do
   test "create clone test" do
     zroot_test = Config.get("zroot") <> "/create_clone_test"
     create(zroot_test)
-    assert {_, 0} = clone(Config.get("base_layer_snapshot"), zroot_test <> "/zfs_test")
+    {_dataset, snapshot} = TestInitialization.test_base_dataset()
+    assert {_, 0} = clone(snapshot, zroot_test <> "/zfs_test")
     assert {_, 0} = snapshot(zroot_test <> "/zfs_test@lol")
     assert {_, 0} = destroy(zroot_test <> "/zfs_test@lol")
     assert {_, 0} = destroy(zroot_test <> "/zfs_test")

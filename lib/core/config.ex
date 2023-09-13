@@ -26,10 +26,8 @@ defmodule Kleened.Core.Config do
     cfg = open_config_file()
     error_if_not_defined(cfg, "zroot")
     error_if_not_defined(cfg, "api_listening_sockets")
-    error_if_not_defined(cfg, "base_layer_dataset")
     cfg = add_api_listening_options(cfg, [])
     cfg = initialize_kleene_root(cfg)
-    cfg = initialize_baselayer(cfg)
     cfg = Map.put(cfg, "metadata_db", Path.join(["/", cfg["zroot"], "metadata.sqlite"]))
     Map.put(cfg, "pf_config_path", Path.join(["/", cfg["zroot"], "pf_kleene.conf"]))
   end
@@ -115,26 +113,6 @@ defmodule Kleened.Core.Config do
     create_dataset_if_not_exist(Path.join([root, "volumes"]))
     cfg = Map.put(cfg, "volume_root", Path.join([root, "volumes"]))
     Map.put(cfg, "base_layer_mountpoint", root_status[:mountpoint])
-  end
-
-  defp initialize_baselayer(cfg) do
-    dataset = cfg["base_layer_dataset"]
-    snapshot = cfg["base_layer_dataset"] <> "@kleene"
-    info = ZFS.info(cfg["base_layer_dataset"])
-    snapshot_info = ZFS.info(snapshot)
-
-    cond do
-      info[:exists?] == false ->
-        config_error("kleenes root zfs filesystem #{dataset} does not seem to exist. Exiting.")
-
-      snapshot_info[:exists?] == false ->
-        Kleened.Core.ZFS.snapshot(snapshot)
-
-      true ->
-        :ok
-    end
-
-    Map.put(cfg, "base_layer_snapshot", snapshot)
   end
 
   defp create_dataset_if_not_exist(dataset) do
