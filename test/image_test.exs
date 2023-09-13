@@ -364,6 +364,38 @@ defmodule ImageTest do
     assert Enum.sort(image.env) == ["TEST2=test2value", "TEST=a new test value for TEST"]
   end
 
+  test "create image with a FROM instruction that uses a predefined ARG-value" do
+    dockerfile = """
+    ARG testvar
+    FROM ${testvar:-doesnotexist}
+    RUN echo "succesfully used parent image"
+    """
+
+    config = %{
+      context: @tmp_context,
+      dockerfile: @tmp_dockerfile,
+      tag: "test:latest"
+    }
+
+    build_log_passed = [
+      "Step 1/3 : ARG testvar\n",
+      "Step 2/3 : FROM ${testvar:-doesnotexist}\n",
+      "Step 3/3 : RUN echo \"succesfully used parent image\"\n",
+      "succesfully used parent image\n"
+    ]
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+
+    {error, _build_id, build_log} = TestHelper.image_invalid_build(config)
+    assert List.last(build_log) == "image not found"
+    assert error == "image build failed"
+
+    config = Map.put(config, :buildargs, %{"testvar" => "FreeBSD:testing"})
+    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
+
+    assert build_log_passed == build_log
+  end
+
   test "create image with ARG-variable without an explicit default value, thus empty string" do
     dockerfile = """
     FROM FreeBSD:testing
