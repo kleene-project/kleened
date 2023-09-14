@@ -58,7 +58,7 @@ defmodule Kleened.Core.Utils do
   end
 
   def mount_nullfs(args) do
-    {"", 0} = OS.cmd(["/sbin/mount_nullfs" | args])
+    OS.cmd(["/sbin/mount_nullfs" | args])
   end
 
   def destroy_interface(kleene_if) do

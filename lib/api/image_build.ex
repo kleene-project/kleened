@@ -103,9 +103,8 @@ defmodule Kleened.API.ImageBuild do
     {[{:close, 1000, closing}], state}
   end
 
-  def websocket_info({:image_builder, _pid, {:image_build_failed, reason}}, state) do
-    error = Utils.error_message("image build failed")
-    {[{:text, reason}, {:close, 1011, error}], state}
+  def websocket_info({:image_builder, _pid, {:image_build_failed, "image build failed"}}, state) do
+    {[{:close, 1011, Utils.error_message("image build failed")}], state}
   end
 
   def websocket_info({:image_builder, _pid, {:jail_output, msg}}, state) do

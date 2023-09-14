@@ -220,8 +220,17 @@ defmodule TestHelper do
 
   def process_failed_buildlog([msg_json | rest]) do
     {:ok, %Msg{data: build_id}} = Cast.cast(Msg.schema(), Jason.decode!(msg_json, keys: :atoms!))
-    {{1011, %Msg{msg_type: "error", message: error_msg}}, build_log} = List.pop_at(rest, -1)
-    {error_msg, build_id, build_log}
+
+    {error_type, build_log} =
+      case List.pop_at(rest, -1) do
+        {{1011, %Msg{msg_type: "error", message: "image build failed"}}, build_log} ->
+          {:failed_build, build_log}
+
+        {{1011, %Msg{msg_type: "error", message: "failed to process Dockerfile"}}, build_log} ->
+          {:invalid_dockerfile, build_log}
+      end
+
+    {error_type, build_id, build_log}
   end
 
   def process_buildlog([msg_json | rest]) do

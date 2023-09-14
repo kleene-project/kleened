@@ -89,10 +89,10 @@ defmodule Kleened.Core.Volume do
 
     case read_only do
       false ->
-        Utils.mount_nullfs([volume_mountpoint, host_location])
+        {"", 0} = Utils.mount_nullfs([volume_mountpoint, host_location])
 
       true ->
-        Utils.mount_nullfs(["-o", "ro", volume_mountpoint, host_location])
+        {"", 0} = Utils.mount_nullfs(["-o", "ro", volume_mountpoint, host_location])
     end
 
     mnt = %Mount{

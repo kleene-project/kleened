@@ -386,9 +386,8 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {error, _build_id, build_log} = TestHelper.image_invalid_build(config)
-    assert List.last(build_log) == "image not found"
-    assert error == "image build failed"
+    {:failed_build, _build_id, build_log} = TestHelper.image_invalid_build(config)
+    assert last_log_entry(build_log) == "parent image not found"
 
     config = Map.put(config, :buildargs, %{"testvar" => "FreeBSD:testing"})
     {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
@@ -587,13 +586,11 @@ defmodule ImageTest do
     }
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
-    {error, _build_id, build_log} = TestHelper.image_invalid_build(config)
+    {:invalid_dockerfile, _build_id, build_log} = TestHelper.image_invalid_build(config)
 
     assert build_log == [
              "ENV/ARG variable name is invalid on line: ARG TEST-VAR=\"this should fail\""
            ]
-
-    assert error == "failed to process Dockerfile"
 
     dockerfile = """
     FROM FreeBSD:testing
@@ -601,13 +598,11 @@ defmodule ImageTest do
     """
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
-    {error, _build_id, build_log} = TestHelper.image_invalid_build(config)
+    {:invalid_dockerfile, _build_id, build_log} = TestHelper.image_invalid_build(config)
 
     assert build_log == [
              "ENV/ARG variable name is invalid on line: ENV TEST-VAR=\"this should fail\""
            ]
-
-    assert error == "failed to process Dockerfile"
   end
 
   test "create arg-variable and use with USER-instruction" do
@@ -786,14 +781,14 @@ defmodule ImageTest do
     context = create_test_context("test_image_run_nonzero_exitcode")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {error, _build_id, build_log} =
+    {:failed_build, _build_id, build_log} =
       TestHelper.image_invalid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile
       })
 
-    assert last_log_entry(build_log) == "executing instruction resulted in non-zero exit code"
-    assert error == "image build failed"
+    assert last_log_entry(build_log) ==
+             "The command '/bin/sh -c ls notexist' returned a non-zero code: 1"
   end
 
   test "image-build stops prematurely from non-zero exitcode that keeps build-container" do
@@ -806,7 +801,7 @@ defmodule ImageTest do
     context = create_test_context("test_image_run_nonzero_exitcode")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {error, build_id, build_log} =
+    {:failed_build, build_id, build_log} =
       TestHelper.image_invalid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile,
@@ -815,8 +810,8 @@ defmodule ImageTest do
         tag: "test:latest"
       })
 
-    assert last_log_entry(build_log) == "executing instruction resulted in non-zero exit code"
-    assert error == "image build failed"
+    assert last_log_entry(build_log) ==
+             "The command '/bin/sh -c ls notexist' returned a non-zero code: 1"
 
     %Schemas.Container{layer_id: layer_id} =
       Kleened.Core.MetaData.get_container("build_#{build_id}")
@@ -836,13 +831,11 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {error, _build_id, build_log} =
+    {:invalid_dockerfile, _build_id, build_log} =
       TestHelper.image_invalid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile
       })
-
-    assert error == "failed to process Dockerfile"
 
     assert last_log_entry(build_log) ==
              "invalid instruction:   \"this should faile because we omitted the '\\' above\""
@@ -856,14 +849,13 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, @tmp_context)
 
-    {error, _build_id, build_log} =
+    {:failed_build, _build_id, build_log} =
       TestHelper.image_invalid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile
       })
 
-    assert build_log == ["Step 1/2 : FROM nonexisting\n", "image not found"]
-    assert error == "image build failed"
+    assert build_log == ["Step 1/2 : FROM nonexisting\n", "parent image not found"]
   end
 
   test "try building an image from a invalid Dockerfile (illegal comment)" do
@@ -875,14 +867,12 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {error, _build_id, build_log} =
+    {:failed_build, _build_id, build_log} =
       TestHelper.image_invalid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile,
         tag: "test:latest"
       })
-
-    assert error == "image build failed"
 
     assert build_log == [
              "Step 1/2 : FROM FreeBSD:testing\n",

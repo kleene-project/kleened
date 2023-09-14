@@ -104,34 +104,32 @@ defmodule Kleened.Core.Image do
     Logger.info("Processing instruction: FROM #{image_ref}")
     state = send_status(line, state)
 
-    on_success_callback = fn new_image_ref ->
-      case Kleened.Core.MetaData.get_image(new_image_ref) do
-        %Schemas.Image{id: image_id} ->
-          {:ok, container_config} =
-            OpenApiSpex.Cast.cast(
-              Kleened.API.Schemas.ContainerConfig.schema(),
-              %{
-                jail_param: ["mount.devfs=true"],
-                image: image_id,
-                user: "root",
-                cmd: [],
-                env: []
-              }
-            )
+    with {:ok, new_image_ref} <- environment_replacement(image_ref, state),
+         %Schemas.Image{id: image_id} <- Kleened.Core.MetaData.get_image(new_image_ref) do
+      {:ok, container_config} =
+        OpenApiSpex.Cast.cast(
+          Schemas.ContainerConfig.schema(),
+          %{
+            jail_param: ["mount.devfs=true"],
+            image: image_id,
+            user: "root",
+            cmd: [],
+            env: []
+          }
+        )
 
-          name = "build_" <> state.build_id
-          {:ok, container} = Kleened.Core.Container.create(name, container_config)
-          Network.connect(state.network, %Schemas.EndPointConfig{container: container.id})
+      name = "build_" <> state.build_id
+      {:ok, container} = Kleened.Core.Container.create(name, container_config)
+      Network.connect(state.network, %Schemas.EndPointConfig{container: container.id})
+      process_instructions(%State{state | container: container, instructions: rest})
+    else
+      :not_found ->
+        send_msg(state.msg_receiver, "parent image not found")
+        terminate_failed_build(state)
 
-          process_instructions(%State{state | container: container, instructions: rest})
-
-        :not_found ->
-          send_msg(state.msg_receiver, {:image_build_failed, "image not found"})
-          Network.remove(state.network)
-      end
+      _ ->
+        terminate_failed_build(state)
     end
-
-    environment_replacement(image_ref, on_success_callback, state)
   end
 
   defp process_instructions(
@@ -140,17 +138,19 @@ defmodule Kleened.Core.Image do
     Logger.info("Processing instruction: ENV #{inspect(env_vars)}")
     state = send_status(line, state)
 
-    on_success_callback = fn env_vars ->
-      env = Utils.merge_environment_variable_lists(container.env, [env_vars])
+    case environment_replacement(env_vars, state) do
+      {:ok, new_env_vars} ->
+        env = Utils.merge_environment_variable_lists(container.env, [new_env_vars])
 
-      process_instructions(%State{
-        state
-        | instructions: rest,
-          container: %Schemas.Container{container | env: env}
-      })
+        process_instructions(%State{
+          state
+          | instructions: rest,
+            container: %Schemas.Container{container | env: env}
+        })
+
+      :error ->
+        terminate_failed_build(state)
     end
-
-    environment_replacement(env_vars, on_success_callback, state)
   end
 
   defp process_instructions(
@@ -174,18 +174,20 @@ defmodule Kleened.Core.Image do
     Logger.info("Processing instruction: USER #{user}")
     state = send_status(line, state)
 
-    on_succes = fn user ->
-      process_instructions(%State{
-        state
-        | instructions: rest,
-          container: %Schemas.Container{state.container | user: user}
-      })
-    end
+    case environment_replacement(user, state) do
+      {:ok, new_user} ->
+        process_instructions(%State{
+          state
+          | instructions: rest,
+            container: %Schemas.Container{state.container | user: new_user}
+        })
 
-    environment_replacement(user, on_succes, state)
+      :error ->
+        terminate_failed_build(state)
+    end
   end
 
-  defp process_instructions(%State{instructions: [{line, {:workdir, workdir}} | _rest]} = state) do
+  defp process_instructions(%State{instructions: [{line, {:workdir, workdir}} | rest]} = state) do
     Logger.info("Processing instruction: WORKDIR #{inspect(workdir)}")
     state = send_status(line, state)
 
@@ -195,18 +197,17 @@ defmodule Kleened.Core.Image do
         false -> Path.join(state.workdir, workdir)
       end
 
-    exit_code =
-      execute_cmd(
-        %Schemas.ExecConfig{
-          container_id: state.container.id,
-          cmd: ["/bin/mkdir", "-p", new_workdir],
-          env: [],
-          user: "root"
-        },
-        state
-      )
+    config_mkdir = %Schemas.ExecConfig{
+      container_id: state.container.id,
+      cmd: ["/bin/mkdir", "-p", new_workdir],
+      env: [],
+      user: "root"
+    }
 
-    validate_result_and_continue_if_valid(exit_code, %State{state | workdir: new_workdir})
+    case succesfully_run_execution(config_mkdir, state) do
+      :ok -> process_instructions(%State{state | workdir: new_workdir, instructions: rest})
+      :error -> terminate_failed_build(state)
+    end
   end
 
   defp process_instructions(
@@ -214,16 +215,12 @@ defmodule Kleened.Core.Image do
        ) do
     Logger.info("Processing instruction: CMD #{inspect(cmd)}")
     state = send_status(line, state)
-
-    process_instructions(%State{
-      state
-      | instructions: rest,
-        container: %Schemas.Container{container | command: cmd}
-    })
+    new_container = %Schemas.Container{container | command: cmd}
+    process_instructions(%State{state | instructions: rest, container: new_container})
   end
 
   defp process_instructions(
-         %State{instructions: [{line, {:run, cmd}} | _rest], container: container} = state
+         %State{instructions: [{line, {:run, cmd}} | rest], container: container} = state
        ) do
     Logger.info("Processing instruction: RUN #{inspect(cmd)}")
     state = send_status(line, state)
@@ -237,51 +234,28 @@ defmodule Kleened.Core.Image do
       user: container.user
     }
 
-    exit_code = execute_cmd(config, state)
-    validate_result_and_continue_if_valid(exit_code, state)
+    case succesfully_run_execution(config, state) do
+      :ok -> process_instructions(%State{state | instructions: rest})
+      :error -> terminate_failed_build(state)
+    end
   end
 
-  defp process_instructions(%State{instructions: [{line, {:copy, src_dest}} | _rest]} = state) do
+  defp process_instructions(%State{instructions: [{line, {:copy, src_dest}} | rest]} = state) do
     Logger.info("Processing instruction: COPY #{inspect(src_dest)}")
     state = send_status(line, state)
+    context_in_jail = context_directory_in_container(state.container)
 
-    case environment_replacementsrc_dest(src_dest, [], state) do
-      {:ok, src_and_dest} ->
-        src_and_dest = wildcard_expand_srcs(src_and_dest, state)
-        src_and_dest = convert_paths_to_jail_context_dir_and_workdir(src_and_dest, state.workdir)
-
-        context_in_jail = create_context_dir_in_jail(state.context, state.container)
-
-        # Create <dest> directory if it does not exist
-        dest = List.last(src_and_dest)
-
-        config = %Schemas.ExecConfig{
-          container_id: state.container.id,
-          cmd: ["/bin/mkdir", "-p", dest],
-          env: [],
-          user: "root"
-        }
-
-        case execute_cmd(config, state) do
-          0 ->
-            # Create <dest> directory if it does not exist
-            config = %Schemas.ExecConfig{
-              container_id: state.container.id,
-              cmd: ["/bin/cp", "-R" | src_and_dest],
-              env: [],
-              user: "root"
-            }
-
-            exit_code = execute_cmd(config, state)
-            unmount_context(context_in_jail)
-            validate_result_and_continue_if_valid(exit_code, state)
-
-          _ ->
-            handle_failed_execution(state)
-        end
-
-      :failed ->
-        send_substitution_failure_and_cleanup(state)
+    with {:ok, src_and_dest} <- environment_replacement_list(src_dest, [], state),
+         {config_mkdir, config_cp} = copy_instruction_exec_configs(src_and_dest, state),
+         :ok <- mount_context(context_in_jail, state),
+         :ok <- succesfully_run_execution(config_mkdir, state),
+         :ok <- succesfully_run_execution(config_cp, state) do
+      unmount_context(context_in_jail)
+      process_instructions(%State{state | instructions: rest})
+    else
+      _error ->
+        unmount_context(context_in_jail)
+        terminate_failed_build(state)
     end
   end
 
@@ -299,7 +273,7 @@ defmodule Kleened.Core.Image do
          } = state
        ) do
     Network.disconnect(container_id, state.network)
-    Network.remove(state.network)
+    {:ok, _network_id} = Network.remove(state.network)
     MetaData.delete_container(container_id)
     layer = MetaData.get_layer(layer_id)
     Kleened.Core.Layer.to_image_from_layer(layer, container_id)
@@ -319,44 +293,57 @@ defmodule Kleened.Core.Image do
     send_msg(state.msg_receiver, {:image_build_succesfully, img})
   end
 
-  defp environment_replacementsrc_dest([expression | rest], evaluated, state) do
-    on_succes = fn evaluated_expr ->
-      environment_replacementsrc_dest(rest, [evaluated_expr | evaluated], state)
-    end
-
-    environment_replacement(expression, on_succes, state)
+  defp terminate_failed_build(%State{container: %Schemas.Container{id: nil}} = state) do
+    Network.remove(state.network)
+    send_msg(state.msg_receiver, {:image_build_failed, "image build failed"})
   end
 
-  defp environment_replacementsrc_dest([], evaluated, _state) do
-    {:ok, Enum.reverse(evaluated)}
-  end
-
-  defp validate_result_and_continue_if_valid(exit_code, %State{instructions: [_ | rest]} = state) do
-    cond do
-      exit_code == 0 ->
-        process_instructions(%State{state | instructions: rest})
-
-      true ->
-        handle_failed_execution(state)
-    end
-  end
-
-  defp handle_failed_execution(state) do
-    send_msg(
-      state.msg_receiver,
-      {:image_build_failed, "executing instruction resulted in non-zero exit code"}
-    )
-
-    cleanup_build_environment(state)
-  end
-
-  defp cleanup_build_environment(state) do
+  defp terminate_failed_build(state) do
     cond do
       state.cleanup -> Container.remove(state.container.id)
       true -> :ok
     end
 
     Network.remove(state.network)
+    send_msg(state.msg_receiver, {:image_build_failed, "image build failed"})
+  end
+
+  defp environment_replacement_list([expression | rest], evaluated, state) do
+    case environment_replacement(expression, state) do
+      {:ok, evaluated_expr} ->
+        environment_replacement_list(rest, [evaluated_expr | evaluated], state)
+
+      :error ->
+        :error
+    end
+  end
+
+  defp environment_replacement_list([], evaluated, _state) do
+    {:ok, Enum.reverse(evaluated)}
+  end
+
+  defp environment_replacement(
+         expression,
+         %State{
+           instructions: [{line, _instruction} | _rest],
+           msg_receiver: pid,
+           buildargs_collected: args_collected,
+           buildargs_supplied: args_supplied,
+           container: %Schemas.Container{env: env}
+         }
+       ) do
+    args = merge_buildargs(args_supplied, args_collected)
+    env = Utils.merge_environment_variable_lists(args, env)
+    command = ~w"/usr/bin/env -i" ++ env ++ ["/bin/sh", "-c", "echo -n #{expression}"]
+
+    case OS.cmd(command) do
+      {evaluated_expression, 0} ->
+        {:ok, evaluated_expression}
+
+      {_, _nonzero_exit_code} ->
+        send_msg(pid, "failed environment substition of: #{line}")
+        :error
+    end
   end
 
   defp create_environment_variables(%State{
@@ -366,40 +353,6 @@ defmodule Kleened.Core.Image do
        }) do
     args = merge_buildargs(args_supplied, args_collected)
     Utils.merge_environment_variable_lists(args, env)
-  end
-
-  defp environment_replacement(
-         expression,
-         on_success_callback,
-         %State{
-           buildargs_collected: args_collected,
-           buildargs_supplied: args_supplied,
-           container: %Schemas.Container{env: env}
-         } = state
-       ) do
-    args = merge_buildargs(args_supplied, args_collected)
-
-    env = Utils.merge_environment_variable_lists(args, env)
-    command = ~w"/usr/bin/env -i" ++ env ++ ["/bin/sh", "-c", "echo -n #{expression}"]
-
-    case OS.cmd(command) do
-      {evaluated_expression, 0} ->
-        on_success_callback.(evaluated_expression)
-
-      {_, _nonzero_exit_code} ->
-        send_substitution_failure_and_cleanup(state)
-    end
-  end
-
-  defp send_substitution_failure_and_cleanup(
-         %State{
-           instructions: [{line, _instruction} | _rest],
-           msg_receiver: pid
-         } = state
-       ) do
-    send_msg(pid, {:image_build_failed, "failed environment substition of: #{line}"})
-
-    cleanup_build_environment(state)
   end
 
   defp merge_buildargs(args_supplied, args_collected) when is_list(args_collected) do
@@ -426,24 +379,19 @@ defmodule Kleened.Core.Image do
     Utils.map2envlist(args_collected)
   end
 
-  defp send_status(_line, %State{:quiet => true} = state) do
-    state
+  defp succesfully_run_execution(config, %State{msg_receiver: pid} = state) do
+    case run_execution(config, state) do
+      0 ->
+        :ok
+
+      nonzero_exitcode ->
+        cmd = Enum.join(config.cmd, " ")
+        send_msg(pid, "The command '#{cmd}' returned a non-zero code: #{nonzero_exitcode}")
+        :error
+    end
   end
 
-  defp send_status(
-         line,
-         %State{
-           :current_step => step,
-           :total_steps => nsteps,
-           :msg_receiver => pid
-         } = state
-       ) do
-    msg = "Step #{step}/#{nsteps} : #{line}\n"
-    send_msg(pid, msg)
-    %State{state | :current_step => step + 1}
-  end
-
-  defp execute_cmd(%Schemas.ExecConfig{container_id: id} = config, state) do
+  defp run_execution(%Schemas.ExecConfig{container_id: id} = config, state) do
     {:ok, exec_id} = Kleened.Core.Exec.create(config)
     Kleened.Core.Exec.start(exec_id, %{attach: true, start_container: true})
     relay_output_and_await_shutdown(id, exec_id, state)
@@ -486,12 +434,33 @@ defmodule Kleened.Core.Image do
     end
   end
 
-  defp create_context_dir_in_jail(context, %Schemas.Container{layer_id: layer_id}) do
+  defp copy_instruction_exec_configs(src_and_dest, state) do
+    src_and_dest = wildcard_expand_srcs(src_and_dest, state)
+    src_and_dest = convert_paths_to_jail_context_dir_and_workdir(src_and_dest, state.workdir)
+
+    # Create <dest> directory if it does not exist
+    dest = List.last(src_and_dest)
+
+    config_mkdir = %Schemas.ExecConfig{
+      container_id: state.container.id,
+      cmd: ["/bin/mkdir", "-p", dest],
+      env: [],
+      user: "root"
+    }
+
+    config_cp = %Schemas.ExecConfig{
+      container_id: state.container.id,
+      cmd: ["/bin/cp", "-R" | src_and_dest],
+      env: [],
+      user: "root"
+    }
+
+    {config_mkdir, config_cp}
+  end
+
+  defp context_directory_in_container(%Schemas.Container{layer_id: layer_id}) do
     %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
-    context_in_jail = Path.join(mountpoint, "/kleene_temporary_context_store")
-    {_output, 0} = System.cmd("/bin/mkdir", [context_in_jail], stderr_to_stdout: true)
-    Utils.mount_nullfs([context, context_in_jail])
-    context_in_jail
+    Path.join(mountpoint, "/kleene_temporary_context_store")
   end
 
   defp wildcard_expand_srcs(srcdest, state) do
@@ -520,13 +489,48 @@ defmodule Kleened.Core.Image do
     Enum.reverse([dest | absolute_sources])
   end
 
-  defp send_msg(pid, msg) do
-    full_msg = {:image_builder, self(), msg}
-    :ok = Process.send(pid, full_msg, [])
+  defp mount_context(context_in_jail, %State{msg_receiver: pid} = state) do
+    # Create a context-directory within the container and nullfs-mount the context into it
+    with {_, 0} <- System.cmd("/bin/mkdir", [context_in_jail], stderr_to_stdout: true),
+         {_, 0} <- Utils.mount_nullfs([state.context, context_in_jail]) do
+      :ok
+    else
+      {output, _nonzero_exitcode} ->
+        send_msg(pid, "could not create context mountpoint in container: #{output}")
+        :error
+    end
   end
 
   defp unmount_context(context_in_jail) do
-    Utils.unmount(context_in_jail)
-    System.cmd("/bin/rm", ["-r", context_in_jail], stderr_to_stdout: true)
+    case File.exists?(context_in_jail) do
+      true ->
+        Utils.unmount(context_in_jail)
+        System.cmd("/bin/rm", ["-r", context_in_jail], stderr_to_stdout: true)
+
+      false ->
+        :ok
+    end
+  end
+
+  defp send_status(_line, %State{:quiet => true} = state) do
+    state
+  end
+
+  defp send_status(
+         line,
+         %State{
+           :current_step => step,
+           :total_steps => nsteps,
+           :msg_receiver => pid
+         } = state
+       ) do
+    msg = "Step #{step}/#{nsteps} : #{line}\n"
+    send_msg(pid, msg)
+    %State{state | :current_step => step + 1}
+  end
+
+  defp send_msg(pid, msg) do
+    full_msg = {:image_builder, self(), msg}
+    :ok = Process.send(pid, full_msg, [])
   end
 end
