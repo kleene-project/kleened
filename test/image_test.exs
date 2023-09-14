@@ -1,9 +1,10 @@
 defmodule ImageTest do
   use Kleened.API.ConnCase
-  alias Kleened.Core.{Config, Image, MetaData, Layer, Container}
+  alias Kleened.Core.{Config, Image, MetaData, Layer, Container, ZFS, OS}
   alias Kleened.API.Schemas
   alias Schemas.WebSocketMessage, as: Message
 
+  require Logger
   @moduletag :capture_log
 
   setup do
@@ -902,11 +903,20 @@ defmodule ImageTest do
            ]
   end
 
+  # The mini-jail userland used for the 'fetch' and 'zfs' image creation tests
+  # have been created with https://github.com/Freaky/mkjail using the command
+  # mkjail -a minimal_testjail.txz /usr/bin/env -i /usr/local/bin/python3.9 -c "print('lol')"
   test "create base image using a method 'zfs'", %{api_spec: api_spec} do
+    dataset = "zroot/image_create_zfs_test"
+    ZFS.create(dataset)
+
+    {_, 0} =
+      OS.cmd(["/usr/bin/tar", "-xf", "./test/data/minimal_testjail.txz", "-C", "/#{dataset}"])
+
     config = %{
       method: "zfs",
-      zfs_dataset: "zroot/kleene_basejail",
-      tag: "FreeBSD:testing-remote"
+      zfs_dataset: dataset,
+      tag: "zfscreate:testing"
     }
 
     frames = TestHelper.image_create(config)
@@ -916,24 +926,21 @@ defmodule ImageTest do
     {_cont, exec_id} =
       TestHelper.container_start_attached(api_spec, "testcont", %{
         image: closing_msg.data,
-        cmd: ["/usr/bin/id"],
-        jail_param: [],
+        cmd: ["/usr/local/bin/python3.9", "-c", "print('testing minimaljail')"],
+        jail_param: ["exec.system_jail_user"],
         user: "root"
       })
 
     assert_receive {:container, ^exec_id, {:jail_output, jail_output}}
     assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
-    assert jail_output == "uid=0(root) gid=0(wheel) groups=0(wheel),5(operator)\n"
+    assert jail_output == "testing minimaljail\n"
+    ZFS.destroy_force(dataset)
   end
 
   test "create base image using a method 'fetch'", %{api_spec: api_spec} do
-    # The "rescue" system does not work as a jail since it needs /etc/master.passwd (and probably other stuff as well). Thus, any bunch of files in a .txz-file could be used to pass this test.
-    # Consider making a special test with a real userland that can be filtered out during development? Could be nice with a more realistic test that uses a full userland (and takes some time to extract).
     config = %{
-      # method-name should be "url"
       method: "fetch",
-      url: "file://./test/data/base_rescue.txz",
-      # url: "file://./test/data/base.txz",
+      url: "file://./test/data/minimal_testjail.txz",
       tag: "FreeBSD:testing"
     }
 
@@ -945,14 +952,14 @@ defmodule ImageTest do
     {_cont, exec_id} =
       TestHelper.container_start_attached(api_spec, "testcont", %{
         image: closing_msg.data,
-        cmd: ["/bin/id"],
-        jail_param: [],
+        cmd: ["/usr/local/bin/python3.9", "-c", "print('testing minimaljail')"],
+        jail_param: ["exec.system_jail_user"],
         user: "root"
       })
 
     assert_receive {:container, ^exec_id, {:jail_output, jail_output}}
-    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 1}}}
-    assert String.slice(jail_output, 0, 46) == "jail: getpwnam root: No such file or directory"
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
+    assert jail_output == "testing minimaljail\n"
   end
 
   defp create_test_context(name) do

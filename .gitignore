@@ -45,8 +45,7 @@ vim_*
 *.sqlite
 
 # Ignore test data blobs
-test/data/base.txz
-test/data/base_rescue.txz
+test/data/minimal_testjail.txz
 
 # Ignore vagrant directory
 /.vagrant/
