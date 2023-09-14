@@ -395,6 +395,27 @@ defmodule ImageTest do
     assert build_log_passed == build_log
   end
 
+  test "fail to create image with a non-ARG instruction before the FROM instruction" do
+    dockerfile = """
+    ENV testvar=lol
+    FROM FreeBSD:testing
+    RUN echo "this never happens"
+    """
+
+    config = %{
+      context: @tmp_context,
+      dockerfile: @tmp_dockerfile,
+      tag: "test:latest"
+    }
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+
+    {:invalid_dockerfile, _build_id, build_log} = TestHelper.image_invalid_build(config)
+
+    assert last_log_entry(build_log) ==
+             "error in 'ENV testvar=lol': instruction not permitted before a FROM instruction"
+  end
+
   test "create image with ARG-variable without an explicit default value, thus empty string" do
     dockerfile = """
     FROM FreeBSD:testing

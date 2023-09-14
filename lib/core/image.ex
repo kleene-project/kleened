@@ -96,6 +96,10 @@ defmodule Kleened.Core.Image do
     {:error, "invalid instruction: #{instruction_line}"}
   end
 
+  defp verify_instructions([{line, {:error, reason}} | _rest]) do
+    {:error, "error in '#{line}': #{reason}"}
+  end
+
   defp verify_instructions([{_line, _instruction} | rest]) do
     verify_instructions(rest)
   end

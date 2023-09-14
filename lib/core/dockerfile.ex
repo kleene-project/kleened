@@ -4,8 +4,14 @@ defmodule Kleened.Core.Dockerfile do
 
   def parse(dockerfile) do
     {:ok, tokens} = decode_file(dockerfile)
-    :ok = starts_with_from_instruction(tokens)
-    tokens
+
+    case starts_with_from_instruction(tokens) do
+      :ok ->
+        tokens
+
+      {:error, {:illegal_before_from, line}} ->
+        [{line, {:error, "instruction not permitted before a FROM instruction"}}]
+    end
   end
 
   defp starts_with_from_instruction([instruction | rest]) do
@@ -18,6 +24,9 @@ defmodule Kleened.Core.Dockerfile do
 
       {_line, {:from, _, _}} ->
         :ok
+
+      {line, _illegal_instruction} ->
+        {:error, {:illegal_before_from, line}}
     end
   end
 
