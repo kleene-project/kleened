@@ -10,7 +10,10 @@ defmodule ImageTest do
   setup do
     on_exit(fn ->
       MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
-      MetaData.list_images() |> Enum.map(fn %Schemas.Image{id: id} -> Image.destroy(id) end)
+
+      MetaData.list_images()
+      |> Enum.filter(fn %Schemas.Image{id: id} -> id != "base" end)
+      |> Enum.map(fn %Schemas.Image{id: id} -> Image.destroy(id) end)
     end)
 
     :ok
@@ -44,14 +47,13 @@ defmodule ImageTest do
              "FreeBSD\n"
            ]
 
-    [%{id: ^image_id}] = TestHelper.image_list(api_spec)
-    assert MetaData.list_containers() == []
+    [%{id: ^image_id}, %{id: "base"}] = TestHelper.image_list(api_spec)
     assert %{id: "websock_img"} == TestHelper.image_destroy(api_spec, "websock_img")
 
     assert %{message: "Error: No such image: websock_img\n"} ==
              TestHelper.image_destroy(api_spec, "websock_img")
 
-    assert TestHelper.image_list(api_spec) == []
+    assert [%{id: "base"}] = TestHelper.image_list(api_spec)
   end
 
   test "parsing some invalid input to the image builder" do
@@ -941,7 +943,7 @@ defmodule ImageTest do
     config = %{
       method: "fetch",
       url: "file://./test/data/minimal_testjail.txz",
-      tag: "FreeBSD:testing"
+      tag: "fetchcreate:testing"
     }
 
     frames = TestHelper.image_create(config)

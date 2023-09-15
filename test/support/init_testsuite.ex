@@ -2,11 +2,7 @@ defmodule TestInitialization do
   alias Kleened.Core.{ZFS, Layer, MetaData}
   alias Kleened.API.Schemas
 
-  def test_base_dataset() do
-    dataset = "zroot/kleene_basejail"
-    snapshot = "#{dataset}@kleene"
-    {dataset, snapshot}
-  end
+  @creation_time "2023-09-14T21:21:57.990515Z"
 
   def create_test_base_image() do
     {dataset, snapshot} = test_base_dataset()
@@ -34,15 +30,25 @@ defmodule TestInitialization do
       mountpoint: ""
     }
 
-    base_image = %Schemas.Image{
+    base_image = test_image()
+    MetaData.add_layer(base_layer)
+    MetaData.add_image(base_image)
+  end
+
+  def test_base_dataset() do
+    dataset = "zroot/kleene_basejail"
+    snapshot = "#{dataset}@kleene"
+    {dataset, snapshot}
+  end
+
+  def test_image() do
+    %Schemas.Image{
       id: "base",
       layer_id: "base",
       name: "FreeBSD",
       tag: "testing",
-      user: "root"
+      user: "root",
+      created: @creation_time
     }
-
-    MetaData.add_layer(base_layer)
-    MetaData.add_image(base_image)
   end
 end

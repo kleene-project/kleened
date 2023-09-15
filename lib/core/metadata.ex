@@ -239,9 +239,7 @@ defmodule Kleened.Core.MetaData do
 
   @spec list_images() :: [Image.t()]
   def list_images() do
-    sql(
-      "SELECT id, image FROM images WHERE id != 'base' ORDER BY json_extract(image, '$.created') DESC"
-    )
+    sql("SELECT id, image FROM images ORDER BY json_extract(image, '$.created') DESC")
   end
 
   @spec add_container(Container.t()) :: :ok
@@ -379,7 +377,7 @@ defmodule Kleened.Core.MetaData do
 
   @spec list_containers_transaction(db_conn()) :: [%{}]
   defp list_containers_transaction(db) do
-    sql = "SELECT * FROM api_list_containers WHERE id != 'base' ORDER BY created DESC"
+    sql = "SELECT * FROM api_list_containers ORDER BY created DESC"
     {:ok, statement} = Sqlitex.Statement.prepare(db, sql)
     {:ok, rows} = Sqlitex.Statement.fetch_all(statement, into: %{})
     rows

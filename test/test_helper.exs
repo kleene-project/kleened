@@ -204,6 +204,10 @@ defmodule TestHelper do
     })
   end
 
+  def test_image() do
+    TestInitialization.test_image()
+  end
+
   def image_invalid_build(config) do
     config = Map.merge(%{quiet: false, cleanup: true}, config)
     build_log_raw = image_build_raw(config)

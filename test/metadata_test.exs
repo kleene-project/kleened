@@ -38,6 +38,7 @@ defmodule MetaDataTest do
   end
 
   test "adding and getting images" do
+    base_image = TestHelper.test_image()
     img1 = %Schemas.Image{id: "lol", name: "test", tag: "oldest", created: now()}
     img2 = %Schemas.Image{id: "lel", name: "test", tag: "latest", created: now()}
     add_image(img1)
@@ -45,7 +46,7 @@ defmodule MetaDataTest do
     assert img1 == get_image(img1.id)
     assert img1 == get_image("test:oldest")
     assert img2 == get_image("test")
-    assert [img2, img1] == list_images()
+    assert [img2, img1, base_image] == list_images()
 
     # Test that name/tag will be removed from existing image if a new image is added with conflicting nametag
     img3 = %Schemas.Image{id: "lel2", name: "test", tag: "latest", created: now()}
@@ -55,27 +56,29 @@ defmodule MetaDataTest do
     delete_image("lol")
     delete_image("lel")
     delete_image("lel2")
-    assert [] == list_images()
+    assert [TestHelper.test_image()] == list_images()
   end
 
   test "empty nametags are avoided in overwrite logic" do
+    base_image = TestHelper.test_image()
     img1 = %Schemas.Image{id: "lol1", name: "", tag: "", created: now()}
     img2 = %Schemas.Image{id: "lol2", name: "", tag: "", created: now()}
     img3 = %Schemas.Image{id: "lol3", name: "", tag: "", created: now()}
     add_image(img1)
     add_image(img2)
     add_image(img3)
-    assert [img3, img2, img1] == list_images()
+    assert [img3, img2, img1, base_image] == list_images()
     delete_image("lol1")
     delete_image("lol2")
     delete_image("lol3")
   end
 
   test "fetching images that is not there" do
-    assert [] = list_images()
+    base_image = TestHelper.test_image()
+    assert [base_image] == list_images()
     img1 = %Schemas.Image{id: "lol", name: "test", tag: "oldest", created: now()}
     add_image(img1)
-    assert [img1] == list_images()
+    assert [img1, base_image] == list_images()
     assert :not_found = get_image("not_here")
     assert :not_found = get_image("not_here:either")
     delete_image("lol")
