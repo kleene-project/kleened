@@ -227,8 +227,12 @@ defmodule TestHelper do
 
     {error_type, build_log} =
       case List.pop_at(rest, -1) do
-        {{1011, %Msg{msg_type: "error", message: "image build failed"}}, build_log} ->
+        {{1011, %Msg{msg_type: "error", message: "image build failed", data: ""}}, build_log} ->
           {:failed_build, build_log}
+
+        {{1011, %Msg{msg_type: "error", message: "image build failed", data: id}}, build_log} ->
+          # image id of the failed image
+          {:failed_build, {build_log, id}}
 
         {{1011, %Msg{msg_type: "error", message: "failed to process Dockerfile"}}, build_log} ->
           {:invalid_dockerfile, build_log}

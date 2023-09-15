@@ -26,10 +26,11 @@ defmodule Kleened.API.Utils do
     })
   end
 
-  def error_message(msg) do
+  def error_message(msg, data \\ "") do
     Jason.encode!(%Message{
       msg_type: "error",
-      message: msg
+      message: msg,
+      data: data
     })
   end
 

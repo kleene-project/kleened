@@ -815,7 +815,9 @@ defmodule ImageTest do
              "The command '/bin/sh -c ls notexist' returned a non-zero code: 1"
   end
 
-  test "image-build stops prematurely from non-zero exitcode that keeps build-container" do
+  test "image-build stops prematurely from non-zero exitcode but creates the image anyway", %{
+    api_spec: api_spec
+  } do
     dockerfile = """
     FROM FreeBSD:testing
     RUN echo "test" > /etc/testing
@@ -825,23 +827,26 @@ defmodule ImageTest do
     context = create_test_context("test_image_run_nonzero_exitcode")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {:failed_build, build_id, build_log} =
+    {:failed_build, _build_id, {build_log, image_id}} =
       TestHelper.image_invalid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile,
         quiet: false,
         cleanup: false,
-        tag: "test:latest"
+        tag: "test-nocleanup:latest"
       })
 
     assert last_log_entry(build_log) ==
              "The command '/bin/sh -c ls notexist' returned a non-zero code: 1"
 
-    %Schemas.Container{layer_id: layer_id} =
-      Kleened.Core.MetaData.get_container("build_#{build_id}")
+    config = %{
+      image: image_id,
+      cmd: ["/bin/cat", "/etc/testing"]
+    }
 
-    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
-    assert File.read(Path.join(mountpoint, "/etc/testing")) == {:ok, "test\n"}
+    {_cont, exec_id} = TestHelper.container_start_attached(api_spec, "testcont", config)
+    assert_receive {:container, ^exec_id, {:jail_output, "test\n"}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
   end
 
   test "try building an image from a invalid Dockerfile (no linebreak)" do

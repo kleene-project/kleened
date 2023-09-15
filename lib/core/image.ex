@@ -263,38 +263,43 @@ defmodule Kleened.Core.Image do
     end
   end
 
-  defp process_instructions(
-         %State{
-           # No more instructions
-           instructions: [],
-           container: %Schemas.Container{
-             id: container_id,
-             layer_id: layer_id,
-             user: user,
-             env: env,
-             command: cmd
-           }
-         } = state
-       ) do
-    Network.disconnect(container_id, state.network)
-    {:ok, _network_id} = Network.remove(state.network)
+  defp process_instructions(%State{instructions: []} = state) do
+    # No more instructions
+    image = assemble_and_save_image(state)
+    send_msg(state.msg_receiver, {:image_build_succesfully, image})
+  end
+
+  defp assemble_and_save_image(%State{
+         network: network,
+         image_name: image_name,
+         image_tag: image_tag,
+         container: %Schemas.Container{
+           id: container_id,
+           layer_id: layer_id,
+           user: user,
+           env: env,
+           command: cmd
+         }
+       }) do
+    Network.disconnect(container_id, network)
+    {:ok, _network_id} = Network.remove(network)
     MetaData.delete_container(container_id)
     layer = MetaData.get_layer(layer_id)
     Kleened.Core.Layer.to_image_from_layer(layer, container_id)
 
-    img = %Schemas.Image{
+    image = %Schemas.Image{
       id: container_id,
       layer_id: layer_id,
       user: user,
-      name: state.image_name,
-      tag: state.image_tag,
+      name: image_name,
+      tag: image_tag,
       command: cmd,
       env: env,
       created: DateTime.to_iso8601(DateTime.utc_now())
     }
 
-    Kleened.Core.MetaData.add_image(img)
-    send_msg(state.msg_receiver, {:image_build_succesfully, img})
+    Kleened.Core.MetaData.add_image(image)
+    image
   end
 
   defp terminate_failed_build(%State{container: %Schemas.Container{id: nil}} = state) do
@@ -302,14 +307,15 @@ defmodule Kleened.Core.Image do
     send_msg(state.msg_receiver, {:image_build_failed, "image build failed"})
   end
 
-  defp terminate_failed_build(state) do
-    cond do
-      state.cleanup -> Container.remove(state.container.id)
-      true -> :ok
-    end
-
+  defp terminate_failed_build(%State{cleanup: true} = state) do
+    Container.remove(state.container.id)
     Network.remove(state.network)
     send_msg(state.msg_receiver, {:image_build_failed, "image build failed"})
+  end
+
+  defp terminate_failed_build(%State{cleanup: false} = state) do
+    image = assemble_and_save_image(state)
+    send_msg(state.msg_receiver, {:image_build_failed, {"image build failed", image}})
   end
 
   defp environment_replacement_list([expression | rest], evaluated, state) do

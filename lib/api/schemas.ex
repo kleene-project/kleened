@@ -191,7 +191,7 @@ defmodule Kleened.API.Schemas do
         },
         cleanup: %Schema{
           type: :boolean,
-          description: "Whether or not to cleanup the build-container in case of failure.",
+          description: "Whether or not to remove the image in case of a build failure.",
           default: true
         },
         tag: %Schema{
