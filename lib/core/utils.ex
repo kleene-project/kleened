@@ -82,13 +82,20 @@ defmodule Kleened.Core.Utils do
     return_code
   end
 
-  def decode_tagname(tagname) do
-    case String.split(tagname, ":") do
+  def decode_tagname(nametag) do
+    case String.split(nametag, ":") do
       [name] ->
         {name, "latest"}
 
       [name, tag] ->
         {name, tag}
+    end
+  end
+
+  def decode_snapshot(nametagsnapshot) do
+    case String.split(nametagsnapshot, ":@") do
+      [nametag] -> {nametag, ""}
+      [nametag, snapshot] -> {nametag, snapshot}
     end
   end
 

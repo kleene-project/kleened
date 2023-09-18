@@ -59,16 +59,21 @@ defmodule Kleened.Core.Layer do
 
   defp new_(%Layer{snapshot: parent_snapshot}, container_id) do
     dataset = Path.join([Config.get("zroot"), "container", container_id])
-    {_, 0} = Kleened.Core.ZFS.clone(parent_snapshot, dataset)
 
-    new_layer = %Layer{
-      id: Kleened.Core.Utils.uuid(),
-      dataset: dataset,
-      mountpoint: Path.join("/", dataset)
-    }
+    case Kleened.Core.ZFS.clone(parent_snapshot, dataset) do
+      {_, 0} ->
+        new_layer = %Layer{
+          id: Kleened.Core.Utils.uuid(),
+          dataset: dataset,
+          mountpoint: Path.join("/", dataset)
+        }
 
-    Kleened.Core.MetaData.add_layer(new_layer)
-    new_layer
+        Kleened.Core.MetaData.add_layer(new_layer)
+        {:ok, new_layer}
+
+      {reason, _nonzero_exit} ->
+        {:error, reason}
+    end
   end
 
   defp destroy_(layer_id) do

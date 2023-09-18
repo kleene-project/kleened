@@ -77,64 +77,86 @@ defmodule Kleened.Core.Container do
   defp create_(
          container_id,
          name,
+         %Schemas.ContainerConfig{image: image_identifier} = config
+       ) do
+    {image_name, snapshot} = Utils.decode_snapshot(image_identifier)
+    image = MetaData.get_image(image_name)
+
+    case {image, snapshot} do
+      {%Schemas.Image{layer_id: parent_layer_id} = image, ""} ->
+        parent_layer = Kleened.Core.MetaData.get_layer(parent_layer_id)
+        {:ok, layer} = Layer.new(parent_layer, container_id)
+        assemble_container({name, container_id}, image, layer, config)
+
+      {%Schemas.Image{layer_id: parent_layer_id} = image, snapshot} ->
+        parent_layer = Kleened.Core.MetaData.get_layer(parent_layer_id)
+        parent_layer_altered = %Layer{parent_layer | snapshot: snapshot}
+
+        case Layer.new(parent_layer_altered, container_id) do
+          {:ok, layer} ->
+            assemble_container({name, container_id}, image, layer, config)
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      {:not_found, _} ->
+        {:error, :image_not_found}
+    end
+  end
+
+  defp assemble_container(
+         {name, container_id},
+         %Schemas.Image{
+           id: image_id,
+           user: image_user,
+           command: image_command,
+           env: img_env
+         },
+         %Layer{id: layer_id},
          %Schemas.ContainerConfig{
-           image: image_name,
            user: user,
            env: env,
            volumes: volumes,
            cmd: command,
            jail_param: jail_param
-         } = container_config
+         } = config
        ) do
-    case MetaData.get_image(image_name) do
-      :not_found ->
-        {:error, :image_not_found}
+    Logger.debug("creating container on layer #{layer_id} with config: #{inspect(config)}")
 
-      %Schemas.Image{
-        id: image_id,
-        user: image_user,
-        command: image_command,
-        layer_id: parent_layer_id,
-        env: img_env
-      } ->
-        Logger.debug("creating container with config: #{inspect(container_config)}")
+    env = Utils.merge_environment_variable_lists(img_env, env)
 
-        parent_layer = Kleened.Core.MetaData.get_layer(parent_layer_id)
-        %Layer{id: layer_id} = Layer.new(parent_layer, container_id)
-        env = Utils.merge_environment_variable_lists(img_env, env)
+    command =
+      case command do
+        [] -> image_command
+        _ -> command
+      end
 
-        command =
-          case command do
-            [] -> image_command
-            _ -> command
-          end
+    user =
+      case user do
+        "" -> image_user
+        _ -> user
+      end
 
-        user =
-          case user do
-            "" -> image_user
-            _ -> user
-          end
+    cont = %Schemas.Container{
+      id: container_id,
+      name: name,
+      command: command,
+      layer_id: layer_id,
+      image_id: image_id,
+      user: user,
+      jail_param: jail_param,
+      env: env,
+      created: DateTime.to_iso8601(DateTime.utc_now())
+    }
 
-        cont = %Schemas.Container{
-          id: container_id,
-          name: name,
-          command: command,
-          layer_id: layer_id,
-          image_id: image_id,
-          user: user,
-          jail_param: jail_param,
-          env: env,
-          created: DateTime.to_iso8601(DateTime.utc_now())
-        }
+    # Mount volumes into container (if any have been provided)
+    bind_volumes(volumes, cont)
 
-        # Mount volumes into container (if any have been provided)
-        bind_volumes(volumes, cont)
+    # Store new container
+    MetaData.add_container(cont)
 
-        # Store new container
-        MetaData.add_container(cont)
-
-        {:ok, MetaData.get_container(container_id)}
-    end
+    {:ok, MetaData.get_container(container_id)}
   end
 
   defp remove_(:not_found), do: {:error, :not_found}
