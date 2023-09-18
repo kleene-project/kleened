@@ -28,8 +28,8 @@ defmodule Kleened.Core.Layer do
     GenServer.call(__MODULE__, {:new, parent_layer, container_id})
   end
 
-  def to_image_from_layer(layer, image_id) do
-    GenServer.call(__MODULE__, {:to_image_from_layer, layer, image_id})
+  def container_to_image(layer, image_id) do
+    GenServer.call(__MODULE__, {:container_to_image, layer, image_id})
   end
 
   def destroy(layer_id) do
@@ -52,8 +52,8 @@ defmodule Kleened.Core.Layer do
     {:reply, :ok, nil}
   end
 
-  def handle_call({:to_image_from_layer, layer, image_id}, _from, nil) do
-    updated_layer = to_image_from_layer_(layer, image_id)
+  def handle_call({:container_to_image, layer, image_id}, _from, nil) do
+    updated_layer = container_to_image_(layer, image_id)
     {:reply, updated_layer, nil}
   end
 
@@ -82,11 +82,11 @@ defmodule Kleened.Core.Layer do
     end
   end
 
-  defp to_image_from_layer_(%Layer{dataset: dataset} = layer, image_id) do
+  defp container_to_image_(%Layer{dataset: dataset} = layer, image_id) do
     new_dataset = Path.join([Config.get("zroot"), "image", image_id])
-    Kleened.Core.ZFS.rename(dataset, new_dataset)
+    {_, 0} = Kleened.Core.ZFS.rename(dataset, new_dataset)
 
-    snapshot = new_dataset <> "@layer"
+    snapshot = new_dataset <> "@image"
     mountpoint = "/" <> new_dataset
     {_, 0} = Kleened.Core.ZFS.snapshot(snapshot)
 

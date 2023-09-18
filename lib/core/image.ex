@@ -14,6 +14,8 @@ defmodule Kleened.Core.Image do
               msg_receiver: nil,
               current_step: nil,
               instructions: nil,
+              processed_instructions: nil,
+              snapshots: nil,
               total_steps: nil,
               container: nil,
               workdir: nil,
@@ -52,6 +54,8 @@ defmodule Kleened.Core.Image do
           msg_receiver: self(),
           current_step: 1,
           instructions: instructions,
+          processed_instructions: [],
+          snapshots: [],
           total_steps: length(instructions),
           container: %Schemas.Container{env: []},
           workdir: "/",
@@ -104,7 +108,7 @@ defmodule Kleened.Core.Image do
     verify_instructions(rest)
   end
 
-  defp process_instructions(%State{instructions: [{line, {:from, image_ref}} | rest]} = state) do
+  defp process_instructions(%State{instructions: [{line, {:from, image_ref}} | _]} = state) do
     Logger.info("Processing instruction: FROM #{image_ref}")
     state = send_status(line, state)
 
@@ -125,7 +129,8 @@ defmodule Kleened.Core.Image do
       name = "build_" <> state.build_id
       {:ok, container} = Kleened.Core.Container.create(name, container_config)
       Network.connect(state.network, %Schemas.EndPointConfig{container: container.id})
-      process_instructions(%State{state | container: container, instructions: rest})
+      new_state = update_state(%State{state | container: container})
+      process_instructions(new_state)
     else
       :not_found ->
         send_msg(state.msg_receiver, "parent image not found")
@@ -137,7 +142,7 @@ defmodule Kleened.Core.Image do
   end
 
   defp process_instructions(
-         %State{instructions: [{line, {:env, env_vars}} | rest], container: container} = state
+         %State{instructions: [{line, {:env, env_vars}} | _], container: container} = state
        ) do
     Logger.info("Processing instruction: ENV #{inspect(env_vars)}")
     state = send_status(line, state)
@@ -146,11 +151,9 @@ defmodule Kleened.Core.Image do
       {:ok, new_env_vars} ->
         env = Utils.merge_environment_variable_lists(container.env, [new_env_vars])
 
-        process_instructions(%State{
-          state
-          | instructions: rest,
-            container: %Schemas.Container{container | env: env}
-        })
+        process_instructions(
+          update_state(%State{state | container: %Schemas.Container{container | env: env}})
+        )
 
       :error ->
         terminate_failed_build(state)
@@ -158,7 +161,7 @@ defmodule Kleened.Core.Image do
   end
 
   defp process_instructions(
-         %State{instructions: [{line, {:arg, buildarg}} | rest], buildargs_collected: buildargs} =
+         %State{instructions: [{line, {:arg, buildarg}} | _], buildargs_collected: buildargs} =
            state
        ) do
     Logger.info("Processing instruction: ARG #{buildarg}")
@@ -167,31 +170,30 @@ defmodule Kleened.Core.Image do
     buildarg = Utils.envlist2map([buildarg])
     buildargs = Map.merge(buildargs, buildarg)
 
-    process_instructions(%State{
-      state
-      | instructions: rest,
-        buildargs_collected: Utils.map2envlist(buildargs)
-    })
+    process_instructions(
+      update_state(%State{state | buildargs_collected: Utils.map2envlist(buildargs)})
+    )
   end
 
-  defp process_instructions(%State{instructions: [{line, {:user, user}} | rest]} = state) do
+  defp process_instructions(%State{instructions: [{line, {:user, user}} | _]} = state) do
     Logger.info("Processing instruction: USER #{user}")
     state = send_status(line, state)
 
     case environment_replacement(user, state) do
       {:ok, new_user} ->
-        process_instructions(%State{
-          state
-          | instructions: rest,
-            container: %Schemas.Container{state.container | user: new_user}
-        })
+        process_instructions(
+          update_state(%State{
+            state
+            | container: %Schemas.Container{state.container | user: new_user}
+          })
+        )
 
       :error ->
         terminate_failed_build(state)
     end
   end
 
-  defp process_instructions(%State{instructions: [{line, {:workdir, workdir}} | rest]} = state) do
+  defp process_instructions(%State{instructions: [{line, {:workdir, workdir}} | _]} = state) do
     Logger.info("Processing instruction: WORKDIR #{inspect(workdir)}")
     state = send_status(line, state)
 
@@ -209,22 +211,25 @@ defmodule Kleened.Core.Image do
     }
 
     case succesfully_run_execution(config_mkdir, state) do
-      :ok -> process_instructions(%State{state | workdir: new_workdir, instructions: rest})
-      :error -> terminate_failed_build(state)
+      :ok ->
+        process_instructions(update_state(%State{state | workdir: new_workdir}))
+
+      :error ->
+        terminate_failed_build(state)
     end
   end
 
   defp process_instructions(
-         %State{instructions: [{line, {:cmd, cmd}} | rest], container: container} = state
+         %State{instructions: [{line, {:cmd, cmd}} | _], container: container} = state
        ) do
     Logger.info("Processing instruction: CMD #{inspect(cmd)}")
     state = send_status(line, state)
     new_container = %Schemas.Container{container | command: cmd}
-    process_instructions(%State{state | instructions: rest, container: new_container})
+    process_instructions(update_state(%State{state | container: new_container}))
   end
 
   defp process_instructions(
-         %State{instructions: [{line, {:run, cmd}} | rest], container: container} = state
+         %State{instructions: [{line, {:run, cmd}} | _], container: container} = state
        ) do
     Logger.info("Processing instruction: RUN #{inspect(cmd)}")
     state = send_status(line, state)
@@ -239,12 +244,16 @@ defmodule Kleened.Core.Image do
     }
 
     case succesfully_run_execution(config, state) do
-      :ok -> process_instructions(%State{state | instructions: rest})
-      :error -> terminate_failed_build(state)
+      :ok ->
+        snapshot = snapshot_image(state.container, state.msg_receiver)
+        process_instructions(update_state(state, snapshot))
+
+      :error ->
+        terminate_failed_build(state)
     end
   end
 
-  defp process_instructions(%State{instructions: [{line, {:copy, src_dest}} | rest]} = state) do
+  defp process_instructions(%State{instructions: [{line, {:copy, src_dest}} | _]} = state) do
     Logger.info("Processing instruction: COPY #{inspect(src_dest)}")
     state = send_status(line, state)
     context_in_jail = context_directory_in_container(state.container)
@@ -255,7 +264,8 @@ defmodule Kleened.Core.Image do
          :ok <- succesfully_run_execution(config_mkdir, state),
          :ok <- succesfully_run_execution(config_cp, state) do
       unmount_context(context_in_jail)
-      process_instructions(%State{state | instructions: rest})
+      snapshot = snapshot_image(state.container, state.msg_receiver)
+      process_instructions(update_state(state, snapshot))
     else
       _error ->
         unmount_context(context_in_jail)
@@ -269,10 +279,28 @@ defmodule Kleened.Core.Image do
     send_msg(state.msg_receiver, {:image_build_succesfully, image})
   end
 
+  defp update_state(
+         %State{
+           instructions: [{line, _} | rest],
+           processed_instructions: processed_instructions,
+           snapshots: snapshots
+         } = state,
+         snapshot \\ ""
+       ) do
+    %State{
+      state
+      | instructions: rest,
+        processed_instructions: [line | processed_instructions],
+        snapshots: [snapshot | snapshots]
+    }
+  end
+
   defp assemble_and_save_image(%State{
          network: network,
          image_name: image_name,
          image_tag: image_tag,
+         processed_instructions: instructions,
+         snapshots: snapshots,
          container: %Schemas.Container{
            id: container_id,
            layer_id: layer_id,
@@ -285,7 +313,7 @@ defmodule Kleened.Core.Image do
     {:ok, _network_id} = Network.remove(network)
     MetaData.delete_container(container_id)
     layer = MetaData.get_layer(layer_id)
-    Kleened.Core.Layer.to_image_from_layer(layer, container_id)
+    Kleened.Core.Layer.container_to_image(layer, container_id)
 
     image = %Schemas.Image{
       id: container_id,
@@ -295,6 +323,8 @@ defmodule Kleened.Core.Image do
       tag: image_tag,
       command: cmd,
       env: env,
+      instructions: Enum.reverse(instructions),
+      snapshots: Enum.reverse(snapshots),
       created: DateTime.to_iso8601(DateTime.utc_now())
     }
 
@@ -314,8 +344,18 @@ defmodule Kleened.Core.Image do
   end
 
   defp terminate_failed_build(%State{cleanup: false} = state) do
-    image = assemble_and_save_image(state)
+    # When the build process terminates abruptly the state is not being updated, so do it now.
+    image = assemble_and_save_image(update_state(state))
     send_msg(state.msg_receiver, {:image_build_failed, {"image build failed", image}})
+  end
+
+  defp snapshot_image(%Schemas.Container{layer_id: layer_id}, pid) do
+    layer = MetaData.get_layer(layer_id)
+    snapshot = "@#{Utils.uuid()}"
+    ZFS.snapshot("#{layer.dataset}#{snapshot}")
+    msg = "--> Snapshot created: #{snapshot}\n"
+    send_msg(pid, msg)
+    snapshot
   end
 
   defp environment_replacement_list([expression | rest], evaluated, state) do

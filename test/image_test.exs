@@ -25,7 +25,7 @@ defmodule ImageTest do
   test "building a simple image that generates some text", %{api_spec: api_spec} do
     dockerfile = """
     FROM FreeBSD:testing
-    RUN echo "lets test that we receives this!"
+    RUN echo "lets test that we receive this!"
     RUN uname
     """
 
@@ -41,8 +41,8 @@ defmodule ImageTest do
 
     assert build_log == [
              "Step 1/3 : FROM FreeBSD:testing\n",
-             "Step 2/3 : RUN echo \"lets test that we receives this!\"\n",
-             "lets test that we receives this!\n",
+             "Step 2/3 : RUN echo \"lets test that we receive this!\"\n",
+             "lets test that we receive this!\n",
              "Step 3/3 : RUN uname\n",
              "FreeBSD\n"
            ]

@@ -282,6 +282,26 @@ defmodule Kleened.API.Schemas do
         },
         layer_id: %Schema{description: "Id of the layer containing the image", type: :string},
         user: %Schema{description: "user used when executing the command", type: :string},
+        instructions: %Schema{
+          description: "Instructions used for creating this image",
+          type: :array,
+          items: %Schema{type: :string},
+          default: [],
+          example: [
+            "FROM FreeBSD:13.2-STABLE",
+            "RUN pkg -y install bash",
+            "RUN echo uname",
+            "CMD /etc/rc"
+          ]
+        },
+        snapshots: %Schema{
+          description:
+            "Array the same size as `instructions` where the n'th entry contain the snapshot (if it exists) for the n'th instruction. If the n'th entry of `snapshots` is the empty string `\"\"` there is no snapshot for the n'th instruction.",
+          type: :array,
+          items: %Schema{type: :string},
+          default: [],
+          example: ["", "@da2232c1f25e", "@643f1fd98e3d", ""]
+        },
         created: %Schema{description: "When the image was created", type: :string}
       }
     })
