@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Image do
-  alias Kleened.Core.{ZFS, MetaData, Utils, Layer, Network, OS, Container}
+  alias Kleened.Core.{Const, ZFS, MetaData, Utils, Layer, Network, OS, Container}
   alias Kleened.API.Schemas
   require Logger
 
@@ -355,7 +355,7 @@ defmodule Kleened.Core.Image do
     layer = MetaData.get_layer(layer_id)
     snapshot = "@#{Utils.uuid()}"
     ZFS.snapshot("#{layer.dataset}#{snapshot}")
-    msg = "--> Snapshot created: #{snapshot}\n"
+    msg = Const.image_builder_snapshot_message(snapshot)
     send_msg(pid, msg)
     snapshot
   end
@@ -576,7 +576,7 @@ defmodule Kleened.Core.Image do
            :msg_receiver => pid
          } = state
        ) do
-    msg = "Step #{step}/#{nsteps} : #{line}\n"
+    msg = Const.image_builder_status_message(step, nsteps, line)
     send_msg(pid, msg)
     %State{state | :current_step => step + 1}
   end

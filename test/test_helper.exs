@@ -1,5 +1,5 @@
 alias OpenApiSpex.Cast
-alias Kleened.Core.{ZFS, Config, Layer, Exec, MetaData}
+alias Kleened.Core.{Const, ZFS, Config, Layer, Exec, MetaData}
 alias :gun, as: Gun
 alias Kleened.API.Router
 alias Kleened.API.Schemas
@@ -217,9 +217,7 @@ defmodule TestHelper do
   def image_valid_build(config) do
     config = Map.merge(%{quiet: false, cleanup: true}, config)
     build_log_raw = image_build_raw(config)
-    {image_id, build_id, build_log} = process_buildlog(build_log_raw)
-    image = MetaData.get_image(image_id)
-    {image, build_id, build_log}
+    process_buildlog(build_log_raw, config)
   end
 
   def process_failed_buildlog([msg_json | rest]) do
@@ -241,10 +239,118 @@ defmodule TestHelper do
     {error_type, build_id, build_log}
   end
 
-  def process_buildlog([msg_json | rest]) do
-    {:ok, %Msg{data: build_id}} = Cast.cast(Msg.schema(), Jason.decode!(msg_json, keys: :atoms!))
-    {{1000, %Msg{data: image_id}}, build_log} = List.pop_at(rest, -1)
-    {image_id, build_id, build_log}
+  def process_buildlog([msg_json | rest], config) do
+    {:ok, %Msg{data: image_id}} = Cast.cast(Msg.schema(), Jason.decode!(msg_json, keys: :atoms!))
+    {{1000, %Msg{data: ^image_id}}, build_log} = List.pop_at(rest, -1)
+    image = MetaData.get_image(image_id)
+    process_output = process_buildlog_(config, image.instructions, image.snapshots, build_log)
+    {image, process_output}
+  end
+
+  defp process_buildlog_(config, instructions, snapshots, build_log) do
+    nsteps = length(instructions)
+    step = 0
+    snapshots = Enum.filter(snapshots, fn snap -> snap != "" end)
+    process_buildlog_(config, step, nsteps, instructions, snapshots, build_log, [])
+  end
+
+  defp process_buildlog_(
+         config,
+         step,
+         nsteps,
+         instructions,
+         snapshots,
+         [log_entry | build_log],
+         process_output
+       ) do
+    instruction_result =
+      case instructions do
+        [instruction | remaining_instructions] ->
+          step = step + 1
+          status_msg = Const.image_builder_status_message(step, nsteps, instruction)
+
+          if status_msg == log_entry do
+            process_buildlog_(
+              config,
+              step,
+              nsteps,
+              remaining_instructions,
+              snapshots,
+              build_log,
+              process_output
+            )
+          else
+            :no_result
+          end
+
+        [] ->
+          :no_result
+      end
+
+    snapshot_result =
+      case snapshots do
+        [snapshot | remaining_snapshots] ->
+          snapshot_msg = Const.image_builder_snapshot_message(snapshot)
+
+          if snapshot_msg == log_entry do
+            process_buildlog_(
+              config,
+              step,
+              nsteps,
+              instructions,
+              remaining_snapshots,
+              build_log,
+              process_output
+            )
+          else
+            :no_result
+          end
+
+        [] ->
+          :no_result
+      end
+
+    cond do
+      instruction_result != :no_result ->
+        instruction_result
+
+      snapshot_result != :no_result ->
+        snapshot_result
+
+      true ->
+        # If neither snapshot nor instruction produced a match the log entry must be process output.
+        process_buildlog_(
+          config,
+          step,
+          nsteps,
+          instructions,
+          snapshots,
+          build_log,
+          [log_entry | process_output]
+        )
+    end
+  end
+
+  defp process_buildlog_(
+         config,
+         step,
+         nsteps,
+         instructions,
+         snapshots,
+         [],
+         process_output
+       ) do
+    case config do
+      %{quiet: false} ->
+        assert step == nsteps
+        assert instructions == []
+        assert snapshots == []
+
+      %{quiet: true} ->
+        :ok
+    end
+
+    Enum.reverse(process_output)
   end
 
   def image_build_raw(config) do

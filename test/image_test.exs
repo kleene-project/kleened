@@ -37,13 +37,10 @@ defmodule ImageTest do
       tag: "websock_img:latest"
     }
 
-    {%Schemas.Image{id: image_id}, _build_id, build_log} = TestHelper.image_valid_build(config)
+    {%Schemas.Image{id: image_id}, build_log} = TestHelper.image_valid_build(config)
 
     assert build_log == [
-             "Step 1/3 : FROM FreeBSD:testing\n",
-             "Step 2/3 : RUN echo \"lets test that we receive this!\"\n",
              "lets test that we receive this!\n",
-             "Step 3/3 : RUN uname\n",
              "FreeBSD\n"
            ]
 
@@ -78,7 +75,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {%Schemas.Image{layer_id: layer_id}, _build_id, _build_log} =
+    {%Schemas.Image{layer_id: layer_id}, _build_log} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
@@ -104,7 +101,6 @@ defmodule ImageTest do
     """
 
     context = create_test_context("test_copy_instruction")
-    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
     config = %{
       context: context,
@@ -112,22 +108,14 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, _build_id, build_log} =
-      TestHelper.image_valid_build(config)
-
-    expected_log = [
-      "Step 1/7 : FROM FreeBSD:testing\n",
-      "Step 2/7 : WORKDIR /testdir\n",
-      "Step 3/7 : RUN pwd\n",
+    expected_output = [
       "/testdir\n",
-      "Step 4/7 : RUN echo \"lol\" > testfile\n",
-      "Step 5/7 : WORKDIR /home/\n",
-      "Step 6/7 : RUN pwd\n",
-      "/home\n",
-      "Step 7/7 : COPY test.txt .\n"
+      "/home\n"
     ]
 
-    assert expected_log == build_log
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+    {%Schemas.Image{layer_id: layer_id}, build_log} = TestHelper.image_valid_build(config)
+    assert expected_output == build_log
     %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "/testdir/testfile")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "/home/test.txt")) == {:ok, "lol\n"}
@@ -145,7 +133,6 @@ defmodule ImageTest do
     """
 
     context = create_test_context("test_copy_instruction")
-    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
     config = %{
       context: context,
@@ -153,20 +140,13 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
-
     expected_log = [
-      "Step 1/7 : FROM FreeBSD:testing\n",
-      "Step 2/7 : WORKDIR /a\n",
-      "Step 3/7 : WORKDIR b\n",
-      "Step 4/7 : WORKDIR c\n",
-      "Step 5/7 : RUN pwd\n",
       "/a/b/c\n",
-      "Step 6/7 : WORKDIR /home\n",
-      "Step 7/7 : RUN pwd\n",
       "/home\n"
     ]
 
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+    {_image, build_log} = TestHelper.image_valid_build(config)
     assert expected_log == build_log
   end
 
@@ -185,8 +165,7 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, _build_id, _build_log} =
-      TestHelper.image_valid_build(config)
+    {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
 
     %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
@@ -208,8 +187,7 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, _build_id, _build_log} =
-      TestHelper.image_valid_build(config)
+    {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
 
     %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/lol/test.txt")) == {:ok, "lol\n"}
@@ -231,8 +209,7 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, _build_id, _build_log} =
-      TestHelper.image_valid_build(config)
+    {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
 
     %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
@@ -257,8 +234,7 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, _build_id, _build_log} =
-      TestHelper.image_valid_build(config)
+    {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
 
     %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
     # we cannot check the symbolic link from the host:
@@ -273,7 +249,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {%Schemas.Image{id: image_id}, _build_id, _build_log} =
+    {%Schemas.Image{id: image_id}, _build_log} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
@@ -302,14 +278,14 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {image, _build_id, build_log} =
+    {image, build_log} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
         tag: "test:latest"
       })
 
-    assert List.last(build_log) == "PWD=/\nTEST1=lol\nTEST2=testing test\nTEST3=test test\n"
+    assert build_log == ["PWD=/\nTEST1=lol\nTEST2=testing test\nTEST3=test test\n"]
     assert Enum.sort(image.env) == ["TEST1=lol", "TEST2=testing test", "TEST3=test test"]
   end
 
@@ -321,7 +297,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {image, _build_id, _build_log} =
+    {image, _build_log} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
@@ -344,7 +320,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {image, _build_id, build_log} =
+    {image, build_log} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
@@ -352,15 +328,8 @@ defmodule ImageTest do
       })
 
     expected_build_log = [
-      "Step 1/7 : FROM FreeBSD:testing\n",
-      "Step 2/7 : ENV TEST=testvalue\n",
-      "Step 3/7 : RUN printenv\n",
       "PWD=/\nTEST=testvalue\n",
-      "Step 4/7 : ENV TEST=\"a new test value for TEST\"\n",
-      "Step 5/7 : ENV TEST2=test2value\n",
-      "Step 6/7 : RUN printenv\n",
-      "PWD=/\nTEST=a new test value for TEST\nTEST2=test2value\n",
-      "Step 7/7 : CMD /bin/ls\n"
+      "PWD=/\nTEST=a new test value for TEST\nTEST2=test2value\n"
     ]
 
     assert expected_build_log == build_log
@@ -381,9 +350,6 @@ defmodule ImageTest do
     }
 
     build_log_passed = [
-      "Step 1/3 : ARG testvar\n",
-      "Step 2/3 : FROM ${testvar:-doesnotexist}\n",
-      "Step 3/3 : RUN echo \"succesfully used parent image\"\n",
       "succesfully used parent image\n"
     ]
 
@@ -393,7 +359,7 @@ defmodule ImageTest do
     assert last_log_entry(build_log) == "parent image not found"
 
     config = Map.put(config, :buildargs, %{"testvar" => "FreeBSD:testing"})
-    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
+    {_image, build_log} = TestHelper.image_valid_build(config)
 
     assert build_log_passed == build_log
   end
@@ -433,26 +399,15 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    expected_build_log = fn x, y ->
-      [
-        "Step 1/4 : FROM FreeBSD:testing\n",
-        "Step 2/4 : ARG testvar\n",
-        "Step 3/4 : RUN echo \"lol:\$testvar\"\n",
-        "#{x}\n",
-        "Step 4/4 : RUN echo \"lol:${testvar:-empty}\"\n",
-        "#{y}\n"
-      ]
-    end
-
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
-    assert expected_build_log.("lol:", "lol:empty") == build_log
+    {_image, build_log} = TestHelper.image_valid_build(config)
+    assert ["lol:\n", "lol:empty\n"] == build_log
 
     config = Map.put(config, :buildargs, %{"testvar" => "testval"})
-    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
+    {_image, build_log} = TestHelper.image_valid_build(config)
 
-    assert expected_build_log.("lol:testval", "lol:testval") == build_log
+    assert ["lol:testval\n", "lol:testval\n"] == build_log
   end
 
   test "create image with ARG-variable with default value" do
@@ -469,25 +424,14 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    expected_build_log = fn x ->
-      [
-        "Step 1/4 : FROM FreeBSD:testing\n",
-        "Step 2/4 : ARG testvar1=testval1\n",
-        "Step 3/4 : ARG testvar2=\"test val2\"\n",
-        "Step 4/4 : RUN echo \"$testvar1:$testvar2\"\n",
-        "#{x}\n"
-      ]
-    end
-
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
-    assert expected_build_log.("testval1:test val2") == build_log
+    {_image, build_log} = TestHelper.image_valid_build(config)
+    assert ["testval1:test val2\n"] == build_log
 
     config = Map.put(config, :buildargs, %{"testvar1" => "newval1", "testvar2" => "newval2"})
-    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
-
-    assert expected_build_log.("newval1:newval2") == build_log
+    {_image, build_log} = TestHelper.image_valid_build(config)
+    assert ["newval1:newval2\n"] == build_log
   end
 
   test "test precedenice ARG-variable definition: Client vs. Dockerfile" do
@@ -501,13 +445,7 @@ defmodule ImageTest do
     """
 
     expected_build_log = [
-      "Step 1/6 : FROM FreeBSD:testing\n",
-      "Step 2/6 : USER ${username:-ntpd}\n",
-      "Step 3/6 : ARG username\n",
-      "Step 4/6 : RUN whoami\n",
       "ntpd\n",
-      "Step 5/6 : USER $username\n",
-      "Step 6/6 : RUN whoami\n",
       "games\n"
     ]
 
@@ -519,7 +457,7 @@ defmodule ImageTest do
     }
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
-    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
+    {_image, build_log} = TestHelper.image_valid_build(config)
     assert expected_build_log == build_log
   end
 
@@ -531,13 +469,7 @@ defmodule ImageTest do
     RUN echo $CONT_IMG_VER
     """
 
-    expected_build_log = [
-      "Step 1/4 : FROM FreeBSD:testing\n",
-      "Step 2/4 : ARG CONT_IMG_VER\n",
-      "Step 3/4 : ENV CONT_IMG_VER=v1.0.0\n",
-      "Step 4/4 : RUN echo $CONT_IMG_VER\n",
-      "v1.0.0\n"
-    ]
+    expected_build_log = ["v1.0.0\n"]
 
     config = %{
       context: @tmp_context,
@@ -547,7 +479,7 @@ defmodule ImageTest do
     }
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
-    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
+    {_image, build_log} = TestHelper.image_valid_build(config)
     assert expected_build_log == build_log
   end
 
@@ -561,13 +493,6 @@ defmodule ImageTest do
     CMD echo $CONT_IMG_VER
     """
 
-    expected_build_log = [
-      "Step 1/4 : FROM FreeBSD:testing\n",
-      "Step 2/4 : ARG CONT_IMG_VER\n",
-      "Step 3/4 : ENV CONT_IMG_VER=${CONT_IMG_VER:-v1.0.0}\n",
-      "Step 4/4 : CMD echo $CONT_IMG_VER\n"
-    ]
-
     config = %{
       context: @tmp_context,
       dockerfile: @tmp_dockerfile,
@@ -577,8 +502,8 @@ defmodule ImageTest do
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
     # Build and run _without_ supplied buildarg
-    {image, _build_id, build_log} = TestHelper.image_valid_build(config)
-    assert expected_build_log == build_log
+    {image, build_log} = TestHelper.image_valid_build(config)
+    assert [] == build_log
 
     {container, exec_id} =
       TestHelper.container_start_attached(api_spec, "test-arg2env", %{image: image.id})
@@ -588,8 +513,8 @@ defmodule ImageTest do
 
     # Build and run _with_ supplied buildarg
     config = Map.put(config, :buildargs, %{"CONT_IMG_VER" => "v.2.0.1"})
-    {image, _build_id, build_log} = TestHelper.image_valid_build(config)
-    assert expected_build_log == build_log
+    {image, build_log} = TestHelper.image_valid_build(config)
+    assert [] == build_log
 
     {container, exec_id} =
       TestHelper.container_start_attached(api_spec, "test-arg2env", %{image: image.id})
@@ -643,20 +568,10 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    expected_build_log = fn x ->
-      [
-        "Step 1/4 : FROM FreeBSD:testing\n",
-        "Step 2/4 : ARG TESTVAR=ntpd\n",
-        "Step 3/4 : USER $TESTVAR\n",
-        "Step 4/4 : RUN echo \"$(/usr/bin/id)\"\n",
-        "#{x}\n"
-      ]
-    end
-
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
-    assert expected_build_log.("uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)") == build_log
+    {_image, build_log} = TestHelper.image_valid_build(config)
+    assert ["uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"] == build_log
   end
 
   test "create ARG-variable and use with COPY instruction" do
@@ -665,12 +580,6 @@ defmodule ImageTest do
     ARG TESTVAR="test.txt"
     COPY $TESTVAR /root/
     """
-
-    expected_build_log = [
-      "Step 1/3 : FROM FreeBSD:testing\n",
-      "Step 2/3 : ARG TESTVAR=\"test.txt\"\n",
-      "Step 3/3 : COPY $TESTVAR /root/\n"
-    ]
 
     context = create_test_context("test_arg_with_copy_instruction")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
@@ -681,12 +590,11 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, _build_id, build_log} =
-      TestHelper.image_valid_build(config)
+    {%Schemas.Image{layer_id: layer_id}, build_log} = TestHelper.image_valid_build(config)
 
     %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
 
-    assert expected_build_log == build_log
+    assert [] == build_log
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
   end
 
@@ -704,17 +612,11 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    expected_build_log = [
-      "Step 1/4 : FROM FreeBSD:testing\n",
-      "Step 2/4 : ARG testvar=should_be_overwritten\n",
-      "Step 3/4 : ARG testvar\n",
-      "Step 4/4 : RUN echo -n \"empty:$testvar\"\n",
-      "empty:"
-    ]
+    expected_build_log = ["empty:"]
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
+    {_image, build_log} = TestHelper.image_valid_build(config)
     assert expected_build_log == build_log
   end
 
@@ -732,17 +634,11 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    expected_build_log = [
-      "Step 1/4 : FROM FreeBSD:testing\n",
-      "Step 2/4 : ARG CONT_IMG_VER\n",
-      "Step 3/4 : ENV CONT_IMG_VER=v1.0.0\n",
-      "Step 4/4 : RUN echo $CONT_IMG_VER\n",
-      "v1.0.0\n"
-    ]
+    expected_build_log = ["v1.0.0\n"]
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {_image, _build_id, build_log} = TestHelper.image_valid_build(config)
+    {_image, build_log} = TestHelper.image_valid_build(config)
     assert expected_build_log == build_log
   end
 
@@ -757,7 +653,7 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {%Schemas.Image{layer_id: layer_id}, _build_id, _build_log} =
+    {%Schemas.Image{layer_id: layer_id}, _build_log} =
       TestHelper.image_valid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile,
@@ -776,7 +672,7 @@ defmodule ImageTest do
     FROM FreeBSD:testing
     COPY test.txt /root/
     RUN echo \
-      "this should be relayed back to the parent process"
+      "this should not be relayed back to the parent process"
     USER ntpd
     CMD /etc/rc
     """
@@ -784,7 +680,7 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {_image, _build_id, build_log} =
+    {_image, build_log} =
       TestHelper.image_valid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile,
