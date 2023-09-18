@@ -15,8 +15,8 @@ defmodule Kleened.API.ImageBuild do
       description: """
       #{Utils.general_websocket_description()}
 
-      * The `data` field in the starting-message contains the `build_id`.
-      * If the build process is successful, the `data` field in the closing-message contains the `image_id`.
+      * The `data` field in the starting-message contains the `image_id`.
+      * If the build process is successful, the `data` field in the closing-message contains the `image_id` otherwise it contains the latest snapshot or empty string `""` if the build failed before any snapshots have been created.
       """,
       operationId: "ImageBuild",
       requestBody:
@@ -57,18 +57,17 @@ defmodule Kleened.API.ImageBuild do
              quiet: quiet
            }} ->
             buildargs = Core.Utils.map2envlist(buildargs)
-            build_id = String.slice(Kleened.Core.Utils.uuid(), 0..5)
 
-            case Image.build(build_id, context, dockerfile, tag, buildargs, cleanup, quiet) do
-              {:ok, build_id, _pid} ->
+            case Image.build(context, dockerfile, tag, buildargs, cleanup, quiet) do
+              {:ok, image_id, _pid} ->
                 Logger.debug("Building image. Await output.")
-                {[{:text, Utils.starting_message(build_id)}], %{handshaking: false}}
+                {[{:text, Utils.starting_message(image_id)}], %{handshaking: false}}
 
               {:error, msg} ->
                 Logger.info("Error building image. Closing websocket.")
 
                 {[
-                   {:text, Utils.starting_message(build_id)},
+                   {:text, Utils.starting_message("")},
                    {:text, msg},
                    {:close, 1011, Utils.error_message("failed to process Dockerfile")}
                  ], state}

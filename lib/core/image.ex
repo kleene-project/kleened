@@ -4,8 +4,8 @@ defmodule Kleened.Core.Image do
   require Logger
 
   defmodule State do
-    defstruct build_id: nil,
-              context: nil,
+    defstruct context: nil,
+              image_id: nil,
               image_name: nil,
               image_tag: nil,
               network: nil,
@@ -27,7 +27,7 @@ defmodule Kleened.Core.Image do
 
   @spec build(String.t(), String.t(), String.t(), String.t(), boolean(), boolean()) ::
           {:ok, pid()} | {:error, String.t()}
-  def build(build_id, context_path, dockerfile, tag, buildargs, cleanup, quiet \\ false) do
+  def build(context_path, dockerfile, tag, buildargs, cleanup, quiet \\ false) do
     {name, tag} = Kleened.Core.Utils.decode_tagname(tag)
     dockerfile_path = Path.join(context_path, dockerfile)
     {:ok, dockerfile} = File.read(dockerfile_path)
@@ -35,17 +35,19 @@ defmodule Kleened.Core.Image do
 
     case verify_instructions(instructions) do
       :ok ->
+        image_id = Kleened.Core.Utils.uuid()
+
         {:ok, buildnet} =
           Network.create(%Schemas.NetworkConfig{
-            name: "build" <> build_id,
+            name: "buildnet_" <> image_id,
             subnet: "172.18.0.0/24",
-            ifname: build_id,
+            ifname: "kl" <> String.slice(image_id, 0..4),
             driver: "loopback"
           })
 
         state = %State{
-          build_id: build_id,
           context: context_path,
+          image_id: image_id,
           image_name: name,
           image_tag: tag,
           network: buildnet.id,
@@ -64,7 +66,7 @@ defmodule Kleened.Core.Image do
         }
 
         pid = Process.spawn(fn -> process_instructions(state) end, [:link])
-        {:ok, build_id, pid}
+        {:ok, image_id, pid}
 
       {:error, error_msg} ->
         {:error, error_msg}
@@ -126,8 +128,8 @@ defmodule Kleened.Core.Image do
           }
         )
 
-      name = "build_" <> state.build_id
-      {:ok, container} = Kleened.Core.Container.create(name, container_config)
+      name = "builder_" <> state.image_id
+      {:ok, container} = Kleened.Core.Container.create(state.image_id, name, container_config)
       Network.connect(state.network, %Schemas.EndPointConfig{container: container.id})
       new_state = update_state(%State{state | container: container})
       process_instructions(new_state)

@@ -39,7 +39,14 @@ defmodule Kleened.Core.Container do
   ### ===================================================================
   @spec create(String.t(), create_opts) :: {:ok, Container.t()} | {:error, :image_not_found}
   def create(name, options) do
-    create_(name, options)
+    container_id = Kleened.Core.Utils.uuid()
+    create_(container_id, name, options)
+  end
+
+  @spec create(String.t(), String.t(), create_opts) ::
+          {:ok, Container.t()} | {:error, :image_not_found}
+  def create(container_id, name, options) do
+    create_(container_id, name, options)
   end
 
   @spec remove(id_or_name()) :: {:ok, container_id()} | {:error, :not_found}
@@ -68,6 +75,7 @@ defmodule Kleened.Core.Container do
   ### Internal functions
   ### ===================================================================
   defp create_(
+         container_id,
          name,
          %Schemas.ContainerConfig{
            image: image_name,
@@ -90,7 +98,6 @@ defmodule Kleened.Core.Container do
         env: img_env
       } ->
         Logger.debug("creating container with config: #{inspect(container_config)}")
-        container_id = Kleened.Core.Utils.uuid()
 
         parent_layer = Kleened.Core.MetaData.get_layer(parent_layer_id)
         %Layer{id: layer_id} = Layer.new(parent_layer, container_id)
