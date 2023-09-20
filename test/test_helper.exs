@@ -1,5 +1,5 @@
 alias OpenApiSpex.Cast
-alias Kleened.Core.{Const, ZFS, Config, Layer, Exec, MetaData}
+alias Kleened.Core.{Const, ZFS, Config, Layer, Exec, MetaData, Container}
 alias :gun, as: Gun
 alias Kleened.API.Router
 alias Kleened.API.Schemas
@@ -27,6 +27,22 @@ defmodule TestHelper do
 
   @kleened_host {0, 0, 0, 0, 0, 0, 0, 1}
   @opts Router.init([])
+
+  def container_run(api_spec, config) do
+    config_create = %{
+      image: config.image,
+      cmd: config.cmd
+    }
+
+    %{id: container_id} = TestHelper.container_create(api_spec, "testrun", config_create)
+    {:ok, exec_id} = Exec.create(container_id)
+
+    {closing_msg, process_output} =
+      valid_execution(%{exec_id: exec_id, attach: config.attach, start_container: true})
+
+    {:ok, ^container_id} = Container.remove(container_id)
+    {closing_msg, process_output}
+  end
 
   def container_start_attached(api_spec, name, config) do
     %{id: container_id} = container_create(api_spec, name, config)
@@ -221,7 +237,7 @@ defmodule TestHelper do
   end
 
   def process_failed_buildlog([msg_json | rest]) do
-    {:ok, %Msg{data: build_id}} = Cast.cast(Msg.schema(), Jason.decode!(msg_json, keys: :atoms!))
+    {:ok, %Msg{data: image_id}} = Cast.cast(Msg.schema(), Jason.decode!(msg_json, keys: :atoms!))
 
     {error_type, build_log} =
       case List.pop_at(rest, -1) do
@@ -236,21 +252,27 @@ defmodule TestHelper do
           {:invalid_dockerfile, build_log}
       end
 
-    {error_type, build_id, build_log}
+    {error_type, image_id, build_log}
   end
 
   def process_buildlog([msg_json | rest], config) do
     {:ok, %Msg{data: image_id}} = Cast.cast(Msg.schema(), Jason.decode!(msg_json, keys: :atoms!))
     {{1000, %Msg{data: ^image_id}}, build_log} = List.pop_at(rest, -1)
     image = MetaData.get_image(image_id)
-    process_output = process_buildlog_(config, image.instructions, image.snapshots, build_log)
+    process_output = process_buildlog_(config, image.instructions, build_log)
     {image, process_output}
   end
 
-  defp process_buildlog_(config, instructions, snapshots, build_log) do
-    nsteps = length(instructions)
+  defp process_buildlog_(config, instructsnaps, build_log) do
+    nsteps = length(instructsnaps)
     step = 0
-    snapshots = Enum.filter(snapshots, fn snap -> snap != "" end)
+
+    snapshots =
+      Enum.map(instructsnaps, fn [_, snap] -> snap end)
+      |> Enum.filter(fn snap -> snap != "" end)
+
+    instructions = Enum.map(instructsnaps, fn [instruction, _] -> instruction end)
+
     process_buildlog_(config, step, nsteps, instructions, snapshots, build_log, [])
   end
 

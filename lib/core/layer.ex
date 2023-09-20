@@ -57,7 +57,7 @@ defmodule Kleened.Core.Layer do
     {:reply, updated_layer, nil}
   end
 
-  defp new_(%Layer{snapshot: parent_snapshot}, container_id) do
+  defp new_(%Layer{id: parent_id, snapshot: parent_snapshot}, container_id) do
     dataset = Path.join([Config.get("zroot"), "container", container_id])
 
     case Kleened.Core.ZFS.clone(parent_snapshot, dataset) do
@@ -65,7 +65,8 @@ defmodule Kleened.Core.Layer do
         new_layer = %Layer{
           id: Kleened.Core.Utils.uuid(),
           dataset: dataset,
-          mountpoint: Path.join("/", dataset)
+          mountpoint: Path.join("/", dataset),
+          parent_id: parent_id
         }
 
         Kleened.Core.MetaData.add_layer(new_layer)

@@ -691,6 +691,163 @@ defmodule ImageTest do
     assert build_log == []
   end
 
+  test "creating a container using a snapshot from an image-build", %{api_spec: api_spec} do
+    dockerfile = """
+    FROM FreeBSD:testing
+    COPY test.txt /etc/
+    RUN echo -n "some text" > /etc/test2.txt
+    CMD /etc/rc
+    """
+
+    context = create_test_context("test_image_snapshots")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    {image, _build_log} =
+      TestHelper.image_valid_build(%{
+        context: context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:latest"
+      })
+
+    snapshot = fetch_snapshot(image, "COPY test.txt /etc/")
+
+    {_closing_msg, process_output} =
+      TestHelper.container_run(api_spec, %{
+        image: "#{image.id}:#{snapshot}",
+        attach: true,
+        cmd: ["/bin/cat", "/etc/test.txt"]
+      })
+
+    assert process_output == ["lol\n"]
+
+    {_closing_msg, process_output} =
+      TestHelper.container_run(api_spec, %{
+        image: "#{image.id}:#{snapshot}",
+        attach: true,
+        cmd: ["/bin/cat", "/etc/test2.txt"]
+      })
+
+    assert process_output == [
+             "cat: /etc/test2.txt: No such file or directory\n",
+             "jail: /usr/bin/env -i /bin/cat /etc/test2.txt: failed\n"
+           ]
+
+    snapshot = fetch_snapshot(image, "RUN echo -n \"some text\" > /etc/test2.txt")
+
+    {_closing_msg, process_output} =
+      TestHelper.container_run(api_spec, %{
+        image: "test:latest:#{snapshot}",
+        attach: true,
+        cmd: ["/bin/cat", "/etc/test2.txt"]
+      })
+
+    assert process_output == ["some text"]
+  end
+
+  test "creating a container using a snapshot from a failed image-build", %{api_spec: api_spec} do
+    dockerfile = """
+    FROM FreeBSD:testing
+    COPY test.txt /etc/
+    RUN ls notexist
+    RUN echo -n "some text" > /etc/test2.txt
+    CMD /etc/rc
+    """
+
+    context = create_test_context("test_image_snapshots2")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    {_error_type, image_id, _build_log} =
+      TestHelper.image_invalid_build(%{
+        context: context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:latest",
+        cleanup: false
+      })
+
+    image = MetaData.get_image(image_id)
+    snapshot = fetch_snapshot(image, "COPY test.txt /etc/")
+
+    {_closing_msg, process_output} =
+      TestHelper.container_run(api_spec, %{
+        image: "#{image.id}:#{snapshot}",
+        attach: true,
+        cmd: ["/bin/cat", "/etc/test.txt"]
+      })
+
+    assert process_output == ["lol\n"]
+
+    {_closing_msg, process_output} =
+      TestHelper.container_run(api_spec, %{
+        image: "#{image.id}:#{snapshot}",
+        attach: true,
+        cmd: ["/bin/cat", "/etc/test2.txt"]
+      })
+
+    assert process_output == [
+             "cat: /etc/test2.txt: No such file or directory\n",
+             "jail: /usr/bin/env -i /bin/cat /etc/test2.txt: failed\n"
+           ]
+  end
+
+  # The mini-jail userland used for the 'fetch' and 'zfs' image creation tests
+  # have been created with https://github.com/Freaky/mkjail using the command
+  # mkjail -a minimal_testjail.txz /usr/bin/env -i /usr/local/bin/python3.9 -c "print('lol')"
+  test "create base image using a method 'zfs'", %{api_spec: api_spec} do
+    dataset = "zroot/image_create_zfs_test"
+    ZFS.create(dataset)
+
+    {_, 0} =
+      OS.cmd(["/usr/bin/tar", "-xf", "./test/data/minimal_testjail.txz", "-C", "/#{dataset}"])
+
+    config = %{
+      method: "zfs",
+      zfs_dataset: dataset,
+      tag: "zfscreate:testing"
+    }
+
+    frames = TestHelper.image_create(config)
+    {{1000, closing_msg}, _rest} = List.pop_at(frames, -1)
+    assert %Message{data: _, message: "image created", msg_type: "closing"} = closing_msg
+
+    {_cont, exec_id} =
+      TestHelper.container_start_attached(api_spec, "testcont", %{
+        image: closing_msg.data,
+        cmd: ["/usr/local/bin/python3.9", "-c", "print('testing minimaljail')"],
+        jail_param: ["exec.system_jail_user"],
+        user: "root"
+      })
+
+    assert_receive {:container, ^exec_id, {:jail_output, jail_output}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
+    assert jail_output == "testing minimaljail\n"
+    ZFS.destroy_force(dataset)
+  end
+
+  test "create base image using a method 'fetch'", %{api_spec: api_spec} do
+    config = %{
+      method: "fetch",
+      url: "file://./test/data/minimal_testjail.txz",
+      tag: "fetchcreate:testing"
+    }
+
+    frames = TestHelper.image_create(config)
+    {{1000, closing_msg}, _rest} = List.pop_at(frames, -1)
+
+    assert %Message{data: _, message: "image created", msg_type: "closing"} = closing_msg
+
+    {_cont, exec_id} =
+      TestHelper.container_start_attached(api_spec, "testcont", %{
+        image: closing_msg.data,
+        cmd: ["/usr/local/bin/python3.9", "-c", "print('testing minimaljail')"],
+        jail_param: ["exec.system_jail_user"],
+        user: "root"
+      })
+
+    assert_receive {:container, ^exec_id, {:jail_output, jail_output}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
+    assert jail_output == "testing minimaljail\n"
+  end
+
   test "image-build stops prematurely from non-zero exitcode from RUN-instruction" do
     dockerfile = """
     FROM FreeBSD:testing
@@ -806,63 +963,13 @@ defmodule ImageTest do
            ]
   end
 
-  # The mini-jail userland used for the 'fetch' and 'zfs' image creation tests
-  # have been created with https://github.com/Freaky/mkjail using the command
-  # mkjail -a minimal_testjail.txz /usr/bin/env -i /usr/local/bin/python3.9 -c "print('lol')"
-  test "create base image using a method 'zfs'", %{api_spec: api_spec} do
-    dataset = "zroot/image_create_zfs_test"
-    ZFS.create(dataset)
+  defp fetch_snapshot(%Schemas.Image{instructions: instructions}, instruction) do
+    [^instruction, snapshot] =
+      Enum.find(instructions, nil, fn [instruct, _] ->
+        instruct == instruction
+      end)
 
-    {_, 0} =
-      OS.cmd(["/usr/bin/tar", "-xf", "./test/data/minimal_testjail.txz", "-C", "/#{dataset}"])
-
-    config = %{
-      method: "zfs",
-      zfs_dataset: dataset,
-      tag: "zfscreate:testing"
-    }
-
-    frames = TestHelper.image_create(config)
-    {{1000, closing_msg}, _rest} = List.pop_at(frames, -1)
-    assert %Message{data: _, message: "image created", msg_type: "closing"} = closing_msg
-
-    {_cont, exec_id} =
-      TestHelper.container_start_attached(api_spec, "testcont", %{
-        image: closing_msg.data,
-        cmd: ["/usr/local/bin/python3.9", "-c", "print('testing minimaljail')"],
-        jail_param: ["exec.system_jail_user"],
-        user: "root"
-      })
-
-    assert_receive {:container, ^exec_id, {:jail_output, jail_output}}
-    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
-    assert jail_output == "testing minimaljail\n"
-    ZFS.destroy_force(dataset)
-  end
-
-  test "create base image using a method 'fetch'", %{api_spec: api_spec} do
-    config = %{
-      method: "fetch",
-      url: "file://./test/data/minimal_testjail.txz",
-      tag: "fetchcreate:testing"
-    }
-
-    frames = TestHelper.image_create(config)
-    {{1000, closing_msg}, _rest} = List.pop_at(frames, -1)
-
-    assert %Message{data: _, message: "image created", msg_type: "closing"} = closing_msg
-
-    {_cont, exec_id} =
-      TestHelper.container_start_attached(api_spec, "testcont", %{
-        image: closing_msg.data,
-        cmd: ["/usr/local/bin/python3.9", "-c", "print('testing minimaljail')"],
-        jail_param: ["exec.system_jail_user"],
-        user: "root"
-      })
-
-    assert_receive {:container, ^exec_id, {:jail_output, jail_output}}
-    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
-    assert jail_output == "testing minimaljail\n"
+    snapshot
   end
 
   defp create_test_context(name) do

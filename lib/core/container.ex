@@ -90,7 +90,11 @@ defmodule Kleened.Core.Container do
 
       {%Schemas.Image{layer_id: parent_layer_id} = image, snapshot} ->
         parent_layer = Kleened.Core.MetaData.get_layer(parent_layer_id)
-        parent_layer_altered = %Layer{parent_layer | snapshot: snapshot}
+
+        parent_layer_altered = %Layer{
+          parent_layer
+          | snapshot: "#{parent_layer.dataset}@#{snapshot}"
+        }
 
         case Layer.new(parent_layer_altered, container_id) do
           {:ok, layer} ->

@@ -325,8 +325,9 @@ defmodule Kleened.Core.Image do
       tag: image_tag,
       command: cmd,
       env: env,
-      instructions: Enum.reverse(instructions),
-      snapshots: Enum.reverse(snapshots),
+      instructions:
+        Enum.zip(Enum.reverse(instructions), Enum.reverse(snapshots))
+        |> Enum.map(fn {a, b} -> [a, b] end),
       created: DateTime.to_iso8601(DateTime.utc_now())
     }
 
