@@ -355,7 +355,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {:failed_build, _build_id, build_log} = TestHelper.image_invalid_build(config)
+    {:failed_build, _image_id, build_log} = TestHelper.image_invalid_build(config)
     assert last_log_entry(build_log) == "parent image not found"
 
     config = Map.put(config, :buildargs, %{"testvar" => "FreeBSD:testing"})
@@ -858,7 +858,7 @@ defmodule ImageTest do
     context = create_test_context("test_image_run_nonzero_exitcode")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {:failed_build, _build_id, build_log} =
+    {:failed_build, _image_id, build_log} =
       TestHelper.image_invalid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile
@@ -880,7 +880,7 @@ defmodule ImageTest do
     context = create_test_context("test_image_run_nonzero_exitcode")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {:failed_build, _build_id, {build_log, image_id}} =
+    {:failed_build, image_id, {build_log, _snapshot}} =
       TestHelper.image_invalid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile,
@@ -931,7 +931,7 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, @tmp_context)
 
-    {:failed_build, _build_id, build_log} =
+    {:failed_build, _image_id, build_log} =
       TestHelper.image_invalid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile
@@ -949,7 +949,7 @@ defmodule ImageTest do
     context = create_test_context("test_image_builder_three_layers")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {:failed_build, _build_id, build_log} =
+    {:failed_build, _image_id, build_log} =
       TestHelper.image_invalid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile,

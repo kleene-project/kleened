@@ -80,7 +80,7 @@ defmodule Kleened.Core.Layer do
   defp destroy_(layer_id) do
     case MetaData.get_layer(layer_id) do
       %Layer{dataset: dataset} ->
-        {_, 0} = Kleened.Core.ZFS.destroy(dataset)
+        {_, 0} = Kleened.Core.ZFS.destroy_force(dataset)
         MetaData.remove_layer(layer_id)
 
       :not_found ->
