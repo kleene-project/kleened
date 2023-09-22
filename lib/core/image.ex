@@ -297,6 +297,28 @@ defmodule Kleened.Core.Image do
     }
   end
 
+  defp terminate_failed_build(%State{container: %Schemas.Container{id: nil}} = state) do
+    Network.remove(state.network)
+    send_msg(state.msg_receiver, {:image_build_failed, "image build failed"})
+  end
+
+  defp terminate_failed_build(%State{cleanup: true} = state) do
+    Container.remove(state.container.id)
+    Network.remove(state.network)
+    send_msg(state.msg_receiver, {:image_build_failed, "image build failed"})
+  end
+
+  defp terminate_failed_build(%State{cleanup: false} = state) do
+    # When the build process terminates abruptly the state is not being updated, so do it now.
+    %Schemas.Image{instructions: instructions} =
+      image = assemble_and_save_image(update_state(state))
+
+    [_instruction, snapshot] =
+      instructions |> Enum.filter(fn [_, snapshot] -> snapshot != "" end) |> List.last()
+
+    send_msg(state.msg_receiver, {:image_build_failed, {"image build failed", snapshot}})
+  end
+
   defp assemble_and_save_image(%State{
          network: network,
          image_name: image_name,
@@ -333,23 +355,6 @@ defmodule Kleened.Core.Image do
 
     Kleened.Core.MetaData.add_image(image)
     image
-  end
-
-  defp terminate_failed_build(%State{container: %Schemas.Container{id: nil}} = state) do
-    Network.remove(state.network)
-    send_msg(state.msg_receiver, {:image_build_failed, "image build failed"})
-  end
-
-  defp terminate_failed_build(%State{cleanup: true} = state) do
-    Container.remove(state.container.id)
-    Network.remove(state.network)
-    send_msg(state.msg_receiver, {:image_build_failed, "image build failed"})
-  end
-
-  defp terminate_failed_build(%State{cleanup: false} = state) do
-    # When the build process terminates abruptly the state is not being updated, so do it now.
-    image = assemble_and_save_image(update_state(state))
-    send_msg(state.msg_receiver, {:image_build_failed, {"image build failed", image}})
   end
 
   defp snapshot_image(%Schemas.Container{layer_id: layer_id}, pid) do
