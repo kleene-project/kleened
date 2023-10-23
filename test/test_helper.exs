@@ -602,14 +602,6 @@ defmodule TestHelper do
     DateTime.to_iso8601(DateTime.utc_now())
   end
 
-  def clear_zroot() do
-    {:ok, _pid} = Config.start_link([])
-    zroot = Config.get("zroot")
-    Agent.stop(Config)
-    ZFS.destroy_force(zroot)
-    ZFS.create(zroot)
-  end
-
   def devfs_mounted(%Schemas.Container{layer_id: layer_id}) do
     :timer.sleep(500)
     %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)

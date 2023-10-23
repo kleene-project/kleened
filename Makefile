@@ -9,7 +9,7 @@ shell:
 
 test-shell:
 	MIX_ENV=test mix run -e "TestInitialization.create_test_base_image()"
-	iex -S mix
+	MIX_ENV=test iex -S mix
 
 clear-kleened:
 	zfs destroy -rf zroot/kleene

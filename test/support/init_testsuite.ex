@@ -1,5 +1,5 @@
 defmodule TestInitialization do
-  alias Kleened.Core.{ZFS, Layer, MetaData}
+  alias Kleened.Core.{ZFS, Layer, MetaData, Container, Image}
   alias Kleened.API.Schemas
 
   @creation_time "2023-09-14T21:21:57.990515Z"
@@ -50,5 +50,13 @@ defmodule TestInitialization do
       user: "root",
       created: @creation_time
     }
+  end
+
+  def clear() do
+    MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
+
+    MetaData.list_images()
+    |> Enum.filter(fn %Schemas.Image{id: id} -> id != "base" end)
+    |> Enum.map(fn %Schemas.Image{id: id} -> Image.destroy(id) end)
   end
 end
