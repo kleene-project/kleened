@@ -108,7 +108,9 @@ defmodule Kleened.API.Network do
     def open_api_operation(_) do
       %Operation{
         summary: "network remove",
-        description: "Remove a network",
+        description: """
+        Remove a network. Any connected containers will be disconnected.
+        """,
         operationId: "Network.Remove",
         parameters: [
           parameter(
@@ -223,7 +225,11 @@ defmodule Kleened.API.Network do
     def open_api_operation(_) do
       %Operation{
         summary: "network disconnect",
-        description: "Disconnect a container from a network",
+        description: """
+        Disconnect a container from a network.
+
+        The container must be stopped before it can be disconnected.
+        """,
         operationId: "Network.Disconnect",
         parameters: [
           parameter(

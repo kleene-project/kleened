@@ -97,7 +97,9 @@ defmodule Kleened.API.Volume do
     def open_api_operation(_) do
       %Operation{
         summary: "volume remove",
-        description: "Remove a volume",
+        description: """
+        Remove one or more volumes. You cannot remove a volume that is in use by a container.
+        """,
         operationId: "Volume.Remove",
         parameters: [
           parameter(
