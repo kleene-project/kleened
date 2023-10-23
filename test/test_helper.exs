@@ -1,5 +1,5 @@
 alias OpenApiSpex.Cast
-alias Kleened.Core.{Const, ZFS, Config, Layer, Exec, MetaData, Container}
+alias Kleened.Core.{Const, Layer, Exec, MetaData, Container}
 alias :gun, as: Gun
 alias Kleened.API.Router
 alias Kleened.API.Schemas

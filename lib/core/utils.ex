@@ -84,6 +84,9 @@ defmodule Kleened.Core.Utils do
 
   def decode_tagname(nametag) do
     case String.split(nametag, ":") do
+      [""] ->
+        {"", ""}
+
       [name] ->
         {name, "latest"}
 
