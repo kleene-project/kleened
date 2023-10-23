@@ -34,6 +34,7 @@ defmodule Kleened.API.Router do
   get("/volumes/list", to: API.Volume.List)
   post("/volumes/create", to: API.Volume.Create)
   delete("/volumes/:volume_name", to: API.Volume.Remove)
+  get("/volumes/:volume_name/inspect", to: API.Volume.Inspect)
 
   # "Default" route that will get called when no other route is matched
   match _ do

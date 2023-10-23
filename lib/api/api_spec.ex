@@ -90,6 +90,10 @@ defmodule Kleened.API.Spec do
         "/volumes/{volume_name}" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :delete, plug: API.Volume.Remove, opts: []}
+          ]),
+        "/volumes/{volume_name}/inspect" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :get, plug: API.Volume.Inspect, opts: []}
           ])
       }
     }

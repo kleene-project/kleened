@@ -1,6 +1,6 @@
 defmodule Kleened.Core.MetaData do
   require Logger
-  alias Kleened.Core.{Config, Layer, Image, Container, Network, Volume, Volume.Mount}
+  alias Kleened.Core.{Config, Layer, Image, Container, Network, Volume}
   alias Kleened.Core.Network.EndPoint
   alias Kleened.API.Schemas
 
@@ -302,7 +302,7 @@ defmodule Kleened.Core.MetaData do
     sql("SELECT name, volume FROM volumes ORDER BY json_extract(volume, '$.created') DESC")
   end
 
-  @spec add_mount(Mount.t()) :: :ok
+  @spec add_mount(%Schemas.MountPoint{}) :: :ok
   def add_mount(mount) do
     sql("INSERT OR REPLACE INTO mounts VALUES (?)", [to_db(mount)])
     :ok
@@ -313,7 +313,7 @@ defmodule Kleened.Core.MetaData do
     Agent.get(__MODULE__, fn db -> remove_mounts_transaction(db, container_or_volume) end)
   end
 
-  @spec list_mounts(Volume.t()) :: [Mount.t()]
+  @spec list_mounts(Volume.t()) :: [%Schemas.MountPoint{}]
   def list_mounts(%Schemas.Volume{name: name}) do
     sql("SELECT mount FROM mounts WHERE json_extract(mount, '$.volume_name') = ?", [name])
   end
@@ -411,7 +411,12 @@ defmodule Kleened.Core.MetaData do
     result
   end
 
-  @spec to_db(Schemas.Image.t() | Schemas.Container.t() | %Schemas.Volume{} | %Mount{}) ::
+  @spec to_db(
+          Schemas.Image.t()
+          | Schemas.Container.t()
+          | %Schemas.Volume{}
+          | %Schemas.MountPoint{}
+        ) ::
           String.t()
   defp to_db(struct) do
     map = Map.from_struct(struct)
@@ -442,7 +447,7 @@ defmodule Kleened.Core.MetaData do
         {:ok, json} = Jason.encode(map)
         {name, json}
 
-      type when type == Mount or type == EndPoint ->
+      type when type == Schemas.MountPoint or type == EndPoint ->
         {:ok, json} = Jason.encode(map)
         json
     end
@@ -486,7 +491,7 @@ defmodule Kleened.Core.MetaData do
         struct(Schemas.Volume, Map.put(map, :name, name))
 
       Keyword.has_key?(row, :mount) ->
-        struct(Mount, from_json(row, :mount))
+        struct(Schemas.MountPoint, from_json(row, :mount))
 
       Keyword.has_key?(row, :config) ->
         struct(EndPoint, from_json(row, :config))

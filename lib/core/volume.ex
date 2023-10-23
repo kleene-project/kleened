@@ -8,19 +8,6 @@ defmodule Kleened.Core.Volume do
 
   @type t() :: %Schemas.Volume{}
 
-  defmodule Mount do
-    @derive Jason.Encoder
-    defstruct([:container_id, :volume_name, :location, read_only: false])
-
-    @type t() ::
-            %Mount{
-              container_id: String.t(),
-              volume_name: String.t(),
-              location: String.t(),
-              read_only: boolean()
-            }
-  end
-
   @type bind_opts() :: [
           rw: boolean()
         ]
@@ -57,17 +44,34 @@ defmodule Kleened.Core.Volume do
 
       volume ->
         mounts = MetaData.remove_mounts(volume)
-        Enum.map(mounts, fn %Mount{location: location} -> 0 = Utils.unmount(location) end)
+
+        Enum.map(mounts, fn %Schemas.MountPoint{location: location} ->
+          0 = Utils.unmount(location)
+        end)
+
         ZFS.destroy(volume.dataset)
         MetaData.remove_volume(volume)
         :ok
     end
   end
 
+  @spec inspect_(String.t()) :: {:ok, %Schemas.VolumeInspect{}} | {:error, String.t()}
+  def inspect_(name) do
+    case Kleened.Core.MetaData.get_volume(name) do
+      :not_found ->
+        {:error, "No such volume"}
+
+      volume ->
+        mounts = MetaData.list_mounts(volume)
+        {:ok, %Schemas.VolumeInspect{volume: volume, mountpoints: mounts}}
+    end
+  end
+
   @spec destroy_mounts(%Schemas.Container{}) :: :ok
   def destroy_mounts(container) do
     mounts = MetaData.remove_mounts(container)
-    Enum.map(mounts, fn %Mount{location: location} -> 0 = Utils.unmount(location) end)
+
+    Enum.map(mounts, fn %Schemas.MountPoint{location: location} -> 0 = Utils.unmount(location) end)
   end
 
   @spec bind_volume(
@@ -95,7 +99,7 @@ defmodule Kleened.Core.Volume do
         {"", 0} = Utils.mount_nullfs(["-o", "ro", volume_mountpoint, host_location])
     end
 
-    mnt = %Mount{
+    mnt = %Schemas.MountPoint{
       container_id: container_id,
       volume_name: volume_name,
       location: host_location,

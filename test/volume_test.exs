@@ -45,6 +45,19 @@ defmodule VolumeTest do
     assert [] == response
   end
 
+  test "inspect a volume", %{
+    api_spec: api_spec
+  } do
+    volume = volume_create(api_spec, "test-inspect")
+    response = volume_inspect("test-notexist")
+    assert response.status == 404
+    response = volume_inspect(volume.name)
+    assert response.status == 200
+    result = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+    assert %{volume: %{name: "test-inspect"}} = result
+    assert_schema(result, "VolumeInspect", api_spec)
+  end
+
   test "list with two volumes then with one volume", %{
     api_spec: api_spec
   } do
@@ -88,6 +101,11 @@ defmodule VolumeTest do
     assert response.status == 200
     json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
     assert_schema(json_body, "IdResponse", api_spec)
+  end
+
+  defp volume_inspect(name) do
+    conn(:get, "/volumes/#{name}/inspect")
+    |> Router.call(@opts)
   end
 
   defp volume_create(api_spec, name) do

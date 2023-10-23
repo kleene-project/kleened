@@ -383,6 +383,40 @@ defmodule Kleened.API.Schemas do
     })
   end
 
+  defmodule MountPoint do
+    OpenApiSpex.schema(%{
+      description: "Detailed information on a volume.",
+      type: :object,
+      properties: %{
+        container_id: %Schema{
+          type: :string,
+          description: "ID of the container where the volume is mounted."
+        },
+        volume_name: %Schema{type: :string, description: "Name of the volume"},
+        location: %Schema{
+          type: :string,
+          description: "Location of the mount within the container."
+        },
+        read_only: %Schema{type: :boolean, description: "Whether this mountpoint is read-only."}
+      }
+    })
+  end
+
+  defmodule VolumeInspect do
+    OpenApiSpex.schema(%{
+      description: "Detailed information on a volume.",
+      type: :object,
+      properties: %{
+        volume: Kleened.API.Schemas.Volume,
+        mountpoints: %Schema{
+          type: :array,
+          description: "Mountpoints of the volume.",
+          items: Kleened.API.Schemas.MountPoint
+        }
+      }
+    })
+  end
+
   defmodule VolumeList do
     OpenApiSpex.schema(%{
       description: "List of volumes.",
