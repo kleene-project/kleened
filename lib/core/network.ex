@@ -269,7 +269,12 @@ defmodule Kleened.Core.Network do
           # A jail with 'ip4=inherit' cannot use VNET's or impose restrictions on ip-addresses
           # using ip4.addr
           [] ->
-            endpoint = %Schemas.EndPoint{id: Utils.uuid()}
+            endpoint = %Schemas.EndPoint{
+              id: Utils.uuid(),
+              network: "host",
+              container: container_id
+            }
+
             MetaData.add_endpoint_config(container_id, network.id, endpoint)
             {:ok, endpoint}
 
@@ -299,7 +304,13 @@ defmodule Kleened.Core.Network do
         {:error, "could not validate the ipv4 address: #{msg}"}
 
       true ->
-        config = %Schemas.EndPoint{id: Utils.uuid(), ip_address: ip}
+        config = %Schemas.EndPoint{
+          id: Utils.uuid(),
+          network: network.name,
+          container: container_id,
+          ip_address: ip
+        }
+
         MetaData.add_endpoint_config(container_id, network.id, config)
 
         case OS.cmd(~w"ifconfig #{network.loopback_if} alias #{ip}/32") do
@@ -339,7 +350,13 @@ defmodule Kleened.Core.Network do
         {:error, "could not validate the ipv4 address: #{msg}"}
 
       true ->
-        config = %Schemas.EndPoint{id: Utils.uuid(), ip_address: ip}
+        config = %Schemas.EndPoint{
+          id: Utils.uuid(),
+          network: network.name,
+          container: container.id,
+          ip_address: ip
+        }
+
         MetaData.add_endpoint_config(container.id, network.id, config)
         {:ok, config}
     end

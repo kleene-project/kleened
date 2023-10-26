@@ -201,6 +201,14 @@ defmodule Kleened.API.Schemas do
       type: :object,
       properties: %{
         id: %Schema{type: :string, description: "EndPoint ID"},
+        network: %Schema{
+          type: :string,
+          description: "Name of the network that this endpoint belongs to."
+        },
+        container: %Schema{
+          type: :string,
+          description: "ID of the container that this endpoint belongs to."
+        },
         epair: %Schema{
           description: "epair used for endpoint in case of a VNET network",
           type: :string,
