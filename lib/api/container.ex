@@ -81,15 +81,6 @@ defmodule Kleened.API.Container do
       %Operation{
         summary: "container create",
         operationId: "Container.Create",
-        parameters: [
-          parameter(
-            :name,
-            :query,
-            %Schema{type: :string},
-            "Assign the specified name to the container. Must match `/?[a-zA-Z0-9][a-zA-Z0-9_.-]+`.",
-            required: true
-          )
-        ],
         requestBody:
           request_body(
             "Container configuration.",
@@ -109,10 +100,9 @@ defmodule Kleened.API.Container do
       conn = Plug.Conn.fetch_query_params(conn)
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
-      name = conn.query_params["name"]
       container_config = conn.body_params
 
-      case Container.create(name, container_config) do
+      case Container.create(container_config) do
         {:ok, %Schemas.Container{id: id}} ->
           send_resp(conn, 201, Utils.id_response(id))
 

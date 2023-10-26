@@ -76,7 +76,7 @@ defmodule VolumeTest do
     volume = Volume.create("testvol")
 
     %{id: id} =
-      TestHelper.container_create(api_spec, "volume_test", %{cmd: ["/usr/bin/touch", file]})
+      TestHelper.container_create(api_spec, %{name: "volume_test", cmd: ["/usr/bin/touch", file]})
 
     container = MetaData.get_container(id)
 

@@ -131,6 +131,7 @@ defmodule Kleened.Core.Image do
         OpenApiSpex.Cast.cast(
           Schemas.ContainerConfig.schema(),
           %{
+            name: "builder_" <> state.image_id,
             jail_param: ["mount.devfs=true"],
             image: image_id,
             user: "root",
@@ -139,8 +140,7 @@ defmodule Kleened.Core.Image do
           }
         )
 
-      name = "builder_" <> state.image_id
-      {:ok, container} = Kleened.Core.Container.create(state.image_id, name, container_config)
+      {:ok, container} = Kleened.Core.Container.create(state.image_id, container_config)
       Network.connect(state.network, %Schemas.EndPointConfig{container: container.id})
       new_state = update_state(%State{state | container: container})
       process_instructions(new_state)

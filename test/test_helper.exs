@@ -31,10 +31,11 @@ defmodule TestHelper do
   def container_run(api_spec, config) do
     config_create = %{
       image: config.image,
-      cmd: config.cmd
+      cmd: config.cmd,
+      name: "testrun"
     }
 
-    %{id: container_id} = TestHelper.container_create(api_spec, "testrun", config_create)
+    %{id: container_id} = TestHelper.container_create(api_spec, config_create)
     {:ok, exec_id} = Exec.create(container_id)
 
     {closing_msg, process_output} =
@@ -44,34 +45,33 @@ defmodule TestHelper do
     {closing_msg, process_output}
   end
 
-  def container_start_attached(api_spec, name, config) do
-    %{id: container_id} = container_create(api_spec, name, config)
+  def container_start_attached(api_spec, config) do
+    %{id: container_id} = container_create(api_spec, config)
     cont = MetaData.get_container(container_id)
     {:ok, exec_id} = Exec.create(container_id)
     :ok = Exec.start(exec_id, %{attach: true, start_container: true})
     {cont, exec_id}
   end
 
-  def container_create(api_spec, name, config) when not is_map_key(config, :image) do
-    container_create(api_spec, name, Map.put(config, :image, "base"))
+  def container_create(api_spec, config) when not is_map_key(config, :image) do
+    container_create(api_spec, Map.put(config, :image, "base"))
   end
 
-  def container_create(api_spec, name, config) when not is_map_key(config, :jail_param) do
-    container_create(api_spec, name, Map.put(config, :jail_param, ["mount.devfs=true"]))
+  def container_create(api_spec, config) when not is_map_key(config, :jail_param) do
+    container_create(api_spec, Map.put(config, :jail_param, ["mount.devfs=true"]))
   end
 
-  def container_create(api_spec, name, config) when not is_map_key(config, :networks) do
+  def container_create(api_spec, config) when not is_map_key(config, :networks) do
     config = Map.put(config, :networks, ["host"])
-
-    container_create(api_spec, name, config)
+    container_create(api_spec, config)
   end
 
-  def container_create(api_spec, name, config) do
+  def container_create(api_spec, config) do
     {networks, config} = Map.pop(config, :networks)
     assert_schema(config, "ContainerConfig", api_spec)
 
     response =
-      conn(:post, "/containers/create?name=#{name}", config)
+      conn(:post, "/containers/create?name=#{config.name}", config)
       |> put_req_header("content-type", "application/json")
       |> Router.call(@opts)
 

@@ -8,6 +8,10 @@ defmodule Kleened.API.Schemas do
         "Configuration for a container. Some of the configuration parameters will overwrite the corresponding parameters in the specified image.",
       type: :object,
       properties: %{
+        name: %Schema{
+          description: "Name of the container. Must match `/?[a-zA-Z0-9][a-zA-Z0-9_.-]+`.",
+          type: :string
+        },
         image: %Schema{
           type: :string,
           description: """

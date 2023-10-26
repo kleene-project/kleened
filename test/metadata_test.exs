@@ -1,6 +1,6 @@
 defmodule MetaDataTest do
   use ExUnit.Case
-  alias Kleened.Core.{Config, Volume.Mount, Layer}
+  alias Kleened.Core.{Config, Layer}
   alias Kleened.API.Schemas
   import Kleened.Core.MetaData
   import TestHelper, only: [now: 0]
@@ -164,15 +164,15 @@ defmodule MetaDataTest do
 
     assert [] == list_mounts(vol)
 
-    mnt1 = %Mount{
+    mnt1 = %Schemas.MountPoint{
       container_id: "contestid",
       volume_name: vol_name,
       location: "location1",
       read_only: false
     }
 
-    mnt2 = %Mount{mnt1 | read_only: true}
-    mnt3 = %Mount{volume_name: "some_other_name"}
+    mnt2 = %Schemas.MountPoint{mnt1 | read_only: true}
+    mnt3 = %Schemas.MountPoint{volume_name: "some_other_name"}
 
     add_mount(mnt1)
     assert [mnt1] == list_mounts(vol)

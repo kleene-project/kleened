@@ -281,10 +281,9 @@ defmodule ImageTest do
 
     assert MetaData.list_containers() == []
 
-    config = %{image: image_id}
+    config = %{name: "test-cmd-instruc", image: image_id}
 
-    {container, exec_id} =
-      TestHelper.container_start_attached(api_spec, "test-cmd-instruc", config)
+    {container, exec_id} = TestHelper.container_start_attached(api_spec, config)
 
     assert TestHelper.collect_container_output(exec_id) == "lol"
     Kleened.Core.Container.remove(container.id)
@@ -529,7 +528,7 @@ defmodule ImageTest do
     assert [] == build_log
 
     {container, exec_id} =
-      TestHelper.container_start_attached(api_spec, "test-arg2env", %{image: image.id})
+      TestHelper.container_start_attached(api_spec, %{name: "test-arg2env", image: image.id})
 
     assert TestHelper.collect_container_output(exec_id) == "v1.0.0\n"
     Kleened.Core.Container.remove(container.id)
@@ -540,7 +539,7 @@ defmodule ImageTest do
     assert [] == build_log
 
     {container, exec_id} =
-      TestHelper.container_start_attached(api_spec, "test-arg2env", %{image: image.id})
+      TestHelper.container_start_attached(api_spec, %{name: "test-arg2env", image: image.id})
 
     assert TestHelper.collect_container_output(exec_id) == "v.2.0.1\n"
     Kleened.Core.Container.remove(container.id)
@@ -833,7 +832,8 @@ defmodule ImageTest do
     assert %Message{data: _, message: "image created", msg_type: "closing"} = closing_msg
 
     {_cont, exec_id} =
-      TestHelper.container_start_attached(api_spec, "testcont", %{
+      TestHelper.container_start_attached(api_spec, %{
+        name: "testcont",
         image: closing_msg.data,
         cmd: ["/usr/local/bin/python3.9", "-c", "print('testing minimaljail')"],
         jail_param: ["exec.system_jail_user"],
@@ -859,7 +859,8 @@ defmodule ImageTest do
     assert %Message{data: _, message: "image created", msg_type: "closing"} = closing_msg
 
     {_cont, exec_id} =
-      TestHelper.container_start_attached(api_spec, "testcont", %{
+      TestHelper.container_start_attached(api_spec, %{
+        name: "testcont",
         image: closing_msg.data,
         cmd: ["/usr/local/bin/python3.9", "-c", "print('testing minimaljail')"],
         jail_param: ["exec.system_jail_user"],
@@ -916,11 +917,12 @@ defmodule ImageTest do
              "The command '/bin/sh -c ls notexist' returned a non-zero code: 1"
 
     config = %{
+      name: "testcont",
       image: image_id,
       cmd: ["/bin/cat", "/etc/testing"]
     }
 
-    {_cont, exec_id} = TestHelper.container_start_attached(api_spec, "testcont", config)
+    {_cont, exec_id} = TestHelper.container_start_attached(api_spec, config)
     assert_receive {:container, ^exec_id, {:jail_output, "test\n"}}
     assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
   end

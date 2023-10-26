@@ -21,7 +21,7 @@ defmodule ContainerTest do
     assert [] == TestHelper.container_list(api_spec)
 
     %Schemas.Container{id: container_id, name: name, image_id: img_id} =
-      container_succesfully_create(api_spec, "testcont", %{})
+      container_succesfully_create(api_spec, %{name: "testcont"})
 
     %Schemas.Image{id: id} = Kleened.Core.MetaData.get_image("base")
     assert id == img_id
@@ -30,7 +30,7 @@ defmodule ContainerTest do
              TestHelper.container_list(api_spec)
 
     %Schemas.Container{id: container_id2, name: name2, image_id: ^img_id} =
-      container_succesfully_create(api_spec, "testcont2", %{})
+      container_succesfully_create(api_spec, %{name: "testcont2"})
 
     assert [%{id: ^container_id2, name: ^name2, image_id: ^img_id}, %{id: ^container_id}] =
              TestHelper.container_list(api_spec)
@@ -46,7 +46,7 @@ defmodule ContainerTest do
   end
 
   test "Inspect a container", %{api_spec: api_spec} do
-    %Schemas.Container{} = container_succesfully_create(api_spec, "testcontainer", %{})
+    %Schemas.Container{} = container_succesfully_create(api_spec, %{name: "testcontainer"})
     response = TestHelper.container_inspect_raw("notexist")
     assert response.status == 404
     response = TestHelper.container_inspect_raw("testcontainer")
@@ -57,10 +57,10 @@ defmodule ContainerTest do
   end
 
   test "start and stop a container (using devfs)", %{api_spec: api_spec} do
-    config = %{cmd: ["/bin/sleep", "10"]}
+    config = %{name: "testcont", cmd: ["/bin/sleep", "10"]}
 
     {%Schemas.Container{id: container_id} = cont, exec_id} =
-      TestHelper.container_start_attached(api_spec, "testcont", config)
+      TestHelper.container_start_attached(api_spec, config)
 
     assert TestHelper.devfs_mounted(cont)
 
@@ -73,7 +73,8 @@ defmodule ContainerTest do
   test "start container without attaching to it", %{api_spec: api_spec} do
     %Schemas.Container{id: container_id} =
       container =
-      container_succesfully_create(api_spec, "ws_test_container", %{
+      container_succesfully_create(api_spec, %{
+        name: "ws_test_container",
         image: "base",
         cmd: ["/bin/sh", "-c", "uname"]
       })
@@ -91,7 +92,7 @@ defmodule ContainerTest do
     cmd_expected = ["/bin/echo", "test test"]
 
     %Schemas.Container{id: container_id, command: command} =
-      container = container_succesfully_create(api_spec, "testcont", %{cmd: cmd_expected})
+      container = container_succesfully_create(api_spec, %{name: "testcont", cmd: cmd_expected})
 
     assert cmd_expected == command
 
@@ -105,7 +106,7 @@ defmodule ContainerTest do
 
   test "start a container and force-stop it", %{api_spec: api_spec} do
     %Schemas.Container{id: container_id} =
-      container_succesfully_create(api_spec, "testcont", %{cmd: ["/bin/sleep", "10"]})
+      container_succesfully_create(api_spec, %{name: "testcont", cmd: ["/bin/sleep", "10"]})
 
     {:ok, exec_id} = Exec.create(container_id)
     :ok = Exec.start(exec_id, %{attach: false, start_container: true})
@@ -120,13 +121,14 @@ defmodule ContainerTest do
     api_spec: api_spec
   } do
     config = %{
+      name: "testcont",
       cmd: ["/bin/sleep", "10"],
       jail_param: ["mount.devfs", "exec.stop=\"/bin/sh /etc/rc.shutdown\""],
       user: "root"
     }
 
     {%Schemas.Container{id: container_id} = cont, exec_id} =
-      TestHelper.container_start_attached(api_spec, "testcont", config)
+      TestHelper.container_start_attached(api_spec, config)
 
     assert TestHelper.devfs_mounted(cont)
     assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
@@ -136,12 +138,13 @@ defmodule ContainerTest do
 
   test "create container from non-existing image", %{api_spec: api_spec} do
     assert %{message: "no such image 'nonexisting'"} ==
-             TestHelper.container_create(api_spec, "testcont", %{image: "nonexisting"})
+             TestHelper.container_create(api_spec, %{name: "testcont", image: "nonexisting"})
   end
 
   test "start a container as non-root", %{api_spec: api_spec} do
     {_cont, exec_id} =
-      TestHelper.container_start_attached(api_spec, "testcont", %{
+      TestHelper.container_start_attached(api_spec, %{
+        name: "testcont",
         cmd: ["/usr/bin/id"],
         user: "ntpd"
       })
@@ -154,12 +157,13 @@ defmodule ContainerTest do
 
   test "start a container with environment variables set", %{api_spec: api_spec} do
     config = %{
+      name: "testcont",
       cmd: ["/bin/sh", "-c", "printenv"],
       env: ["LOL=test", "LOOL=test2"],
       user: "root"
     }
 
-    {_cont, exec_id} = TestHelper.container_start_attached(api_spec, "testcont", config)
+    {_cont, exec_id} = TestHelper.container_start_attached(api_spec, config)
 
     assert_receive {:container, ^exec_id, {:jail_output, "PWD=/\nLOOL=test2\nLOL=test\n"}}
     assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
@@ -167,7 +171,8 @@ defmodule ContainerTest do
 
   test "start container quickly several times to verify reproducibility", %{api_spec: api_spec} do
     container =
-      container_succesfully_create(api_spec, "ws_test_container", %{
+      container_succesfully_create(api_spec, %{
+        name: "ws_test_container",
         image: "base",
         cmd: ["/bin/sh", "-c", "uname"]
       })
@@ -195,12 +200,13 @@ defmodule ContainerTest do
     {image, _build_log} = TestHelper.image_valid_build(config_image)
 
     config = %{
+      name: "testcont",
       image: image.id,
       env: ["TEST3=loool"],
       cmd: ["/bin/sh", "-c", "printenv"]
     }
 
-    {container, exec_id} = TestHelper.container_start_attached(api_spec, "testcont", config)
+    {container, exec_id} = TestHelper.container_start_attached(api_spec, config)
 
     assert_receive {:container, ^exec_id, {:jail_output, env_vars}}
     env_vars_set = String.trim(env_vars, "\n") |> String.split("\n") |> MapSet.new()
@@ -231,12 +237,13 @@ defmodule ContainerTest do
     {image, _build_log} = TestHelper.image_valid_build(config_image)
 
     config = %{
+      name: "testcont",
       image: image.id,
       env: ["TEST=new_value"],
       cmd: ["/bin/sh", "-c", "printenv"]
     }
 
-    {container, exec_id} = TestHelper.container_start_attached(api_spec, "testcont", config)
+    {container, exec_id} = TestHelper.container_start_attached(api_spec, config)
 
     assert_receive {:container, ^exec_id, {:jail_output, env_vars}}
     env_vars_set = String.trim(env_vars, "\n") |> String.split("\n") |> MapSet.new()
@@ -247,8 +254,8 @@ defmodule ContainerTest do
     Image.destroy(image.id)
   end
 
-  defp container_succesfully_create(api_spec, name, config) do
-    %{id: container_id} = TestHelper.container_create(api_spec, name, config)
+  defp container_succesfully_create(api_spec, config) do
+    %{id: container_id} = TestHelper.container_create(api_spec, config)
     MetaData.get_container(container_id)
   end
 

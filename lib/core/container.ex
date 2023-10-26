@@ -24,7 +24,7 @@ defmodule Kleened.Core.Container do
             created: String.t()
           }
 
-  @type create_opts() :: %Schemas.ContainerConfig{}
+  @type container_config() :: %Schemas.ContainerConfig{}
 
   @type list_containers_opts :: [
           {:all, boolean()}
@@ -37,22 +37,27 @@ defmodule Kleened.Core.Container do
   ### ===================================================================
   ### API
   ### ===================================================================
-  @spec create(String.t(), create_opts) :: {:ok, Container.t()} | {:error, :image_not_found}
-  def create(name, options) do
+  @spec create(container_config) :: {:ok, Container.t()} | {:error, :image_not_found}
+  def create(options) do
     container_id = Kleened.Core.Utils.uuid()
-    create_(container_id, name, options)
+    create_(container_id, options)
   end
 
-  @spec create(String.t(), String.t(), create_opts) ::
+  @spec create(String.t(), container_config) ::
           {:ok, Container.t()} | {:error, :image_not_found}
-  def create(container_id, name, options) do
-    create_(container_id, name, options)
+  def create(container_id, options) do
+    create_(container_id, options)
   end
 
   @spec remove(id_or_name()) :: {:ok, container_id()} | {:error, :not_found}
   def remove(id_or_name) do
     cont = MetaData.get_container(id_or_name)
     remove_(cont)
+  end
+
+  @spec update(String.t(), container_config) :: :ok | {:error, String.t()}
+  def update(container_id, config) do
+    update_(container_id, config)
   end
 
   @spec stop(id_or_name()) :: {:ok, String.t()} | {:error, String.t()}
@@ -95,7 +100,6 @@ defmodule Kleened.Core.Container do
   ### ===================================================================
   defp create_(
          container_id,
-         name,
          %Schemas.ContainerConfig{image: image_identifier} = config
        ) do
     {image_name, snapshot} = Utils.decode_snapshot(image_identifier)
@@ -105,7 +109,7 @@ defmodule Kleened.Core.Container do
       {%Schemas.Image{layer_id: parent_layer_id} = image, ""} ->
         parent_layer = Kleened.Core.MetaData.get_layer(parent_layer_id)
         {:ok, layer} = Layer.new(parent_layer, container_id)
-        assemble_container({name, container_id}, image, layer, config)
+        assemble_container(container_id, image, layer, config)
 
       {%Schemas.Image{layer_id: parent_layer_id} = image, snapshot} ->
         parent_layer = Kleened.Core.MetaData.get_layer(parent_layer_id)
@@ -117,7 +121,7 @@ defmodule Kleened.Core.Container do
 
         case Layer.new(parent_layer_altered, container_id) do
           {:ok, layer} ->
-            assemble_container({name, container_id}, image, layer, config)
+            assemble_container(container_id, image, layer, config)
 
           {:error, reason} ->
             {:error, reason}
@@ -128,8 +132,15 @@ defmodule Kleened.Core.Container do
     end
   end
 
+  defp update_(
+         _container_id,
+         _config
+       ) do
+    :implement_me
+  end
+
   defp assemble_container(
-         {name, container_id},
+         container_id,
          %Schemas.Image{
            id: image_id,
            user: image_user,
@@ -138,6 +149,7 @@ defmodule Kleened.Core.Container do
          },
          %Layer{id: layer_id},
          %Schemas.ContainerConfig{
+           name: name,
            user: user,
            env: env,
            volumes: volumes,

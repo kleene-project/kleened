@@ -96,7 +96,8 @@ defmodule NetworkTest do
     network = create_network(api_spec, %{driver: "loopback"})
 
     %{id: container_id} =
-      TestHelper.container_create(api_spec, "network_test", %{
+      TestHelper.container_create(api_spec, %{
+        name: "network_test",
         cmd: ["/bin/sleep", "10"],
         networks: [network.name]
       })
@@ -110,12 +111,13 @@ defmodule NetworkTest do
   end
 
   test "create a container using the host network", %{api_spec: api_spec} do
-    opts = %{
+    config = %{
+      name: "network_test2",
       networks: ["host"],
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-i", "-4"]
     }
 
-    %{id: id} = TestHelper.container_create(api_spec, "network_test2", opts)
+    %{id: id} = TestHelper.container_create(api_spec, config)
 
     {output_json, 0} = System.cmd("/usr/bin/netstat", ["--libxo", "json", "-i", "-4"])
     ips_before = ips_on_all_interfaces(output_json)
@@ -134,12 +136,13 @@ defmodule NetworkTest do
     network =
       create_network(api_spec, %{subnet: "172.19.0.0/16", ifname: "kleene1", driver: "loopback"})
 
-    opts = %{
+    config = %{
+      name: "network_test",
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network.loopback_if],
       networks: [network.name]
     }
 
-    %{id: container_id} = TestHelper.container_create(api_spec, "network_test", opts)
+    %{id: container_id} = TestHelper.container_create(api_spec, config)
 
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
     %Schemas.EndPoint{ip_address: ip} = MetaData.get_endpoint(container_id, network.id)
@@ -154,12 +157,13 @@ defmodule NetworkTest do
     network =
       create_network(api_spec, %{ifname: "kleene1", subnet: "172.19.0.0/16", driver: "loopback"})
 
-    opts = %{
+    config = %{
+      name: "network_test",
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-I", network.loopback_if],
       networks: []
     }
 
-    %{id: container_id} = TestHelper.container_create(api_spec, "network_test", opts)
+    %{id: container_id} = TestHelper.container_create(api_spec, config)
 
     assert :ok = TestHelper.network_connect(api_spec, "testnet", container_id)
 
@@ -179,7 +183,8 @@ defmodule NetworkTest do
     network = create_network(api_spec, %{driver: "vnet"})
 
     %{id: container_id} =
-      TestHelper.container_create(api_spec, "network_test3", %{
+      TestHelper.container_create(api_spec, %{
+        name: "network_test3",
         cmd: ["/bin/sleep", "100"],
         networks: [network.name]
       })
@@ -204,7 +209,8 @@ defmodule NetworkTest do
     network = create_network(api_spec, %{driver: "vnet", ifname: "vnet0"})
 
     %{id: container_id} =
-      TestHelper.container_create(api_spec, "network_test3", %{
+      TestHelper.container_create(api_spec, %{
+        name: "network_test3",
         cmd: ["/bin/sleep", "100"],
         networks: []
       })
@@ -245,7 +251,8 @@ defmodule NetworkTest do
       })
 
     %{id: container_id} =
-      TestHelper.container_create(api_spec, "network_test3", %{
+      TestHelper.container_create(api_spec, %{
+        name: "network_test3",
         cmd: ["/bin/sleep", "10"],
         networks: []
       })
@@ -271,12 +278,13 @@ defmodule NetworkTest do
     network_lo =
       create_network(api_spec, %{name: "testlonet", subnet: "10.13.38.0/24", driver: "loopback"})
 
-    opts = %{
+    config = %{
+      name: "network_test",
       cmd: ["/usr/bin/netstat", "--libxo", "json", "-4", "-n", "-i"],
       networks: []
     }
 
-    %{id: container_id} = TestHelper.container_create(api_spec, "network_test", opts)
+    %{id: container_id} = TestHelper.container_create(api_spec, config)
 
     :ok =
       TestHelper.network_connect(api_spec, "testlonet", %{
@@ -307,13 +315,13 @@ defmodule NetworkTest do
   test "exhaust all ips in a network", %{api_spec: api_spec} do
     create_network(api_spec, %{name: "smallnet", subnet: "172.19.0.0/30", driver: "loopback"})
 
-    opts = %{cmd: ["/bin/ls"], networks: ["smallnet"]}
+    config = %{cmd: ["/bin/ls"], networks: ["smallnet"]}
 
-    %{id: _container_id} = TestHelper.container_create(api_spec, "exhaust1", opts)
-    %{id: _container_id} = TestHelper.container_create(api_spec, "exhaust2", opts)
-    %{id: _container_id} = TestHelper.container_create(api_spec, "exhaust3", opts)
-    %{id: _container_id} = TestHelper.container_create(api_spec, "exhaust4", opts)
-    %{id: _container_id} = TestHelper.container_create(api_spec, "exhaust5", opts)
+    %{id: _id} = TestHelper.container_create(api_spec, Map.put(config, :name, "exhaust1"))
+    %{id: _id} = TestHelper.container_create(api_spec, Map.put(config, :name, "exhaust2"))
+    %{id: _id} = TestHelper.container_create(api_spec, Map.put(config, :name, "exhaust3"))
+    %{id: _id} = TestHelper.container_create(api_spec, Map.put(config, :name, "exhaust4"))
+    %{id: _id} = TestHelper.container_create(api_spec, Map.put(config, :name, "exhaust5"))
   end
 
   test "connectivity using loopback interface", %{api_spec: api_spec} do
@@ -322,8 +330,7 @@ defmodule NetworkTest do
     %{id: container_id} =
       TestHelper.container_create(
         api_spec,
-        "network_test3",
-        %{cmd: @dns_lookup_cmd, networks: ["testnet"]}
+        %{name: "network_test3", cmd: @dns_lookup_cmd, networks: ["testnet"]}
       )
 
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
@@ -339,8 +346,7 @@ defmodule NetworkTest do
     %{id: container_id} =
       TestHelper.container_create(
         api_spec,
-        "network_test3",
-        %{cmd: @dns_lookup_cmd, networks: ["testnet"]}
+        %{name: "network_test3", cmd: @dns_lookup_cmd, networks: ["testnet"]}
       )
 
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
@@ -359,8 +365,7 @@ defmodule NetworkTest do
     %{id: container_id} =
       TestHelper.container_create(
         api_spec,
-        "network_test3",
-        %{cmd: ["/bin/sleep", "100"], networks: []}
+        %{name: "network_test3", cmd: ["/bin/sleep", "100"], networks: []}
       )
 
     assert :ok == TestHelper.network_connect(api_spec, network.name, container_id)
@@ -421,9 +426,9 @@ defmodule NetworkTest do
     Container.remove(container_id)
   end
 
-  defp exec_run(container_id_or_exec_config, start_opts) do
+  defp exec_run(container_id_or_exec_config, start_config) do
     {:ok, exec_id} = Exec.create(container_id_or_exec_config)
-    Kleened.Core.Exec.start(exec_id, start_opts)
+    Kleened.Core.Exec.start(exec_id, start_config)
     {:ok, exec_id}
   end
 
