@@ -90,4 +90,53 @@ defmodule Kleened.API.Image do
       end
     end
   end
+
+  defmodule Inspect do
+    use Plug.Builder
+    alias Kleened.API.Utils
+
+    plug(OpenApiSpex.Plug.CastAndValidate,
+      json_render_error_v2: true,
+      operation_id: "Image.Inspect"
+    )
+
+    plug(:inspect_)
+
+    def open_api_operation(_) do
+      %Operation{
+        summary: "image inspect",
+        description: "Inspect a image and its endpoints.",
+        operationId: "Image.Inspect",
+        parameters: [
+          parameter(
+            :image_id,
+            :path,
+            %Schema{type: :string},
+            "Identifier of the image",
+            required: true
+          )
+        ],
+        responses: %{
+          200 => response("image retrieved", "application/json", Schemas.Image),
+          404 => response("no such image", "application/json", Schemas.ErrorResponse),
+          500 => response("server error", "application/json", Schemas.ErrorResponse)
+        }
+      }
+    end
+
+    def inspect_(conn, _opts) do
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+      image_ident = conn.params.image_id
+
+      case Core.Image.inspect_(image_ident) do
+        {:ok, image_inspect} ->
+          image_inspect = Jason.encode!(image_inspect)
+          send_resp(conn, 200, image_inspect)
+
+        {:error, msg} ->
+          msg_json = Utils.error_response(msg)
+          send_resp(conn, 404, msg_json)
+      end
+    end
+  end
 end

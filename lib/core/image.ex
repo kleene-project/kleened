@@ -73,6 +73,17 @@ defmodule Kleened.Core.Image do
     end
   end
 
+  @spec inspect_(String.t()) :: {:ok, %Schemas.Image{}} | {:error, String.t()}
+  def inspect_(idname) do
+    case MetaData.get_image(idname) do
+      :not_found ->
+        {:error, "image not found"}
+
+      image ->
+        {:ok, image}
+    end
+  end
+
   @spec destroy(String.t()) :: :ok | :not_found
   def destroy(id_or_nametag) do
     case MetaData.get_image(id_or_nametag) do
@@ -310,8 +321,7 @@ defmodule Kleened.Core.Image do
 
   defp terminate_failed_build(%State{cleanup: false} = state) do
     # When the build process terminates abruptly the state is not being updated, so do it now.
-    %Schemas.Image{instructions: instructions} =
-      image = assemble_and_save_image(update_state(state))
+    %Schemas.Image{instructions: instructions} = assemble_and_save_image(update_state(state))
 
     [_instruction, snapshot] =
       instructions |> Enum.filter(fn [_, snapshot] -> snapshot != "" end) |> List.last()

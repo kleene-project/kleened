@@ -6,13 +6,6 @@ defmodule Kleened.Core.Network do
 
   alias __MODULE__, as: Network
 
-  defmodule EndPoint do
-    @derive Jason.Encoder
-    defstruct id: nil,
-              epair: nil,
-              ip_address: nil
-  end
-
   defmodule State do
     defstruct pf_config_path: nil,
               gateway_interface: nil
@@ -21,7 +14,7 @@ defmodule Kleened.Core.Network do
   @type t() :: %Schemas.Network{}
   @type network_id() :: String.t()
   @type network_config :: %Schemas.NetworkConfig{}
-  @type endpoint() :: %EndPoint{}
+  @type endpoint() :: %Schemas.EndPoint{}
 
   @default_pf_configuration """
   # This is the pf(4) configuration file template that is used by Kleened.
@@ -85,6 +78,7 @@ defmodule Kleened.Core.Network do
     GenServer.call(__MODULE__, {:remove, idname}, 30_000)
   end
 
+  @spec inspect_(String.t()) :: {:ok, %Schemas.NetworkInspect{}} | {:error, String.t()}
   def inspect_(network_idname) do
     GenServer.call(__MODULE__, {:inspect, network_idname})
   end
@@ -186,8 +180,17 @@ defmodule Kleened.Core.Network do
   end
 
   def handle_call({:inspect, idname}, _from, state) do
-    network = MetaData.get_network(idname)
-    {:reply, network, state}
+    reply =
+      case MetaData.get_network(idname) do
+        :not_found ->
+          {:error, "network not found"}
+
+        network ->
+          endpoints = MetaData.get_endpoints_from_network(network.id)
+          {:ok, %Schemas.NetworkInspect{network: network, network_endpoints: endpoints}}
+      end
+
+    {:reply, reply, state}
   end
 
   def handle_call({:inspect_endpoint, container_id, network_id}, _from, state) do
@@ -243,7 +246,7 @@ defmodule Kleened.Core.Network do
 
   defp connect_(container, network, config) do
     case MetaData.get_endpoint(container.id, network.id) do
-      %EndPoint{} ->
+      %Schemas.EndPoint{} ->
         {:error, "container already connected to the network"}
 
       :not_found ->
@@ -266,7 +269,7 @@ defmodule Kleened.Core.Network do
           # A jail with 'ip4=inherit' cannot use VNET's or impose restrictions on ip-addresses
           # using ip4.addr
           [] ->
-            endpoint = %EndPoint{}
+            endpoint = %Schemas.EndPoint{id: Utils.uuid()}
             MetaData.add_endpoint_config(container_id, network.id, endpoint)
             {:ok, endpoint}
 
@@ -296,7 +299,7 @@ defmodule Kleened.Core.Network do
         {:error, "could not validate the ipv4 address: #{msg}"}
 
       true ->
-        config = %EndPoint{ip_address: ip}
+        config = %Schemas.EndPoint{id: Utils.uuid(), ip_address: ip}
         MetaData.add_endpoint_config(container_id, network.id, config)
 
         case OS.cmd(~w"ifconfig #{network.loopback_if} alias #{ip}/32") do
@@ -336,7 +339,7 @@ defmodule Kleened.Core.Network do
         {:error, "could not validate the ipv4 address: #{msg}"}
 
       true ->
-        config = %EndPoint{ip_address: ip}
+        config = %Schemas.EndPoint{id: Utils.uuid(), ip_address: ip}
         MetaData.add_endpoint_config(container.id, network.id, config)
         {:ok, config}
     end

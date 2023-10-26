@@ -111,6 +111,11 @@ defmodule TestHelper do
     })
   end
 
+  def container_inspect_raw(container_ident) do
+    conn(:get, "/containers/#{container_ident}/inspect")
+    |> Router.call(@opts)
+  end
+
   def container_list(api_spec, all \\ true) do
     response =
       conn(:get, "/containers/list?all=#{all}")
@@ -407,6 +412,11 @@ defmodule TestHelper do
     json_body
   end
 
+  def image_inspect_raw(image_ident) do
+    conn(:get, "/images/#{image_ident}/inspect")
+    |> Router.call(@opts)
+  end
+
   def image_destroy(api_spec, image_id) do
     response =
       conn(:delete, "/images/#{image_id}")
@@ -452,6 +462,11 @@ defmodule TestHelper do
       200 => "IdResponse",
       404 => "ErrorResponse"
     })
+  end
+
+  def network_inspect_raw(network_ident) do
+    conn(:get, "/networks/#{network_ident}/inspect")
+    |> Router.call(@opts)
   end
 
   def network_list(api_spec) do

@@ -65,6 +65,53 @@ defmodule Kleened.API.Schemas do
     })
   end
 
+  defmodule Container do
+    OpenApiSpex.schema(%{
+      description: "summary description of a container",
+      type: :object,
+      properties: %{
+        id: %Schema{description: "The id of the container", type: :string},
+        name: %Schema{description: "Name of the container.", type: :string},
+        image_id: %Schema{
+          description: "The id of the image that this container was created from",
+          type: :string
+        },
+        command: %Schema{
+          description: "Command being used when starting the container",
+          type: :array,
+          items: %Schema{type: :string},
+          default: []
+        },
+        layer_id: %Schema{
+          description: "The id of the layer used by the container.",
+          type: :string
+        },
+        user: %Schema{
+          description:
+            "The default user used when creating execution instances in the container.",
+          type: :string
+        },
+        env: %Schema{
+          description:
+            "List of environment variables used when the container is used. This list will be merged with environment variables defined by the image. The values in this list takes precedence if the variable is defined in both places.",
+          type: :array,
+          items: %Schema{type: :string},
+          default: [],
+          example: ["DEBUG=0", "LANG=da_DK.UTF-8"]
+        },
+        jail_param: %Schema{
+          description: "List of jail parameters (see jail(8) for details)",
+          type: :array,
+          items: %Schema{type: :string},
+          default: [],
+          example: ["allow.raw_sockets=true", "osrelease=kleenejail"]
+        },
+        created: %Schema{description: "When the container was created", type: :string},
+        running: %Schema{description: "whether or not the container is running", type: :boolean}
+      }
+    })
+  end
+
   defmodule ExecConfig do
     OpenApiSpex.schema(%{
       description:
@@ -145,6 +192,26 @@ defmodule Kleened.API.Schemas do
         }
       },
       required: [:container]
+    })
+  end
+
+  defmodule EndPoint do
+    OpenApiSpex.schema(%{
+      description: "Endpoint connecting a container to a network.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, description: "EndPoint ID"},
+        epair: %Schema{
+          description: "epair used for endpoint in case of a VNET network",
+          type: :string,
+          nullable: true
+        },
+        ip_address: %Schema{
+          description: "IP address of the container connected to the network",
+          type: :string,
+          nullable: true
+        }
+      }
     })
   end
 
@@ -355,6 +422,21 @@ defmodule Kleened.API.Schemas do
     })
   end
 
+  defmodule NetworkInspect do
+    OpenApiSpex.schema(%{
+      description: "Detailed information on a volume.",
+      type: :object,
+      properties: %{
+        network: Kleened.API.Schemas.Network,
+        network_endpoints: %Schema{
+          type: :array,
+          description: "Endpoints of the network.",
+          items: Kleened.API.Schemas.EndPoint
+        }
+      }
+    })
+  end
+
   defmodule Volume do
     OpenApiSpex.schema(%{
       description: "Volume object used for persistent storage in containers.",
@@ -425,53 +507,6 @@ defmodule Kleened.API.Schemas do
     })
   end
 
-  defmodule Container do
-    OpenApiSpex.schema(%{
-      description: "summary description of a container",
-      type: :object,
-      properties: %{
-        id: %Schema{description: "The id of the container", type: :string},
-        name: %Schema{description: "Name of the container.", type: :string},
-        image_id: %Schema{
-          description: "The id of the image that this container was created from",
-          type: :string
-        },
-        command: %Schema{
-          description: "Command being used when starting the container",
-          type: :array,
-          items: :string,
-          default: []
-        },
-        layer_id: %Schema{
-          description: "The id of the layer used by the container.",
-          type: :string
-        },
-        user: %Schema{
-          description:
-            "The default user used when creating execution instances in the container.",
-          type: :string
-        },
-        env: %Schema{
-          description:
-            "List of environment variables used when the container is used. This list will be merged with environment variables defined by the image. The values in this list takes precedence if the variable is defined in both places.",
-          type: :array,
-          items: :string,
-          default: [],
-          example: ["DEBUG=0", "LANG=da_DK.UTF-8"]
-        },
-        jail_param: %Schema{
-          description: "List of jail parameters (see jail(8) for details)",
-          type: :array,
-          items: :string,
-          default: [],
-          example: ["allow.raw_sockets=true", "osrelease=kleenejail"]
-        },
-        created: %Schema{description: "When the container was created", type: :string},
-        running: %Schema{description: "whether or not the container is running", type: :boolean}
-      }
-    })
-  end
-
   defmodule ContainerSummary do
     OpenApiSpex.schema(%{
       description: "summary description of a container",
@@ -506,6 +541,21 @@ defmodule Kleened.API.Schemas do
       description: "List of summarised containers.",
       type: :array,
       items: Kleened.API.Schemas.ContainerSummary
+    })
+  end
+
+  defmodule ContainerInspect do
+    OpenApiSpex.schema(%{
+      description: "Detailed information on a container.",
+      type: :object,
+      properties: %{
+        container: Kleened.API.Schemas.Container,
+        container_endpoints: %Schema{
+          type: :array,
+          description: "Endpoints of the container.",
+          items: Kleened.API.Schemas.EndPoint
+        }
+      }
     })
   end
 

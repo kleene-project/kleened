@@ -1,6 +1,5 @@
 defmodule Kleened.Core.Exec do
   alias Kleened.Core.{Container, MetaData, OS, FreeBSD, Layer, Utils, ExecInstances, Network}
-  alias Network.EndPoint
   alias Kleened.API.Schemas
 
   defmodule State do
@@ -291,7 +290,7 @@ defmodule Kleened.Core.Exec do
       destoy_jail_epairs = fn network ->
         config = MetaData.get_endpoint(container_id, network.id)
         FreeBSD.destroy_bridged_epair(config.epair, network.bridge_if)
-        config = %EndPoint{config | epair: nil}
+        config = %Schemas.EndPoint{config | epair: nil}
         MetaData.add_endpoint_config(container_id, network.id, config)
       end
 
@@ -381,10 +380,10 @@ defmodule Kleened.Core.Exec do
     subnet = CIDR.parse(subnet)
     gateway = subnet.first |> :inet.ntoa() |> :binary.list_to_bin()
 
-    %EndPoint{ip_address: ip} = endpoint = MetaData.get_endpoint(container_id, id)
+    %Schemas.EndPoint{ip_address: ip} = endpoint = MetaData.get_endpoint(container_id, id)
 
     epair = FreeBSD.create_epair()
-    MetaData.add_endpoint_config(container_id, id, %EndPoint{endpoint | epair: epair})
+    MetaData.add_endpoint_config(container_id, id, %Schemas.EndPoint{endpoint | epair: epair})
     # "exec.start=\"ifconfig #{epair}b name jail0\" " <>
     # "exec.poststop=\"ifconfig #{bridge} deletem #{epair}a\" " <>
     # "exec.poststop=\"ifconfig #{epair}a destroy\""

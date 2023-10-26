@@ -14,6 +14,7 @@ defmodule Kleened.API.Router do
   post("/containers/create", to: API.Container.Create)
   delete("/containers/:container_id", to: API.Container.Remove)
   post("/containers/:container_id/stop", to: API.Container.Stop)
+  get("/containers/:container_id/inspect", to: API.Container.Inspect)
 
   # Execution instances
   post("/exec/create", to: API.Exec.Create)
@@ -22,11 +23,13 @@ defmodule Kleened.API.Router do
   # Images:
   get("/images/list", to: API.Image.List)
   delete("/images/:image_id", to: API.Image.Remove)
+  get("/images/:image_id/inspect", to: API.Image.Inspect)
 
   # Networks:
   get("/networks/list", to: API.Network.List)
   post("/networks/create", to: API.Network.Create)
   delete("/networks/:network_id", to: API.Network.Remove)
+  get("/networks/:network_id/inspect", to: API.Network.Inspect)
   post("/networks/:network_id/connect", to: API.Network.Connect)
   post("/networks/:network_id/disconnect/:container_id", to: API.Network.Disconnect)
 

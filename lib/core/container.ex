@@ -66,6 +66,18 @@ defmodule Kleened.Core.Container do
     end
   end
 
+  @spec inspect_(String.t()) :: {:ok, %Schemas.ContainerInspect{}} | {:error, String.t()}
+  def inspect_(idname) do
+    case MetaData.get_container(idname) do
+      :not_found ->
+        {:error, "container not found"}
+
+      container ->
+        endpoints = MetaData.get_endpoints_from_container(container.id)
+        {:ok, %Schemas.ContainerInspect{container: container, container_endpoints: endpoints}}
+    end
+  end
+
   @spec list([list_containers_opts()]) :: [%{}]
   def list(options \\ []) do
     list_(options)
@@ -151,7 +163,8 @@ defmodule Kleened.Core.Container do
       user: user,
       jail_param: jail_param,
       env: env,
-      created: DateTime.to_iso8601(DateTime.utc_now())
+      created: DateTime.to_iso8601(DateTime.utc_now()),
+      running: false
     }
 
     # Mount volumes into container (if any have been provided)

@@ -271,4 +271,53 @@ defmodule Kleened.API.Network do
       end
     end
   end
+
+  defmodule Inspect do
+    use Plug.Builder
+    alias Kleened.API.Utils
+
+    plug(OpenApiSpex.Plug.CastAndValidate,
+      json_render_error_v2: true,
+      operation_id: "Network.Inspect"
+    )
+
+    plug(:inspect_)
+
+    def open_api_operation(_) do
+      %Operation{
+        summary: "network inspect",
+        description: "Inspect a network and its endpoints.",
+        operationId: "Network.Inspect",
+        parameters: [
+          parameter(
+            :network_id,
+            :path,
+            %Schema{type: :string},
+            "Identifier of the network",
+            required: true
+          )
+        ],
+        responses: %{
+          200 => response("network retrieved", "application/json", Schemas.NetworkInspect),
+          404 => response("no such network", "application/json", Schemas.ErrorResponse),
+          500 => response("server error", "application/json", Schemas.ErrorResponse)
+        }
+      }
+    end
+
+    def inspect_(conn, _opts) do
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+      network_ident = conn.params.network_id
+
+      case Network.inspect_(network_ident) do
+        {:ok, network_inspect} ->
+          network_inspect = Jason.encode!(network_inspect)
+          send_resp(conn, 200, network_inspect)
+
+        {:error, msg} ->
+          msg_json = Utils.error_response(msg)
+          send_resp(conn, 404, msg_json)
+      end
+    end
+  end
 end

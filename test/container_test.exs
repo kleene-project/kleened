@@ -45,6 +45,17 @@ defmodule ContainerTest do
              TestHelper.container_remove(api_spec, container_id2)
   end
 
+  test "Inspect a container", %{api_spec: api_spec} do
+    %Schemas.Container{} = container_succesfully_create(api_spec, "testcontainer", %{})
+    response = TestHelper.container_inspect_raw("notexist")
+    assert response.status == 404
+    response = TestHelper.container_inspect_raw("testcontainer")
+    assert response.status == 200
+    result = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+    assert %{container: %{name: "testcontainer"}} = result
+    assert_schema(result, "ContainerInspect", api_spec)
+  end
+
   test "start and stop a container (using devfs)", %{api_spec: api_spec} do
     config = %{cmd: ["/bin/sleep", "10"]}
 

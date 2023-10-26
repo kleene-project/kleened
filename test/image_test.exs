@@ -86,6 +86,29 @@ defmodule ImageTest do
     assert File.read(Path.join(mountpoint, "/root/test_1.txt")) == {:ok, "lol1\n"}
   end
 
+  test "buld and inspect an image", %{api_spec: api_spec} do
+    dockerfile = """
+    FROM FreeBSD:testing
+    CMD /etc/rc
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+
+    {%Schemas.Image{}, _build_log} =
+      TestHelper.image_valid_build(%{
+        context: @tmp_context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:inspect"
+      })
+
+    response = TestHelper.image_inspect_raw("testlol:inspect")
+    assert response.status == 404
+    response = TestHelper.image_inspect_raw("test:inspect")
+    assert response.status == 200
+    result = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+    assert_schema(result, "Image", api_spec)
+  end
+
   test "verify 'WORKDIR' behaviour: Absolute path and auto-creation" do
     dockerfile = """
     FROM FreeBSD:testing

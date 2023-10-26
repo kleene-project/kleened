@@ -3,7 +3,6 @@ defmodule NetworkTest do
   require Logger
   alias Kleened.Core.{Network, Utils, MetaData, Container, Exec, OS}
   alias Kleened.API.Schemas
-  alias Network.EndPoint
 
   @moduletag :capture_log
 
@@ -33,11 +32,22 @@ defmodule NetworkTest do
     assert network.name == "testnet"
 
     assert Utils.interface_exists("kleene1")
-    assert Network.inspect_(network.name) == network
-    assert Network.inspect_(String.slice(network.id, 0, 4)) == network
     assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
     assert not Utils.interface_exists("kleene1")
     assert MetaData.get_network(network.id) == :not_found
+  end
+
+  test "inspect a network", %{
+    api_spec: api_spec
+  } do
+    %Schemas.Network{} = create_network(api_spec, %{ifname: "kleene1", driver: "loopback"})
+    response = TestHelper.network_inspect_raw("notexist")
+    assert response.status == 404
+    response = TestHelper.network_inspect_raw("testnet")
+    assert response.status == 200
+    result = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+    assert %{network: %{name: "testnet"}} = result
+    assert_schema(result, "NetworkInspect", api_spec)
   end
 
   test "listing networks", %{api_spec: api_spec} do
@@ -132,7 +142,7 @@ defmodule NetworkTest do
     %{id: container_id} = TestHelper.container_create(api_spec, "network_test", opts)
 
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
-    %EndPoint{ip_address: ip} = MetaData.get_endpoint(container_id, network.id)
+    %Schemas.EndPoint{ip_address: ip} = MetaData.get_endpoint(container_id, network.id)
     {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
     assert %{"statistics" => %{"interface" => [%{"address" => ^ip}]}} = output
     assert ip_not_on_if(ip, network.loopback_if)
@@ -156,7 +166,7 @@ defmodule NetworkTest do
     assert %{message: "container already connected to the network"} ==
              TestHelper.network_connect(api_spec, "testnet", container_id)
 
-    %EndPoint{ip_address: ip} = MetaData.get_endpoint(container_id, network.id)
+    %Schemas.EndPoint{ip_address: ip} = MetaData.get_endpoint(container_id, network.id)
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
     {:ok, output} = Jason.decode(TestHelper.collect_container_output(exec_id))
     assert %{"statistics" => %{"interface" => [%{"address" => ^ip}]}} = output
@@ -176,7 +186,7 @@ defmodule NetworkTest do
 
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
     assert receive_jail_output(exec_id) == "add net default: gateway 172.18.0.0\n"
-    %EndPoint{epair: epair} = Network.inspect_endpoint(container_id, network.id)
+    %Schemas.EndPoint{epair: epair} = Network.inspect_endpoint(container_id, network.id)
     assert epair != nil
 
     # This is needed because "jail" adds the epair<N>b AFTER "add net default.." so a race-condition occurs
@@ -200,10 +210,10 @@ defmodule NetworkTest do
       })
 
     assert :ok == TestHelper.network_connect(api_spec, "testnet", container_id)
-    %EndPoint{epair: nil} = MetaData.get_endpoint(container_id, network.id)
+    %Schemas.EndPoint{epair: nil} = MetaData.get_endpoint(container_id, network.id)
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
     assert receive_jail_output(exec_id) == "add net default: gateway 172.18.0.0\n"
-    %EndPoint{epair: epair} = Network.inspect_endpoint(container_id, network.id)
+    %Schemas.EndPoint{epair: epair} = Network.inspect_endpoint(container_id, network.id)
 
     # This is needed because "jail" adds the epair<N>b AFTER "add net default.." so a race-condition occurs
     :timer.sleep(1_000)
@@ -241,7 +251,7 @@ defmodule NetworkTest do
       })
 
     assert :ok == TestHelper.network_connect(api_spec, network1.id, container_id)
-    assert %EndPoint{} = MetaData.get_endpoint(container_id, network1.id)
+    assert %Schemas.EndPoint{} = MetaData.get_endpoint(container_id, network1.id)
 
     assert %{
              message:
@@ -354,12 +364,12 @@ defmodule NetworkTest do
       )
 
     assert :ok == TestHelper.network_connect(api_spec, network.name, container_id)
-    assert %EndPoint{} = MetaData.get_endpoint(container_id, network.id)
+    assert %Schemas.EndPoint{} = MetaData.get_endpoint(container_id, network.id)
     {:ok, exec_id} = exec_run(container_id, %{attach: true, start_container: true})
 
     assert receive_jail_output(exec_id) == "add net default: gateway 172.18.0.0\n"
 
-    %EndPoint{epair: epair} = Network.inspect_endpoint(container_id, network.id)
+    %Schemas.EndPoint{epair: epair} = Network.inspect_endpoint(container_id, network.id)
     assert interface_exists?("#{epair}a")
 
     assert :ok == TestHelper.network_disconnect(api_spec, container_id, network.name)

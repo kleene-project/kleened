@@ -24,6 +24,10 @@ defmodule Kleened.API.Spec do
           OpenApiSpex.PathItem.from_routes([
             %{verb: :delete, plug: API.Container.Remove, opts: []}
           ]),
+        "/containers/{container_id}/inspect" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :get, plug: API.Container.Inspect, opts: []}
+          ]),
         "/containers/{container_id}/stop" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :post, plug: API.Container.Stop, opts: []}
@@ -51,6 +55,10 @@ defmodule Kleened.API.Spec do
           OpenApiSpex.PathItem.from_routes([
             %{verb: :get, plug: API.ImageCreate, opts: []}
           ]),
+        "/images/{image_id}/inspect" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :get, plug: API.Image.Inspect, opts: []}
+          ]),
         "/images/list" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :get, plug: API.Image.List, opts: []}
@@ -70,6 +78,10 @@ defmodule Kleened.API.Spec do
         "/networks/{network_id}" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :delete, plug: API.Network.Remove, opts: []}
+          ]),
+        "/networks/{network_id}/inspect" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :get, plug: API.Network.Inspect, opts: []}
           ]),
         "/networks/{network_id}/connect" =>
           OpenApiSpex.PathItem.from_routes([
