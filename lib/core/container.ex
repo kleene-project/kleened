@@ -74,7 +74,14 @@ defmodule Kleened.Core.Container do
 
       container ->
         endpoints = MetaData.get_endpoints_from_container(container.id)
-        {:ok, %Schemas.ContainerInspect{container: container, container_endpoints: endpoints}}
+        mountpoints = MetaData.list_mounts_by_container(container.id)
+
+        {:ok,
+         %Schemas.ContainerInspect{
+           container: container,
+           container_endpoints: endpoints,
+           container_mountpoints: mountpoints
+         }}
     end
   end
 

@@ -562,6 +562,11 @@ defmodule Kleened.API.Schemas do
           type: :array,
           description: "Endpoints of the container.",
           items: Kleened.API.Schemas.EndPoint
+        },
+        container_mountpoints: %Schema{
+          type: :array,
+          description: "Mountpoints of the container.",
+          items: Kleened.API.Schemas.MountPoint
         }
       }
     })

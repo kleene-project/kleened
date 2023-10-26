@@ -326,6 +326,11 @@ defmodule Kleened.Core.MetaData do
     sql("SELECT mount FROM mounts WHERE json_extract(mount, '$.volume_name') = ?", [name])
   end
 
+  @spec list_mounts_by_container(String.t()) :: [%Schemas.MountPoint{}] | :not_found
+  def list_mounts_by_container(container_id) do
+    sql("SELECT mount FROM mounts WHERE json_extract(mount, '$.container_id') = ?", [container_id])
+  end
+
   ##########################
   ### Internal functions ###
   ##########################
