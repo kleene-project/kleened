@@ -158,7 +158,7 @@ defmodule Kleened.API.Volume do
           )
         ],
         responses: %{
-          200 => response("volume removed", "application/json", Schemas.VolumeInspect),
+          200 => response("volume retrieved", "application/json", Schemas.VolumeInspect),
           404 => response("no such volume", "application/json", Schemas.ErrorResponse),
           500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
