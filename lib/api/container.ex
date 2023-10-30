@@ -115,6 +115,73 @@ defmodule Kleened.API.Container do
     end
   end
 
+  defmodule Update do
+    use Plug.Builder
+    alias Kleened.API.Utils
+
+    plug(Plug.Parsers,
+      parsers: [:json],
+      json_decoder: Jason
+    )
+
+    plug(OpenApiSpex.Plug.CastAndValidate,
+      json_render_error_v2: true,
+      operation_id: "Container.Update"
+    )
+
+    plug(:update)
+
+    def open_api_operation(_) do
+      %Operation{
+        summary: "container update",
+        operationId: "Container.Update",
+        parameters: [
+          parameter(
+            :container_id,
+            :path,
+            %Schema{type: :string},
+            "ID or name of the container. An initial segment of the id can be supplied if it uniquely determines the container.",
+            required: true
+          )
+        ],
+        requestBody:
+          request_body(
+            "Container configuration.",
+            "application/json",
+            Schemas.ContainerConfig,
+            required: true
+          ),
+        responses: %{
+          201 => response("no error", "application/json", Schemas.IdResponse),
+          409 => response("error processing update", "application/json", Schemas.ErrorResponse),
+          404 => response("no such container", "application/json", Schemas.ErrorResponse),
+          500 => response("server error", "application/json", Schemas.ErrorResponse)
+        }
+      }
+    end
+
+    def update(conn, _opts) do
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+      container_id = conn.params.container_id
+      container_config = conn.body_params
+
+      case Container.update(container_id, container_config) do
+        {:ok, %Schemas.Container{id: id}} ->
+          send_resp(conn, 201, Utils.id_response(id))
+
+        {:warning, msg} ->
+          resp_msg = Utils.error_response("an error ocurred while updating the container: #{msg}")
+          send_resp(conn, 409, resp_msg)
+
+        {:error, :container_not_found} ->
+          send_resp(conn, 404, Utils.error_response("no such container '#{container_id}'"))
+
+        {:error, reason} ->
+          send_resp(conn, 500, Utils.error_response(reason))
+      end
+    end
+  end
+
   defmodule Remove do
     use Plug.Builder
     alias Kleened.API.Utils

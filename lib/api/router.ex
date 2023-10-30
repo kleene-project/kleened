@@ -13,6 +13,7 @@ defmodule Kleened.API.Router do
   get("/containers/list", to: API.Container.List)
   post("/containers/create", to: API.Container.Create)
   delete("/containers/:container_id", to: API.Container.Remove)
+  post("/containers/:container_id/update", to: API.Container.Update)
   post("/containers/:container_id/stop", to: API.Container.Stop)
   get("/containers/:container_id/inspect", to: API.Container.Inspect)
 

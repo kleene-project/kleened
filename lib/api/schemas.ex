@@ -10,7 +10,8 @@ defmodule Kleened.API.Schemas do
       properties: %{
         name: %Schema{
           description: "Name of the container. Must match `/?[a-zA-Z0-9][a-zA-Z0-9_.-]+`.",
-          type: :string
+          type: :string,
+          nullable: true
         },
         image: %Schema{
           type: :string,
@@ -36,12 +37,14 @@ defmodule Kleened.API.Schemas do
           type: :array,
           items: %Schema{type: :string},
           default: [],
+          nullable: true,
           example: ["/bin/sh", "-c", "ls /"]
         },
         user: %Schema{
           type: :string,
           description:
             "User that executes the command (cmd). If no user is set the user from the image will be used (which in turn is 'root' if no user is specified there).",
+          nullable: true,
           default: ""
         },
         env: %Schema{
@@ -49,6 +52,7 @@ defmodule Kleened.API.Schemas do
             "List of environment variables when using the container. This list will be merged with environment variables defined by the image. The values in this list takes precedence if the variable is defined in both.",
           type: :array,
           items: %Schema{type: :string},
+          nullable: true,
           default: [],
           example: ["DEBUG=0", "LANG=da_DK.UTF-8"]
         },
@@ -56,12 +60,14 @@ defmodule Kleened.API.Schemas do
           description: "List of volumes that should be mounted into the container",
           type: :array,
           items: %Schema{type: :string},
+          nullable: true,
           default: []
         },
         jail_param: %Schema{
           description: "List of `jail(8)` parameters to use for the container.",
           type: :array,
           items: %Schema{type: :string},
+          nullable: true,
           default: [],
           example: ["allow.raw_sockets=true", "osrelease=kleenejail"]
         }

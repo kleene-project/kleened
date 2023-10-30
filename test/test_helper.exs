@@ -45,6 +45,13 @@ defmodule TestHelper do
     {closing_msg, process_output}
   end
 
+  def container_start_attached(_api_spec, container_id) when is_binary(container_id) do
+    cont = MetaData.get_container(container_id)
+    {:ok, exec_id} = Exec.create(container_id)
+    :ok = Exec.start(exec_id, %{attach: true, start_container: true})
+    {cont, exec_id}
+  end
+
   def container_start_attached(api_spec, config) do
     %{id: container_id} = container_create(api_spec, config)
     cont = MetaData.get_container(container_id)
@@ -88,6 +95,21 @@ defmodule TestHelper do
     end
   end
 
+  def container_update(api_spec, container_ident, config) do
+    assert_schema(config, "ContainerConfig", api_spec)
+
+    response =
+      conn(:post, "/containers/#{container_ident}/update", config)
+      |> put_req_header("content-type", "application/json")
+      |> Router.call(@opts)
+
+    validate_response(api_spec, response, %{
+      201 => "IdResponse",
+      409 => "ErrorResponse",
+      404 => "ErrorResponse"
+    })
+  end
+
   def container_stop(api_spec, name) do
     response =
       conn(:post, "/containers/#{name}/stop")
@@ -116,6 +138,19 @@ defmodule TestHelper do
     |> Router.call(@opts)
   end
 
+  def container_inspect(container_ident) do
+    response = container_inspect_raw(container_ident)
+
+    %{container: container, container_endpoints: endpoints, container_mountpoints: mountpoints} =
+      Jason.decode!(response.resp_body, [{:keys, :atoms}])
+
+    %{
+      container: struct(Schemas.Container, container),
+      container_endpoints: Enum.map(endpoints, &struct(Schemas.EndPoint, &1)),
+      container_mountpoints: Enum.map(mountpoints, &struct(Schemas.MountPoint, &1))
+    }
+  end
+
   def container_list(api_spec, all \\ true) do
     response =
       conn(:get, "/containers/list?all=#{all}")
@@ -132,6 +167,8 @@ defmodule TestHelper do
   end
 
   defp collect_container_output_(exec_id, output) do
+    timeout = 5_000
+
     receive do
       {:container, ^exec_id, {:shutdown, {:jail_stopped, _exit_code}}} ->
         output
@@ -141,6 +178,8 @@ defmodule TestHelper do
 
       {:container, ^exec_id, msg} ->
         collect_container_output_(exec_id, [msg | output])
+    after
+      timeout -> {:error, "timed out while waiting for container messages"}
     end
   end
 
@@ -607,6 +646,10 @@ defmodule TestHelper do
 
       {:gun_down, ^conn, :ws, :closed, [_stream_ref]} ->
         {:error, "websocket closed unexpectedly"}
+
+      unknown ->
+        Logger.warn("unknown message received: #{inspect(unknown)}")
+        receive_frame(conn, timeout)
     after
       timeout -> {:error, "timed out while waiting for websocket frames"}
     end

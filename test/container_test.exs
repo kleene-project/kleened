@@ -8,6 +8,8 @@ defmodule ContainerTest do
 
   setup do
     on_exit(fn ->
+      Logger.info("Cleaning up")
+
       Kleened.Core.MetaData.list_containers()
       |> Enum.map(fn %{id: id} -> Container.remove(id) end)
     end)
@@ -54,6 +56,122 @@ defmodule ContainerTest do
     result = Jason.decode!(response.resp_body, [{:keys, :atoms}])
     assert %{container: %{name: "testcontainer"}} = result
     assert_schema(result, "ContainerInspect", api_spec)
+  end
+
+  test "updating a container", %{
+    api_spec: api_spec
+  } do
+    %Schemas.Container{id: container_id} =
+      container =
+      container_succesfully_create(api_spec, %{
+        name: "testcontainer",
+        user: "ntpd",
+        cmd: ["/bin/sleep", "10"],
+        env: ["TESTVAR=testval"],
+        jail_param: ["allow.raw_sockets=true"]
+      })
+
+    config_nil = %{
+      name: nil,
+      user: nil,
+      cmd: nil,
+      env: nil,
+      jail_param: nil
+    }
+
+    # Test a "nil-update"
+    %{id: ^container_id} = TestHelper.container_update(api_spec, container_id, config_nil)
+    %{container: container_upd} = TestHelper.container_inspect(container_id)
+    assert container_upd == container
+
+    # Test changing name
+    %{id: ^container_id} =
+      TestHelper.container_update(api_spec, container_id, %{config_nil | name: "testcontupd"})
+
+    %{container: container_upd} = TestHelper.container_inspect(container_id)
+
+    assert container_upd.name == "testcontupd"
+
+    # Test changing env
+    %{id: ^container_id} =
+      TestHelper.container_update(api_spec, container_id, %{
+        config_nil
+        | env: ["TESTVAR=testval2"]
+      })
+
+    %{container: container_upd} = TestHelper.container_inspect(container_id)
+    assert container_upd.env == ["TESTVAR=testval2"]
+
+    # Test changing jail-param
+    %{id: ^container_id} =
+      TestHelper.container_update(api_spec, container_id, %{
+        config_nil
+        | user: "root",
+          jail_param: ["allow.raw_sockets=false"]
+      })
+
+    %{container: container_upd} = TestHelper.container_inspect(container_id)
+
+    assert container_upd.jail_param == ["allow.raw_sockets=false"]
+    assert container_upd.user == "root"
+  end
+
+  test "updating on a running container", %{api_spec: api_spec} do
+    %Schemas.Container{id: container_id} =
+      container_succesfully_create(api_spec, %{
+        name: "testcontainer",
+        user: "root",
+        cmd: ["/bin/sh", "/etc/rc"],
+        jail_param: ["mount.devfs"]
+      })
+
+    config_nil = %{
+      name: nil,
+      user: nil,
+      cmd: nil,
+      env: nil,
+      jail_param: nil
+    }
+
+    # Test changing a jail-param that can be modfied while running
+    {:ok, exec_id} = Exec.create(%Schemas.ExecConfig{container_id: container_id})
+
+    TestHelper.valid_execution(%{exec_id: exec_id, start_container: true, attach: true})
+
+    %{id: ^container_id} =
+      TestHelper.container_update(api_spec, container_id, %{
+        config_nil
+        | jail_param: ["mount.devfs", "host.hostname=testing.local"]
+      })
+
+    %{container: container_upd} = TestHelper.container_inspect(container_id)
+    assert container_upd.jail_param == ["mount.devfs", "host.hostname=testing.local"]
+
+    {:ok, exec_id} =
+      Exec.create(%Kleened.API.Schemas.ExecConfig{
+        container_id: container_id,
+        cmd: ["/bin/hostname"]
+      })
+
+    {_closing_msg, output} =
+      TestHelper.valid_execution(%{
+        exec_id: exec_id,
+        attach: true,
+        start_container: false
+      })
+
+    assert output == ["testing.local\n"]
+
+    assert %{
+             message:
+               "an error ocurred while updating the container: '/usr/sbin/jail' returned non-zero exitcode 139 when attempting to modify the container ''"
+           } ==
+             TestHelper.container_update(api_spec, container_id, %{
+               config_nil
+               | jail_param: ["vnet"]
+             })
+
+    Container.stop(container_id)
   end
 
   test "start and stop a container (using devfs)", %{api_spec: api_spec} do

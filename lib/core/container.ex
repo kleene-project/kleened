@@ -8,7 +8,7 @@ defmodule Kleened.Core.Container do
   alias __MODULE__, as: Container
 
   require Logger
-  alias Kleened.Core.{MetaData, Volume, Layer, Network, Utils}
+  alias Kleened.Core.{MetaData, Volume, Layer, Network, Utils, OS}
   alias Kleened.API.Schemas
 
   @type t() ::
@@ -55,7 +55,8 @@ defmodule Kleened.Core.Container do
     remove_(cont)
   end
 
-  @spec update(String.t(), container_config) :: :ok | {:error, String.t()}
+  @spec update(String.t(), container_config) ::
+          :ok | {:warning, String.t()} | {:error, String.t()}
   def update(container_id, config) do
     update_(container_id, config)
   end
@@ -133,10 +134,72 @@ defmodule Kleened.Core.Container do
   end
 
   defp update_(
-         _container_id,
-         _config
+         container_id,
+         %Schemas.ContainerConfig{
+           name: name,
+           user: user,
+           env: env,
+           volumes: _volumes,
+           cmd: cmd,
+           jail_param: jail_param
+         }
        ) do
-    :implement_me
+    case MetaData.get_container(container_id) do
+      %Schemas.Container{} = container ->
+        case update_container_object(container,
+               name: name,
+               user: user,
+               env: env,
+               cmd: cmd,
+               jail_param: jail_param
+             ) do
+          {:ok, container} -> modify_container_if_running(container, jail_param)
+          {:warning, msg} -> {:warning, msg}
+        end
+
+      :not_found ->
+        {:error, :container_not_found}
+    end
+  end
+
+  defp update_container_object(container, simple_vars) do
+    container_upd = Enum.reduce(simple_vars, container, &update_container_property/2)
+
+    if container != container_upd do
+      Logger.debug("updated container #{container.id}")
+      MetaData.add_container(container_upd)
+    end
+
+    {:ok, container_upd}
+  end
+
+  defp update_container_property({_var_name, nil}, container) do
+    container
+  end
+
+  defp update_container_property({var_name, var_val}, container) do
+    Map.put(container, var_name, var_val)
+  end
+
+  defp modify_container_if_running(container, jail_param) do
+    case is_running?(container.id) do
+      true ->
+        command = ["/usr/sbin/jail", "-m", "name=#{container.id}" | jail_param]
+
+        case OS.cmd(command, %{suppress_warning: false}) do
+          {_output, 0} ->
+            {:ok, container}
+
+          {output, nonzero_exit} ->
+            {:warning,
+             "'/usr/sbin/jail' returned non-zero exitcode #{nonzero_exit} when attempting to modify the container '#{
+               output
+             }'"}
+        end
+
+      false ->
+        {:ok, container}
+    end
   end
 
   defp assemble_container(

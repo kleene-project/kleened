@@ -28,6 +28,10 @@ defmodule Kleened.API.Spec do
           OpenApiSpex.PathItem.from_routes([
             %{verb: :get, plug: API.Container.Inspect, opts: []}
           ]),
+        "/containers/{container_id}/update" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :post, plug: API.Container.Update, opts: []}
+          ]),
         "/containers/{container_id}/stop" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :post, plug: API.Container.Stop, opts: []}
