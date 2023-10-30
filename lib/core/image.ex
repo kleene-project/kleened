@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Image do
-  alias Kleened.Core.{Const, ZFS, MetaData, Utils, Layer, Network, OS, Container}
+  alias Kleened.Core.{Const, ZFS, MetaData, Utils, Layer, Network, OS, Container, Config}
   alias Kleened.API.Schemas
   require Logger
 
@@ -95,6 +95,77 @@ defmodule Kleened.Core.Image do
         {_, 0} = ZFS.destroy_force(dataset)
         MetaData.delete_image(id)
     end
+  end
+
+  @spec prune(String.t()) :: {:ok, [String.t()]}
+  def prune(all \\ false) do
+    images = MetaData.list_image_datasets()
+    prune_images(all, images, [])
+  end
+
+  defp prune_images(all, images, pruned_images) do
+    dataset2clones = create_dataset2clones()
+
+    case trim_images(images, dataset2clones, all, [], []) do
+      {:ok, [], _remaining} ->
+        # No images have been removed by trimming so we are done
+        {:ok, List.flatten(pruned_images)}
+
+      {:ok, deleted_images, remaining_images} ->
+        # Images have been removed by trimming which might make new images eligible for removal
+        # - if their children have been removed in a previous trim
+        prune_images(all, remaining_images, [deleted_images | pruned_images])
+    end
+  end
+
+  defp trim_images(
+         [[id: image_id, name: name, tag: tag, dataset: dataset] = image | rest],
+         dataset2clones,
+         all,
+         deleted,
+         remaining
+       ) do
+    clones = Map.get(dataset2clones, dataset)
+
+    case {all, name, tag, clones} do
+      {true, _name, _tag, []} ->
+        destroy(image_id)
+        trim_images(rest, dataset2clones, all, [image_id | deleted], remaining)
+
+      {false, "", "", []} ->
+        destroy(image_id)
+        trim_images(rest, dataset2clones, all, [image_id | deleted], remaining)
+
+      _ ->
+        trim_images(rest, dataset2clones, all, deleted, [image | remaining])
+    end
+  end
+
+  defp trim_images([], _dataset2clones, _all, deleted, remaining) do
+    {:ok, deleted, remaining}
+  end
+
+  defp create_dataset2clones() do
+    kleened_root = Config.get("zroot")
+    {output, 0} = OS.cmd(~w"/sbin/zfs list -H -t snapshot -o name,clones -r #{kleened_root}")
+    processed_output = output |> String.split("\n") |> Enum.map(&String.split(&1, "\t"))
+    Enum.reduce(processed_output, %{}, &create_dataset2clones_/2)
+  end
+
+  def create_dataset2clones_([""], dataset2clones) do
+    dataset2clones
+  end
+
+  def create_dataset2clones_([snapshot, clones_raw], dataset2clones) do
+    [dataset, _snapshot_name] = String.split(snapshot, "@")
+
+    clones =
+      case clones_raw do
+        "-" -> []
+        clones_nonempty -> String.split(clones_nonempty, ",")
+      end
+
+    Map.put(dataset2clones, dataset, clones)
   end
 
   defp verify_instructions([]) do

@@ -71,6 +71,10 @@ defmodule Kleened.API.Spec do
           OpenApiSpex.PathItem.from_routes([
             %{verb: :delete, plug: API.Image.Remove, opts: []}
           ]),
+        "/images/prune" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :get, plug: API.Image.Prune, opts: []}
+          ]),
         "/networks/list" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :get, plug: API.Network.List, opts: []}

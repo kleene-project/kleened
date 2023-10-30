@@ -646,4 +646,13 @@ defmodule Kleened.API.Schemas do
       required: [:id]
     })
   end
+
+  defmodule IdListResponse do
+    OpenApiSpex.schema(%{
+      title: "IdListResponse",
+      description: "Response to an API call that returns just an Id",
+      type: :array,
+      items: %Schema{type: :string}
+    })
+  end
 end

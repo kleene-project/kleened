@@ -1,6 +1,6 @@
 defmodule ImageTest do
   use Kleened.API.ConnCase
-  alias Kleened.Core.{Config, Image, MetaData, Layer, Container, ZFS, OS}
+  alias Kleened.Core.{Config, MetaData, Layer, Container, ZFS, OS}
   alias Kleened.API.Schemas
   alias Schemas.WebSocketMessage, as: Message
 
@@ -9,11 +9,12 @@ defmodule ImageTest do
 
   setup do
     on_exit(fn ->
+      Logger.info("Cleaning up after test...")
       MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
 
       MetaData.list_images()
       |> Enum.filter(fn %Schemas.Image{id: id} -> id != "base" end)
-      |> Enum.map(fn %Schemas.Image{id: id} -> Image.destroy(id) end)
+      |> Enum.map(fn %Schemas.Image{id: id} -> Kleened.Core.Image.destroy(id) end)
     end)
 
     :ok
@@ -86,7 +87,7 @@ defmodule ImageTest do
     assert File.read(Path.join(mountpoint, "/root/test_1.txt")) == {:ok, "lol1\n"}
   end
 
-  test "buld and inspect an image", %{api_spec: api_spec} do
+  test "build and inspect an image", %{api_spec: api_spec} do
     dockerfile = """
     FROM FreeBSD:testing
     CMD /etc/rc
@@ -107,6 +108,111 @@ defmodule ImageTest do
     assert response.status == 200
     result = Jason.decode!(response.resp_body, [{:keys, :atoms}])
     assert_schema(result, "Image", api_spec)
+  end
+
+  test "pruning of images with all=true", %{api_spec: api_spec} do
+    base_image = MetaData.get_image("base")
+    # Image with no children and a tag
+    build_dummy_image("FreeBSD:testing", "test:no-children")
+
+    # Image with no children and no tag
+    build_dummy_image("FreeBSD:testing", "")
+
+    # Image with children and a tag
+    image = build_dummy_image("FreeBSD:testing", "test:with-children")
+    build_dummy_image(image.id, "test:child1")
+    build_dummy_image(image.id, "")
+
+    # Image with children and no tag
+    image = build_dummy_image("FreeBSD:testing", "")
+    build_dummy_image(image.id, "test:child2")
+    build_dummy_image(image.id, "")
+
+    TestHelper.image_prune(api_spec, true)
+    assert [base_image] == MetaData.list_images()
+
+    # Image with no children and a tag
+    image1 = build_dummy_image("FreeBSD:testing", "test:no-children")
+
+    # Image with no children and no tag
+    _deleted = build_dummy_image("FreeBSD:testing", "")
+
+    # Image with children and a tag
+    image2 = build_dummy_image("FreeBSD:testing", "test:with-children")
+    image3 = build_dummy_image(image2.id, "test:child1")
+    _deleted = build_dummy_image(image2.id, "")
+
+    # Image with children and no tag
+    image4 = build_dummy_image("FreeBSD:testing", "")
+    image5 = build_dummy_image(image4.id, "test:child2")
+    _deleted = build_dummy_image(image4.id, "")
+
+    TestHelper.image_prune(api_spec, false)
+
+    assert [image5, image4, image3, image2, image1, base_image] ==
+             MetaData.list_images()
+  end
+
+  test "pruning with all=false", %{api_spec: api_spec} do
+    base_image = MetaData.get_image("base")
+
+    # Image with no children and a tag + Image with no children and no tag
+    image1 = build_dummy_image("FreeBSD:testing", "test:no-children")
+    _deleted = build_dummy_image("FreeBSD:testing", "")
+
+    Kleened.Core.Image.prune(false)
+    assert [image1, base_image] == MetaData.list_images()
+    Kleened.Core.Image.destroy(image1.id)
+
+    # Image with children and a tag
+    image1 = build_dummy_image("FreeBSD:testing", "test:with-children")
+    image2 = build_dummy_image(image1.id, "test:child1")
+    _deleted = build_dummy_image(image1.id, "")
+
+    TestHelper.image_prune(api_spec, false)
+    assert [image2, image1, base_image] == MetaData.list_images()
+    Kleened.Core.Image.destroy(image2.id)
+    Kleened.Core.Image.destroy(image1.id)
+
+    # Image with children and no tag
+    image1 = build_dummy_image("FreeBSD:testing", "")
+    image2 = build_dummy_image(image1.id, "test:child2")
+    _deleted = build_dummy_image(image1.id, "")
+    TestHelper.image_prune(api_spec, false)
+    assert [image2, image1, base_image] == MetaData.list_images()
+  end
+
+  test "pruning images with containers and all=false", %{api_spec: api_spec} do
+    base_image = MetaData.get_image("base")
+    # Image with no children and a tag
+    image1 = build_dummy_image("FreeBSD:testing", "test:no-children")
+    TestHelper.container_create(api_spec, %{name: "prune1", image: image1.id})
+
+    # Image with no children and no tag
+    image2 = build_dummy_image("FreeBSD:testing", "")
+    TestHelper.container_create(api_spec, %{name: "prune2", image: image2.id})
+    TestHelper.image_prune(api_spec, false)
+    assert [image2, image1, base_image] == MetaData.list_images()
+  end
+
+  test "pruning images with containers and all=true", %{api_spec: api_spec} do
+    base_image = MetaData.get_image("base")
+
+    # Image with children and a tag
+    image1 = build_dummy_image("FreeBSD:testing", "test:with-children")
+    image2 = build_dummy_image(image1.id, "test:child1")
+    build_dummy_image(image1.id, "")
+    TestHelper.container_create(api_spec, %{name: "prune3", image: image2.id})
+
+    # Image with children and no tag
+    image3 = build_dummy_image("FreeBSD:testing", "")
+    build_dummy_image(image3.id, "test:child2")
+    image4 = build_dummy_image(image3.id, "")
+    TestHelper.container_create(api_spec, %{name: "prune4", image: image4.id})
+
+    TestHelper.image_prune(api_spec, true)
+
+    assert [image4, image3, image2, image1, base_image] == MetaData.list_images()
   end
 
   test "verify 'WORKDIR' behaviour: Absolute path and auto-creation" do
@@ -986,6 +1092,27 @@ defmodule ImageTest do
              "Step 2/2 : ENV TEST=\"something\" # You cannot make comments like this.\n",
              "failed environment substition of: ENV TEST=\"something\" # You cannot make comments like this."
            ]
+  end
+
+  defp build_dummy_image(parent_image, image_tag) do
+    create_dockerfile = fn parent ->
+      """
+      FROM #{parent}
+      CMD /etc/rc
+      """
+    end
+
+    dockerfile = create_dockerfile.(parent_image)
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+
+    {%Schemas.Image{} = image, _build_log} =
+      TestHelper.image_valid_build(%{
+        context: @tmp_context,
+        dockerfile: @tmp_dockerfile,
+        tag: image_tag
+      })
+
+    image
   end
 
   defp fetch_snapshot(%Schemas.Image{instructions: instructions}, instruction) do

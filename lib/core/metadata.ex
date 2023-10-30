@@ -331,6 +331,18 @@ defmodule Kleened.Core.MetaData do
     sql("SELECT mount FROM mounts WHERE json_extract(mount, '$.container_id') = ?", [container_id])
   end
 
+  @spec list_image_datasets() :: [%{}]
+  def list_image_datasets() do
+    sql("""
+    SELECT images.id AS id,
+         json_extract(images.image, '$.name') AS name,
+         json_extract(images.image, '$.tag') AS tag,
+         json_extract(layers.layer, '$.dataset') AS dataset
+    FROM images
+    INNER JOIN layers ON layers.id = json_extract(images.image, '$.layer_id');
+    """)
+  end
+
   ##########################
   ### Internal functions ###
   ##########################
@@ -514,6 +526,9 @@ defmodule Kleened.Core.MetaData do
 
       Keyword.has_key?(row, :network_id) ->
         Keyword.get(row, :network_id)
+
+      true ->
+        row
     end
   end
 

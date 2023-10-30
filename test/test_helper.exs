@@ -268,6 +268,23 @@ defmodule TestHelper do
     TestInitialization.test_image()
   end
 
+  def image_prune(api_spec, all) do
+    endpoint =
+      case all do
+        true -> "/images/prune?all=true"
+        false -> "/images/prune?all=false"
+      end
+
+    response =
+      conn(:get, endpoint)
+      |> put_req_header("content-type", "application/json")
+      |> Router.call(@opts)
+
+    validate_response(api_spec, response, %{
+      200 => "IdListResponse"
+    })
+  end
+
   def image_invalid_build(config) do
     config = Map.merge(%{quiet: false, cleanup: true}, config)
     build_log_raw = image_build_raw(config)

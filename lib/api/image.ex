@@ -45,7 +45,7 @@ defmodule Kleened.API.Image do
 
     plug(OpenApiSpex.Plug.CastAndValidate,
       json_render_error_v2: true,
-      operation_id: "Image.List"
+      operation_id: "Image.Remove"
     )
 
     plug(:remove)
@@ -88,6 +88,53 @@ defmodule Kleened.API.Image do
           msg = "Error: No such image: #{image_id}\n"
           Plug.Conn.send_resp(conn, 404, Utils.error_response(msg))
       end
+    end
+  end
+
+  defmodule Prune do
+    use Plug.Builder
+
+    plug(OpenApiSpex.Plug.CastAndValidate,
+      json_render_error_v2: true,
+      operation_id: "Image.Prune"
+    )
+
+    plug(:prune)
+
+    def open_api_operation(_) do
+      %Operation{
+        summary: "image prune",
+        description: """
+        Remove images that are not being used for containers.
+        """,
+        operationId: "Image.Prune",
+        parameters: [
+          parameter(
+            :all,
+            :query,
+            %Schema{type: :boolean},
+            "Whether to remove tagged containers as well.",
+            required: true
+          )
+        ],
+        responses: %{
+          200 => response("no error", "application/json", Schemas.IdListResponse)
+        }
+      }
+    end
+
+    def prune(conn, _opts) do
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+      conn = Plug.Conn.fetch_query_params(conn)
+
+      all =
+        case conn.query_params do
+          %{"all" => "true"} -> true
+          _ -> false
+        end
+
+      {:ok, pruned_images} = Core.Image.prune(all)
+      Plug.Conn.send_resp(conn, 200, Jason.encode!(pruned_images))
     end
   end
 
