@@ -55,6 +55,11 @@ defmodule Kleened.Core.Container do
     remove_(cont)
   end
 
+  @spec prune() :: {:ok, [container_id()]}
+  def prune() do
+    prune_containers()
+  end
+
   @spec update(String.t(), container_config) ::
           :ok | {:warning, String.t()} | {:error, String.t()}
   def update(container_id, config) do
@@ -131,6 +136,21 @@ defmodule Kleened.Core.Container do
       {:not_found, _} ->
         {:error, :image_not_found}
     end
+  end
+
+  defp prune_containers() do
+    pruned_containers =
+      Enum.reduce(list(all: true), [], fn
+        %{running: false, id: container_id}, removed_containers ->
+          Logger.debug("pruning container #{container_id}")
+          remove(container_id)
+          [container_id | removed_containers]
+
+        _, removed_containers ->
+          removed_containers
+      end)
+
+    {:ok, pruned_containers}
   end
 
   defp update_(

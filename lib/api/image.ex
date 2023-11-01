@@ -134,7 +134,7 @@ defmodule Kleened.API.Image do
         end
 
       {:ok, pruned_images} = Core.Image.prune(all)
-      Plug.Conn.send_resp(conn, 200, Jason.encode!(pruned_images))
+      Plug.Conn.send_resp(conn, 200, Utils.idlist_response(pruned_images))
     end
   end
 

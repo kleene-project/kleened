@@ -78,6 +78,11 @@ defmodule Kleened.Core.Network do
     GenServer.call(__MODULE__, {:remove, idname}, 30_000)
   end
 
+  @spec prune() :: {:ok, [Network.network_id()]}
+  def prune() do
+    GenServer.call(__MODULE__, :prune, 30_000)
+  end
+
   @spec inspect_(String.t()) :: {:ok, %Schemas.NetworkInspect{}} | {:error, String.t()}
   def inspect_(network_idname) do
     GenServer.call(__MODULE__, {:inspect, network_idname})
@@ -150,33 +155,13 @@ defmodule Kleened.Core.Network do
   end
 
   def handle_call({:remove, idname}, _from, state) do
-    case MetaData.get_network(idname) do
-      %Schemas.Network{id: id, driver: "loopback", loopback_if: if_name} ->
-        container_ids = MetaData.connected_containers(id)
-        Enum.map(container_ids, &disconnect_(&1, id))
-        Utils.destroy_interface(if_name)
-        MetaData.remove_network(id)
-        configure_pf(state.pf_config_path, state.gateway_interface)
-        {:reply, {:ok, id}, state}
+    remove_(idname, state)
+  end
 
-      %Schemas.Network{id: id, driver: "vnet", bridge_if: if_name} ->
-        container_ids = MetaData.connected_containers(id)
-        Enum.map(container_ids, &disconnect_(&1, id))
-
-        # Just in case there are more members added:
-        remove_bridge_members(if_name)
-
-        Utils.destroy_interface(if_name)
-        MetaData.remove_network(id)
-        configure_pf(state.pf_config_path, state.gateway_interface)
-        {:reply, {:ok, id}, state}
-
-      :not_found ->
-        {:reply, {:error, "network not found."}, state}
-
-      %Schemas.Network{driver: "host"} ->
-        {:reply, {:error, "cannot delete host network"}, state}
-    end
+  def handle_call(:prune, _from, state) do
+    pruned_networks = MetaData.list_unused_networks()
+    pruned_networks |> Enum.map(&remove_(&1, state))
+    {:reply, {:ok, pruned_networks}, state}
   end
 
   def handle_call({:inspect, idname}, _from, state) do
@@ -231,6 +216,36 @@ defmodule Kleened.Core.Network do
 
       true ->
         {:error, "Unknown driver #{inspect(driver)}"}
+    end
+  end
+
+  defp remove_(idname, state) do
+    case MetaData.get_network(idname) do
+      %Schemas.Network{id: id, driver: "loopback", loopback_if: if_name} ->
+        container_ids = MetaData.connected_containers(id)
+        Enum.map(container_ids, &disconnect_(&1, id))
+        Utils.destroy_interface(if_name)
+        MetaData.remove_network(id)
+        configure_pf(state.pf_config_path, state.gateway_interface)
+        {:reply, {:ok, id}, state}
+
+      %Schemas.Network{id: id, driver: "vnet", bridge_if: if_name} ->
+        container_ids = MetaData.connected_containers(id)
+        Enum.map(container_ids, &disconnect_(&1, id))
+
+        # Just in case there are more members added:
+        remove_bridge_members(if_name)
+
+        Utils.destroy_interface(if_name)
+        MetaData.remove_network(id)
+        configure_pf(state.pf_config_path, state.gateway_interface)
+        {:reply, {:ok, id}, state}
+
+      :not_found ->
+        {:reply, {:error, "network not found."}, state}
+
+      %Schemas.Network{driver: "host"} ->
+        {:reply, {:error, "cannot delete host network"}, state}
     end
   end
 

@@ -132,6 +132,38 @@ defmodule Kleened.API.Volume do
     end
   end
 
+  defmodule Prune do
+    use Plug.Builder
+    alias Kleened.API.Utils
+
+    plug(OpenApiSpex.Plug.CastAndValidate,
+      json_render_error_v2: true,
+      operation_id: "Volume.Prune"
+    )
+
+    plug(:prune)
+
+    def open_api_operation(_) do
+      %Operation{
+        summary: "volume prune",
+        description: """
+        Remove all volumes that are not being mounted into any containers.
+        """,
+        operationId: "Volume.Prune",
+        responses: %{
+          200 => response("volume removed", "application/json", Schemas.IdListResponse),
+          500 => response("server error", "application/json", Schemas.ErrorResponse)
+        }
+      }
+    end
+
+    def prune(conn, _opts) do
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+      {:ok, pruned_volumes} = Volume.prune()
+      send_resp(conn, 200, Utils.idlist_response(pruned_volumes))
+    end
+  end
+
   defmodule Inspect do
     use Plug.Builder
     alias Kleened.API.Utils

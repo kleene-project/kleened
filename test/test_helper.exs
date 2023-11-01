@@ -95,6 +95,16 @@ defmodule TestHelper do
     end
   end
 
+  def container_prune(api_spec) do
+    response =
+      conn(:get, "/containers/prune")
+      |> Router.call(@opts)
+
+    json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+    assert_schema(json_body, "IdListResponse", api_spec)
+    json_body
+  end
+
   def container_update(api_spec, container_ident, config) do
     assert_schema(config, "ContainerConfig", api_spec)
 
@@ -518,6 +528,16 @@ defmodule TestHelper do
       200 => "IdResponse",
       404 => "ErrorResponse"
     })
+  end
+
+  def network_prune(api_spec) do
+    response =
+      conn(:get, "/networks/prune")
+      |> Router.call(@opts)
+
+    json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+    assert_schema(json_body, "IdListResponse", api_spec)
+    json_body
   end
 
   def network_inspect_raw(network_ident) do

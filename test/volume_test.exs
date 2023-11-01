@@ -93,6 +93,22 @@ defmodule VolumeTest do
     Container.remove(id)
   end
 
+  test "prune volumes", %{api_spec: api_spec} do
+    # use /mnt since this is empty in the basejail by default
+    location = "/mnt"
+    volume1 = Volume.create("prunevol1")
+    _volume2 = Volume.create("prunevol2")
+
+    %{id: id} =
+      TestHelper.container_create(api_spec, %{name: "volume_test", cmd: ["/bin/sleep", "10"]})
+
+    container = MetaData.get_container(id)
+    :ok = Volume.bind_volume(container, volume1, location)
+    assert ["prunevol2"] = volume_prune(api_spec)
+    assert [%{name: "prunevol1"}] = volume_list(api_spec)
+    Container.remove(id)
+  end
+
   defp volume_destroy(api_spec, name) do
     response =
       conn(:delete, "/volumes/#{name}")
@@ -101,6 +117,16 @@ defmodule VolumeTest do
     assert response.status == 200
     json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
     assert_schema(json_body, "IdResponse", api_spec)
+  end
+
+  defp volume_prune(api_spec) do
+    response =
+      conn(:get, "/volumes/prune")
+      |> Router.call(@opts)
+
+    json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+    assert_schema(json_body, "IdListResponse", api_spec)
+    json_body
   end
 
   defp volume_inspect(name) do

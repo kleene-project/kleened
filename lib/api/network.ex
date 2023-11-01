@@ -143,6 +143,38 @@ defmodule Kleened.API.Network do
     end
   end
 
+  defmodule Prune do
+    use Plug.Builder
+    alias Kleened.API.Utils
+
+    plug(OpenApiSpex.Plug.CastAndValidate,
+      json_render_error_v2: true,
+      operation_id: "Network.Prune"
+    )
+
+    plug(:prune)
+
+    def open_api_operation(_) do
+      %Operation{
+        summary: "network prune",
+        description: """
+        Remove all networks that are not being used by any containers.
+        """,
+        operationId: "Network.Prune",
+        responses: %{
+          200 => response("network removed", "application/json", Schemas.IdListResponse),
+          500 => response("server error", "application/json", Schemas.ErrorResponse)
+        }
+      }
+    end
+
+    def prune(conn, _opts) do
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+      {:ok, pruned_networks} = Network.prune()
+      send_resp(conn, 200, Utils.idlist_response(pruned_networks))
+    end
+  end
+
   defmodule Connect do
     use Plug.Builder
 

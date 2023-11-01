@@ -65,6 +65,26 @@ defmodule NetworkTest do
     assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
   end
 
+  test "prune networks", %{api_spec: api_spec} do
+    network1 =
+      create_network(api_spec, %{name: "testnet1", ifname: "kleene1", driver: "loopback"})
+
+    %Schemas.Network{id: network2_id} =
+      create_network(api_spec, %{name: "testnet2", ifname: "kleene2", driver: "loopback"})
+
+    %{id: container_id} =
+      TestHelper.container_create(api_spec, %{
+        name: "network_prune_test",
+        cmd: ["/bin/sleep", "10"],
+        networks: [network1.id]
+      })
+
+    assert [network2_id] == TestHelper.network_prune(api_spec)
+    assert [%{id: "host"}, %{name: "testnet1"}] = TestHelper.network_list(api_spec)
+    assert :ok == TestHelper.network_disconnect(api_spec, container_id, network1.id)
+    cleanup(api_spec, container_id, network1)
+  end
+
   test "remove a non-existing network", %{api_spec: api_spec} do
     network = create_network(api_spec, %{ifname: "kleene1", driver: "loopback"})
     assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}

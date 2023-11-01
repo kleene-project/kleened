@@ -10,6 +10,10 @@ defmodule Kleened.API.Utils do
     Jason.encode!(%{id: id})
   end
 
+  def idlist_response(ids) do
+    Jason.encode!(ids)
+  end
+
   def closing_message(msg, data \\ "") do
     Jason.encode!(%Message{
       msg_type: "closing",

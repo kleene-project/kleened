@@ -136,6 +136,17 @@ defmodule Kleened.Core.MetaData do
     )
   end
 
+  def list_unused_networks() do
+    sql("""
+    SELECT
+      networks.id AS network_id,
+      endpoint_configs.container_id AS endpoint
+    FROM networks
+    LEFT JOIN endpoint_configs ON networks.id = endpoint_configs.network_id
+    WHERE networks.id != 'host' AND ifnull(endpoint_configs.container_id, 'empty') = 'empty';
+    """)
+  end
+
   @spec add_endpoint_config(
           Container.container_id(),
           Network.network_id(),
@@ -308,6 +319,16 @@ defmodule Kleened.Core.MetaData do
   @spec list_volumes() :: [Volume.t()]
   def list_volumes() do
     sql("SELECT name, volume FROM volumes ORDER BY json_extract(volume, '$.created') DESC")
+  end
+
+  @spec list_unused_volumes() :: [String.t()]
+  def list_unused_volumes() do
+    sql("""
+    SELECT volumes.name
+    FROM volumes
+    LEFT JOIN mounts ON volumes.name = json_extract(mounts.mount, '$.volume_name')
+    WHERE ifnull(mounts.mount, 'empty') = 'empty';
+    """)
   end
 
   @spec add_mount(%Schemas.MountPoint{}) :: :ok

@@ -38,26 +38,25 @@ defmodule Kleened.Core.Volume do
 
   @spec destroy(String.t()) :: :ok | {:error, String.t()}
   def destroy(name) do
-    case Kleened.Core.MetaData.get_volume(name) do
-      :not_found ->
-        {:error, "No such volume"}
+    destroy_(name)
+  end
 
-      volume ->
-        mounts = MetaData.remove_mounts(volume)
+  @spec prune() :: {:ok, [String.t()]}
+  def prune() do
+    pruned_volumes =
+      MetaData.list_unused_volumes()
+      |> Enum.map(fn keywords ->
+        volume_name = Keyword.get(keywords, :name)
+        destroy_(volume_name)
+        volume_name
+      end)
 
-        Enum.map(mounts, fn %Schemas.MountPoint{location: location} ->
-          0 = Utils.unmount(location)
-        end)
-
-        ZFS.destroy(volume.dataset)
-        MetaData.remove_volume(volume)
-        :ok
-    end
+    {:ok, pruned_volumes}
   end
 
   @spec inspect_(String.t()) :: {:ok, %Schemas.VolumeInspect{}} | {:error, String.t()}
   def inspect_(name) do
-    case Kleened.Core.MetaData.get_volume(name) do
+    case MetaData.get_volume(name) do
       :not_found ->
         {:error, "No such volume"}
 
@@ -108,5 +107,23 @@ defmodule Kleened.Core.Volume do
 
     MetaData.add_mount(mnt)
     :ok
+  end
+
+  defp destroy_(name) do
+    case Kleened.Core.MetaData.get_volume(name) do
+      :not_found ->
+        {:error, "No such volume"}
+
+      volume ->
+        mounts = MetaData.remove_mounts(volume)
+
+        Enum.map(mounts, fn %Schemas.MountPoint{location: location} ->
+          0 = Utils.unmount(location)
+        end)
+
+        ZFS.destroy(volume.dataset)
+        MetaData.remove_volume(volume)
+        :ok
+    end
   end
 end

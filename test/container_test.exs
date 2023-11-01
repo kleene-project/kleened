@@ -47,6 +47,28 @@ defmodule ContainerTest do
              TestHelper.container_remove(api_spec, container_id2)
   end
 
+  test "prune containers", %{
+    api_spec: api_spec
+  } do
+    %Schemas.Container{id: container_id1} =
+      container_succesfully_create(api_spec, %{name: "testprune1", cmd: ["/bin/sleep", "10"]})
+
+    %Schemas.Container{id: container_id2} =
+      container_succesfully_create(api_spec, %{name: "testprune2", cmd: ["/bin/sleep", "10"]})
+
+    %Schemas.Container{id: container_id3} =
+      container_succesfully_create(api_spec, %{name: "testprune2", cmd: ["/bin/sleep", "10"]})
+
+    {:ok, exec_id} = Exec.create(%Schemas.ExecConfig{container_id: container_id2})
+    TestHelper.valid_execution(%{exec_id: exec_id, start_container: true, attach: false})
+
+    assert [^container_id1, ^container_id3] = TestHelper.container_prune(api_spec)
+
+    assert [%{id: ^container_id2}] = TestHelper.container_list(api_spec)
+
+    Container.stop(container_id2)
+  end
+
   test "Inspect a container", %{api_spec: api_spec} do
     %Schemas.Container{} = container_succesfully_create(api_spec, %{name: "testcontainer"})
     response = TestHelper.container_inspect_raw("notexist")
