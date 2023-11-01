@@ -121,7 +121,7 @@ defmodule VolumeTest do
 
   defp volume_prune(api_spec) do
     response =
-      conn(:get, "/volumes/prune")
+      conn(:post, "/volumes/prune")
       |> Router.call(@opts)
 
     json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])

@@ -26,7 +26,7 @@ defmodule Kleened.API.Spec do
           ]),
         "/containers/prune" =>
           OpenApiSpex.PathItem.from_routes([
-            %{verb: :get, plug: API.Container.Prune, opts: []}
+            %{verb: :post, plug: API.Container.Prune, opts: []}
           ]),
         "/containers/{container_id}/inspect" =>
           OpenApiSpex.PathItem.from_routes([
@@ -81,7 +81,7 @@ defmodule Kleened.API.Spec do
           ]),
         "/images/prune" =>
           OpenApiSpex.PathItem.from_routes([
-            %{verb: :get, plug: API.Image.Prune, opts: []}
+            %{verb: :post, plug: API.Image.Prune, opts: []}
           ]),
         "/networks/list" =>
           OpenApiSpex.PathItem.from_routes([
@@ -97,7 +97,7 @@ defmodule Kleened.API.Spec do
           ]),
         "/networks/prune" =>
           OpenApiSpex.PathItem.from_routes([
-            %{verb: :get, plug: API.Network.Prune, opts: []}
+            %{verb: :post, plug: API.Network.Prune, opts: []}
           ]),
         "/networks/{network_id}/inspect" =>
           OpenApiSpex.PathItem.from_routes([
@@ -125,7 +125,7 @@ defmodule Kleened.API.Spec do
           ]),
         "/volumes/prune" =>
           OpenApiSpex.PathItem.from_routes([
-            %{verb: :get, plug: API.Volume.Prune, opts: []}
+            %{verb: :post, plug: API.Volume.Prune, opts: []}
           ]),
         "/volumes/{volume_name}/inspect" =>
           OpenApiSpex.PathItem.from_routes([

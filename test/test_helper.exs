@@ -97,7 +97,7 @@ defmodule TestHelper do
 
   def container_prune(api_spec) do
     response =
-      conn(:get, "/containers/prune")
+      conn(:post, "/containers/prune")
       |> Router.call(@opts)
 
     json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
@@ -286,7 +286,7 @@ defmodule TestHelper do
       end
 
     response =
-      conn(:get, endpoint)
+      conn(:post, endpoint)
       |> put_req_header("content-type", "application/json")
       |> Router.call(@opts)
 
@@ -546,7 +546,7 @@ defmodule TestHelper do
 
   def network_prune(api_spec) do
     response =
-      conn(:get, "/networks/prune")
+      conn(:post, "/networks/prune")
       |> Router.call(@opts)
 
     json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
