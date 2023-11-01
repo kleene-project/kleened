@@ -63,6 +63,10 @@ defmodule Kleened.API.Spec do
           OpenApiSpex.PathItem.from_routes([
             %{verb: :get, plug: API.ImageCreate, opts: []}
           ]),
+        "/images/{image_id}/tag" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :post, plug: API.Image.Tag, opts: []}
+          ]),
         "/images/{image_id}/inspect" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :get, plug: API.Image.Inspect, opts: []}

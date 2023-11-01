@@ -26,6 +26,7 @@ defmodule Kleened.API.Router do
   get("/images/list", to: API.Image.List)
   delete("/images/:image_id", to: API.Image.Remove)
   get("/images/prune", to: API.Image.Prune)
+  post("/images/:image_id/tag", to: API.Image.Tag)
   get("/images/:image_id/inspect", to: API.Image.Inspect)
 
   # Networks:

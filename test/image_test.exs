@@ -54,6 +54,31 @@ defmodule ImageTest do
     assert [%{id: "base"}] = TestHelper.image_list(api_spec)
   end
 
+  test "update the image tag", %{api_spec: api_spec} do
+    dockerfile = """
+    FROM FreeBSD:testing
+    CMD /bin/sleep 10
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+
+    config = %{
+      context: @tmp_context,
+      dockerfile: @tmp_dockerfile,
+      tag: "tagging:test"
+    }
+
+    {%Schemas.Image{id: image_id}, _build_log} = TestHelper.image_valid_build(config)
+
+    assert %{message: "image not found"} ==
+             TestHelper.image_tag(api_spec, "notexist", "newtag:latest")
+
+    assert %{id: image_id} == TestHelper.image_tag(api_spec, image_id, "newtag:latest")
+
+    [%{id: ^image_id, name: "newtag", tag: "latest"}, %{id: "base"}] =
+      TestHelper.image_list(api_spec)
+  end
+
   test "parsing some invalid input to the image builder" do
     # Using string instead of boolean in parameter 'quiet'
     assert ["Invalid boolean. Got: string", {1002, %Message{message: "invalid parameters"}}] =

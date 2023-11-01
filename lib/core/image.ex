@@ -73,6 +73,20 @@ defmodule Kleened.Core.Image do
     end
   end
 
+  @spec tag(String.t(), String.t()) :: {:ok, %Schemas.Image{}} | {:error, String.t()}
+  def tag(image_ident, nametag) do
+    case MetaData.get_image(image_ident) do
+      :not_found ->
+        {:error, "image not found"}
+
+      image ->
+        {name, tag} = Utils.decode_tagname(nametag)
+        image_updated = %Schemas.Image{image | name: name, tag: tag}
+        MetaData.add_image(image_updated)
+        {:ok, image_updated}
+    end
+  end
+
   @spec inspect_(String.t()) :: {:ok, %Schemas.Image{}} | {:error, String.t()}
   def inspect_(idname) do
     case MetaData.get_image(idname) do

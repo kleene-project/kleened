@@ -91,6 +91,63 @@ defmodule Kleened.API.Image do
     end
   end
 
+  defmodule Tag do
+    use Plug.Builder
+    alias Kleened.API.Utils
+
+    plug(OpenApiSpex.Plug.CastAndValidate,
+      json_render_error_v2: true,
+      operation_id: "Image.Tag"
+    )
+
+    plug(:tag)
+
+    def open_api_operation(_) do
+      %Operation{
+        summary: "image tag",
+        description: "Update the tag of an image.",
+        operationId: "Image.Tag",
+        parameters: [
+          parameter(
+            :image_id,
+            :path,
+            %Schema{type: :string},
+            "Identifier of the image",
+            required: true
+          ),
+          parameter(
+            :nametag,
+            :query,
+            %Schema{type: :string},
+            "New nametag for the image in the `name:tag` format. If `:tag` is omitted, `:latest` is used.",
+            required: true
+          )
+        ],
+        responses: %{
+          200 => response("image succesfully tagged", "application/json", Schemas.IdResponse),
+          404 => response("no such image", "application/json", Schemas.ErrorResponse),
+          500 => response("server error", "application/json", Schemas.ErrorResponse)
+        }
+      }
+    end
+
+    def tag(conn, _opts) do
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+      conn = Plug.Conn.fetch_query_params(conn)
+      image_ident = conn.params.image_id
+      new_tag = conn.query_params["nametag"]
+
+      case Core.Image.tag(image_ident, new_tag) do
+        {:ok, %Schemas.Image{id: image_id}} ->
+          send_resp(conn, 200, Utils.id_response(image_id))
+
+        {:error, msg} ->
+          msg_json = Utils.error_response(msg)
+          send_resp(conn, 404, msg_json)
+      end
+    end
+  end
+
   defmodule Prune do
     use Plug.Builder
 

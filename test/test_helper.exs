@@ -295,6 +295,20 @@ defmodule TestHelper do
     })
   end
 
+  def image_tag(api_spec, image_ident, nametag) do
+    endpoint = "/images/#{image_ident}/tag?nametag=#{nametag}"
+
+    response =
+      conn(:post, endpoint)
+      |> put_req_header("content-type", "application/json")
+      |> Router.call(@opts)
+
+    validate_response(api_spec, response, %{
+      200 => "IdResponse",
+      404 => "ErrorResponse"
+    })
+  end
+
   def image_invalid_build(config) do
     config = Map.merge(%{quiet: false, cleanup: true}, config)
     build_log_raw = image_build_raw(config)
