@@ -170,7 +170,7 @@ defmodule Kleened.Core.Container do
                name: name,
                user: user,
                env: env,
-               cmd: cmd,
+               command: cmd,
                jail_param: jail_param
              ) do
           {:ok, container} -> modify_container_if_running(container, jail_param)

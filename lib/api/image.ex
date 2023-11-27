@@ -162,7 +162,7 @@ defmodule Kleened.API.Image do
       %Operation{
         summary: "image prune",
         description: """
-        Remove images that are not being used for containers.
+        Remove images that are not being used by containers.
         """,
         operationId: "Image.Prune",
         parameters: [

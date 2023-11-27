@@ -114,15 +114,17 @@ defmodule ContainerTest do
 
     assert container_upd.name == "testcontupd"
 
-    # Test changing env
+    # Test changing env and cmd
     %{id: ^container_id} =
       TestHelper.container_update(api_spec, container_id, %{
         config_nil
-        | env: ["TESTVAR=testval2"]
+        | env: ["TESTVAR=testval2"],
+          cmd: ["/bin/sleep", "20"]
       })
 
     %{container: container_upd} = TestHelper.container_inspect(container_id)
     assert container_upd.env == ["TESTVAR=testval2"]
+    assert container_upd.command == ["/bin/sleep", "20"]
 
     # Test changing jail-param
     %{id: ^container_id} =
