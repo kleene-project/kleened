@@ -42,8 +42,12 @@ defmodule Kleened.API.Schemas do
         },
         user: %Schema{
           type: :string,
-          description:
-            "User that executes the command (cmd). If no user is set the user from the image will be used (which in turn is 'root' if no user is specified there).",
+          description: """
+          User that executes the command (cmd).
+          If no user is set, the user from the image will be used, which in turn is 'root' if no user is specified there.
+
+          This parameter will be overwritten by the jail parameter `exec.jail_user` if it is set.
+          """,
           nullable: true,
           default: ""
         },
@@ -64,7 +68,17 @@ defmodule Kleened.API.Schemas do
           default: []
         },
         jail_param: %Schema{
-          description: "List of `jail(8)` parameters to use for the container.",
+          description: """
+          List of jail parameters to use for the container.
+          See the [`jails manual page`](https://man.freebsd.org/cgi/man.cgi?query=jail) for details.
+
+          A few parameters have some special behavior in Kleene:
+
+          - `exec.jail_user`: If not explicitly set, the value of the `user` parameter will be used.
+          - `mount.devfs`/`exec.clean`: If not explicitly set, `mount.devfs=true`/`exec.clean=true` will be used.
+
+          So, if you do not want `exec.clean` and `mount.devfs` enabled, you must actively disable them.
+          """,
           type: :array,
           items: %Schema{type: :string},
           nullable: true,

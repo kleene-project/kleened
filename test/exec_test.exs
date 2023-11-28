@@ -197,7 +197,7 @@ defmodule ExecTest do
     {:ok, stream_ref, conn} = TestHelper.exec_start(exec_id, start_config)
 
     assert {:text, "# "} == TestHelper.receive_frame(conn)
-    TestHelper.send_data(conn, stream_ref, "ls && exit\r\n")
+    TestHelper.send_data(conn, stream_ref, "pwd && exit\r\n")
     frames = TestHelper.receive_frames(conn)
 
     {last_frame, frames} = List.pop_at(frames, -1)
@@ -205,10 +205,7 @@ defmodule ExecTest do
     assert {1000, %Message{msg_type: "closing", message: msg, data: ""}} == last_frame
     frames_as_string = Enum.join(frames, "")
 
-    expected_output =
-      "ls && exit\r\n.cshrc\t\tboot\t\tlibexec\t\tproc\t\tsys\r\n.profile\tdev\t\tmedia\t\trescue\t\ttmp\r\nCOPYRIGHT\tetc\t\tmnt\t\troot\t\tusr\r\nbin\t\tlib\t\tnet\t\tsbin\t\tvar\r\n"
-
-    assert expected_output == frames_as_string
+    assert "pwd && exit\r\n/root\r\n" == frames_as_string
   end
 
   test "use execution instance created with container name instead of container id", %{

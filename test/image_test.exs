@@ -1,6 +1,6 @@
 defmodule ImageTest do
   use Kleened.API.ConnCase
-  alias Kleened.Core.{Config, MetaData, Layer, Container, ZFS, OS}
+  alias Kleened.Core.{Config, MetaData, Layer, ZFS, OS, Container}
   alias Kleened.API.Schemas
   alias Schemas.WebSocketMessage, as: Message
 
@@ -438,7 +438,12 @@ defmodule ImageTest do
         tag: "test:latest"
       })
 
-    assert build_log == ["PWD=/\nTEST1=lol\nTEST2=testing test\nTEST3=test test\n"]
+    TestHelper.compare_environment_output(build_log, [
+      "TEST1=lol",
+      "TEST2=testing test",
+      "TEST3=test test"
+    ])
+
     assert Enum.sort(image.env) == ["TEST1=lol", "TEST2=testing test", "TEST3=test test"]
   end
 
@@ -473,19 +478,20 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {image, build_log} =
+    {image, [printenv1, printenv2]} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
         tag: "test:latest"
       })
 
-    expected_build_log = [
-      "PWD=/\nTEST=testvalue\n",
-      "PWD=/\nTEST=a new test value for TEST\nTEST2=test2value\n"
-    ]
+    TestHelper.compare_environment_output([printenv1], ["TEST=testvalue"])
 
-    assert expected_build_log == build_log
+    TestHelper.compare_environment_output([printenv2], [
+      "TEST2=test2value",
+      "TEST=a new test value for TEST"
+    ])
+
     assert Enum.sort(image.env) == ["TEST2=test2value", "TEST=a new test value for TEST"]
   end
 
@@ -882,7 +888,7 @@ defmodule ImageTest do
 
     assert process_output == [
              "cat: /etc/test2.txt: No such file or directory\n",
-             "jail: /usr/bin/env -i /bin/cat /etc/test2.txt: failed\n"
+             "jail: /usr/bin/env /bin/cat /etc/test2.txt: failed\n"
            ]
 
     snapshot = fetch_snapshot(image, "RUN echo -n \"some text\" > /etc/test2.txt")
@@ -938,13 +944,13 @@ defmodule ImageTest do
 
     assert process_output == [
              "cat: /etc/test2.txt: No such file or directory\n",
-             "jail: /usr/bin/env -i /bin/cat /etc/test2.txt: failed\n"
+             "jail: /usr/bin/env /bin/cat /etc/test2.txt: failed\n"
            ]
   end
 
   # The mini-jail userland used for the 'fetch' and 'zfs' image creation tests
   # have been created with https://github.com/Freaky/mkjail using the command
-  # mkjail -a minimal_testjail.txz /usr/bin/env -i /usr/local/bin/python3.9 -c "print('lol')"
+  # mkjail -a minimal_testjail.txz /usr/bin/env /usr/local/bin/python3.9 -c "print('lol')"
   test "create base image using a method 'zfs'", %{api_spec: api_spec} do
     dataset = "zroot/image_create_zfs_test"
     ZFS.create(dataset)
@@ -967,7 +973,7 @@ defmodule ImageTest do
         name: "testcont",
         image: closing_msg.data,
         cmd: ["/usr/local/bin/python3.9", "-c", "print('testing minimaljail')"],
-        jail_param: ["exec.system_jail_user"],
+        jail_param: ["exec.system_jail_user", "mount.devfs=false", "exec.clean=false"],
         user: "root"
       })
 
@@ -994,7 +1000,7 @@ defmodule ImageTest do
         name: "testcont",
         image: closing_msg.data,
         cmd: ["/usr/local/bin/python3.9", "-c", "print('testing minimaljail')"],
-        jail_param: ["exec.system_jail_user"],
+        jail_param: ["exec.system_jail_user", "mount.devfs=false", "exec.clean=false"],
         user: "root"
       })
 

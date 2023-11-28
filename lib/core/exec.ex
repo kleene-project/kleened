@@ -315,7 +315,7 @@ defmodule Kleened.Core.Exec do
          use_tty
        ) do
     # jexec [-l] [-u username | -U username] jail [command ...]
-    args = ~w"-l -u #{user} #{container_id} /usr/bin/env -i" ++ env ++ cmd
+    args = ~w"-l -U #{user} #{container_id} /usr/bin/env" ++ env ++ cmd
 
     port = OS.cmd_async(['/usr/sbin/jexec' | args], use_tty)
     port
@@ -338,14 +338,47 @@ defmodule Kleened.Core.Exec do
 
     %Layer{mountpoint: path} = Kleened.Core.MetaData.get_layer(layer_id)
 
+    jail_param =
+      jail_param
+      |> update_jailparam_if_not_exist(["exec.jail_user"], "exec.jail_user=#{user}")
+      |> update_jailparam_if_not_exist(["exec.clean", "exec.noclean"], "exec.clean=true")
+      |> update_jailparam_if_not_exist(["mount.devfs", "mount.nodevfs"], "mount.devfs=true")
+
     args =
       ~w"-c path=#{path} name=#{id}" ++
         network_config ++
         jail_param ++
-        ~w"exec.jail_user=#{user} command=/usr/bin/env -i" ++ env ++ command
+        ["command=/usr/bin/env"] ++ env ++ command
 
     port = OS.cmd_async(['/usr/sbin/jail' | args], use_tty)
     port
+  end
+
+  defp update_jailparam_if_not_exist(jail_params, paramtype, default_value) do
+    case if_paramtype_exist?(jail_params, paramtype) do
+      true ->
+        jail_params
+
+      false ->
+        [default_value | jail_params]
+    end
+  end
+
+  defp if_paramtype_exist?([jail_param | rest], paramtype) do
+    # Since booleans can have two different forms:
+    # - with/without 'no' prefix ('nopersist', 'exec.noclean')
+    # - <param>=true/false ('persist=false', 'exec.clean=false')
+    # 'parmatype' can both be a list of two or one variant(s)
+    case paramtype
+         |> Enum.map(&(String.slice(jail_param, 0, String.length(&1)) == &1))
+         |> Enum.any?() do
+      false -> if_paramtype_exist?(rest, paramtype)
+      true -> true
+    end
+  end
+
+  defp if_paramtype_exist?([], _paramtype) do
+    false
   end
 
   defp setup_connectivity_configuration(container_id) do

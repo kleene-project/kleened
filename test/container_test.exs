@@ -188,7 +188,7 @@ defmodule ContainerTest do
 
     assert %{
              message:
-               "an error ocurred while updating the container: '/usr/sbin/jail' returned non-zero exitcode 139 when attempting to modify the container ''"
+               "an error ocurred while updating the container: '/usr/sbin/jail' returned non-zero exitcode 1 when attempting to modify the container 'jail: vnet cannot be changed after creation\n'"
            } ==
              TestHelper.container_update(api_spec, container_id, %{
                config_nil
@@ -297,18 +297,142 @@ defmodule ContainerTest do
     assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
   end
 
+  test "jail parameters 'mount.devfs' and 'exec.clean' defaults can be replaced with jailparams",
+       %{api_spec: api_spec} do
+    # Override mount.devfs=true with mount.nodevfs
+    config =
+      container_config(%{
+        jail_param: ["mount.nodevfs"],
+        cmd: ["/bin/sh", "-c", "ls /dev"]
+      })
+
+    # With mount.devfs=true you get:
+    # ["fd\nnull\npts\nrandom\nstderr\nstdin\nstdout\nurandom\nzero\nzfs\n"]
+    assert [] == TestHelper.container_valid_run(api_spec, config)
+
+    # Override mount.devfs=true/exec.clean=true with mount.devfs=false/exec.noclean
+    config =
+      container_config(%{
+        jail_param: ["mount.devfs=false", "exec.noclean"],
+        cmd: ["/bin/sh", "-c", "ls /dev && printenv"]
+      })
+
+    output = TestHelper.container_valid_run(api_spec, config)
+    environment = TestHelper.from_environment_output(output)
+    assert MapSet.member?(environment, "EMU=beam")
+
+    # Override mount.devfs=true with mount.devfs=true
+    config =
+      container_config(%{
+        jail_param: ["mount.devfs"],
+        cmd: ["/bin/sh", "-c", "ls /dev"]
+      })
+
+    assert ["fd\nnull\npts\nrandom\nstderr\nstdin\nstdout\nurandom\nzero\nzfs\n"] ==
+             TestHelper.container_valid_run(api_spec, config)
+
+    # Override exec.clean=true with exec.clean=true
+    config =
+      container_config(%{
+        jail_param: ["exec.clean=true"],
+        cmd: ["/bin/sh", "-c", "printenv"]
+      })
+
+    output = TestHelper.container_valid_run(api_spec, config)
+    environment = TestHelper.from_environment_output(output)
+    assert environment == TestHelper.jail_environment([])
+  end
+
+  test "test that jail-param 'exec.jail_user' overrides ContainerConfig{user:}", %{
+    api_spec: api_spec
+  } do
+    config =
+      container_config(%{
+        jail_param: ["exec.jail_user=ntpd"],
+        user: "root",
+        cmd: ["/usr/bin/id"]
+      })
+
+    assert ["uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"] ==
+             TestHelper.container_valid_run(api_spec, config)
+  end
+
   test "start a container with environment variables set", %{api_spec: api_spec} do
     config = %{
+      image: "FreeBSD:testing",
       name: "testcont",
       cmd: ["/bin/sh", "-c", "printenv"],
       env: ["LOL=test", "LOOL=test2"],
-      user: "root"
+      user: "root",
+      attach: true
     }
 
-    {_cont, exec_id} = TestHelper.container_start_attached(api_spec, config)
+    process_output = TestHelper.container_valid_run(api_spec, config)
+    TestHelper.compare_environment_output(process_output, ["LOOL=test2", "LOL=test"])
+  end
 
-    assert_receive {:container, ^exec_id, {:jail_output, "PWD=/\nLOOL=test2\nLOL=test\n"}}
-    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
+  test "start a container with environment variables", %{api_spec: api_spec} do
+    dockerfile = """
+    FROM FreeBSD:testing
+    ENV TEST=lol
+    ENV TEST2="lool test"
+    CMD /bin/sh -c "printenv"
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
+
+    {image, _build_log} =
+      TestHelper.image_valid_build(%{
+        context: "./",
+        dockerfile: "tmp_dockerfile",
+        tag: "test:latest"
+      })
+
+    config =
+      container_config(%{
+        image: image.id,
+        env: ["TEST3=loool"]
+      })
+
+    process_output = TestHelper.container_valid_run(api_spec, config)
+
+    TestHelper.compare_environment_output(process_output, [
+      "TEST=lol",
+      "TEST2=lool test",
+      "TEST3=loool"
+    ])
+
+    Image.destroy(image.id)
+  end
+
+  test "start a container with environment variables and overwrite one of them", %{
+    api_spec: api_spec
+  } do
+    dockerfile = """
+    FROM FreeBSD:testing
+    ENV TEST=lol
+    ENV TEST2="lool test"
+    CMD /bin/sh -c "printenv"
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
+
+    {image, _build_log} =
+      TestHelper.image_valid_build(%{
+        context: "./",
+        dockerfile: "tmp_dockerfile",
+        tag: "test:latest"
+      })
+
+    config =
+      container_config(%{
+        image: image.id,
+        env: ["TEST=new_value"]
+      })
+
+    process_output = TestHelper.container_valid_run(api_spec, config)
+    TestHelper.compare_environment_output(process_output, ["TEST=new_value", "TEST2=lool test"])
+    Image.destroy(image.id)
   end
 
   test "start container quickly several times to verify reproducibility", %{api_spec: api_spec} do
@@ -324,76 +448,15 @@ defmodule ContainerTest do
     {:ok, ^container_id} = Container.remove(container_id)
   end
 
-  test "start a container with environment variables", %{api_spec: api_spec} do
-    dockerfile = """
-    FROM FreeBSD:testing
-    ENV TEST=lol
-    ENV TEST2="lool test"
-    CMD /bin/sh -c "printenv"
-    """
-
-    config_image = %{
-      context: "./",
-      dockerfile: "tmp_dockerfile",
-      tag: "test:latest"
+  defp container_config(config) do
+    defaults = %{
+      name: "container_testing",
+      image: "FreeBSD:testing",
+      user: "root",
+      attach: true
     }
 
-    TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
-    {image, _build_log} = TestHelper.image_valid_build(config_image)
-
-    config = %{
-      name: "testcont",
-      image: image.id,
-      env: ["TEST3=loool"],
-      cmd: ["/bin/sh", "-c", "printenv"]
-    }
-
-    {container, exec_id} = TestHelper.container_start_attached(api_spec, config)
-
-    assert_receive {:container, ^exec_id, {:jail_output, env_vars}}
-    env_vars_set = String.trim(env_vars, "\n") |> String.split("\n") |> MapSet.new()
-    expected_set = MapSet.new(["PWD=/", "TEST=lol", "TEST2=lool test", "TEST3=loool"])
-    assert MapSet.equal?(env_vars_set, expected_set)
-
-    Container.remove(container.id)
-    Image.destroy(image.id)
-  end
-
-  test "start a container with environment variables and overwrite one of them", %{
-    api_spec: api_spec
-  } do
-    dockerfile = """
-    FROM FreeBSD:testing
-    ENV TEST=lol
-    ENV TEST2="lool test"
-    CMD /bin/sh -c "printenv"
-    """
-
-    config_image = %{
-      context: "./",
-      dockerfile: "tmp_dockerfile",
-      tag: "test:latest"
-    }
-
-    TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
-    {image, _build_log} = TestHelper.image_valid_build(config_image)
-
-    config = %{
-      name: "testcont",
-      image: image.id,
-      env: ["TEST=new_value"],
-      cmd: ["/bin/sh", "-c", "printenv"]
-    }
-
-    {container, exec_id} = TestHelper.container_start_attached(api_spec, config)
-
-    assert_receive {:container, ^exec_id, {:jail_output, env_vars}}
-    env_vars_set = String.trim(env_vars, "\n") |> String.split("\n") |> MapSet.new()
-    expected_set = MapSet.new(["PWD=/", "TEST=new_value", "TEST2=lool test"])
-    assert MapSet.equal?(env_vars_set, expected_set)
-
-    Container.remove(container.id)
-    Image.destroy(image.id)
+    Map.merge(defaults, config)
   end
 
   defp container_succesfully_create(api_spec, config) do

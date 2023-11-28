@@ -28,6 +28,21 @@ defmodule TestHelper do
   @kleened_host {0, 0, 0, 0, 0, 0, 0, 1}
   @opts Router.init([])
 
+  def container_valid_run(api_spec, config) do
+    {attach, config_create} = Map.pop(config, :attach)
+
+    %{id: container_id} = TestHelper.container_create(api_spec, config_create)
+    {:ok, exec_id} = Exec.create(container_id)
+
+    {closing_msg, process_output} =
+      valid_execution(%{exec_id: exec_id, attach: attach, start_container: true})
+
+    assert closing_msg == "executable #{exec_id} and its container exited with exit-code 0"
+
+    {:ok, ^container_id} = Container.remove(container_id)
+    process_output
+  end
+
   def container_run(api_spec, config) do
     config_create = %{
       image: config.image,
@@ -595,6 +610,33 @@ defmodule TestHelper do
       204 => "",
       409 => "ErrorResponse"
     })
+  end
+
+  def compare_environment_output(output, expected_envvars) do
+    output_envs = TestHelper.from_environment_output(output)
+    expected_envs = TestHelper.jail_environment(expected_envvars)
+    assert output_envs == expected_envs
+  end
+
+  def jail_environment(additional_envs) do
+    MapSet.new(
+      [
+        "LANG=C.UTF-8",
+        "MAIL=/var/mail/root",
+        "PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin",
+        "PWD=/root",
+        "TERM=screen",
+        "USER=root",
+        "HOME=/root",
+        "SHELL=/bin/csh",
+        "MM_CHARSET=UTF-8",
+        "BLOCKSIZE=K"
+      ] ++ additional_envs
+    )
+  end
+
+  def from_environment_output(output) do
+    MapSet.new(String.split(Enum.join(output), "\n", trim: true))
   end
 
   defp validate_response(api_spec, response, statuscodes_to_specs) do
