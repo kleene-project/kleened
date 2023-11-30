@@ -348,6 +348,28 @@ defmodule ImageTest do
     assert MetaData.list_containers() == []
   end
 
+  test "create an image with a 'COPY' instruction where <dest> is a file" do
+    dockerfile = """
+    FROM FreeBSD:testing
+    COPY test.txt /root/lol/test.txt
+    COPY test.txt /root/test.txt
+    """
+
+    context = create_test_context("test_copy_instruction")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    {image, _build_log} =
+      TestHelper.image_valid_build(%{
+        context: context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:latest"
+      })
+
+    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(image.layer_id)
+    assert File.read(Path.join(mountpoint, "root/lol/test.txt")) == {:ok, "lol\n"}
+    assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
+  end
+
   test "create an image with a wildcard-expandable 'COPY' instruction" do
     dockerfile = """
     FROM FreeBSD:testing

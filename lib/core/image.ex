@@ -592,7 +592,7 @@ defmodule Kleened.Core.Image do
     src_and_dest = convert_paths_to_jail_context_dir_and_workdir(src_and_dest, state.workdir)
 
     # Create <dest> directory if it does not exist
-    dest = List.last(src_and_dest)
+    dest = Path.dirname(List.last(src_and_dest))
 
     config_mkdir = %Schemas.ExecConfig{
       container_id: state.container.id,
@@ -634,7 +634,12 @@ defmodule Kleened.Core.Image do
 
   defp convert_paths_to_jail_context_dir_and_workdir(srcdest, workdir) do
     {dest, relative_sources} = List.pop_at(srcdest, -1)
-    dest = Path.join(workdir, dest)
+
+    dest =
+      case String.last(dest) do
+        "/" -> Path.join(workdir, dest) <> "/"
+        _ -> Path.join(workdir, dest)
+      end
 
     absolute_sources =
       Enum.map(relative_sources, fn src -> Path.join("/kleene_temporary_context_store", src) end)
