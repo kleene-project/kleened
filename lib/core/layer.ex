@@ -32,6 +32,7 @@ defmodule Kleened.Core.Layer do
     GenServer.call(__MODULE__, {:container_to_image, layer, image_id})
   end
 
+  @spec destroy(String.t()) :: :ok
   def destroy(layer_id) do
     GenServer.call(__MODULE__, {:destroy, layer_id})
   end

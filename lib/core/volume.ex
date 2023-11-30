@@ -70,7 +70,8 @@ defmodule Kleened.Core.Volume do
   def destroy_mounts(container) do
     mounts = MetaData.remove_mounts(container)
 
-    Enum.map(mounts, fn %Schemas.MountPoint{location: location} -> 0 = Utils.unmount(location) end)
+    Enum.map(mounts, fn %Schemas.MountPoint{location: location} -> Utils.unmount(location) end)
+    :ok
   end
 
   @spec bind_volume(

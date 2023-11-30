@@ -64,6 +64,7 @@ defmodule Kleened.Core.Network do
     GenServer.call(__MODULE__, {:disconnect, container_idname, network_idname})
   end
 
+  @spec disconnect_all(String.t()) :: :ok
   def disconnect_all(container_id) do
     GenServer.call(__MODULE__, {:disconnect_all, container_id})
   end

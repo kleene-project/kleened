@@ -74,12 +74,13 @@ defmodule Kleened.API.ImageCreate do
 
   # Format and forward elixir messages to client
   def websocket_info({:image_creator, _pid, {:ok, %Schemas.Image{id: id}}}, state) do
+    Logger.info("base image created with id #{id}")
     closing = Utils.closing_message("image created", id)
     {[{:close, 1000, closing}], state}
   end
 
   def websocket_info({:image_creator, _pid, {:error, reason}}, state) do
-    error = Utils.error_message("image creation failed")
+    error = Utils.error_message("image creation failed: #{reason}")
     {[{:text, reason}, {:close, 1011, error}], state}
   end
 
@@ -87,8 +88,8 @@ defmodule Kleened.API.ImageCreate do
     {[{:text, msg}], state}
   end
 
-  def websocket_info({:EXIT, _pid, _reason}, state) do
-    error = Utils.error_message("image creation failed")
+  def websocket_info({:EXIT, _pid, reason}, state) do
+    error = Utils.error_message("image creation crashed: #{inspect(reason)}")
     {[{:close, 1011, error}], state}
   end
 

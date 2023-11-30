@@ -330,16 +330,26 @@ defmodule Kleened.API.Schemas do
       type: :object,
       required: [:method],
       properties: %{
+        method: %Schema{
+          description: """
+          There are two methods for creating a new base image:
+
+          - `\"fetch\"`: Kleened will fetch a release/snapshot of the base system and use it for image creation.
+          - `\"zfs\"`: A copy of the `zfs_dataset` is used for the image.
+          """,
+          type: :string,
+          enum: ["fetch", "zfs"]
+        },
         tag: %Schema{
           description: "Name and optionally a tag in the `name:tag` format",
           type: :string,
           default: ""
         },
-        method: %Schema{
+        dns: %Schema{
           description:
-            "Method used for creating a new base image: If `\"fetch\"` is selected, kleened will fetch a release/snapshot of the base system and use it for image creation. When `\"zfs\"` is used, a copy of the supplied zfs dataset is used for the image.",
-          type: :string,
-          enum: ["fetch", "zfs"]
+            "Whether or not to copy `/etc/resolv.conf` from the host to the new image.",
+          type: :boolean,
+          default: true
         },
         zfs_dataset: %Schema{
           description:
