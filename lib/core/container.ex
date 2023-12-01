@@ -49,7 +49,8 @@ defmodule Kleened.Core.Container do
     create_(container_id, options)
   end
 
-  @spec remove(id_or_name()) :: {:ok, container_id()} | {:error, :not_found}
+  @spec remove(id_or_name()) ::
+          {:ok, container_id()} | {:error, :not_found} | {:error, :is_running}
   def remove(id_or_name) do
     cont = MetaData.get_container(id_or_name)
     remove_(cont)
@@ -84,6 +85,8 @@ defmodule Kleened.Core.Container do
         {:error, "container not found"}
 
       container ->
+        running = Utils.is_container_running?(container.id)
+        container = %Schemas.Container{container | running: running}
         endpoints = MetaData.get_endpoints_from_container(container.id)
         mountpoints = MetaData.list_mounts_by_container(container.id)
 
@@ -281,11 +284,18 @@ defmodule Kleened.Core.Container do
   defp remove_(:not_found), do: {:error, :not_found}
 
   defp remove_(%Schemas.Container{id: container_id, layer_id: layer_id} = cont) do
-    Network.disconnect_all(container_id)
-    Volume.destroy_mounts(cont)
-    MetaData.delete_container(container_id)
-    Layer.destroy(layer_id)
-    {:ok, container_id}
+    case Utils.is_container_running?(container_id) do
+      false ->
+        :ok = Network.disconnect_all(container_id)
+        :ok = Volume.destroy_mounts(cont)
+        :ok = MetaData.delete_container(container_id)
+        Layer.destroy(layer_id)
+
+        {:ok, container_id}
+
+      true ->
+        {:error, :is_running}
+    end
   end
 
   @spec stop_container(%State{}) :: {:ok, String.t()} | {:error, String.t()}

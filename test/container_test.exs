@@ -1,17 +1,19 @@
 defmodule ContainerTest do
   require Logger
   use Kleened.API.ConnCase
-  alias Kleened.Core.{Container, Image, Exec, Utils, MetaData}
+  alias Kleened.Core.{Container, Exec, Utils, MetaData}
   alias Kleened.API.Schemas
 
   @moduletag :capture_log
 
   setup do
     on_exit(fn ->
-      Logger.info("Cleaning up")
+      Logger.info("Cleaning up after test...")
+      MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
 
-      Kleened.Core.MetaData.list_containers()
-      |> Enum.map(fn %{id: id} -> Container.remove(id) end)
+      MetaData.list_images()
+      |> Enum.filter(fn %Schemas.Image{id: id} -> id != "base" end)
+      |> Enum.map(fn %Schemas.Image{id: id} -> Kleened.Core.Image.destroy(id) end)
     end)
 
     :ok
@@ -308,7 +310,7 @@ defmodule ContainerTest do
 
     # With mount.devfs=true you get:
     # ["fd\nnull\npts\nrandom\nstderr\nstdin\nstdout\nurandom\nzero\nzfs\n"]
-    assert [] == TestHelper.container_valid_run(api_spec, config)
+    assert {_, []} = TestHelper.container_valid_run(api_spec, config)
 
     # Override mount.devfs=true/exec.clean=true with mount.devfs=false/exec.noclean
     config =
@@ -317,7 +319,7 @@ defmodule ContainerTest do
         cmd: ["/bin/sh", "-c", "ls /dev && printenv"]
       })
 
-    output = TestHelper.container_valid_run(api_spec, config)
+    {_container_id, output} = TestHelper.container_valid_run(api_spec, config)
     environment = TestHelper.from_environment_output(output)
     assert MapSet.member?(environment, "EMU=beam")
 
@@ -328,8 +330,8 @@ defmodule ContainerTest do
         cmd: ["/bin/sh", "-c", "ls /dev"]
       })
 
-    assert ["fd\nnull\npts\nrandom\nstderr\nstdin\nstdout\nurandom\nzero\nzfs\n"] ==
-             TestHelper.container_valid_run(api_spec, config)
+    {_container_id, output} = TestHelper.container_valid_run(api_spec, config)
+    assert ["fd\nnull\npts\nrandom\nstderr\nstdin\nstdout\nurandom\nzero\nzfs\n"] == output
 
     # Override exec.clean=true with exec.clean=true
     config =
@@ -338,7 +340,7 @@ defmodule ContainerTest do
         cmd: ["/bin/sh", "-c", "printenv"]
       })
 
-    output = TestHelper.container_valid_run(api_spec, config)
+    {_container_id, output} = TestHelper.container_valid_run(api_spec, config)
     environment = TestHelper.from_environment_output(output)
     assert environment == TestHelper.jail_environment([])
   end
@@ -353,8 +355,8 @@ defmodule ContainerTest do
         cmd: ["/usr/bin/id"]
       })
 
-    assert ["uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"] ==
-             TestHelper.container_valid_run(api_spec, config)
+    {_container_id, output} = TestHelper.container_valid_run(api_spec, config)
+    assert ["uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"] == output
   end
 
   test "start a container with environment variables set", %{api_spec: api_spec} do
@@ -367,8 +369,8 @@ defmodule ContainerTest do
       attach: true
     }
 
-    process_output = TestHelper.container_valid_run(api_spec, config)
-    TestHelper.compare_environment_output(process_output, ["LOOL=test2", "LOL=test"])
+    {_container_id, output} = TestHelper.container_valid_run(api_spec, config)
+    TestHelper.compare_environment_output(output, ["LOOL=test2", "LOL=test"])
   end
 
   test "start a container with environment variables", %{api_spec: api_spec} do
@@ -376,7 +378,7 @@ defmodule ContainerTest do
     FROM FreeBSD:testing
     ENV TEST=lol
     ENV TEST2="lool test"
-    CMD /bin/sh -c "printenv"
+    CMD printenv
     """
 
     TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
@@ -394,15 +396,13 @@ defmodule ContainerTest do
         env: ["TEST3=loool"]
       })
 
-    process_output = TestHelper.container_valid_run(api_spec, config)
+    {_container_id, output} = TestHelper.container_valid_run(api_spec, config)
 
-    TestHelper.compare_environment_output(process_output, [
+    TestHelper.compare_environment_output(output, [
       "TEST=lol",
       "TEST2=lool test",
       "TEST3=loool"
     ])
-
-    Image.destroy(image.id)
   end
 
   test "start a container with environment variables and overwrite one of them", %{
@@ -427,12 +427,28 @@ defmodule ContainerTest do
     config =
       container_config(%{
         image: image.id,
-        env: ["TEST=new_value"]
+        env: ~w"TEST=new_value"
       })
 
-    process_output = TestHelper.container_valid_run(api_spec, config)
-    TestHelper.compare_environment_output(process_output, ["TEST=new_value", "TEST2=lool test"])
-    Image.destroy(image.id)
+    {_container_id, output} = TestHelper.container_valid_run(api_spec, config)
+    TestHelper.compare_environment_output(output, ["TEST=new_value", "TEST2=lool test"])
+  end
+
+  test "try to remove a running container", %{api_spec: api_spec} do
+    config = %{
+      name: "remove_while_running",
+      image: "FreeBSD:testing",
+      user: "root",
+      cmd: ~w"/bin/sh /etc/rc",
+      attach: true
+    }
+
+    {container_id, _output} = TestHelper.container_valid_run(api_spec, config)
+
+    assert %{message: "you cannot remove a running container"} ==
+             TestHelper.container_remove(api_spec, container_id)
+
+    Container.stop(container_id)
   end
 
   test "start container quickly several times to verify reproducibility", %{api_spec: api_spec} do

@@ -213,6 +213,7 @@ defmodule Kleened.API.Container do
             response("no such container", "application/json", Schemas.ErrorResponse,
               example: %{message: "No such container: df6ed453357b"}
             ),
+          409 => response("container running", "application/json", Schemas.ErrorResponse),
           500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
@@ -228,9 +229,8 @@ defmodule Kleened.API.Container do
         {:error, :not_found} ->
           send_resp(conn, 404, Utils.error_response("no such container"))
 
-          # Atm. the remove api automatically stops a container. Docker Engine returns this error.
-          # {:error, :already_started} ->
-          #  send_resp(conn, 409, "you cannot remove a running container")
+        {:error, :is_running} ->
+          send_resp(conn, 409, Utils.error_response("you cannot remove a running container"))
       end
     end
   end
