@@ -34,7 +34,7 @@ defmodule Kleened.API.ImageBuild do
 
   # Called on connection initialization
   def init(req0, _state) do
-    {:cowboy_websocket, req0, %{handshaking: true}, %{idle_timeout: 60000}}
+    {:cowboy_websocket, req0, %{handshaking: true, image_id: nil}, %{idle_timeout: 60000}}
   end
 
   # Called on websocket connection initialization.
@@ -61,7 +61,9 @@ defmodule Kleened.API.ImageBuild do
             case Image.build(context, dockerfile, tag, buildargs, cleanup, quiet) do
               {:ok, image_id, _pid} ->
                 Logger.debug("Building image. Await output.")
-                {[{:text, Utils.starting_message(image_id)}], %{handshaking: false}}
+
+                {[{:text, Utils.starting_message(image_id)}],
+                 %{handshaking: false, image_id: image_id}}
 
               {:error, msg} ->
                 Logger.info("Error building image. Closing websocket.")
@@ -103,6 +105,7 @@ defmodule Kleened.API.ImageBuild do
   end
 
   def websocket_info({:image_builder, _pid, {:image_build_failed, "image build failed"}}, state) do
+    Logger.info("image build failed")
     {[{:close, 1011, Utils.error_message("image build failed")}], state}
   end
 
@@ -110,6 +113,7 @@ defmodule Kleened.API.ImageBuild do
         {:image_builder, _pid, {:image_build_failed, {"image build failed", snapshot}}},
         state
       ) do
+    Logger.info("image build failed")
     {[{:close, 1011, Utils.error_message("image build failed", snapshot)}], state}
   end
 
@@ -120,5 +124,21 @@ defmodule Kleened.API.ImageBuild do
   def websocket_info({:image_builder, _pid, msg}, state) when is_binary(msg) do
     # Status messages from the build process
     {[{:text, msg}], state}
+  end
+
+  def terminate(reason, _partial_req, %{image_id: nil}) do
+    Logger.info("Websocket connection closed early: #{inspect(reason)}")
+  end
+
+  def terminate(:stop, _partial_req, %{image_id: image_id}) do
+    Logger.info("Finished building image #{image_id}. Closing connection.")
+  end
+
+  def terminate(reason, partial_req, %{image_id: image_id}) do
+    Logger.info("Websocket connection closed while building #{image_id}: #{inspect(reason)}")
+    Core.Container.stop(image_id)
+    Core.Container.remove(image_id)
+    Image.destroy(image_id)
+    Core.Network.remove("buildnet_" <> image_id)
   end
 end
