@@ -30,46 +30,53 @@ defmodule Kleened.Core.Image do
   def build(context_path, dockerfile, tag, buildargs, cleanup, quiet \\ false) do
     {name, tag} = Kleened.Core.Utils.decode_tagname(tag)
     dockerfile_path = Path.join(context_path, dockerfile)
-    {:ok, dockerfile} = File.read(dockerfile_path)
-    instructions = Kleened.Core.Dockerfile.parse(dockerfile)
 
-    case verify_instructions(instructions) do
-      :ok ->
-        image_id = Kleened.Core.Utils.uuid()
+    case File.read(dockerfile_path) do
+      {:ok, dockerfile} ->
+        instructions = Kleened.Core.Dockerfile.parse(dockerfile)
 
-        {:ok, buildnet} =
-          Network.create(%Schemas.NetworkConfig{
-            name: "buildnet_" <> image_id,
-            subnet: "172.18.0.0/24",
-            ifname: "kl" <> String.slice(image_id, 0..4),
-            driver: "loopback"
-          })
+        case verify_instructions(instructions) do
+          :ok ->
+            image_id = Kleened.Core.Utils.uuid()
 
-        state = %State{
-          context: context_path,
-          image_id: image_id,
-          image_name: name,
-          image_tag: tag,
-          network: buildnet.id,
-          buildargs_supplied: buildargs,
-          buildargs_collected: [],
-          msg_receiver: self(),
-          current_step: 1,
-          instructions: instructions,
-          processed_instructions: [],
-          snapshots: [],
-          total_steps: length(instructions),
-          container: %Schemas.Container{env: []},
-          workdir: "/",
-          cleanup: cleanup,
-          quiet: quiet
-        }
+            {:ok, buildnet} =
+              Network.create(%Schemas.NetworkConfig{
+                name: "buildnet_" <> image_id,
+                subnet: "172.18.0.0/24",
+                ifname: "kl" <> String.slice(image_id, 0..4),
+                driver: "loopback"
+              })
 
-        pid = Process.spawn(fn -> process_instructions(state) end, [:link])
-        {:ok, image_id, pid}
+            state = %State{
+              context: context_path,
+              image_id: image_id,
+              image_name: name,
+              image_tag: tag,
+              network: buildnet.id,
+              buildargs_supplied: buildargs,
+              buildargs_collected: [],
+              msg_receiver: self(),
+              current_step: 1,
+              instructions: instructions,
+              processed_instructions: [],
+              snapshots: [],
+              total_steps: length(instructions),
+              container: %Schemas.Container{env: []},
+              workdir: "/",
+              cleanup: cleanup,
+              quiet: quiet
+            }
 
-      {:error, error_msg} ->
-        {:error, error_msg}
+            pid = Process.spawn(fn -> process_instructions(state) end, [:link])
+            {:ok, image_id, pid}
+
+          {:error, error_msg} ->
+            {:error, error_msg}
+        end
+
+      {:error, reason} ->
+        msg = "Could not open Docker file #{dockerfile_path}: #{inspect(reason)}"
+        {:error, msg}
     end
   end
 
