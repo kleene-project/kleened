@@ -65,7 +65,8 @@ defmodule ImageTest do
     config = %{
       context: @tmp_context,
       dockerfile: @tmp_dockerfile,
-      tag: "tagging:test"
+      tag: "tagging:test",
+      cmd: ~w"/bin/ls"
     }
 
     {%Schemas.Image{id: image_id}, _build_log} = TestHelper.image_valid_build(config)
@@ -974,35 +975,19 @@ defmodule ImageTest do
   # have been created with https://github.com/Freaky/mkjail using the command
   # mkjail -a minimal_testjail.txz /usr/bin/env /usr/local/bin/python3.9 -c "print('lol')"
   test "create base image using a method 'zfs'", %{api_spec: api_spec} do
-    dataset = "zroot/image_create_zfs_test"
-    ZFS.create(dataset)
-
-    {_, 0} =
-      OS.cmd(["/usr/bin/tar", "-xf", "./test/data/minimal_testjail.txz", "-C", "/#{dataset}"])
-
     config = %{
       method: "zfs",
-      zfs_dataset: dataset,
+      zfs_dataset: "zroot/image_create_zfs_test",
       tag: "zfscreate:testing"
     }
 
-    frames = TestHelper.image_create(config)
-    {{1000, closing_msg}, _rest} = List.pop_at(frames, -1)
-    assert %Message{data: _, message: "image created", msg_type: "closing"} = closing_msg
+    image_id = TestHelper.base_image_create(config)
+    ZFS.destroy_force(config.zfs_dataset)
 
-    {_cont, exec_id} =
-      TestHelper.container_start_attached(api_spec, %{
-        name: "testcont",
-        image: closing_msg.data,
-        cmd: ["/usr/local/bin/python3.9", "-c", "print('testing minimaljail')"],
-        jail_param: ["exec.system_jail_user", "mount.devfs=false", "exec.clean=false"],
-        user: "root"
-      })
-
-    assert_receive {:container, ^exec_id, {:jail_output, jail_output}}
-    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
-    assert jail_output == "testing minimaljail\n"
-    ZFS.destroy_force(dataset)
+    run_config = baseimage_run_config(image_id)
+    {_container_id, output} = TestHelper.container_valid_run(api_spec, run_config)
+    assert output == ["testing minimaljail\n"]
+    assert container_resolv_conf_exists?(run_config, api_spec)
   end
 
   test "create base image using a method 'fetch'", %{api_spec: api_spec} do
@@ -1012,23 +997,65 @@ defmodule ImageTest do
       tag: "fetchcreate:testing"
     }
 
-    frames = TestHelper.image_create(config)
-    {{1000, closing_msg}, _rest} = List.pop_at(frames, -1)
+    image_id = TestHelper.base_image_create(config)
+    run_config = baseimage_run_config(image_id)
+    {_container_id, output} = TestHelper.container_valid_run(api_spec, run_config)
+    assert output == ["testing minimaljail\n"]
+    assert container_resolv_conf_exists?(run_config, api_spec)
+  end
 
-    assert %Message{data: _, message: "image created", msg_type: "closing"} = closing_msg
+  #### Without copying 'resolv.conf' ####
+  test "create base image using a method 'zfs' without 'dns'", %{api_spec: api_spec} do
+    config = %{
+      method: "zfs",
+      zfs_dataset: "zroot/image_create_zfs_test",
+      tag: "zfscreate:testing",
+      dns: false
+    }
 
-    {_cont, exec_id} =
-      TestHelper.container_start_attached(api_spec, %{
-        name: "testcont",
-        image: closing_msg.data,
-        cmd: ["/usr/local/bin/python3.9", "-c", "print('testing minimaljail')"],
-        jail_param: ["exec.system_jail_user", "mount.devfs=false", "exec.clean=false"],
-        user: "root"
-      })
+    image_id = TestHelper.base_image_create(config)
+    ZFS.destroy_force(config.zfs_dataset)
 
-    assert_receive {:container, ^exec_id, {:jail_output, jail_output}}
-    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
-    assert jail_output == "testing minimaljail\n"
+    run_config = baseimage_run_config(image_id)
+    {_container_id, output} = TestHelper.container_valid_run(api_spec, run_config)
+    assert output == ["testing minimaljail\n"]
+    assert not container_resolv_conf_exists?(run_config, api_spec)
+  end
+
+  test "create base image using a method 'fetch' without 'dns'", %{api_spec: api_spec} do
+    config = %{
+      method: "fetch",
+      url: "file://./test/data/minimal_testjail.txz",
+      tag: "fetchcreate:testing",
+      dns: false
+    }
+
+    image_id = TestHelper.base_image_create(config)
+    run_config = baseimage_run_config(image_id)
+
+    {_container_id, output} = TestHelper.container_valid_run(api_spec, run_config)
+    assert output == ["testing minimaljail\n"]
+    assert not container_resolv_conf_exists?(run_config, api_spec)
+  end
+
+  defp baseimage_run_config(image_id) do
+    %{
+      name: "base_img_create_test",
+      image: image_id,
+      cmd: ["/usr/local/bin/python3.9", "-c", "print('testing minimaljail')"],
+      jail_param: ["exec.system_jail_user", "mount.devfs=false", "exec.clean=false"],
+      user: "root",
+      attach: true
+    }
+  end
+
+  defp container_resolv_conf_exists?(run_config, api_spec) do
+    {_attach, config_create} = Map.pop(run_config, :attach)
+    %{id: container_id} = TestHelper.container_create(api_spec, config_create)
+    resolv_conf_path = "/" <> Config.get("zroot") <> "/container/#{container_id}/etc/resolv.conf"
+    {_output, exit_code} = OS.cmd(["/bin/sh", "-c", "cat #{resolv_conf_path}"])
+    Container.remove(container_id)
+    exit_code == 0
   end
 
   test "image-build stops prematurely from non-zero exitcode from RUN-instruction" do

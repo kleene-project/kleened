@@ -8,45 +8,50 @@ defmodule Kleened.Core.ImageCreate do
   @type freebsd_version() :: {String.t(), String.t(), String.t()}
 
   @spec start_image_creation(create_config()) :: {:ok, %Schemas.Image{}} | {:error, String.t()}
-  def start_image_creation(%Config{method: "fetch", tag: tag, url: url, force: force}) do
-    my_pid = self()
-    Process.spawn(fn -> create_image_from_fetched_tarball(url, tag, my_pid, force) end, [:link])
+  def start_image_creation(%Config{method: "fetch"} = config) do
+    receiver = self()
+    Process.spawn(fn -> create_image_from_fetched_tarball(receiver, config) end, [:link])
   end
 
-  def start_image_creation(%Config{method: "zfs", tag: tag, zfs_dataset: dataset}) do
-    my_pid = self()
-    Process.spawn(fn -> create_image_from_dataset(dataset, tag, my_pid) end, [:link])
+  def start_image_creation(%Config{method: "zfs"} = config) do
+    receiver = self()
+    Process.spawn(fn -> create_image_from_dataset(receiver, config) end, [:link])
   end
 
-  defp create_image_from_dataset(dataset_parent, tag, receiver) do
+  defp create_image_from_dataset(
+         receiver,
+         %Config{zfs_dataset: dataset_parent, tag: tag} = config
+       ) do
     image_id = Utils.uuid()
     {image_dataset, image_mountpoint, image_snapshot} = create_image_attributes(image_id)
     snapshot_parent = dataset_parent <> "@#{image_id}"
+    image = create_image_metadata(image_id, image_snapshot, image_dataset, image_mountpoint, tag)
+
     create_snapshot(snapshot_parent, receiver)
 
     # Create image dataset by zfs send/receiving it on the new image dataset
     send_msg(receiver, {:info, "copying dataset into the new image, this can take a while...\n"})
     create_dataset_from_snapshot(snapshot_parent, image_dataset, receiver)
+    copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
     create_snapshot(image_snapshot, receiver)
 
-    image = create_image_metadata(image_id, image_snapshot, image_dataset, image_mountpoint, tag)
     send_msg(receiver, {:ok, image})
     ZFS.destroy(snapshot_parent)
   end
 
-  defp create_image_from_fetched_tarball("", tag, receiver, force) do
+  defp create_image_from_fetched_tarball(receiver, %Config{url: "", force: force} = config) do
     {"FreeBSD", version, arch} = detect_freebsd_version(force, receiver)
-    url = version2url(version, arch, "base.txz")
 
     send_msg(
       receiver,
       {:info, "FreeBSD-#{version} #{arch} detected."}
     )
 
-    create_image_from_fetched_tarball(url, tag, receiver, force)
+    url = version2url(version, arch, "base.txz")
+    create_image_from_fetched_tarball(receiver, %Config{config | url: url})
   end
 
-  defp create_image_from_fetched_tarball(url, tag, receiver, _force) do
+  defp create_image_from_fetched_tarball(receiver, %Config{url: url, tag: tag} = config) do
     image_id = Utils.uuid()
     {image_dataset, image_mountpoint, image_snapshot} = create_image_attributes(image_id)
     tar_archive = Path.join("/", [Kleened.Core.Config.get("zroot"), "base.txz"])
@@ -61,6 +66,7 @@ defmodule Kleened.Core.ImageCreate do
 
     create_dataset(image_dataset, receiver)
     untar_file(tar_archive, image_mountpoint, receiver)
+    copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
     create_snapshot(image_snapshot, receiver)
 
     image = create_image_metadata(image_id, image_snapshot, image_dataset, image_mountpoint, tag)
@@ -204,6 +210,25 @@ defmodule Kleened.Core.ImageCreate do
     case process_messages(port, receiver) do
       :ok -> :ok
       :error -> exit(receiver, "error creating image dataset")
+    end
+  end
+
+  defp copy_resolv_conf_if_dns_enabled(_receiver, _image_mountpoint, %{dns: false}) do
+    :ok
+  end
+
+  defp copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, %{dns: true}) do
+    dest = Path.join(image_mountpoint, ["etc/resolv.conf"])
+
+    case OS.cmd(["/bin/cp", "/etc/resolv.conf", dest]) do
+      {_output, 0} ->
+        :ok
+
+      {output, nonzero_exit} ->
+        exit(
+          receiver,
+          "exit code #{nonzero_exit} when copying host '/etc/resolv.conf' to #{dest}: #{output}"
+        )
     end
   end
 

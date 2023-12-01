@@ -1,5 +1,5 @@
 alias OpenApiSpex.Cast
-alias Kleened.Core.{Const, Layer, Exec, MetaData, Container}
+alias Kleened.Core.{Const, Layer, Exec, MetaData, Container, ZFS, OS}
 alias :gun, as: Gun
 alias Kleened.API.Router
 alias Kleened.API.Schemas
@@ -37,10 +37,9 @@ defmodule TestHelper do
     {closing_msg, process_output} =
       valid_execution(%{exec_id: exec_id, attach: attach, start_container: true})
 
-    assert closing_msg == "executable #{exec_id} and its container exited with exit-code 0"
+    assert String.slice(closing_msg, -11, 11) == "exit-code 0"
 
-    {:ok, ^container_id} = Container.remove(container_id)
-    process_output
+    {container_id, process_output}
   end
 
   def container_run(api_spec, config) do
@@ -154,7 +153,8 @@ defmodule TestHelper do
 
     validate_response(api_spec, response, %{
       200 => "IdResponse",
-      404 => "ErrorResponse"
+      404 => "ErrorResponse",
+      409 => "ErrorResponse"
     })
   end
 
@@ -495,6 +495,25 @@ defmodule TestHelper do
       error_msg ->
         error_msg
     end
+  end
+
+  def base_image_create(%{method: method} = config) do
+    case method do
+      "zfs" ->
+        dataset = config.zfs_dataset
+        ZFS.create(dataset)
+
+        {_, 0} =
+          OS.cmd(["/usr/bin/tar", "-xf", "./test/data/minimal_testjail.txz", "-C", "/#{dataset}"])
+
+      _ ->
+        :ok
+    end
+
+    frames = TestHelper.image_create(config)
+    {{1000, closing_msg}, _rest} = List.pop_at(frames, -1)
+    assert %Msg{data: _, message: "image created", msg_type: "closing"} = closing_msg
+    closing_msg.data
   end
 
   def image_list(api_spec) do
