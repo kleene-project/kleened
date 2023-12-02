@@ -8,17 +8,49 @@ defmodule Kleened.Core.ImageCreate do
   @type freebsd_version() :: {String.t(), String.t(), String.t()}
 
   @spec start_image_creation(create_config()) :: {:ok, %Schemas.Image{}} | {:error, String.t()}
+  def start_image_creation(%Config{method: "fetch-auto"} = config) do
+    receiver = self()
+    Process.spawn(fn -> create_image_using_fetch_automatically(receiver, config) end, [:link])
+  end
+
   def start_image_creation(%Config{method: "fetch"} = config) do
     receiver = self()
-    Process.spawn(fn -> create_image_from_fetched_tarball(receiver, config) end, [:link])
+    Process.spawn(fn -> create_image_using_fetch(receiver, config) end, [:link])
   end
 
-  def start_image_creation(%Config{method: "zfs"} = config) do
+  def start_image_creation(%Config{method: "zfs-copy"} = config) do
     receiver = self()
-    Process.spawn(fn -> create_image_from_dataset(receiver, config) end, [:link])
+    Process.spawn(fn -> create_using_zfs_copy(receiver, config) end, [:link])
   end
 
-  defp create_image_from_dataset(
+  def start_image_creation(%Config{method: "zfs-clone"} = config) do
+    receiver = self()
+    Process.spawn(fn -> create_using_zfs_clone(receiver, config) end, [:link])
+  end
+
+  defp create_using_zfs_copy(
+         receiver,
+         %Config{zfs_dataset: dataset_parent, tag: tag} = config
+       ) do
+    # Initialize
+    image_id = Utils.uuid()
+    {image_dataset, image_mountpoint, image_snapshot} = create_image_attributes(image_id)
+    snapshot_parent = dataset_parent <> "@#{image_id}"
+    image = create_image_metadata(image_id, image_snapshot, image_dataset, image_mountpoint, tag)
+    create_snapshot(snapshot_parent, receiver)
+
+    # Create image dataset by zfs send/receiving it to the new image dataset
+    send_msg(receiver, {:info, "copying dataset into the new image, this can take a while...\n"})
+    copy_zfs_dataset(snapshot_parent, image_dataset, receiver)
+
+    # Wrap up
+    copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
+    create_snapshot(image_snapshot, receiver)
+    send_msg(receiver, {:ok, image})
+    ZFS.destroy(snapshot_parent)
+  end
+
+  defp create_using_zfs_clone(
          receiver,
          %Config{zfs_dataset: dataset_parent, tag: tag} = config
        ) do
@@ -26,20 +58,19 @@ defmodule Kleened.Core.ImageCreate do
     {image_dataset, image_mountpoint, image_snapshot} = create_image_attributes(image_id)
     snapshot_parent = dataset_parent <> "@#{image_id}"
     image = create_image_metadata(image_id, image_snapshot, image_dataset, image_mountpoint, tag)
-
     create_snapshot(snapshot_parent, receiver)
 
-    # Create image dataset by zfs send/receiving it on the new image dataset
-    send_msg(receiver, {:info, "copying dataset into the new image, this can take a while...\n"})
-    create_dataset_from_snapshot(snapshot_parent, image_dataset, receiver)
+    # Create image dataset by cloning the supplied dataset
+    send_msg(receiver, {:info, "cloning dataset...\n"})
+    clone_zfs_dataset(snapshot_parent, image_dataset, receiver)
+
+    # Wrap up
     copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
     create_snapshot(image_snapshot, receiver)
-
     send_msg(receiver, {:ok, image})
-    ZFS.destroy(snapshot_parent)
   end
 
-  defp create_image_from_fetched_tarball(receiver, %Config{url: "", force: force} = config) do
+  defp create_image_using_fetch_automatically(receiver, %Config{force: force} = config) do
     {"FreeBSD", version, arch} = detect_freebsd_version(force, receiver)
 
     send_msg(
@@ -48,10 +79,17 @@ defmodule Kleened.Core.ImageCreate do
     )
 
     url = version2url(version, arch, "base.txz")
-    create_image_from_fetched_tarball(receiver, %Config{config | url: url})
+
+    tag =
+      case config do
+        %Config{autotag: true} -> "FreeBSD-#{version}"
+        %Config{autotag: false} -> config.tag
+      end
+
+    create_image_using_fetch(receiver, %Config{config | url: url, tag: tag})
   end
 
-  defp create_image_from_fetched_tarball(receiver, %Config{url: url, tag: tag} = config) do
+  defp create_image_using_fetch(receiver, %Config{url: url, tag: tag} = config) do
     image_id = Utils.uuid()
     {image_dataset, image_mountpoint, image_snapshot} = create_image_attributes(image_id)
     tar_archive = Path.join("/", [Kleened.Core.Config.get("zroot"), "base.txz"])
@@ -203,13 +241,23 @@ defmodule Kleened.Core.ImageCreate do
     end
   end
 
-  defp create_dataset_from_snapshot(snapshot, dataset, receiver) do
+  defp copy_zfs_dataset(snapshot, dataset, receiver) do
     cmd = "/sbin/zfs send -v #{snapshot} | /sbin/zfs receive #{dataset}"
     port = OS.cmd_async(["/bin/sh", "-c", cmd])
 
     case process_messages(port, receiver) do
       :ok -> :ok
-      :error -> exit(receiver, "error creating image dataset")
+      :error -> exit(receiver, "error copying image dataset")
+    end
+  end
+
+  defp clone_zfs_dataset(snapshot, dataset, receiver) do
+    cmd = "/sbin/zfs clone #{snapshot} #{dataset}"
+    port = OS.cmd_async(["/bin/sh", "-c", cmd])
+
+    case process_messages(port, receiver) do
+      :ok -> :ok
+      :error -> exit(receiver, "error cloning image dataset")
     end
   end
 

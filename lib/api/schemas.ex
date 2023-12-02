@@ -332,16 +332,20 @@ defmodule Kleened.API.Schemas do
       properties: %{
         method: %Schema{
           description: """
-          There are two methods for creating a new base image:
+          There are four methods for creating a new base image:
 
-          - `\"fetch\"`: Kleened will fetch a release/snapshot of the base system and use it for image creation.
-          - `\"zfs\"`: A copy of the `zfs_dataset` is used for the image.
+          - `\"fetch\"`: Fetch a release/snapshot of the base system and use it for image creation.
+          - `\"fetch-auto\"`: Fetch a release/snapshot from the offical FreeBSD mirrors, based on information from `uname(1)`.
+          - `\"zfs-copy\"`: Create the base image based on a copy of `zfs_dataset`.
+          - `\"zfs-clone\"`: Create the base image based on a clone of `zfs_dataset`.
           """,
           type: :string,
-          enum: ["fetch", "zfs"]
+          enum: ["fetch", "fetch-auto", "zfs-copy", "zfs-clone"]
         },
         tag: %Schema{
-          description: "Name and optionally a tag in the `name:tag` format",
+          description: """
+          Name and optionally a tag in the `name:tag` format.
+          """,
           type: :string,
           default: ""
         },
@@ -352,22 +356,36 @@ defmodule Kleened.API.Schemas do
           default: true
         },
         zfs_dataset: %Schema{
-          description:
-            "Dataset path on the host used for the image (required for method `\"zfs\"` only).",
+          description: """
+          ZFS dataset that the image should be based on.
+          *Method `\"zfs-*\"` only*.
+          """,
           type: :string,
           default: ""
         },
         url: %Schema{
-          description:
-            "URL to a remote location where the base system (as a base.txz file) is stored. If an empty string is supplied kleened will try to fetch a version of the base sytem from download.freebsd.org using information from `uname(1)` (required for method 'fetch').",
+          description: """
+          URL to a remote location where the base system (as a base.txz file) is stored.
+          *Method `\"fetch\"` only*.
+          """,
           type: :string,
           default: ""
         },
         force: %Schema{
-          description:
-            "Ignore any discrepancies detected when using `uname(1)` to fetch the base system (method `\"fetch\"` only).",
+          description: """
+          Ignore any discrepancies detected when using `uname(1)` to fetch the base system.
+          *Method `\"fetch-auto\"` only*.
+          """,
           type: :boolean,
           default: false
+        },
+        autotag: %Schema{
+          description: """
+          Whether or not to auto-genereate a nametag `FreeBSD-<version>:latest` based on `uname(1)`.
+          *Method `\"fetch-auto\"` only*.
+          """,
+          type: :boolean,
+          default: true
         }
       }
     })
