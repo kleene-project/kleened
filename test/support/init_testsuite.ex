@@ -1,55 +1,31 @@
 defmodule TestInitialization do
-  alias Kleened.Core.{ZFS, Layer, MetaData, Container, Image}
+  alias Kleened.Core.{MetaData, Container, Image, ImageCreate}
   alias Kleened.API.Schemas
 
   @creation_time "2023-09-14T21:21:57.990515Z"
 
   def create_test_base_image() do
-    {dataset, snapshot} = test_base_dataset()
-    info = ZFS.info(dataset)
-    snapshot_info = ZFS.info(snapshot)
+    creator_pid =
+      ImageCreate.start_image_creation(%Schemas.ImageCreateConfig{
+        method: "zfs-clone",
+        tag: "FreeBSD:testing",
+        zfs_dataset: "zroot/kleene_basejail"
+      })
 
-    # Check if the testing dataset + snapshot exists
-    cond do
-      info[:exists?] == false ->
-        raise RuntimeError,
-          message: "kleenes root zfs filesystem #{dataset} does not seem to exist. Exiting."
+    image = process_image_creator_messages(creator_pid)
+    MetaData.add_image(%Schemas.Image{image | created: @creation_time})
+    :ok
+  end
 
-      snapshot_info[:exists?] == false ->
-        ZFS.snapshot(snapshot)
+  defp process_image_creator_messages(creator_pid) do
+    receive do
+      {:image_creator, ^creator_pid, {:ok, image}} ->
+        image
 
-      true ->
-        :ok
+      {:image_creator, ^creator_pid, {:error, error_msg}} ->
+        Logger.error("Could not build test base image: #{inspect(error_msg)}")
+        Process.exit(self(), :failed_to_build_test_baseimage)
     end
-
-    # Create the ad-hoc base-image to use in testing
-    base_layer = %Layer{
-      id: "base",
-      dataset: dataset,
-      snapshot: snapshot,
-      mountpoint: ""
-    }
-
-    base_image = test_image()
-    MetaData.add_layer(base_layer)
-    MetaData.add_image(base_image)
-  end
-
-  def test_base_dataset() do
-    dataset = "zroot/kleene_basejail"
-    snapshot = "#{dataset}@kleene"
-    {dataset, snapshot}
-  end
-
-  def test_image() do
-    %Schemas.Image{
-      id: "base",
-      layer_id: "base",
-      name: "FreeBSD",
-      tag: "testing",
-      user: "root",
-      created: @creation_time
-    }
   end
 
   def clear() do

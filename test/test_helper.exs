@@ -75,7 +75,7 @@ defmodule TestHelper do
   end
 
   def container_create(api_spec, config) when not is_map_key(config, :image) do
-    container_create(api_spec, Map.put(config, :image, "base"))
+    container_create(api_spec, Map.put(config, :image, "FreeBSD:testing"))
   end
 
   def container_create(api_spec, config) when not is_map_key(config, :jail_param) do
@@ -499,7 +499,7 @@ defmodule TestHelper do
 
   def base_image_create(%{method: method} = config) do
     case method do
-      "zfs" ->
+      "zfs-copy" ->
         dataset = config.zfs_dataset
         ZFS.create(dataset)
 

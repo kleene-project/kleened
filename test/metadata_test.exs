@@ -38,7 +38,7 @@ defmodule MetaDataTest do
   end
 
   test "adding and getting images" do
-    base_image = TestHelper.test_image()
+    base_image = get_image("FreeBSD:testing")
     img1 = %Schemas.Image{id: "lol", name: "test", tag: "oldest", created: now()}
     img2 = %Schemas.Image{id: "lel", name: "test", tag: "latest", created: now()}
     add_image(img1)
@@ -56,11 +56,11 @@ defmodule MetaDataTest do
     delete_image("lol")
     delete_image("lel")
     delete_image("lel2")
-    assert [TestHelper.test_image()] == list_images()
+    assert [get_image("FreeBSD:testing")] == list_images()
   end
 
   test "empty nametags are avoided in overwrite logic" do
-    base_image = TestHelper.test_image()
+    base_image = get_image("FreeBSD:testing")
     img1 = %Schemas.Image{id: "lol1", name: "", tag: "", created: now()}
     img2 = %Schemas.Image{id: "lol2", name: "", tag: "", created: now()}
     img3 = %Schemas.Image{id: "lol3", name: "", tag: "", created: now()}
@@ -74,7 +74,7 @@ defmodule MetaDataTest do
   end
 
   test "fetching images that is not there" do
-    base_image = TestHelper.test_image()
+    base_image = get_image("FreeBSD:testing")
     assert [base_image] == list_images()
     img1 = %Schemas.Image{id: "lol", name: "test", tag: "oldest", created: now()}
     add_image(img1)
@@ -99,15 +99,18 @@ defmodule MetaDataTest do
   end
 
   test "list all containers" do
+    test_id = get_image("FreeBSD:testing").id
     add_image(%Schemas.Image{id: "lol", created: now()})
     add_image(%Schemas.Image{id: "lel", name: "test", tag: "latest", created: now()})
     add_container(%Schemas.Container{id: "1337", image_id: "lol", name: "test1", created: now()})
     add_container(%Schemas.Container{id: "1338", image_id: "lel", name: "test2", created: now()})
-    add_container(%Schemas.Container{id: "1339", image_id: "base", name: "test3", created: now()})
+
+    add_container(%Schemas.Container{id: "1339", image_id: test_id, name: "test3", created: now()})
+
     containers = list_containers()
 
     assert [
-             %{id: "1339", image_id: "base", name: "test3"},
+             %{id: "1339", image_id: ^test_id, name: "test3"},
              %{id: "1338", image_id: "lel", name: "test2"},
              %{id: "1337", image_id: "lol", name: "test1"}
            ] = containers

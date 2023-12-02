@@ -12,7 +12,9 @@ defmodule ContainerTest do
       MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
 
       MetaData.list_images()
-      |> Enum.filter(fn %Schemas.Image{id: id} -> id != "base" end)
+      |> Enum.filter(fn %Schemas.Image{name: name, tag: tag} ->
+        name != "FreeBSD" or tag != "testing"
+      end)
       |> Enum.map(fn %Schemas.Image{id: id} -> Kleened.Core.Image.destroy(id) end)
     end)
 
@@ -27,7 +29,7 @@ defmodule ContainerTest do
     %Schemas.Container{id: container_id, name: name, image_id: img_id} =
       container_succesfully_create(api_spec, %{name: "testcont"})
 
-    %Schemas.Image{id: id} = Kleened.Core.MetaData.get_image("base")
+    %Schemas.Image{id: id} = Kleened.Core.MetaData.get_image("FreeBSD:testing")
     assert id == img_id
 
     assert [%{id: ^container_id, name: ^name, image_id: ^img_id}] =
@@ -219,7 +221,7 @@ defmodule ContainerTest do
       container =
       container_succesfully_create(api_spec, %{
         name: "ws_test_container",
-        image: "base",
+        image: "FreeBSD:testing",
         cmd: ["/bin/sh", "-c", "uname"]
       })
 
@@ -229,7 +231,8 @@ defmodule ContainerTest do
     assert "succesfully started execution instance in detached mode" ==
              TestHelper.valid_execution(config)
 
-    {:ok, ^container_id} = Container.remove(container_id)
+    :timer.sleep(100)
+    assert %{id: container_id} == TestHelper.container_remove(api_spec, container_id)
   end
 
   test "start a container (using devfs), attach to it and receive output", %{api_spec: api_spec} do
@@ -455,7 +458,7 @@ defmodule ContainerTest do
     container =
       container_succesfully_create(api_spec, %{
         name: "ws_test_container",
-        image: "base",
+        image: "FreeBSD:testing",
         cmd: ["/bin/sh", "-c", "uname"]
       })
 

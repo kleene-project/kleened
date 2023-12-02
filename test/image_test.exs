@@ -13,7 +13,9 @@ defmodule ImageTest do
       MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
 
       MetaData.list_images()
-      |> Enum.filter(fn %Schemas.Image{id: id} -> id != "base" end)
+      |> Enum.filter(fn %Schemas.Image{name: name, tag: tag} ->
+        name != "FreeBSD" or tag != "testing"
+      end)
       |> Enum.map(fn %Schemas.Image{id: id} -> Kleened.Core.Image.destroy(id) end)
     end)
 
@@ -22,6 +24,8 @@ defmodule ImageTest do
 
   @tmp_dockerfile "tmp_dockerfile"
   @tmp_context "./"
+
+  @test_img %{name: "FreeBSD", tag: "testing"}
 
   test "building a simple image that generates some text", %{api_spec: api_spec} do
     dockerfile = """
@@ -45,13 +49,13 @@ defmodule ImageTest do
              "FreeBSD\n"
            ]
 
-    [%{id: ^image_id}, %{id: "base"}] = TestHelper.image_list(api_spec)
+    [%{id: ^image_id}, @test_img] = TestHelper.image_list(api_spec)
     assert %{id: "websock_img"} == TestHelper.image_destroy(api_spec, "websock_img")
 
     assert %{message: "Error: No such image: websock_img\n"} ==
              TestHelper.image_destroy(api_spec, "websock_img")
 
-    assert [%{id: "base"}] = TestHelper.image_list(api_spec)
+    assert [@test_img] = TestHelper.image_list(api_spec)
   end
 
   test "update the image tag", %{api_spec: api_spec} do
@@ -76,8 +80,7 @@ defmodule ImageTest do
 
     assert %{id: image_id} == TestHelper.image_tag(api_spec, image_id, "newtag:latest")
 
-    [%{id: ^image_id, name: "newtag", tag: "latest"}, %{id: "base"}] =
-      TestHelper.image_list(api_spec)
+    [%{id: ^image_id, name: "newtag", tag: "latest"}, @test_img] = TestHelper.image_list(api_spec)
   end
 
   test "parsing some invalid input to the image builder" do
@@ -137,7 +140,6 @@ defmodule ImageTest do
   end
 
   test "pruning of images with all=true", %{api_spec: api_spec} do
-    base_image = MetaData.get_image("base")
     # Image with no children and a tag
     build_dummy_image("FreeBSD:testing", "test:no-children")
 
@@ -155,7 +157,10 @@ defmodule ImageTest do
     build_dummy_image(image.id, "")
 
     TestHelper.image_prune(api_spec, true)
-    assert [base_image] == MetaData.list_images()
+    assert [] == MetaData.list_images()
+
+    TestInitialization.create_test_base_image()
+    base_image = MetaData.get_image("FreeBSD:testing")
 
     # Image with no children and a tag
     image1 = build_dummy_image("FreeBSD:testing", "test:no-children")
@@ -180,7 +185,7 @@ defmodule ImageTest do
   end
 
   test "pruning with all=false", %{api_spec: api_spec} do
-    base_image = MetaData.get_image("base")
+    base_image = MetaData.get_image("FreeBSD:testing")
 
     # Image with no children and a tag + Image with no children and no tag
     image1 = build_dummy_image("FreeBSD:testing", "test:no-children")
@@ -209,7 +214,7 @@ defmodule ImageTest do
   end
 
   test "pruning images with containers and all=false", %{api_spec: api_spec} do
-    base_image = MetaData.get_image("base")
+    base_image = MetaData.get_image("FreeBSD:testing")
     # Image with no children and a tag
     image1 = build_dummy_image("FreeBSD:testing", "test:no-children")
     TestHelper.container_create(api_spec, %{name: "prune1", image: image1.id})
@@ -222,7 +227,7 @@ defmodule ImageTest do
   end
 
   test "pruning images with containers and all=true", %{api_spec: api_spec} do
-    base_image = MetaData.get_image("base")
+    base_image = MetaData.get_image("FreeBSD:testing")
 
     # Image with children and a tag
     image1 = build_dummy_image("FreeBSD:testing", "test:with-children")
@@ -974,9 +979,9 @@ defmodule ImageTest do
   # The mini-jail userland used for the 'fetch' and 'zfs' image creation tests
   # have been created with https://github.com/Freaky/mkjail using the command
   # mkjail -a minimal_testjail.txz /usr/bin/env /usr/local/bin/python3.9 -c "print('lol')"
-  test "create base image using a method 'zfs'", %{api_spec: api_spec} do
+  test "create base image using a method 'zfs-copy'", %{api_spec: api_spec} do
     config = %{
-      method: "zfs",
+      method: "zfs-copy",
       zfs_dataset: "zroot/image_create_zfs_test",
       tag: "zfscreate:testing"
     }
@@ -987,6 +992,26 @@ defmodule ImageTest do
     run_config = baseimage_run_config(image_id)
     {_container_id, output} = TestHelper.container_valid_run(api_spec, run_config)
     assert output == ["testing minimaljail\n"]
+    assert container_resolv_conf_exists?(run_config, api_spec)
+  end
+
+  test "create base image using a method 'zfs-clone'", %{api_spec: api_spec} do
+    config = %{
+      method: "zfs-clone",
+      zfs_dataset: "zroot/kleene_basejail",
+      tag: "zfscreate:testing"
+    }
+
+    image_id = TestHelper.base_image_create(config)
+
+    run_config = %{
+      baseimage_run_config(image_id)
+      | cmd: ["/bin/sh", "-c", "echo lol"],
+        jail_param: ["mount.devfs=false"]
+    }
+
+    {_container_id, output} = TestHelper.container_valid_run(api_spec, run_config)
+    assert output == ["lol\n"]
     assert container_resolv_conf_exists?(run_config, api_spec)
   end
 
@@ -1005,9 +1030,9 @@ defmodule ImageTest do
   end
 
   #### Without copying 'resolv.conf' ####
-  test "create base image using a method 'zfs' without 'dns'", %{api_spec: api_spec} do
+  test "create base image using a method 'zfs-copy' without 'dns'", %{api_spec: api_spec} do
     config = %{
-      method: "zfs",
+      method: "zfs-copy",
       zfs_dataset: "zroot/image_create_zfs_test",
       tag: "zfscreate:testing",
       dns: false
