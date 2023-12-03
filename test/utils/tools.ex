@@ -1,6 +1,7 @@
-defmodule TestInitialization do
+defmodule Kleened.Test.TestImage do
   alias Kleened.Core.{MetaData, Container, Image, ImageCreate}
   alias Kleened.API.Schemas
+  require Logger
 
   @creation_time "2023-09-14T21:21:57.990515Z"
 
@@ -34,5 +35,25 @@ defmodule TestInitialization do
     MetaData.list_images()
     |> Enum.filter(fn %Schemas.Image{id: id} -> id != "base" end)
     |> Enum.map(fn %Schemas.Image{id: id} -> Image.destroy(id) end)
+  end
+end
+
+defmodule Kleened.Test.ConnCase do
+  use ExUnit.CaseTemplate
+
+  using do
+    quote do
+      use Plug.Test
+      import Plug.Conn
+      import OpenApiSpex.TestAssertions
+      import OpenApiSpex.Schema, only: [example: 1]
+    end
+  end
+
+  setup _tags do
+    # Added to the context to validate responses with assert_schema/3
+    api_spec = Kleened.API.Spec.spec()
+
+    {:ok, api_spec: api_spec}
   end
 end

@@ -1,5 +1,5 @@
 defmodule VolumeTest do
-  use Kleened.API.ConnCase
+  use Kleened.Test.ConnCase
   require Logger
 
   alias Kleened.Core.{MetaData, Container, Volume}

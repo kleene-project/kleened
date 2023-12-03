@@ -1,6 +1,6 @@
 defmodule ExecTest do
   require Logger
-  use Kleened.API.ConnCase
+  use Kleened.Test.ConnCase
   alias Kleened.Core.{Container, Exec, Utils, Network}
   alias Kleened.API.Schemas
   alias Schemas.WebSocketMessage, as: Message

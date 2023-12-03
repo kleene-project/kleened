@@ -335,7 +335,7 @@ defmodule Kleened.API.Schemas do
           There are four methods for creating a new base image:
 
           - `\"fetch\"`: Fetch a release/snapshot of the base system and use it for image creation.
-          - `\"fetch-auto\"`: Fetch a release/snapshot from the offical FreeBSD mirrors, based on information from `uname(1)`.
+          - `\"fetch-auto\"`: Automatically fetch a release/snapshot from the offical FreeBSD mirrors, based on information from `uname(1)`.
           - `\"zfs-copy\"`: Create the base image based on a copy of `zfs_dataset`.
           - `\"zfs-clone\"`: Create the base image based on a clone of `zfs_dataset`.
           """,

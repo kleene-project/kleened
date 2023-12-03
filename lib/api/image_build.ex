@@ -134,7 +134,7 @@ defmodule Kleened.API.ImageBuild do
     Logger.info("Finished building image #{image_id}. Closing connection.")
   end
 
-  def terminate(reason, partial_req, %{image_id: image_id}) do
+  def terminate(reason, _partial_req, %{image_id: image_id}) do
     Logger.info("Websocket connection closed while building #{image_id}: #{inspect(reason)}")
     Core.Container.stop(image_id)
     Core.Container.remove(image_id)

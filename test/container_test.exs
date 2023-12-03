@@ -1,6 +1,6 @@
 defmodule ContainerTest do
   require Logger
-  use Kleened.API.ConnCase
+  use Kleened.Test.ConnCase
   alias Kleened.Core.{Container, Exec, Utils, MetaData}
   alias Kleened.API.Schemas
 

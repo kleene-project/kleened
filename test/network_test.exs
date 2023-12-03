@@ -1,5 +1,5 @@
 defmodule NetworkTest do
-  use Kleened.API.ConnCase
+  use Kleened.Test.ConnCase
   require Logger
   alias Kleened.Core.{Network, Utils, MetaData, Container, Exec, OS}
   alias Kleened.API.Schemas

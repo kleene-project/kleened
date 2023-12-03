@@ -1,4 +1,5 @@
 alias OpenApiSpex.Cast
+alias Kleened.Test.TestImage
 alias Kleened.Core.{Const, Layer, Exec, MetaData, Container, ZFS, OS}
 alias :gun, as: Gun
 alias Kleened.API.Router
@@ -17,7 +18,7 @@ ExUnit.configure(
   max_failures: 1
 )
 
-TestInitialization.create_test_base_image()
+TestImage.create_test_base_image()
 
 defmodule TestHelper do
   import ExUnit.Assertions
@@ -287,10 +288,6 @@ defmodule TestHelper do
       200 => "IdResponse",
       404 => "ErrorResponse"
     })
-  end
-
-  def test_image() do
-    TestInitialization.test_image()
   end
 
   def image_prune(api_spec, all) do

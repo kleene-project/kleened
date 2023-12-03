@@ -1,5 +1,6 @@
 defmodule ImageTest do
-  use Kleened.API.ConnCase
+  use Kleened.Test.ConnCase
+  alias Kleened.Test.TestImage
   alias Kleened.Core.{Config, MetaData, Layer, ZFS, OS, Container}
   alias Kleened.API.Schemas
   alias Schemas.WebSocketMessage, as: Message
@@ -159,7 +160,7 @@ defmodule ImageTest do
     TestHelper.image_prune(api_spec, true)
     assert [] == MetaData.list_images()
 
-    TestInitialization.create_test_base_image()
+    TestImage.create_test_base_image()
     base_image = MetaData.get_image("FreeBSD:testing")
 
     # Image with no children and a tag
