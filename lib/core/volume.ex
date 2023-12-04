@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Volume do
-  alias Kleened.Core.{ZFS, Config, Utils, MetaData}
+  alias Kleened.Core.{ZFS, Config, Utils, Mount, MetaData}
   alias Kleened.API.Schemas
   require Config
   require Logger
@@ -68,12 +68,7 @@ defmodule Kleened.Core.Volume do
         {:error, "No such volume"}
 
       volume ->
-        mounts = MetaData.remove_mounts(volume)
-
-        Enum.map(mounts, fn %Schemas.MountPoint{destination: dest} ->
-          0 = Utils.unmount(dest)
-        end)
-
+        Mount.remove_mounts(volume)
         ZFS.destroy(volume.dataset)
         MetaData.remove_volume(volume)
         :ok

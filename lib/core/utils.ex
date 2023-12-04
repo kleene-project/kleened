@@ -53,14 +53,6 @@ defmodule Kleened.Core.Utils do
     DateTime.to_iso8601(DateTime.utc_now())
   end
 
-  def mkdir(path) do
-    {"", 0} = OS.cmd(["/bin/mkdir", "-p", path])
-  end
-
-  def mount_nullfs(args) do
-    OS.cmd(["/sbin/mount_nullfs" | args])
-  end
-
   def destroy_interface(kleene_if) do
     if interface_exists(kleene_if) do
       {"", _exitcode} = System.cmd("ifconfig", [kleene_if, "destroy"])

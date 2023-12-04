@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Image do
-  alias Kleened.Core.{Const, ZFS, MetaData, Utils, Layer, Network, OS, Container, Config}
+  alias Kleened.Core.{Const, ZFS, MetaData, Utils, Layer, Mount, Network, OS, Container, Config}
   alias Kleened.API.Schemas
   require Logger
 
@@ -361,19 +361,17 @@ defmodule Kleened.Core.Image do
   defp process_instructions(%State{instructions: [{line, {:copy, src_dest}} | _]} = state) do
     Logger.info("Processing instruction: COPY #{inspect(src_dest)}")
     state = send_status(line, state)
-    context_in_jail = context_directory_in_container(state.container)
 
     with {:ok, src_and_dest} <- environment_replacement_list(src_dest, [], state),
          {config_mkdir, config_cp} = copy_instruction_exec_configs(src_and_dest, state),
-         :ok <- mount_context(context_in_jail, state),
+         {:ok, mountpoint} <- mount_context(state),
          :ok <- succesfully_run_execution(config_mkdir, state),
-         :ok <- succesfully_run_execution(config_cp, state) do
-      unmount_context(context_in_jail)
+         :ok <- succesfully_run_execution(config_cp, state),
+         :ok <- Mount.unmount(mountpoint) do
       snapshot = snapshot_image(state.container, state.msg_receiver)
       process_instructions(update_state(state, snapshot))
     else
       _error ->
-        unmount_context(context_in_jail)
         terminate_failed_build(state)
     end
   end
@@ -618,11 +616,6 @@ defmodule Kleened.Core.Image do
     {config_mkdir, config_cp}
   end
 
-  defp context_directory_in_container(%Schemas.Container{layer_id: layer_id}) do
-    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
-    Path.join(mountpoint, "/kleene_temporary_context_store")
-  end
-
   defp wildcard_expand_srcs(srcdest, state) do
     {dest, srcs_relative} = List.pop_at(srcdest, -1)
     context_depth = length(Path.split(state.context))
@@ -654,26 +647,17 @@ defmodule Kleened.Core.Image do
     Enum.reverse([dest | absolute_sources])
   end
 
-  defp mount_context(context_in_jail, %State{msg_receiver: pid} = state) do
-    # Create a context-directory within the container and nullfs-mount the context into it
-    with {_, 0} <- System.cmd("/bin/mkdir", [context_in_jail], stderr_to_stdout: true),
-         {_, 0} <- Utils.mount_nullfs([state.context, context_in_jail]) do
-      :ok
-    else
-      {output, _nonzero_exitcode} ->
+  defp mount_context(%State{msg_receiver: pid} = state) do
+    source = state.context
+    destination = "/kleene_temporary_context_store"
+
+    case Mount.mount_nullfs(state.container, source, destination) do
+      {:ok, mountpoint} ->
+        {:ok, mountpoint}
+
+      {:error, output} ->
         send_msg(pid, "could not create context mountpoint in container: #{output}")
         :error
-    end
-  end
-
-  defp unmount_context(context_in_jail) do
-    case File.exists?(context_in_jail) do
-      true ->
-        Utils.unmount(context_in_jail)
-        System.cmd("/bin/rm", ["-r", context_in_jail], stderr_to_stdout: true)
-
-      false ->
-        :ok
     end
   end
 

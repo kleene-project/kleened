@@ -273,7 +273,7 @@ defmodule Kleened.Core.Container do
     }
 
     # Mount volumes into container (if any have been provided)
-    bind_volumes(volumes, cont)
+    mount_volumes(volumes, cont)
 
     # Store new container
     MetaData.add_container(cont)
@@ -287,7 +287,7 @@ defmodule Kleened.Core.Container do
     case Utils.is_container_running?(container_id) do
       false ->
         :ok = Network.disconnect_all(container_id)
-        :ok = Mount.destroy_mounts(cont)
+        :ok = Mount.remove_mounts(cont)
         :ok = MetaData.delete_container(container_id)
         Layer.destroy(layer_id)
 
@@ -348,11 +348,11 @@ defmodule Kleened.Core.Container do
     end
   end
 
-  defp bind_volumes(volumes, container) do
-    Enum.map(volumes, fn vol -> bind_volumes_(vol, container) end)
+  defp mount_volumes(volumes, container) do
+    Enum.map(volumes, fn vol -> mount_volumes_(vol, container) end)
   end
 
-  defp bind_volumes_(volume_raw, cont) do
+  defp mount_volumes_(volume_raw, cont) do
     case String.split(volume_raw, ":") do
       [<<"/", _::binary>> = location] ->
         # anonymous volume
@@ -378,12 +378,12 @@ defmodule Kleened.Core.Container do
   defp create_and_bind("", destination, opts, cont) do
     name = Kleened.Core.Utils.uuid()
     volume = Volume.create(name)
-    Mount.bind_volume(cont, volume, destination, opts)
+    Mount.mount_volume(cont, volume, destination, opts)
   end
 
   defp create_and_bind(name, destination, opts, cont) do
     volume = MetaData.get_volume(name)
-    Mount.bind_volume(cont, volume, destination, opts)
+    Mount.mount_volume(cont, volume, destination, opts)
   end
 
   def running_jails() do

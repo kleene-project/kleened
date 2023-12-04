@@ -81,7 +81,7 @@ defmodule VolumeTest do
     container = MetaData.get_container(id)
 
     {:ok, exec_id} = Kleened.Core.Exec.create(id)
-    :ok = Mount.bind_volume(container, volume, destination)
+    :ok = Mount.mount_volume(container, volume, destination)
     Kleened.Core.Exec.start(exec_id, %{attach: true, start_container: true})
 
     receive do
@@ -103,7 +103,7 @@ defmodule VolumeTest do
       TestHelper.container_create(api_spec, %{name: "volume_test", cmd: ["/bin/sleep", "10"]})
 
     container = MetaData.get_container(id)
-    :ok = Mount.bind_volume(container, volume1, destination)
+    :ok = Mount.mount_volume(container, volume1, destination)
     assert ["prunevol2"] = volume_prune(api_spec)
     assert [%{name: "prunevol1"}] = volume_list(api_spec)
     Container.remove(id)
