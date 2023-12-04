@@ -170,13 +170,13 @@ defmodule MetaDataTest do
 
     mnt1 = %Schemas.MountPoint{
       container_id: "contestid",
-      volume_name: vol_name,
-      location: "location1",
+      source: vol_name,
+      destination: "location1",
       read_only: false
     }
 
     mnt2 = %Schemas.MountPoint{mnt1 | read_only: true}
-    mnt3 = %Schemas.MountPoint{volume_name: "some_other_name"}
+    mnt3 = %Schemas.MountPoint{source: "some_other_name"}
 
     add_mount(mnt1)
     assert [mnt1] == list_mounts(vol)

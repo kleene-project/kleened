@@ -8,7 +8,7 @@ defmodule Kleened.Core.Container do
   alias __MODULE__, as: Container
 
   require Logger
-  alias Kleened.Core.{MetaData, Volume, Layer, Network, Utils, OS}
+  alias Kleened.Core.{MetaData, Volume, Mount, Layer, Network, Utils, OS}
   alias Kleened.API.Schemas
 
   @type t() ::
@@ -287,7 +287,7 @@ defmodule Kleened.Core.Container do
     case Utils.is_container_running?(container_id) do
       false ->
         :ok = Network.disconnect_all(container_id)
-        :ok = Volume.destroy_mounts(cont)
+        :ok = Mount.destroy_mounts(cont)
         :ok = MetaData.delete_container(container_id)
         Layer.destroy(layer_id)
 
@@ -375,15 +375,15 @@ defmodule Kleened.Core.Container do
     end
   end
 
-  defp create_and_bind("", location, opts, cont) do
+  defp create_and_bind("", destination, opts, cont) do
     name = Kleened.Core.Utils.uuid()
-    vol = Volume.create(name)
-    Volume.bind_volume(cont, vol, location, opts)
+    volume = Volume.create(name)
+    Mount.bind_volume(cont, volume, destination, opts)
   end
 
-  defp create_and_bind(name, location, opts, cont) do
-    vol = MetaData.get_volume(name)
-    Volume.bind_volume(cont, vol, location, opts)
+  defp create_and_bind(name, destination, opts, cont) do
+    volume = MetaData.get_volume(name)
+    Mount.bind_volume(cont, volume, destination, opts)
   end
 
   def running_jails() do

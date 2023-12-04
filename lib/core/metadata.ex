@@ -326,7 +326,7 @@ defmodule Kleened.Core.MetaData do
     sql("""
     SELECT volumes.name
     FROM volumes
-    LEFT JOIN mounts ON volumes.name = json_extract(mounts.mount, '$.volume_name')
+    LEFT JOIN mounts ON volumes.name = json_extract(mounts.mount, '$.source')
     WHERE ifnull(mounts.mount, 'empty') = 'empty';
     """)
   end
@@ -344,7 +344,7 @@ defmodule Kleened.Core.MetaData do
 
   @spec list_mounts(Volume.t()) :: [%Schemas.MountPoint{}]
   def list_mounts(%Schemas.Volume{name: name}) do
-    sql("SELECT mount FROM mounts WHERE json_extract(mount, '$.volume_name') = ?", [name])
+    sql("SELECT mount FROM mounts WHERE json_extract(mount, '$.source') = ?", [name])
   end
 
   @spec list_mounts_by_container(String.t()) :: [%Schemas.MountPoint{}] | :not_found
@@ -447,12 +447,11 @@ defmodule Kleened.Core.MetaData do
 
   def remove_mounts_transaction(db, %Schemas.Volume{name: name}) do
     result =
-      fetch_all(db, "SELECT mount FROM mounts WHERE json_extract(mount, '$.volume_name') = ?", [
+      fetch_all(db, "SELECT mount FROM mounts WHERE json_extract(mount, '$.source') = ?", [
         name
       ])
 
-    [] =
-      fetch_all(db, "DELETE FROM mounts WHERE json_extract(mount, '$.volume_name') = ?;", [name])
+    [] = fetch_all(db, "DELETE FROM mounts WHERE json_extract(mount, '$.source') = ?;", [name])
 
     result
   end

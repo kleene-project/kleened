@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Volume do
-  alias Kleened.Core.{ZFS, Config, Utils, Layer, MetaData}
+  alias Kleened.Core.{ZFS, Config, Utils, MetaData}
   alias Kleened.API.Schemas
   require Config
   require Logger
@@ -7,10 +7,6 @@ defmodule Kleened.Core.Volume do
   alias __MODULE__, as: Volume
 
   @type t() :: %Schemas.Volume{}
-
-  @type bind_opts() :: [
-          rw: boolean()
-        ]
 
   @spec create(String.t()) :: Volume.t()
   def create(name) do
@@ -66,50 +62,6 @@ defmodule Kleened.Core.Volume do
     end
   end
 
-  @spec destroy_mounts(%Schemas.Container{}) :: :ok
-  def destroy_mounts(container) do
-    mounts = MetaData.remove_mounts(container)
-
-    Enum.map(mounts, fn %Schemas.MountPoint{location: location} -> Utils.unmount(location) end)
-    :ok
-  end
-
-  @spec bind_volume(
-          %Schemas.Container{},
-          Kleened.Core.Records.volume(),
-          String.t(),
-          bind_opts()
-        ) :: :ok
-  def bind_volume(
-        %Schemas.Container{id: container_id, layer_id: layer_id},
-        %Schemas.Volume{name: volume_name, mountpoint: volume_mountpoint},
-        location,
-        opts \\ []
-      ) do
-    %Layer{mountpoint: container_mountpoint} = MetaData.get_layer(layer_id)
-    host_location = Path.join(container_mountpoint, location)
-    Utils.mkdir(host_location)
-    read_only = Keyword.get(opts, :ro, false)
-
-    case read_only do
-      false ->
-        {"", 0} = Utils.mount_nullfs([volume_mountpoint, host_location])
-
-      true ->
-        {"", 0} = Utils.mount_nullfs(["-o", "ro", volume_mountpoint, host_location])
-    end
-
-    mnt = %Schemas.MountPoint{
-      container_id: container_id,
-      volume_name: volume_name,
-      location: host_location,
-      read_only: read_only
-    }
-
-    MetaData.add_mount(mnt)
-    :ok
-  end
-
   defp destroy_(name) do
     case Kleened.Core.MetaData.get_volume(name) do
       :not_found ->
@@ -118,8 +70,8 @@ defmodule Kleened.Core.Volume do
       volume ->
         mounts = MetaData.remove_mounts(volume)
 
-        Enum.map(mounts, fn %Schemas.MountPoint{location: location} ->
-          0 = Utils.unmount(location)
+        Enum.map(mounts, fn %Schemas.MountPoint{destination: dest} ->
+          0 = Utils.unmount(dest)
         end)
 
         ZFS.destroy(volume.dataset)

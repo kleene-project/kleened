@@ -2,7 +2,7 @@ defmodule VolumeTest do
   use Kleened.Test.ConnCase
   require Logger
 
-  alias Kleened.Core.{MetaData, Container, Volume}
+  alias Kleened.Core.{MetaData, Container, Volume, Mount}
   alias Kleened.API.Router
 
   @moduletag :capture_log
@@ -71,7 +71,7 @@ defmodule VolumeTest do
 
   test "verify volume binding", %{api_spec: api_spec} do
     # use /mnt since this is empty in the basejail by default
-    location = "/mnt"
+    destination = "/mnt"
     file = "/mnt/test"
     volume = Volume.create("testvol")
 
@@ -81,7 +81,7 @@ defmodule VolumeTest do
     container = MetaData.get_container(id)
 
     {:ok, exec_id} = Kleened.Core.Exec.create(id)
-    :ok = Volume.bind_volume(container, volume, location)
+    :ok = Mount.bind_volume(container, volume, destination)
     Kleened.Core.Exec.start(exec_id, %{attach: true, start_container: true})
 
     receive do
@@ -95,7 +95,7 @@ defmodule VolumeTest do
 
   test "prune volumes", %{api_spec: api_spec} do
     # use /mnt since this is empty in the basejail by default
-    location = "/mnt"
+    destination = "/mnt"
     volume1 = Volume.create("prunevol1")
     _volume2 = Volume.create("prunevol2")
 
@@ -103,7 +103,7 @@ defmodule VolumeTest do
       TestHelper.container_create(api_spec, %{name: "volume_test", cmd: ["/bin/sleep", "10"]})
 
     container = MetaData.get_container(id)
-    :ok = Volume.bind_volume(container, volume1, location)
+    :ok = Mount.bind_volume(container, volume1, destination)
     assert ["prunevol2"] = volume_prune(api_spec)
     assert [%{name: "prunevol1"}] = volume_list(api_spec)
     Container.remove(id)

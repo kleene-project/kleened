@@ -527,17 +527,36 @@ defmodule Kleened.API.Schemas do
 
   defmodule MountPoint do
     OpenApiSpex.schema(%{
-      description: "Detailed information on a volume.",
+      description: """
+      Mount point between some part of the host file system and a container.
+      There are two types of mountpoints:
+
+      - `nullfs`: Mounting a user-specified file or directory from the host machine into the container.
+      - `volume`: Mounting a volume that is managed by Kleened into the container.
+      """,
       type: :object,
       properties: %{
+        type: %Schema{
+          type: :string,
+          description: "Kind of mount to use: `nullfs`or `volume`.",
+          enum: ["volume", "nullfs"]
+        },
         container_id: %Schema{
           type: :string,
-          description: "ID of the container where the volume is mounted."
+          description: "ID of the container that the mountpoint belongs to."
         },
-        volume_name: %Schema{type: :string, description: "Name of the volume"},
-        location: %Schema{
+        destination: %Schema{
           type: :string,
-          description: "Location of the mount within the container."
+          description: "Destination path of the mount within the container."
+        },
+        source: %Schema{
+          type: :string,
+          description: """
+          Source used for the mount. Depends on `method`:
+
+          - If `method` is `volume` then `source` should be a volume name
+          - If `method` is `nullfs` then `source` should be a (absolute) path on the host
+          """
         },
         read_only: %Schema{type: :boolean, description: "Whether this mountpoint is read-only."}
       }
