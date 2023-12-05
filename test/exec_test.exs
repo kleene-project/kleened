@@ -38,7 +38,7 @@ defmodule ExecTest do
     stop_msg = "executable #{exec_id} and its container exited with exit-code 0"
 
     assert {stop_msg, ["FreeBSD\n"]} ==
-             TestHelper.valid_execution(%{exec_id: exec_id, attach: true, start_container: true})
+             TestHelper.exec_valid_start(%{exec_id: exec_id, attach: true, start_container: true})
 
     {:ok, ^container_id} = Container.remove(container_id)
   end
@@ -131,7 +131,7 @@ defmodule ExecTest do
     config = %{exec_id: root_exec_id, attach: false, start_container: true}
 
     assert "succesfully started execution instance in detached mode" ==
-             TestHelper.valid_execution(config)
+             TestHelper.exec_valid_start(config)
 
     %{id: exec_id} =
       TestHelper.exec_create(api_spec, %{
@@ -217,7 +217,7 @@ defmodule ExecTest do
     %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: "testcont"})
 
     assert "succesfully started execution instance in detached mode" ==
-             TestHelper.valid_execution(%{exec_id: exec_id, attach: false, start_container: true})
+             TestHelper.exec_valid_start(%{exec_id: exec_id, attach: false, start_container: true})
 
     # seems like '/usr/sbin/jail' returns before the kernel reports it as running?
     :timer.sleep(500)

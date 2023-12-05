@@ -648,10 +648,13 @@ defmodule Kleened.Core.Image do
   end
 
   defp mount_context(%State{msg_receiver: pid} = state) do
-    source = state.context
-    destination = "/kleene_temporary_context_store"
+    mount_config = %Schemas.MountPointConfig{
+      type: "nullfs",
+      source: state.context,
+      destination: "/kleene_temporary_context_store"
+    }
 
-    case Mount.mount_nullfs(state.container, source, destination) do
+    case Mount.create(state.container, mount_config) do
       {:ok, mountpoint} ->
         {:ok, mountpoint}
 

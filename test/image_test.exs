@@ -899,19 +899,19 @@ defmodule ImageTest do
 
     snapshot = fetch_snapshot(image, "COPY test.txt /etc/")
 
-    {_closing_msg, process_output} =
+    {_, _, process_output} =
       TestHelper.container_run(api_spec, %{
+        name: "image_testing1",
         image: "#{image.id}:#{snapshot}",
-        attach: true,
         cmd: ["/bin/cat", "/etc/test.txt"]
       })
 
     assert process_output == ["lol\n"]
 
-    {_closing_msg, process_output} =
+    {_, _, process_output} =
       TestHelper.container_run(api_spec, %{
+        name: "image_testing2",
         image: "#{image.id}:#{snapshot}",
-        attach: true,
         cmd: ["/bin/cat", "/etc/test2.txt"]
       })
 
@@ -922,10 +922,10 @@ defmodule ImageTest do
 
     snapshot = fetch_snapshot(image, "RUN echo -n \"some text\" > /etc/test2.txt")
 
-    {_closing_msg, process_output} =
+    {_, _, process_output} =
       TestHelper.container_run(api_spec, %{
+        name: "image_testing3",
         image: "test:latest:#{snapshot}",
-        attach: true,
         cmd: ["/bin/cat", "/etc/test2.txt"]
       })
 
@@ -955,26 +955,26 @@ defmodule ImageTest do
     image = MetaData.get_image(image_id)
     snapshot = fetch_snapshot(image, "COPY test.txt /etc/")
 
-    {_closing_msg, process_output} =
+    {_, _, process_output} =
       TestHelper.container_run(api_spec, %{
+        name: "image_testing4",
         image: "#{image.id}:#{snapshot}",
-        attach: true,
         cmd: ["/bin/cat", "/etc/test.txt"]
       })
 
     assert process_output == ["lol\n"]
 
-    {_closing_msg, process_output} =
+    {_, _, process_output} =
       TestHelper.container_run(api_spec, %{
+        name: "image_testing5",
         image: "#{image.id}:#{snapshot}",
-        attach: true,
         cmd: ["/bin/cat", "/etc/test2.txt"]
       })
 
-    assert process_output == [
-             "cat: /etc/test2.txt: No such file or directory\n",
-             "jail: /usr/bin/env /bin/cat /etc/test2.txt: failed\n"
-           ]
+    assert Enum.join(process_output) == """
+           cat: /etc/test2.txt: No such file or directory
+           jail: /usr/bin/env /bin/cat /etc/test2.txt: failed
+           """
   end
 
   # The mini-jail userland used for the 'fetch' and 'zfs' image creation tests

@@ -1,6 +1,6 @@
 alias OpenApiSpex.Cast
 alias Kleened.Test.TestImage
-alias Kleened.Core.{Const, Layer, Exec, MetaData, Container, ZFS, OS}
+alias Kleened.Core.{Const, Layer, Exec, MetaData, ZFS, OS}
 alias :gun, as: Gun
 alias Kleened.API.Router
 alias Kleened.API.Schemas
@@ -30,13 +30,14 @@ defmodule TestHelper do
   @opts Router.init([])
 
   def container_valid_run(api_spec, config) do
-    {attach, config_create} = Map.pop(config, :attach)
+    {attach, config} = Map.pop(config, :attach, true)
+    {start_container, config} = Map.pop(config, :start_container, true)
 
-    %{id: container_id} = TestHelper.container_create(api_spec, config_create)
+    %{id: container_id} = TestHelper.container_create(api_spec, config)
     {:ok, exec_id} = Exec.create(container_id)
 
     {closing_msg, process_output} =
-      valid_execution(%{exec_id: exec_id, attach: attach, start_container: true})
+      exec_valid_start(%{exec_id: exec_id, attach: attach, start_container: start_container})
 
     assert String.slice(closing_msg, -11, 11) == "exit-code 0"
 
@@ -44,20 +45,16 @@ defmodule TestHelper do
   end
 
   def container_run(api_spec, config) do
-    config_create = %{
-      image: config.image,
-      cmd: config.cmd,
-      name: "testrun"
-    }
+    {attach, config} = Map.pop(config, :attach, true)
+    {start_container, config} = Map.pop(config, :start_container, true)
 
-    %{id: container_id} = TestHelper.container_create(api_spec, config_create)
+    %{id: container_id} = TestHelper.container_create(api_spec, config)
     {:ok, exec_id} = Exec.create(container_id)
 
     {closing_msg, process_output} =
-      valid_execution(%{exec_id: exec_id, attach: config.attach, start_container: true})
+      exec_valid_start(%{exec_id: exec_id, attach: attach, start_container: start_container})
 
-    {:ok, ^container_id} = Container.remove(container_id)
-    {closing_msg, process_output}
+    {container_id, closing_msg, process_output}
   end
 
   def container_start_attached(_api_spec, container_id) when is_binary(container_id) do
@@ -245,7 +242,7 @@ defmodule TestHelper do
     {:ok, stream_ref, conn}
   end
 
-  def valid_execution(%{attach: true} = config) do
+  def exec_valid_start(%{attach: true} = config) do
     [msg_json | rest] = exec_start_raw(config)
 
     assert {:ok, %Msg{data: "", message: "", msg_type: "starting"}} ==
@@ -257,7 +254,7 @@ defmodule TestHelper do
     {closing_msg, process_output}
   end
 
-  def valid_execution(%{attach: false} = config) do
+  def exec_valid_start(%{attach: false} = config) do
     [{1001, %Msg{msg_type: "closing", message: closing_msg}}] = exec_start_raw(config)
     closing_msg
   end
@@ -626,6 +623,51 @@ defmodule TestHelper do
       204 => "",
       409 => "ErrorResponse"
     })
+  end
+
+  def volume_destroy(api_spec, name) do
+    response =
+      conn(:delete, "/volumes/#{name}")
+      |> Router.call(@opts)
+
+    assert response.status == 200
+    json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+    assert_schema(json_body, "IdResponse", api_spec)
+  end
+
+  def volume_prune(api_spec) do
+    response =
+      conn(:post, "/volumes/prune")
+      |> Router.call(@opts)
+
+    json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+    assert_schema(json_body, "IdListResponse", api_spec)
+    json_body
+  end
+
+  def volume_inspect(name) do
+    conn(:get, "/volumes/#{name}/inspect")
+    |> Router.call(@opts)
+  end
+
+  def volume_create(api_spec, name) do
+    response =
+      conn(:post, "/volumes/create", %{name: name})
+      |> put_req_header("content-type", "application/json")
+      |> Router.call(@opts)
+
+    assert response.status == 201
+    json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+    assert_schema(json_body, "IdResponse", api_spec)
+    MetaData.get_volume(json_body.id) |> Map.drop([:__struct__])
+  end
+
+  def volume_list(api_spec) do
+    response = conn(:get, "/volumes/list") |> Router.call(@opts)
+    assert response.status == 200
+    json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+    assert_schema(json_body, "VolumeList", api_spec)
+    json_body
   end
 
   def compare_environment_output(output, expected_envvars) do

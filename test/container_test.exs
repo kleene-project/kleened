@@ -64,7 +64,7 @@ defmodule ContainerTest do
       container_succesfully_create(api_spec, %{name: "testprune2", cmd: ["/bin/sleep", "10"]})
 
     {:ok, exec_id} = Exec.create(%Schemas.ExecConfig{container_id: container_id2})
-    TestHelper.valid_execution(%{exec_id: exec_id, start_container: true, attach: false})
+    TestHelper.exec_valid_start(%{exec_id: exec_id, start_container: true, attach: false})
 
     assert [^container_id1, ^container_id3] = TestHelper.container_prune(api_spec)
 
@@ -82,6 +82,168 @@ defmodule ContainerTest do
     result = Jason.decode!(response.resp_body, [{:keys, :atoms}])
     assert %{container: %{name: "testcontainer"}} = result
     assert_schema(result, "ContainerInspect", api_spec)
+  end
+
+  test "start and stop a container (using devfs)", %{api_spec: api_spec} do
+    config = %{name: "testcont", cmd: ["/bin/sleep", "10"]}
+
+    {%Schemas.Container{id: container_id} = cont, exec_id} =
+      TestHelper.container_start_attached(api_spec, config)
+
+    assert TestHelper.devfs_mounted(cont)
+
+    assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
+
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 1}}}
+    refute TestHelper.devfs_mounted(cont)
+  end
+
+  test "start container without attaching to it", %{api_spec: api_spec} do
+    %Schemas.Container{id: container_id} =
+      container =
+      container_succesfully_create(api_spec, %{
+        name: "ws_test_container",
+        image: "FreeBSD:testing",
+        cmd: ["/bin/sh", "-c", "uname"]
+      })
+
+    {:ok, exec_id} = Exec.create(container.id)
+    config = %{exec_id: exec_id, attach: false, start_container: true}
+
+    assert "succesfully started execution instance in detached mode" ==
+             TestHelper.exec_valid_start(config)
+
+    :timer.sleep(100)
+    assert %{id: container_id} == TestHelper.container_remove(api_spec, container_id)
+  end
+
+  test "start a container (using devfs), attach to it and receive output", %{api_spec: api_spec} do
+    cmd_expected = ["/bin/echo", "test test"]
+
+    %Schemas.Container{id: container_id, command: command} =
+      container = container_succesfully_create(api_spec, %{name: "testcont", cmd: cmd_expected})
+
+    assert cmd_expected == command
+
+    {:ok, exec_id} = Exec.create(container_id)
+    :ok = Exec.start(exec_id, %{attach: true, start_container: true})
+
+    assert_receive {:container, ^exec_id, {:jail_output, "test test\n"}}
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}, 5_000
+    refute TestHelper.devfs_mounted(container)
+  end
+
+  test "start a container and force-stop it", %{api_spec: api_spec} do
+    %Schemas.Container{id: container_id} =
+      container_succesfully_create(api_spec, %{name: "testcont", cmd: ["/bin/sleep", "10"]})
+
+    {:ok, exec_id} = Exec.create(container_id)
+    :ok = Exec.start(exec_id, %{attach: false, start_container: true})
+
+    :timer.sleep(500)
+    assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
+
+    refute Utils.is_container_running?(container_id)
+  end
+
+  test "start and stop a container with '/etc/rc' (using devfs)", %{
+    api_spec: api_spec
+  } do
+    config = %{
+      name: "testcont",
+      cmd: ["/bin/sleep", "10"],
+      jail_param: ["mount.devfs", "exec.stop=\"/bin/sh /etc/rc.shutdown\""],
+      user: "root"
+    }
+
+    {%Schemas.Container{id: container_id} = cont, exec_id} =
+      TestHelper.container_start_attached(api_spec, config)
+
+    assert TestHelper.devfs_mounted(cont)
+    assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
+    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 1}}}
+    assert not TestHelper.devfs_mounted(cont)
+  end
+
+  test "making nullfd-mounts into a container", %{
+    api_spec: api_spec
+  } do
+    File.rm("/host/testing_mounts.txt")
+    mount_path = "/kleene_nullfs_testing"
+
+    # RW mount
+    config = %{
+      name: "testcont",
+      cmd: ["/usr/bin/touch", "#{mount_path}/testing_mounts.txt"],
+      mounts: [%{type: "nullfs", source: "/host", destination: mount_path}],
+      user: "root"
+    }
+
+    {container_id, process_output} = TestHelper.container_valid_run(api_spec, config)
+    assert process_output == []
+    file_path = "/zroot/kleene/container/#{container_id}/#{mount_path}/testing_mounts.txt"
+    assert File.read(file_path) == {:ok, ""}
+    file_path = "/host/testing_mounts.txt"
+    assert File.read(file_path) == {:ok, ""}
+
+    # Read-only mount
+    config = %{
+      name: "testcont",
+      cmd: ["/usr/bin/touch", "#{mount_path}/testing_mounts.txt"],
+      mounts: [%{type: "nullfs", source: "/host", destination: mount_path, read_only: true}],
+      user: "root"
+    }
+
+    {_, _, output} = TestHelper.container_run(api_spec, config)
+
+    expected_output = """
+    touch: /kleene_nullfs_testing/testing_mounts.txt: Read-only file system
+    jail: /usr/bin/env /usr/bin/touch /kleene_nullfs_testing/testing_mounts.txt: failed
+    """
+
+    assert Enum.join(output) == expected_output
+  end
+
+  test "mounting volumes into a container", %{
+    api_spec: api_spec
+  } do
+    volume = TestHelper.volume_create(api_spec, "volume-mounting-test")
+
+    mount_path = "/kleene_volume_testing"
+
+    # RW mount
+    config = %{
+      name: "testcont",
+      cmd: ["/usr/bin/touch", "#{mount_path}/testing_mounts.txt"],
+      mounts: [%{type: "volume", source: volume.name, destination: mount_path}],
+      user: "root"
+    }
+
+    {container_id, process_output} = TestHelper.container_valid_run(api_spec, config)
+    assert process_output == []
+    file_path = "/zroot/kleene/container/#{container_id}/#{mount_path}/testing_mounts.txt"
+    assert File.read(file_path) == {:ok, ""}
+    file_path = "/zroot/kleene/volumes/#{volume.name}/testing_mounts.txt"
+    assert File.read(file_path) == {:ok, ""}
+
+    # Read-only mount
+    config = %{
+      name: "testcont",
+      cmd: ["/usr/bin/touch", "#{mount_path}/testing_mounts.txt"],
+      mounts: [%{type: "volume", source: volume.name, destination: mount_path, read_only: true}],
+      user: "root"
+    }
+
+    {_, _, output} = TestHelper.container_run(api_spec, config)
+
+    expected_output = """
+    touch: /kleene_volume_testing/testing_mounts.txt: Read-only file system
+    jail: /usr/bin/env /usr/bin/touch /kleene_volume_testing/testing_mounts.txt: failed
+    """
+
+    assert Enum.join(output) == expected_output
+
+    TestHelper.volume_destroy(api_spec, volume.name)
   end
 
   test "updating a container", %{
@@ -164,7 +326,7 @@ defmodule ContainerTest do
     # Test changing a jail-param that can be modfied while running
     {:ok, exec_id} = Exec.create(%Schemas.ExecConfig{container_id: container_id})
 
-    TestHelper.valid_execution(%{exec_id: exec_id, start_container: true, attach: true})
+    TestHelper.exec_valid_start(%{exec_id: exec_id, start_container: true, attach: true})
 
     %{id: ^container_id} =
       TestHelper.container_update(api_spec, container_id, %{
@@ -182,7 +344,7 @@ defmodule ContainerTest do
       })
 
     {_closing_msg, output} =
-      TestHelper.valid_execution(%{
+      TestHelper.exec_valid_start(%{
         exec_id: exec_id,
         attach: true,
         start_container: false
@@ -200,87 +362,6 @@ defmodule ContainerTest do
              })
 
     Container.stop(container_id)
-  end
-
-  test "start and stop a container (using devfs)", %{api_spec: api_spec} do
-    config = %{name: "testcont", cmd: ["/bin/sleep", "10"]}
-
-    {%Schemas.Container{id: container_id} = cont, exec_id} =
-      TestHelper.container_start_attached(api_spec, config)
-
-    assert TestHelper.devfs_mounted(cont)
-
-    assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
-
-    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 1}}}
-    refute TestHelper.devfs_mounted(cont)
-  end
-
-  test "start container without attaching to it", %{api_spec: api_spec} do
-    %Schemas.Container{id: container_id} =
-      container =
-      container_succesfully_create(api_spec, %{
-        name: "ws_test_container",
-        image: "FreeBSD:testing",
-        cmd: ["/bin/sh", "-c", "uname"]
-      })
-
-    {:ok, exec_id} = Exec.create(container.id)
-    config = %{exec_id: exec_id, attach: false, start_container: true}
-
-    assert "succesfully started execution instance in detached mode" ==
-             TestHelper.valid_execution(config)
-
-    :timer.sleep(100)
-    assert %{id: container_id} == TestHelper.container_remove(api_spec, container_id)
-  end
-
-  test "start a container (using devfs), attach to it and receive output", %{api_spec: api_spec} do
-    cmd_expected = ["/bin/echo", "test test"]
-
-    %Schemas.Container{id: container_id, command: command} =
-      container = container_succesfully_create(api_spec, %{name: "testcont", cmd: cmd_expected})
-
-    assert cmd_expected == command
-
-    {:ok, exec_id} = Exec.create(container_id)
-    :ok = Exec.start(exec_id, %{attach: true, start_container: true})
-
-    assert_receive {:container, ^exec_id, {:jail_output, "test test\n"}}
-    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}, 5_000
-    refute TestHelper.devfs_mounted(container)
-  end
-
-  test "start a container and force-stop it", %{api_spec: api_spec} do
-    %Schemas.Container{id: container_id} =
-      container_succesfully_create(api_spec, %{name: "testcont", cmd: ["/bin/sleep", "10"]})
-
-    {:ok, exec_id} = Exec.create(container_id)
-    :ok = Exec.start(exec_id, %{attach: false, start_container: true})
-
-    :timer.sleep(500)
-    assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
-
-    refute Utils.is_container_running?(container_id)
-  end
-
-  test "start and stop a container with '/etc/rc' (using devfs)", %{
-    api_spec: api_spec
-  } do
-    config = %{
-      name: "testcont",
-      cmd: ["/bin/sleep", "10"],
-      jail_param: ["mount.devfs", "exec.stop=\"/bin/sh /etc/rc.shutdown\""],
-      user: "root"
-    }
-
-    {%Schemas.Container{id: container_id} = cont, exec_id} =
-      TestHelper.container_start_attached(api_spec, config)
-
-    assert TestHelper.devfs_mounted(cont)
-    assert %{id: ^container_id} = TestHelper.container_stop(api_spec, container_id)
-    assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 1}}}
-    assert not TestHelper.devfs_mounted(cont)
   end
 
   test "create container from non-existing image", %{api_spec: api_spec} do
@@ -492,7 +573,7 @@ defmodule ContainerTest do
     stop_msg = "executable #{exec_id} and its container exited with exit-code 0"
 
     assert {stop_msg, ["FreeBSD\n"]} ==
-             TestHelper.valid_execution(%{exec_id: exec_id, attach: true, start_container: true})
+             TestHelper.exec_valid_start(%{exec_id: exec_id, attach: true, start_container: true})
 
     start_n_attached_containers_and_receive_output(container_id, number_of_starts - 1)
   end

@@ -60,10 +60,11 @@ defmodule Kleened.API.Schemas do
           default: [],
           example: ["DEBUG=0", "LANG=da_DK.UTF-8"]
         },
-        volumes: %Schema{
-          description: "List of volumes that should be mounted into the container",
+        mounts: %Schema{
+          description:
+            "List of files/directories/volumes on the host filesystem that should be mounted into the container.",
           type: :array,
-          items: %Schema{type: :string},
+          items: Kleened.API.Schemas.MountPointConfig,
           nullable: true,
           default: []
         },
@@ -525,20 +526,59 @@ defmodule Kleened.API.Schemas do
     })
   end
 
+  defmodule MountPointConfig do
+    OpenApiSpex.schema(%{
+      description: """
+      Create a mount point between sthe host file system and a container.
+
+      There are two `type`'s of mount points:
+
+      - `nullfs`: Mount a user-specified file or directory from the host machine into the container.
+      - `volume`: Mount a Kleene volume into the container.
+      """,
+      type: :object,
+      properties: %{
+        type: %Schema{
+          type: :string,
+          description: "Kind of mount to create: `nullfs` or `volume`.",
+          enum: ["volume", "nullfs"]
+        },
+        destination: %Schema{
+          type: :string,
+          description: "Destination path of the mount within the container."
+        },
+        source: %Schema{
+          type: :string,
+          description: """
+          Source used for the mount. Depends on `method`:
+
+          - If `method="volume"` then `source` should be a volume name
+          - If `method="nullfs"`  then `source` should be a (absolute) path on the host
+          """
+        },
+        read_only: %Schema{
+          type: :boolean,
+          description: "Whether the mountpoint should be read-only.",
+          default: false
+        }
+      }
+    })
+  end
+
   defmodule MountPoint do
     OpenApiSpex.schema(%{
       description: """
       Mount point between some part of the host file system and a container.
       There are two types of mountpoints:
 
-      - `nullfs`: Mounting a user-specified file or directory from the host machine into the container.
-      - `volume`: Mounting a volume that is managed by Kleened into the container.
+      - `nullfs`: Mount from a user-specified file or directory from the host machine into the container.
+      - `volume`: Mount from a Kleene volume into the container.
       """,
       type: :object,
       properties: %{
         type: %Schema{
           type: :string,
-          description: "Kind of mount to use: `nullfs`or `volume`.",
+          description: "Kind of mount: `nullfs` or `volume`.",
           enum: ["volume", "nullfs"]
         },
         container_id: %Schema{
@@ -554,8 +594,8 @@ defmodule Kleened.API.Schemas do
           description: """
           Source used for the mount. Depends on `method`:
 
-          - If `method` is `volume` then `source` should be a volume name
-          - If `method` is `nullfs` then `source` should be a (absolute) path on the host
+          - If `method="volume"` then `source` should be a volume name
+          - If `method="nullfs"`  then `source` should be a (absolute) path on the host
           """
         },
         read_only: %Schema{type: :boolean, description: "Whether this mountpoint is read-only."}

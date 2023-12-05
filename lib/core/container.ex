@@ -8,7 +8,7 @@ defmodule Kleened.Core.Container do
   alias __MODULE__, as: Container
 
   require Logger
-  alias Kleened.Core.{MetaData, Volume, Mount, Layer, Network, Utils, OS}
+  alias Kleened.Core.{MetaData, Mount, Layer, Network, Utils, OS}
   alias Kleened.API.Schemas
 
   @type t() ::
@@ -162,7 +162,7 @@ defmodule Kleened.Core.Container do
            name: name,
            user: user,
            env: env,
-           volumes: _volumes,
+           mounts: _mounts,
            cmd: cmd,
            jail_param: jail_param
          }
@@ -238,7 +238,7 @@ defmodule Kleened.Core.Container do
            name: name,
            user: user,
            env: env,
-           volumes: volumes,
+           mounts: mounts,
            cmd: command,
            jail_param: jail_param
          } = config
@@ -259,7 +259,7 @@ defmodule Kleened.Core.Container do
         _ -> user
       end
 
-    cont = %Schemas.Container{
+    container = %Schemas.Container{
       id: container_id,
       name: name,
       command: command,
@@ -272,13 +272,14 @@ defmodule Kleened.Core.Container do
       running: false
     }
 
-    # Mount volumes into container (if any have been provided)
-    mount_volumes(volumes, cont)
+    case create_mounts(container, mounts) do
+      :ok ->
+        MetaData.add_container(container)
+        {:ok, container}
 
-    # Store new container
-    MetaData.add_container(cont)
-
-    {:ok, MetaData.get_container(container_id)}
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   defp remove_(:not_found), do: {:error, :not_found}
@@ -348,42 +349,15 @@ defmodule Kleened.Core.Container do
     end
   end
 
-  defp mount_volumes(volumes, container) do
-    Enum.map(volumes, fn vol -> mount_volumes_(vol, container) end)
-  end
-
-  defp mount_volumes_(volume_raw, cont) do
-    case String.split(volume_raw, ":") do
-      [<<"/", _::binary>> = location] ->
-        # anonymous volume
-        create_and_bind("", location, [ro: false], cont)
-
-      [<<"/", _::binary>> = location, "ro"] ->
-        # anonymous volume - readonly
-        create_and_bind("", location, [ro: true], cont)
-
-      [name, location, "ro"] ->
-        # named volume - readonly
-        create_and_bind(name, location, [ro: true], cont)
-
-      [name, location] ->
-        # named volume
-        create_and_bind(name, location, [ro: false], cont)
-
-      _ ->
-        {:error, "could not decode volume specfication string"}
+  defp create_mounts(container, [mount_config | rest]) do
+    case Mount.create(container, mount_config) do
+      {:ok, _} -> create_mounts(container, rest)
+      {:error, reason} -> {:error, reason}
     end
   end
 
-  defp create_and_bind("", destination, opts, cont) do
-    name = Kleened.Core.Utils.uuid()
-    volume = Volume.create(name)
-    Mount.mount_volume(cont, volume, destination, opts)
-  end
-
-  defp create_and_bind(name, destination, opts, cont) do
-    volume = MetaData.get_volume(name)
-    Mount.mount_volume(cont, volume, destination, opts)
+  defp create_mounts(_container, []) do
+    :ok
   end
 
   def running_jails() do

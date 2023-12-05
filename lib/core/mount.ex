@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Mount do
-  alias Kleened.Core.{OS, Config, Utils, Layer, MetaData}
+  alias Kleened.Core.{OS, Config, Layer, MetaData}
   alias Kleened.API.Schemas
   require Config
   require Logger
@@ -8,57 +8,54 @@ defmodule Kleened.Core.Mount do
           rw: boolean()
         ]
 
-  @spec mount_volume(
+  @spec create(
           %Schemas.Container{},
-          %Schemas.Volume{},
-          String.t(),
-          bind_opts()
-        ) :: :ok
-  def mount_volume(
-        %Schemas.Container{id: container_id, layer_id: layer_id},
-        %Schemas.Volume{name: volume_name, mountpoint: volume_mountpoint},
-        destination,
-        opts \\ []
+          %Schemas.MountPointConfig{}
+        ) :: {:ok, %Schemas.MountPoint{}}
+  def create(
+        container,
+        %Schemas.MountPointConfig{
+          type: "volume",
+          source: volume_name,
+          destination: destination,
+          read_only: read_only
+        }
       ) do
-    read_only = Keyword.get(opts, :ro, false)
-    create_nullfs_mount_(layer_id, volume_mountpoint, destination, read_only)
+    %Schemas.Volume{mountpoint: source} = MetaData.get_volume(volume_name)
 
-    mnt = %Schemas.MountPoint{
-      type: "volume",
-      container_id: container_id,
-      source: volume_name,
-      destination: destination,
-      read_only: read_only
-    }
+    case create_nullfs_mount(container, source, destination, read_only) do
+      {:ok, mountpoint} ->
+        mountpoint = %Schemas.MountPoint{mountpoint | type: "volume", source: volume_name}
+        MetaData.add_mount(mountpoint)
+        {:ok, mountpoint}
 
-    MetaData.add_mount(mnt)
-    :ok
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
-  @spec mount_nullfs(
+  @spec create(
           %Schemas.Container{},
-          String.t(),
-          bind_opts()
-        ) :: {:error, String.t()} | {:ok, %Schemas.MountPoint{}}
-  def mount_nullfs(
-        %Schemas.Container{id: container_id, layer_id: layer_id},
-        source,
-        destination,
-        opts \\ []
+          %Schemas.MountPointConfig{}
+        ) :: {:ok, %Schemas.MountPoint{}}
+  def create(
+        container,
+        %Schemas.MountPointConfig{
+          type: "nullfs",
+          source: source,
+          destination: destination,
+          read_only: read_only
+        }
       ) do
-    read_only = Keyword.get(opts, :ro, false)
-    create_nullfs_mount_(layer_id, source, destination, read_only)
+    case create_nullfs_mount(container, source, destination, read_only) do
+      {:ok, mountpoint} ->
+        mountpoint = %Schemas.MountPoint{mountpoint | type: "nullfs", source: source}
+        MetaData.add_mount(mountpoint)
+        {:ok, mountpoint}
 
-    mountpoint = %Schemas.MountPoint{
-      type: "nullfs",
-      container_id: container_id,
-      source: source,
-      destination: destination,
-      read_only: read_only
-    }
-
-    MetaData.add_mount(mountpoint)
-    {:ok, mountpoint}
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @spec unmount(%Schemas.MountPoint{}) :: {:error, String.t()} | :ok
@@ -89,17 +86,39 @@ defmodule Kleened.Core.Mount do
     :ok
   end
 
-  defp create_nullfs_mount_(layer_id, source, destination, read_only) do
+  defp create_nullfs_mount(
+         %Schemas.Container{id: container_id, layer_id: layer_id},
+         source,
+         destination,
+         read_only
+       ) do
     %Layer{mountpoint: mountpoint} = MetaData.get_layer(layer_id)
-    destination = Path.join(mountpoint, destination)
-    {"", 0} = OS.cmd(["/bin/mkdir", "-p", destination])
+    absolute_destination = Path.join(mountpoint, destination)
 
-    case read_only do
-      false ->
-        {"", 0} = OS.cmd(["/sbin/mount_nullfs", source, destination])
+    case OS.cmd(["/bin/mkdir", "-p", absolute_destination]) do
+      {"", 0} ->
+        mount_cmd =
+          case read_only do
+            false -> ["/sbin/mount_nullfs", source, absolute_destination]
+            true -> ["/sbin/mount_nullfs", "-o", "ro", source, absolute_destination]
+          end
 
-      true ->
-        {"", 0} = OS.cmd(["/sbin/mount_nullfs", "-o", "ro", source, destination])
+        case OS.cmd(mount_cmd) do
+          {"", 0} ->
+            mountpoint = %Schemas.MountPoint{
+              container_id: container_id,
+              destination: destination,
+              read_only: read_only
+            }
+
+            {:ok, mountpoint}
+
+          {output, _nonzero_exitcode} ->
+            {:error, output}
+        end
+
+      {output, _nonzero_exitcode} ->
+        {:error, output}
     end
   end
 end
