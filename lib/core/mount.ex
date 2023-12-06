@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Mount do
-  alias Kleened.Core.{OS, Config, Layer, MetaData}
+  alias Kleened.Core.{OS, Config, Volume, Layer, MetaData}
   alias Kleened.API.Schemas
   require Config
   require Logger
@@ -21,7 +21,15 @@ defmodule Kleened.Core.Mount do
           read_only: read_only
         }
       ) do
-    %Schemas.Volume{mountpoint: source} = MetaData.get_volume(volume_name)
+    source =
+      case MetaData.get_volume(volume_name) do
+        %Schemas.Volume{} = volume ->
+          volume.mountpoint
+
+        :not_found ->
+          volume = Volume.create(volume_name)
+          volume.mountpoint
+      end
 
     case create_nullfs_mount(container, source, destination, read_only) do
       {:ok, mountpoint} ->

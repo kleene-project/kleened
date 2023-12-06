@@ -165,7 +165,7 @@ defmodule ContainerTest do
     assert not TestHelper.devfs_mounted(cont)
   end
 
-  test "making nullfd-mounts into a container", %{
+  test "making nullfs-mounts into a container", %{
     api_spec: api_spec
   } do
     File.rm("/host/testing_mounts.txt")
@@ -244,6 +244,25 @@ defmodule ContainerTest do
     assert Enum.join(output) == expected_output
 
     TestHelper.volume_destroy(api_spec, volume.name)
+  end
+
+  test "mounting a non-existing volume into a container", %{api_spec: api_spec} do
+    mount_path = "/kleene_volume_testing"
+    volume_name = "will-be-created"
+
+    config = %{
+      name: "testcont",
+      cmd: ["/usr/bin/touch", "#{mount_path}/testing_mounts.txt"],
+      mounts: [%{type: "volume", source: volume_name, destination: mount_path}],
+      user: "root"
+    }
+
+    {container_id, process_output} = TestHelper.container_valid_run(api_spec, config)
+    assert process_output == []
+    file_path = "/zroot/kleene/container/#{container_id}/#{mount_path}/testing_mounts.txt"
+    assert File.read(file_path) == {:ok, ""}
+    file_path = "/zroot/kleene/volumes/#{volume_name}/testing_mounts.txt"
+    assert File.read(file_path) == {:ok, ""}
   end
 
   test "updating a container", %{
