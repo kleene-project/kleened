@@ -329,6 +329,7 @@ defmodule Kleened.Core.Image do
        ) do
     Logger.info("Processing instruction: CMD #{inspect(cmd)}")
     state = send_status(line, state)
+    cmd = adapt_run_command_to_workdir(cmd, state.workdir)
     new_container = %Schemas.Container{container | command: cmd}
     process_instructions(update_state(%State{state | container: new_container}))
   end
@@ -581,13 +582,13 @@ defmodule Kleened.Core.Image do
 
   defp adapt_run_command_to_workdir(cmd, workdir) do
     case {cmd, workdir} do
-      {{_cmd_type, cmd}, "/"} ->
+      {cmd, "/"} ->
         cmd
 
-      {{:shell_form, ["/bin/sh", "-c", cmd]}, workdir} ->
+      {["/bin/sh", "-c", cmd], workdir} ->
         ["/bin/sh", "-c", "cd #{workdir} && #{cmd}"]
 
-      {{:exec_form, cmd}, _} ->
+      {cmd, _} ->
         cmd
     end
   end

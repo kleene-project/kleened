@@ -68,10 +68,10 @@ defmodule Kleened.Core.Dockerfile do
           {:workdir, workdir}
 
         {"RUN", <<"[", _::binary>> = json_cmd} ->
-          {:run, {:exec_form, json_decode(json_cmd)}}
+          {:run, json_decode(json_cmd)}
 
         {"RUN", shellform} ->
-          {:run, {:shell_form, ["/bin/sh", "-c", shellform]}}
+          {:run, ["/bin/sh", "-c", shellform]}
 
         {"CMD", <<"[", _::binary>> = json_cmd} ->
           {:cmd, json_decode(json_cmd)}

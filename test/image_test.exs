@@ -293,7 +293,7 @@ defmodule ImageTest do
     RUN pwd
     """
 
-    context = create_test_context("test_copy_instruction")
+    context = create_test_context("test_work_instruction")
 
     config = %{
       context: context,
@@ -309,6 +309,55 @@ defmodule ImageTest do
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
     {_image, build_log} = TestHelper.image_valid_build(config)
     assert expected_log == build_log
+  end
+
+  test "verify 'WORKDIR' works with 'COPY'", %{api_spec: api_spec} do
+    dockerfile = """
+    FROM FreeBSD:testing
+    WORKDIR /etc
+    COPY ["test.txt", "."]
+    CMD cat /etc/test.txt
+    """
+
+    context = create_test_context("test_workdir_instruction")
+
+    config = %{
+      context: context,
+      dockerfile: @tmp_dockerfile,
+      tag: "test:latest"
+    }
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+    {_image, _build_log} = TestHelper.image_valid_build(config)
+
+    {_container_id, output} =
+      TestHelper.container_valid_run(api_spec, %{name: "workdir_copy", image: "test:latest"})
+
+    assert ["lol\n"] == output
+  end
+
+  test "verify 'WORKDIR' works with 'CMD'", %{api_spec: api_spec} do
+    dockerfile = """
+    FROM FreeBSD:testing
+    WORKDIR /etc
+    CMD echo $(pwd)
+    """
+
+    context = create_test_context("test_work_instruction")
+
+    config = %{
+      context: context,
+      dockerfile: @tmp_dockerfile,
+      tag: "test:latest"
+    }
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+    {_image, _build_log} = TestHelper.image_valid_build(config)
+
+    {_container_id, output} =
+      TestHelper.container_valid_run(api_spec, %{name: "workdir_cmd", image: "test:latest"})
+
+    assert ["/etc\n"] == output
   end
 
   test "create an image with a 'COPY' instruction" do
@@ -899,37 +948,39 @@ defmodule ImageTest do
 
     snapshot = fetch_snapshot(image, "COPY test.txt /etc/")
 
-    {_, _, process_output} =
+    {_, _, output} =
       TestHelper.container_run(api_spec, %{
         name: "image_testing1",
         image: "#{image.id}:#{snapshot}",
         cmd: ["/bin/cat", "/etc/test.txt"]
       })
 
-    assert process_output == ["lol\n"]
+    assert output == ["lol\n"]
 
-    {_, _, process_output} =
+    {_, _, output} =
       TestHelper.container_run(api_spec, %{
         name: "image_testing2",
         image: "#{image.id}:#{snapshot}",
         cmd: ["/bin/cat", "/etc/test2.txt"]
       })
 
-    assert process_output == [
-             "cat: /etc/test2.txt: No such file or directory\n",
-             "jail: /usr/bin/env /bin/cat /etc/test2.txt: failed\n"
-           ]
+    expected_output = """
+    cat: /etc/test2.txt: No such file or directory
+    jail: /usr/bin/env /bin/cat /etc/test2.txt: failed
+    """
+
+    assert Enum.join(output) == expected_output
 
     snapshot = fetch_snapshot(image, "RUN echo -n \"some text\" > /etc/test2.txt")
 
-    {_, _, process_output} =
+    {_, _, output} =
       TestHelper.container_run(api_spec, %{
         name: "image_testing3",
         image: "test:latest:#{snapshot}",
         cmd: ["/bin/cat", "/etc/test2.txt"]
       })
 
-    assert process_output == ["some text"]
+    assert output == ["some text"]
   end
 
   test "creating a container using a snapshot from a failed image-build", %{api_spec: api_spec} do
