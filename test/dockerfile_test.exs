@@ -16,7 +16,7 @@ defmodule DockerfileTest do
 
     assert output == [
              {"FROM lol", {:from, "lol"}},
-             {"RUN cat lol.txt", {:run, {:shell_form, ["/bin/sh", "-c", "cat lol.txt"]}}}
+             {"RUN cat lol.txt", {:run, ["/bin/sh", "-c", "cat lol.txt"]}}
            ]
 
     output = parse("# Testing\nFROM lol\nRUN [\"/bin/sh\", \"-c\", \"cat lol.txt\"]")
@@ -25,7 +25,7 @@ defmodule DockerfileTest do
              [
                {"FROM lol", {:from, "lol"}},
                {"RUN [\"/bin/sh\", \"-c\", \"cat lol.txt\"]",
-                {:run, {:exec_form, ["/bin/sh", "-c", "cat lol.txt"]}}}
+                {:run, ["/bin/sh", "-c", "cat lol.txt"]}}
              ]
   end
 

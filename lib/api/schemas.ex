@@ -101,7 +101,7 @@ defmodule Kleened.API.Schemas do
           description: "The id of the image that this container was created from",
           type: :string
         },
-        command: %Schema{
+        cmd: %Schema{
           description: "Command being used when starting the container",
           type: :array,
           items: %Schema{type: :string},
@@ -400,7 +400,7 @@ defmodule Kleened.API.Schemas do
         id: %Schema{description: "The id of the image", type: :string},
         name: %Schema{description: "Name of the image", type: :string},
         tag: %Schema{description: "Tag of the image", type: :string},
-        command: %Schema{
+        cmd: %Schema{
           description: "Default command used when creating a container from this image",
           type: :array,
           items: %Schema{type: :string},
@@ -645,7 +645,7 @@ defmodule Kleened.API.Schemas do
           description: "Tag of the image that this container was created from",
           type: :string
         },
-        command: %Schema{
+        cmd: %Schema{
           description: "Command being used when starting the container",
           type: :string
         },

@@ -10,7 +10,7 @@ defmodule VolumeTest do
   setup do
     on_exit(fn ->
       Kleened.Core.MetaData.list_volumes()
-      |> Enum.map(&Volume.destroy(&1.name))
+      |> Enum.map(&Volume.remove(&1.name))
     end)
 
     :ok
@@ -24,7 +24,7 @@ defmodule VolumeTest do
 
     assert {:ok, %File.Stat{:type => :directory}} = File.stat(mountpoint)
     assert {"#{dataset}\n", 0} == System.cmd("/sbin/zfs", ["list", "-H", "-o", "name", dataset])
-    TestHelper.volume_destroy(api_spec, volume.name)
+    TestHelper.volume_remove(api_spec, volume.name)
     assert {:error, :enoent} = File.stat(mountpoint)
     assert {"", 1} == System.cmd("/sbin/zfs", ["list", "-H", "-o", "name", dataset])
   end
@@ -41,7 +41,7 @@ defmodule VolumeTest do
     volume = TestHelper.volume_create(api_spec, "test-one-zero")
     response = TestHelper.volume_list(api_spec)
     assert [volume] == response
-    TestHelper.volume_destroy(api_spec, volume.name)
+    TestHelper.volume_remove(api_spec, volume.name)
     response = TestHelper.volume_list(api_spec)
     assert [] == response
   end
@@ -65,9 +65,9 @@ defmodule VolumeTest do
     volume1 = TestHelper.volume_create(api_spec, "test-two-one1")
     volume2 = TestHelper.volume_create(api_spec, "test-two-one2")
     assert [volume2, volume1] == TestHelper.volume_list(api_spec)
-    TestHelper.volume_destroy(api_spec, volume2.name)
+    TestHelper.volume_remove(api_spec, volume2.name)
     assert [volume1] == TestHelper.volume_list(api_spec)
-    TestHelper.volume_destroy(api_spec, volume1.name)
+    TestHelper.volume_remove(api_spec, volume1.name)
   end
 
   test "prune volumes", %{api_spec: api_spec} do

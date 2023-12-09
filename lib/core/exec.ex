@@ -258,7 +258,7 @@ defmodule Kleened.Core.Exec do
 
   defp merge_configurations(
          %Schemas.Container{
-           command: default_cmd,
+           cmd: default_cmd,
            user: default_user,
            env: default_env
          } = cont,
@@ -282,7 +282,7 @@ defmodule Kleened.Core.Exec do
         _ -> exec_user
       end
 
-    %Schemas.Container{cont | user: user, command: cmd, env: env}
+    %Schemas.Container{cont | user: user, cmd: cmd, env: env}
   end
 
   defp jail_cleanup(%Schemas.Container{id: container_id, layer_id: layer_id}) do
@@ -308,7 +308,7 @@ defmodule Kleened.Core.Exec do
   defp jexec_container(
          %Schemas.Container{
            id: container_id,
-           command: cmd,
+           cmd: cmd,
            user: user,
            env: env
          },
@@ -325,7 +325,7 @@ defmodule Kleened.Core.Exec do
          %Schemas.Container{
            id: id,
            layer_id: layer_id,
-           command: command,
+           cmd: command,
            user: user,
            jail_param: jail_param,
            env: env

@@ -80,7 +80,7 @@ defmodule Kleened.API.Image do
     def remove(%Plug.Conn{path_params: %{"image_id" => image_id}} = conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
-      case Core.Image.destroy(image_id) do
+      case Core.Image.remove(image_id) do
         :ok ->
           Plug.Conn.send_resp(conn, 200, Utils.id_response(image_id))
 

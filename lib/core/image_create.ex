@@ -304,7 +304,7 @@ defmodule Kleened.Core.ImageCreate do
       user: "root",
       name: name,
       tag: tag,
-      command: ["/bin/sh", "/etc/rc"],
+      cmd: ["/bin/sh", "/etc/rc"],
       env: [],
       created: DateTime.to_iso8601(DateTime.utc_now())
     }

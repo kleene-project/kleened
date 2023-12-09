@@ -525,7 +525,7 @@ defmodule TestHelper do
     |> Router.call(@opts)
   end
 
-  def image_destroy(api_spec, image_id) do
+  def image_remove(api_spec, image_id) do
     response =
       conn(:delete, "/images/#{image_id}")
       |> Router.call(@opts)
@@ -561,7 +561,7 @@ defmodule TestHelper do
     })
   end
 
-  def network_destroy(api_spec, name) do
+  def network_remove(api_spec, name) do
     response =
       conn(:delete, "/networks/#{name}")
       |> Router.call(@opts)
@@ -625,7 +625,7 @@ defmodule TestHelper do
     })
   end
 
-  def volume_destroy(api_spec, name) do
+  def volume_remove(api_spec, name) do
     response =
       conn(:delete, "/volumes/#{name}")
       |> Router.call(@opts)

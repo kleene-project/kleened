@@ -122,7 +122,7 @@ defmodule Kleened.API.Volume do
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
       name = conn.params.volume_name
 
-      case Volume.destroy(name) do
+      case Volume.remove(name) do
         :ok ->
           send_resp(conn, 200, Utils.id_response(name))
 

@@ -138,7 +138,7 @@ defmodule Kleened.API.ImageBuild do
     Logger.info("Websocket connection closed while building #{image_id}: #{inspect(reason)}")
     Core.Container.stop(image_id)
     Core.Container.remove(image_id)
-    Image.destroy(image_id)
+    Image.remove(image_id)
     Core.Network.remove("buildnet_" <> image_id)
   end
 end

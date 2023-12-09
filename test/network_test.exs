@@ -32,7 +32,7 @@ defmodule NetworkTest do
     assert network.name == "testnet"
 
     assert Utils.interface_exists("kleene1")
-    assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
+    assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
     assert not Utils.interface_exists("kleene1")
     assert MetaData.get_network(network.id) == :not_found
   end
@@ -62,7 +62,7 @@ defmodule NetworkTest do
              %{name: "testnet"}
            ] = TestHelper.network_list(api_spec)
 
-    assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
+    assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
   end
 
   test "prune networks", %{api_spec: api_spec} do
@@ -87,8 +87,8 @@ defmodule NetworkTest do
 
   test "remove a non-existing network", %{api_spec: api_spec} do
     network = create_network(api_spec, %{ifname: "kleene1", driver: "loopback"})
-    assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
-    assert TestHelper.network_destroy(api_spec, network.name) == %{message: "network not found."}
+    assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
+    assert TestHelper.network_remove(api_spec, network.name) == %{message: "network not found."}
   end
 
   test "create a network with same name twice", %{api_spec: api_spec} do
@@ -101,7 +101,7 @@ defmodule NetworkTest do
                driver: "loopback"
              })
 
-    assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
+    assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
   end
 
   test "try to create a network with a invalid subnet", %{api_spec: api_spec} do
@@ -430,12 +430,12 @@ defmodule NetworkTest do
   end
 
   defp cleanup(api_spec, container_id, [network1, network2]) do
-    assert TestHelper.network_destroy(api_spec, network1.name) == %{id: network1.id}
+    assert TestHelper.network_remove(api_spec, network1.name) == %{id: network1.id}
     cleanup(api_spec, container_id, network2)
   end
 
   defp cleanup(api_spec, container_id, network) do
-    assert TestHelper.network_destroy(api_spec, network.name) == %{id: network.id}
+    assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
 
     case network.driver do
       "vnet" -> assert not interface_exists?(network.bridge_if)

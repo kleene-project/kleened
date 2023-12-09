@@ -105,8 +105,8 @@ defmodule Kleened.Core.Image do
     end
   end
 
-  @spec destroy(String.t()) :: :ok | :not_found
-  def destroy(id_or_nametag) do
+  @spec remove(String.t()) :: :ok | :not_found
+  def remove(id_or_nametag) do
     case MetaData.get_image(id_or_nametag) do
       :not_found ->
         :not_found
@@ -150,11 +150,11 @@ defmodule Kleened.Core.Image do
 
     case {all, name, tag, clones} do
       {true, _name, _tag, []} ->
-        destroy(image_id)
+        remove(image_id)
         trim_images(rest, dataset2clones, all, [image_id | deleted], remaining)
 
       {false, "", "", []} ->
-        destroy(image_id)
+        remove(image_id)
         trim_images(rest, dataset2clones, all, [image_id | deleted], remaining)
 
       _ ->
@@ -330,7 +330,7 @@ defmodule Kleened.Core.Image do
     Logger.info("Processing instruction: CMD #{inspect(cmd)}")
     state = send_status(line, state)
     cmd = adapt_run_command_to_workdir(cmd, state.workdir)
-    new_container = %Schemas.Container{container | command: cmd}
+    new_container = %Schemas.Container{container | cmd: cmd}
     process_instructions(update_state(%State{state | container: new_container}))
   end
 
@@ -431,7 +431,7 @@ defmodule Kleened.Core.Image do
            layer_id: layer_id,
            user: user,
            env: env,
-           command: cmd
+           cmd: cmd
          }
        }) do
     Network.disconnect(container_id, network)
@@ -446,7 +446,7 @@ defmodule Kleened.Core.Image do
       user: user,
       name: image_name,
       tag: image_tag,
-      command: cmd,
+      cmd: cmd,
       env: env,
       instructions:
         Enum.zip(Enum.reverse(instructions), Enum.reverse(snapshots))

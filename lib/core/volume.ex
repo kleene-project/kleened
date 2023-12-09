@@ -32,9 +32,9 @@ defmodule Kleened.Core.Volume do
     end
   end
 
-  @spec destroy(String.t()) :: :ok | {:error, String.t()}
-  def destroy(name) do
-    destroy_(name)
+  @spec remove(String.t()) :: :ok | {:error, String.t()}
+  def remove(name) do
+    remove_(name)
   end
 
   @spec prune() :: {:ok, [String.t()]}
@@ -43,7 +43,7 @@ defmodule Kleened.Core.Volume do
       MetaData.list_unused_volumes()
       |> Enum.map(fn keywords ->
         volume_name = Keyword.get(keywords, :name)
-        destroy_(volume_name)
+        remove_(volume_name)
         volume_name
       end)
 
@@ -62,7 +62,7 @@ defmodule Kleened.Core.Volume do
     end
   end
 
-  defp destroy_(name) do
+  defp remove_(name) do
     case Kleened.Core.MetaData.get_volume(name) do
       :not_found ->
         {:error, "No such volume"}

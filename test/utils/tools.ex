@@ -34,7 +34,7 @@ defmodule Kleened.Test.TestImage do
 
     MetaData.list_images()
     |> Enum.filter(fn %Schemas.Image{id: id} -> id != "base" end)
-    |> Enum.map(fn %Schemas.Image{id: id} -> Image.destroy(id) end)
+    |> Enum.map(fn %Schemas.Image{id: id} -> Image.remove(id) end)
   end
 end
 

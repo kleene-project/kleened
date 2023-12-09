@@ -15,13 +15,13 @@ defmodule ContainerTest do
       |> Enum.filter(fn %Schemas.Image{name: name, tag: tag} ->
         name != "FreeBSD" or tag != "testing"
       end)
-      |> Enum.map(fn %Schemas.Image{id: id} -> Kleened.Core.Image.destroy(id) end)
+      |> Enum.map(fn %Schemas.Image{id: id} -> Kleened.Core.Image.remove(id) end)
     end)
 
     :ok
   end
 
-  test "create, destroy and list containers", %{
+  test "create, remove and list containers", %{
     api_spec: api_spec
   } do
     assert [] == TestHelper.container_list(api_spec)
@@ -120,10 +120,10 @@ defmodule ContainerTest do
   test "start a container (using devfs), attach to it and receive output", %{api_spec: api_spec} do
     cmd_expected = ["/bin/echo", "test test"]
 
-    %Schemas.Container{id: container_id, command: command} =
+    %Schemas.Container{id: container_id, cmd: cmd} =
       container = container_succesfully_create(api_spec, %{name: "testcont", cmd: cmd_expected})
 
-    assert cmd_expected == command
+    assert cmd_expected == cmd
 
     {:ok, exec_id} = Exec.create(container_id)
     :ok = Exec.start(exec_id, %{attach: true, start_container: true})
@@ -243,7 +243,7 @@ defmodule ContainerTest do
 
     assert Enum.join(output) == expected_output
 
-    TestHelper.volume_destroy(api_spec, volume.name)
+    TestHelper.volume_remove(api_spec, volume.name)
   end
 
   test "mounting a non-existing volume into a container", %{api_spec: api_spec} do
@@ -309,7 +309,7 @@ defmodule ContainerTest do
 
     %{container: container_upd} = TestHelper.container_inspect(container_id)
     assert container_upd.env == ["TESTVAR=testval2"]
-    assert container_upd.command == ["/bin/sleep", "20"]
+    assert container_upd.cmd == ["/bin/sleep", "20"]
 
     # Test changing jail-param
     %{id: ^container_id} =

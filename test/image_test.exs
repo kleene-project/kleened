@@ -17,7 +17,7 @@ defmodule ImageTest do
       |> Enum.filter(fn %Schemas.Image{name: name, tag: tag} ->
         name != "FreeBSD" or tag != "testing"
       end)
-      |> Enum.map(fn %Schemas.Image{id: id} -> Kleened.Core.Image.destroy(id) end)
+      |> Enum.map(fn %Schemas.Image{id: id} -> Kleened.Core.Image.remove(id) end)
     end)
 
     :ok
@@ -51,10 +51,10 @@ defmodule ImageTest do
            ]
 
     [%{id: ^image_id}, @test_img] = TestHelper.image_list(api_spec)
-    assert %{id: "websock_img"} == TestHelper.image_destroy(api_spec, "websock_img")
+    assert %{id: "websock_img"} == TestHelper.image_remove(api_spec, "websock_img")
 
     assert %{message: "Error: No such image: websock_img\n"} ==
-             TestHelper.image_destroy(api_spec, "websock_img")
+             TestHelper.image_remove(api_spec, "websock_img")
 
     assert [@test_img] = TestHelper.image_list(api_spec)
   end
@@ -194,7 +194,7 @@ defmodule ImageTest do
 
     Kleened.Core.Image.prune(false)
     assert [image1, base_image] == MetaData.list_images()
-    Kleened.Core.Image.destroy(image1.id)
+    Kleened.Core.Image.remove(image1.id)
 
     # Image with children and a tag
     image1 = build_dummy_image("FreeBSD:testing", "test:with-children")
@@ -203,8 +203,8 @@ defmodule ImageTest do
 
     TestHelper.image_prune(api_spec, false)
     assert [image2, image1, base_image] == MetaData.list_images()
-    Kleened.Core.Image.destroy(image2.id)
-    Kleened.Core.Image.destroy(image1.id)
+    Kleened.Core.Image.remove(image2.id)
+    Kleened.Core.Image.remove(image1.id)
 
     # Image with children and no tag
     image1 = build_dummy_image("FreeBSD:testing", "")

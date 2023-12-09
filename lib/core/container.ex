@@ -15,7 +15,7 @@ defmodule Kleened.Core.Container do
           %Schemas.Container{
             id: String.t(),
             name: String.t(),
-            command: [String.t()],
+            cmd: [String.t()],
             layer_id: String.t(),
             image_id: String.t(),
             user: String.t(),
@@ -173,7 +173,7 @@ defmodule Kleened.Core.Container do
                name: name,
                user: user,
                env: env,
-               command: cmd,
+               cmd: cmd,
                jail_param: jail_param
              ) do
           {:ok, container} -> modify_container_if_running(container, jail_param)
@@ -230,7 +230,7 @@ defmodule Kleened.Core.Container do
          %Schemas.Image{
            id: image_id,
            user: image_user,
-           command: image_command,
+           cmd: image_command,
            env: img_env
          },
          %Layer{id: layer_id},
@@ -262,7 +262,7 @@ defmodule Kleened.Core.Container do
     container = %Schemas.Container{
       id: container_id,
       name: name,
-      command: command,
+      cmd: command,
       layer_id: layer_id,
       image_id: image_id,
       user: user,
