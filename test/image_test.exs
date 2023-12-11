@@ -946,7 +946,7 @@ defmodule ImageTest do
     {_, _, output} =
       TestHelper.container_run(api_spec, %{
         name: "image_testing1",
-        image: "#{image.id}:#{snapshot}",
+        image: "#{image.id}#{snapshot}",
         cmd: ["/bin/cat", "/etc/test.txt"]
       })
 
@@ -955,7 +955,7 @@ defmodule ImageTest do
     {_, _, output} =
       TestHelper.container_run(api_spec, %{
         name: "image_testing2",
-        image: "#{image.id}:#{snapshot}",
+        image: "#{image.id}#{snapshot}",
         cmd: ["/bin/cat", "/etc/test2.txt"]
       })
 
@@ -971,7 +971,7 @@ defmodule ImageTest do
     {_, _, output} =
       TestHelper.container_run(api_spec, %{
         name: "image_testing3",
-        image: "test:latest:#{snapshot}",
+        image: "test:latest#{snapshot}",
         cmd: ["/bin/cat", "/etc/test2.txt"]
       })
 
@@ -1004,7 +1004,7 @@ defmodule ImageTest do
     {_, _, process_output} =
       TestHelper.container_run(api_spec, %{
         name: "image_testing4",
-        image: "#{image.id}:#{snapshot}",
+        image: "#{image.id}#{snapshot}",
         cmd: ["/bin/cat", "/etc/test.txt"]
       })
 
@@ -1013,7 +1013,7 @@ defmodule ImageTest do
     {_, _, process_output} =
       TestHelper.container_run(api_spec, %{
         name: "image_testing5",
-        image: "#{image.id}:#{snapshot}",
+        image: "#{image.id}#{snapshot}",
         cmd: ["/bin/cat", "/etc/test2.txt"]
       })
 

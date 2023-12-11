@@ -19,16 +19,16 @@ defmodule Kleened.API.Schemas do
           The name or id and possibly a snapshot of the image used for creating the container.
           The parameter uses the followinge format:
 
-          - `<image_id>[:@<snapshot_id>]` or
-          - `<name>[:<tag>][:@<snapshot_id>]`.
+          - `<image_id>[@<snapshot_id>]` or
+          - `<name>[:<tag>][@<snapshot_id>]`.
 
           If `<tag>` is omitted, `latest` is assumed.
           """,
           example: [
             "FreeBSD:13.2-STABLE",
-            "FreeBSD:13.2-STABLE:@6b3c821605d4",
+            "FreeBSD:13.2-STABLE@6b3c821605d4",
             "48fa55889b0f",
-            "48fa55889b0f:@2028818d6f06"
+            "48fa55889b0f@2028818d6f06"
           ]
         },
         cmd: %Schema{
