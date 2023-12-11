@@ -36,6 +36,18 @@ defmodule Kleened.Core.ZFS do
     cmd("rename -f #{dataset} #{new_dataset}")
   end
 
+  @spec mountpoint(String.t()) :: String.t() | nil
+  def mountpoint(dataset) do
+    case info(dataset) do
+      %{mountpoint: nil} ->
+        Logger.warn("No mountpoint found for dataset '#{dataset}'")
+        ""
+
+      %{mountpoint: mountpoint} ->
+        mountpoint
+    end
+  end
+
   @spec info(String.t()) :: %{:exists? => boolean(), :mountpoint => String.t() | nil}
   def info(filesystem_or_snapshot) do
     case cmd("list -H -o mountpoint #{filesystem_or_snapshot}", false) do

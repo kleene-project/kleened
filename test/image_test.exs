@@ -1,7 +1,7 @@
 defmodule ImageTest do
   use Kleened.Test.ConnCase
   alias Kleened.Test.TestImage
-  alias Kleened.Core.{Config, MetaData, Layer, ZFS, OS, Container}
+  alias Kleened.Core.{Config, MetaData, ZFS, OS, Container}
   alias Kleened.API.Schemas
   alias Schemas.WebSocketMessage, as: Message
 
@@ -106,14 +106,14 @@ defmodule ImageTest do
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
-    {%Schemas.Image{layer_id: layer_id}, _build_log} =
+    {image, _build_log} =
       TestHelper.image_valid_build(%{
         context: @tmp_context,
         dockerfile: @tmp_dockerfile,
         tag: "test:latest"
       })
 
-    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
+    mountpoint = image_mountpoint(image)
     assert File.read(Path.join(mountpoint, "/root/test_1.txt")) == {:ok, "lol1\n"}
   end
 
@@ -275,9 +275,9 @@ defmodule ImageTest do
     ]
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
-    {%Schemas.Image{layer_id: layer_id}, build_log} = TestHelper.image_valid_build(config)
+    {image, build_log} = TestHelper.image_valid_build(config)
     assert expected_output == build_log
-    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
+    mountpoint = image_mountpoint(image)
     assert File.read(Path.join(mountpoint, "/testdir/testfile")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "/home/test.txt")) == {:ok, "lol\n"}
   end
@@ -375,9 +375,8 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
-
-    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
+    {image, _build_log} = TestHelper.image_valid_build(config)
+    mountpoint = image_mountpoint(image)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert MetaData.list_containers() == []
   end
@@ -397,9 +396,8 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
-
-    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
+    {image, _build_log} = TestHelper.image_valid_build(config)
+    mountpoint = image_mountpoint(image)
     assert File.read(Path.join(mountpoint, "root/lol/test.txt")) == {:ok, "lol\n"}
     assert MetaData.list_containers() == []
   end
@@ -421,7 +419,7 @@ defmodule ImageTest do
         tag: "test:latest"
       })
 
-    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(image.layer_id)
+    mountpoint = image_mountpoint(image)
     assert File.read(Path.join(mountpoint, "root/lol/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
   end
@@ -441,9 +439,8 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
-
-    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
+    {image, _build_log} = TestHelper.image_valid_build(config)
+    mountpoint = image_mountpoint(image)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test2.txt")) == {:ok, "lel\n"}
     assert MetaData.list_containers() == []
@@ -466,9 +463,8 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, _build_log} = TestHelper.image_valid_build(config)
-
-    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
+    {image, _build_log} = TestHelper.image_valid_build(config)
+    mountpoint = image_mountpoint(image)
     # we cannot check the symbolic link from the host:
     assert File.read(Path.join(mountpoint, "etc/testdir/test.txt")) == {:ok, "lol\n"}
   end
@@ -827,9 +823,8 @@ defmodule ImageTest do
       tag: "test:latest"
     }
 
-    {%Schemas.Image{layer_id: layer_id}, build_log} = TestHelper.image_valid_build(config)
-
-    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
+    {image, build_log} = TestHelper.image_valid_build(config)
+    mountpoint = image_mountpoint(image)
 
     assert [] == build_log
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
@@ -887,17 +882,17 @@ defmodule ImageTest do
     RUN echo 'lol2' > /root/test_2.txt
     """
 
-    context = create_test_context("test_image_builder_three_layers")
+    context = create_test_context("test_image_builder_runcopy")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {%Schemas.Image{layer_id: layer_id}, _build_log} =
+    {image, _build_log} =
       TestHelper.image_valid_build(%{
         context: context,
         dockerfile: @tmp_dockerfile,
         tag: "test:latest"
       })
 
-    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
+    mountpoint = image_mountpoint(image)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test_1.txt")) == {:ok, "lol1\n"}
     assert File.read(Path.join(mountpoint, "root/test_2.txt")) == {:ok, "lol2\n"}
@@ -914,7 +909,7 @@ defmodule ImageTest do
     CMD /etc/rc
     """
 
-    context = create_test_context("test_image_builder_three_layers")
+    context = create_test_context("test_image_builder_quiet")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
     {_image, build_log} =
@@ -1198,7 +1193,7 @@ defmodule ImageTest do
     CMD /usr/bin/uname
     """
 
-    context = create_test_context("test_image_builder_three_layers")
+    context = create_test_context("test_image_builder_three_invalid")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
     {:invalid_dockerfile, _build_id, build_log} =
@@ -1234,7 +1229,7 @@ defmodule ImageTest do
     ENV TEST="something" # You cannot make comments like this.
     """
 
-    context = create_test_context("test_image_builder_three_layers")
+    context = create_test_context("test_image_builder_three_invalid")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
     {:failed_build, _image_id, build_log} =
@@ -1249,6 +1244,10 @@ defmodule ImageTest do
              "Step 2/2 : ENV TEST=\"something\" # You cannot make comments like this.\n",
              "failed environment substition of: ENV TEST=\"something\" # You cannot make comments like this."
            ]
+  end
+
+  def image_mountpoint(%Schemas.Image{dataset: dataset}) do
+    ZFS.mountpoint(dataset)
   end
 
   defp build_dummy_image(parent_image, image_tag) do

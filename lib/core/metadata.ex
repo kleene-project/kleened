@@ -1,6 +1,6 @@
 defmodule Kleened.Core.MetaData do
   require Logger
-  alias Kleened.Core.{Config, Layer, Image, Container, Network, Volume}
+  alias Kleened.Core.{Config, Image, Container, Network, Volume}
   alias Kleened.API.Schemas
 
   use Agent
@@ -20,14 +20,6 @@ defmodule Kleened.Core.MetaData do
     network_id   TEXT,
     config       TEXT,
     UNIQUE(container_id, network_id)
-  )
-  """
-
-  @table_layers """
-  CREATE TABLE IF NOT EXISTS
-  layers (
-    id    TEXT PRIMARY KEY,
-    layer TEXT
   )
   """
 
@@ -219,27 +211,6 @@ defmodule Kleened.Core.MetaData do
     )
   end
 
-  @spec add_layer(Layer.t()) :: :ok
-  def add_layer(layer) do
-    {id, json} = to_db(layer)
-    sql("INSERT OR REPLACE INTO layers(id, layer) VALUES (?, ?)", [id, json])
-    :ok
-  end
-
-  @spec get_layer(String.t()) :: Layer.t() | :not_found
-  def get_layer(layer_id) do
-    case sql("SELECT id, layer FROM layers WHERE id=?", [layer_id]) do
-      [layer] -> layer
-      [] -> :not_found
-    end
-  end
-
-  @spec remove_layer(String.t()) :: :ok
-  def remove_layer(layer_id) do
-    sql("DELETE FROM layers WHERE id = ?", [layer_id])
-    :ok
-  end
-
   @spec add_image(Image.t()) :: :ok
   def add_image(image) do
     Agent.get(__MODULE__, fn db -> add_image_transaction(db, image) end)
@@ -358,9 +329,8 @@ defmodule Kleened.Core.MetaData do
     SELECT images.id AS id,
          json_extract(images.image, '$.name') AS name,
          json_extract(images.image, '$.tag') AS tag,
-         json_extract(layers.layer, '$.dataset') AS dataset
-    FROM images
-    INNER JOIN layers ON layers.id = json_extract(images.image, '$.layer_id');
+         json_extract(images.image, '$.dataset') AS dataset
+    FROM images;
     """)
   end
 
@@ -472,11 +442,6 @@ defmodule Kleened.Core.MetaData do
         {:ok, json} = Jason.encode(map)
         {id, json}
 
-      Layer ->
-        {id, map} = Map.pop(map, :id)
-        {:ok, json} = Jason.encode(map)
-        {id, json}
-
       Schemas.Network ->
         {id, map} = Map.pop(map, :id)
         {:ok, json} = Jason.encode(map)
@@ -514,11 +479,6 @@ defmodule Kleened.Core.MetaData do
         map = from_json(row, :image)
         id = Keyword.get(row, :id)
         struct(Schemas.Image, Map.put(map, :id, id))
-
-      Keyword.has_key?(row, :layer) ->
-        map = from_json(row, :layer)
-        id = Keyword.get(row, :id)
-        struct(Layer, Map.put(map, :id, id))
 
       Keyword.has_key?(row, :network) ->
         map = from_json(row, :network)
@@ -574,7 +534,6 @@ defmodule Kleened.Core.MetaData do
     {:ok, []} = Sqlitex.query(db, "DROP VIEW api_list_containers")
     {:ok, []} = Sqlitex.query(db, "DROP TABLE images")
     {:ok, []} = Sqlitex.query(db, "DROP TABLE containers")
-    {:ok, []} = Sqlitex.query(db, "DROP TABLE layers")
     {:ok, []} = Sqlitex.query(db, "DROP TABLE volumes")
     {:ok, []} = Sqlitex.query(db, "DROP TABLE mounts")
     {:ok, []} = Sqlitex.query(db, "DROP TABLE networks")
@@ -584,7 +543,6 @@ defmodule Kleened.Core.MetaData do
   def create_tables(db) do
     {:ok, []} = Sqlitex.query(db, @table_network)
     {:ok, []} = Sqlitex.query(db, @table_endpoint_configs)
-    {:ok, []} = Sqlitex.query(db, @table_layers)
     {:ok, []} = Sqlitex.query(db, @table_images)
     {:ok, []} = Sqlitex.query(db, @table_containers)
     {:ok, []} = Sqlitex.query(db, @table_volumes)

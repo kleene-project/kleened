@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Mount do
-  alias Kleened.Core.{OS, Config, Volume, Layer, MetaData}
+  alias Kleened.Core.{OS, Config, Volume, ZFS, MetaData}
   alias Kleened.API.Schemas
   require Config
   require Logger
@@ -68,8 +68,8 @@ defmodule Kleened.Core.Mount do
 
   @spec unmount(%Schemas.MountPoint{}) :: {:error, String.t()} | :ok
   def unmount(%Schemas.MountPoint{container_id: container_id, destination: destination}) do
-    %Schemas.Container{layer_id: layer_id} = MetaData.get_container(container_id)
-    %Layer{mountpoint: container_mountpoint} = MetaData.get_layer(layer_id)
+    %Schemas.Container{dataset: dataset} = MetaData.get_container(container_id)
+    container_mountpoint = ZFS.mountpoint(dataset)
     dest = Path.join(container_mountpoint, destination)
 
     case OS.cmd(["/sbin/umount", dest]) do
@@ -95,12 +95,12 @@ defmodule Kleened.Core.Mount do
   end
 
   defp create_nullfs_mount(
-         %Schemas.Container{id: container_id, layer_id: layer_id},
+         %Schemas.Container{id: container_id, dataset: dataset},
          source,
          destination,
          read_only
        ) do
-    %Layer{mountpoint: mountpoint} = MetaData.get_layer(layer_id)
+    mountpoint = ZFS.mountpoint(dataset)
     absolute_destination = Path.join(mountpoint, destination)
 
     case OS.cmd(["/bin/mkdir", "-p", absolute_destination]) do

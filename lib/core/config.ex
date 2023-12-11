@@ -111,8 +111,7 @@ defmodule Kleened.Core.Config do
     create_dataset_if_not_exist(Path.join([root, "image"]))
     create_dataset_if_not_exist(Path.join([root, "container"]))
     create_dataset_if_not_exist(Path.join([root, "volumes"]))
-    cfg = Map.put(cfg, "volume_root", Path.join([root, "volumes"]))
-    Map.put(cfg, "base_layer_mountpoint", root_status[:mountpoint])
+    Map.put(cfg, "volume_root", Path.join([root, "volumes"]))
   end
 
   defp create_dataset_if_not_exist(dataset) do

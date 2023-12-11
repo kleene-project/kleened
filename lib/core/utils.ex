@@ -90,7 +90,7 @@ defmodule Kleened.Core.Utils do
   def decode_snapshot(nametagsnapshot) do
     case String.split(nametagsnapshot, ":@") do
       [nametag] -> {nametag, ""}
-      [nametag, snapshot] -> {nametag, snapshot}
+      [nametag, snapshot] -> {nametag, "@" <> snapshot}
     end
   end
 

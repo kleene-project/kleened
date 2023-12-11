@@ -92,7 +92,7 @@ defmodule Kleened.API.Schemas do
 
   defmodule Container do
     OpenApiSpex.schema(%{
-      description: "summary description of a container",
+      description: "Summary description of a container",
       type: :object,
       properties: %{
         id: %Schema{description: "The id of the container", type: :string},
@@ -106,10 +106,6 @@ defmodule Kleened.API.Schemas do
           type: :array,
           items: %Schema{type: :string},
           default: []
-        },
-        layer_id: %Schema{
-          description: "The id of the layer used by the container.",
-          type: :string
         },
         user: %Schema{
           description:
@@ -132,6 +128,7 @@ defmodule Kleened.API.Schemas do
           example: ["allow.raw_sockets=true", "osrelease=kleenejail"]
         },
         created: %Schema{description: "When the container was created", type: :string},
+        dataset: %Schema{description: "ZFS dataset of the container", type: :string},
         running: %Schema{description: "whether or not the container is running", type: :boolean}
       }
     })
@@ -421,7 +418,6 @@ defmodule Kleened.API.Schemas do
           default: %{},
           example: %{"USERNAME" => "Stephen", "JAIL_MGMT_ENGINE" => "kleene"}
         },
-        layer_id: %Schema{description: "Id of the layer containing the image", type: :string},
         user: %Schema{description: "user used when executing the command", type: :string},
         instructions: %Schema{
           description: """
@@ -436,7 +432,8 @@ defmodule Kleened.API.Schemas do
           default: [],
           example: []
         },
-        created: %Schema{description: "When the image was created", type: :string}
+        created: %Schema{description: "When the image was created", type: :string},
+        dataset: %Schema{description: "ZFS dataset of the image", type: :string}
       }
     })
   end
@@ -504,12 +501,8 @@ defmodule Kleened.API.Schemas do
       type: :object,
       properties: %{
         name: %Schema{description: "Name of the volume", type: :string},
-        dataset: %Schema{description: "underlying zfs dataset of the volume", type: :string},
-        mountpoint: %Schema{
-          description:
-            "mountpoint of the volume's underlying zfs-dataset (the mountpoint shown with 'zfs list')",
-          type: :string
-        },
+        dataset: %Schema{description: "ZFS dataset used for the volume", type: :string},
+        mountpoint: %Schema{description: "Mountpoint of `dataset`", type: :string},
         created: %Schema{description: "when the volume was created", type: :string}
       }
     })

@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Image do
-  alias Kleened.Core.{Const, ZFS, MetaData, Utils, Layer, Mount, Network, OS, Container, Config}
+  alias Kleened.Core.{Const, ZFS, MetaData, Utils, Mount, Network, OS, Container, Config}
   alias Kleened.API.Schemas
   require Logger
 
@@ -111,8 +111,7 @@ defmodule Kleened.Core.Image do
       :not_found ->
         :not_found
 
-      %Schemas.Image{id: id, layer_id: layer_id} ->
-        %Layer{dataset: dataset} = MetaData.get_layer(layer_id)
+      %Schemas.Image{id: id, dataset: dataset} ->
         {_, 0} = ZFS.destroy_force(dataset)
         MetaData.delete_image(id)
     end
@@ -428,7 +427,7 @@ defmodule Kleened.Core.Image do
          snapshots: snapshots,
          container: %Schemas.Container{
            id: container_id,
-           layer_id: layer_id,
+           dataset: container_dataset,
            user: user,
            env: env,
            cmd: cmd
@@ -436,13 +435,11 @@ defmodule Kleened.Core.Image do
        }) do
     Network.disconnect(container_id, network)
     {:ok, _network_id} = Network.remove(network)
+    :ok = container_to_image(container_dataset, container_id)
     MetaData.delete_container(container_id)
-    layer = MetaData.get_layer(layer_id)
-    Kleened.Core.Layer.container_to_image(layer, container_id)
 
     image = %Schemas.Image{
       id: container_id,
-      layer_id: layer_id,
       user: user,
       name: image_name,
       tag: image_tag,
@@ -451,17 +448,27 @@ defmodule Kleened.Core.Image do
       instructions:
         Enum.zip(Enum.reverse(instructions), Enum.reverse(snapshots))
         |> Enum.map(fn {a, b} -> [a, b] end),
-      created: DateTime.to_iso8601(DateTime.utc_now())
+      created: DateTime.to_iso8601(DateTime.utc_now()),
+      dataset: Const.image_dataset(container_id)
     }
 
     Kleened.Core.MetaData.add_image(image)
     image
   end
 
-  defp snapshot_image(%Schemas.Container{layer_id: layer_id}, pid) do
-    layer = MetaData.get_layer(layer_id)
+  defp container_to_image(container_dataset, image_id) do
+    image_dataset = Const.image_dataset(image_id)
+    {_, 0} = Kleened.Core.ZFS.rename(container_dataset, image_dataset)
+
+    image_snapshot = image_dataset <> Const.image_snapshot()
+    {_, 0} = Kleened.Core.ZFS.snapshot(image_snapshot)
+
+    :ok
+  end
+
+  defp snapshot_image(%Schemas.Container{dataset: dataset}, pid) do
     snapshot = "@#{Utils.uuid()}"
-    ZFS.snapshot("#{layer.dataset}#{snapshot}")
+    ZFS.snapshot(dataset <> snapshot)
     msg = Const.image_builder_snapshot_message(snapshot)
     send_msg(pid, msg)
     snapshot

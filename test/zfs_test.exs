@@ -2,7 +2,7 @@ defmodule ZFSTest do
   use ExUnit.Case
   require Logger
 
-  alias Kleened.Core.{Config, MetaData}
+  alias Kleened.Core.{Const, Config, MetaData}
   alias Config
   import Kleened.Core.ZFS
 
@@ -17,9 +17,8 @@ defmodule ZFSTest do
     zroot_test = Config.get("zroot") <> "/create_clone_test"
     create(zroot_test)
     image = MetaData.get_image("FreeBSD:testing")
-    layer = MetaData.get_layer(image.layer_id)
 
-    assert {_, 0} = clone(layer.snapshot, zroot_test <> "/zfs_test")
+    assert {_, 0} = clone(image.dataset <> Const.image_snapshot(), zroot_test <> "/zfs_test")
     assert {_, 0} = snapshot(zroot_test <> "/zfs_test@lol")
     assert {_, 0} = destroy(zroot_test <> "/zfs_test@lol")
     assert {_, 0} = destroy(zroot_test <> "/zfs_test")

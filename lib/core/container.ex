@@ -8,21 +8,10 @@ defmodule Kleened.Core.Container do
   alias __MODULE__, as: Container
 
   require Logger
-  alias Kleened.Core.{MetaData, Mount, Layer, Network, Utils, OS}
+  alias Kleened.Core.{Config, Const, MetaData, Mount, Network, Utils, OS}
   alias Kleened.API.Schemas
 
-  @type t() ::
-          %Schemas.Container{
-            id: String.t(),
-            name: String.t(),
-            cmd: [String.t()],
-            layer_id: String.t(),
-            image_id: String.t(),
-            user: String.t(),
-            jail_param: [String.t()],
-            env: [String.t()],
-            created: String.t()
-          }
+  @type t() :: %Schemas.Container{}
 
   @type container_config() :: %Schemas.ContainerConfig{}
 
@@ -111,26 +100,23 @@ defmodule Kleened.Core.Container do
          container_id,
          %Schemas.ContainerConfig{image: image_identifier} = config
        ) do
-    {image_name, snapshot} = Utils.decode_snapshot(image_identifier)
+    {image_name, potential_snapshot} = Utils.decode_snapshot(image_identifier)
     image = MetaData.get_image(image_name)
 
-    case {image, snapshot} do
-      {%Schemas.Image{layer_id: parent_layer_id} = image, ""} ->
-        parent_layer = Kleened.Core.MetaData.get_layer(parent_layer_id)
-        {:ok, layer} = Layer.new(parent_layer, container_id)
-        assemble_container(container_id, image, layer, config)
+    case {image, potential_snapshot} do
+      {%Schemas.Image{}, ""} ->
+        dataset_snapshot = "#{image.dataset}#{Const.image_snapshot()}"
+        Logger.debug("Creating container from image #{dataset_snapshot}")
+        {:ok, dataset} = create_dataset(dataset_snapshot, container_id)
+        assemble_container(container_id, image, dataset, config)
 
-      {%Schemas.Image{layer_id: parent_layer_id} = image, snapshot} ->
-        parent_layer = Kleened.Core.MetaData.get_layer(parent_layer_id)
+      {%Schemas.Image{}, snapshot} ->
+        dataset_snapshot = "#{image.dataset}#{snapshot}"
+        Logger.debug("Creating container from image snapshot #{dataset_snapshot}")
 
-        parent_layer_altered = %Layer{
-          parent_layer
-          | snapshot: "#{parent_layer.dataset}@#{snapshot}"
-        }
-
-        case Layer.new(parent_layer_altered, container_id) do
-          {:ok, layer} ->
-            assemble_container(container_id, image, layer, config)
+        case create_dataset(dataset_snapshot, container_id) do
+          {:ok, dataset} ->
+            assemble_container(container_id, image, dataset, config)
 
           {:error, reason} ->
             {:error, reason}
@@ -138,6 +124,15 @@ defmodule Kleened.Core.Container do
 
       {:not_found, _} ->
         {:error, :image_not_found}
+    end
+  end
+
+  defp create_dataset(parent_snapshot, container_id) do
+    dataset = Path.join([Config.get("zroot"), "container", container_id])
+
+    case Kleened.Core.ZFS.clone(parent_snapshot, dataset) do
+      {_, 0} -> {:ok, dataset}
+      {reason, _nonzero_exit} -> {:error, reason}
     end
   end
 
@@ -233,7 +228,7 @@ defmodule Kleened.Core.Container do
            cmd: image_command,
            env: img_env
          },
-         %Layer{id: layer_id},
+         dataset,
          %Schemas.ContainerConfig{
            name: name,
            user: user,
@@ -243,7 +238,7 @@ defmodule Kleened.Core.Container do
            jail_param: jail_param
          } = config
        ) do
-    Logger.debug("creating container on layer #{layer_id} with config: #{inspect(config)}")
+    Logger.debug("creating container on #{dataset} with config: #{inspect(config)}")
 
     env = Utils.merge_environment_variable_lists(img_env, env)
 
@@ -263,7 +258,7 @@ defmodule Kleened.Core.Container do
       id: container_id,
       name: name,
       cmd: command,
-      layer_id: layer_id,
+      dataset: dataset,
       image_id: image_id,
       user: user,
       jail_param: jail_param,
@@ -284,14 +279,13 @@ defmodule Kleened.Core.Container do
 
   defp remove_(:not_found), do: {:error, :not_found}
 
-  defp remove_(%Schemas.Container{id: container_id, layer_id: layer_id} = cont) do
+  defp remove_(%Schemas.Container{id: container_id, dataset: dataset} = cont) do
     case Utils.is_container_running?(container_id) do
       false ->
         :ok = Network.disconnect_all(container_id)
         :ok = Mount.remove_mounts(cont)
         :ok = MetaData.delete_container(container_id)
-        Layer.destroy(layer_id)
-
+        {_, 0} = Kleened.Core.ZFS.destroy_force(dataset)
         {:ok, container_id}
 
       true ->

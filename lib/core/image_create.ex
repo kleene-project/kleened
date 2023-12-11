@@ -1,5 +1,5 @@
 defmodule Kleened.Core.ImageCreate do
-  alias Kleened.Core.{ZFS, Utils, Layer, OS}
+  alias Kleened.Core.{Const, ZFS, Utils, OS}
   alias Kleened.API.Schemas
   alias Schemas.ImageCreateConfig, as: Config
   require Logger
@@ -34,9 +34,9 @@ defmodule Kleened.Core.ImageCreate do
        ) do
     # Initialize
     image_id = Utils.uuid()
-    {image_dataset, image_mountpoint, image_snapshot} = create_image_attributes(image_id)
+    image_dataset = Const.image_dataset(image_id)
+    image = create_image_metadata(image_id, image_dataset, tag)
     snapshot_parent = dataset_parent <> "@#{image_id}"
-    image = create_image_metadata(image_id, image_snapshot, image_dataset, image_mountpoint, tag)
     create_snapshot(snapshot_parent, receiver)
 
     # Create image dataset by zfs send/receiving it to the new image dataset
@@ -44,8 +44,9 @@ defmodule Kleened.Core.ImageCreate do
     copy_zfs_dataset(snapshot_parent, image_dataset, receiver)
 
     # Wrap up
+    image_mountpoint = ZFS.mountpoint(image_dataset)
     copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
-    create_snapshot(image_snapshot, receiver)
+    create_snapshot(image_dataset <> Const.image_snapshot(), receiver)
     send_msg(receiver, {:ok, image})
     ZFS.destroy(snapshot_parent)
   end
@@ -55,9 +56,9 @@ defmodule Kleened.Core.ImageCreate do
          %Config{zfs_dataset: dataset_parent, tag: tag} = config
        ) do
     image_id = Utils.uuid()
-    {image_dataset, image_mountpoint, image_snapshot} = create_image_attributes(image_id)
+    image_dataset = Const.image_dataset(image_id)
+    image = create_image_metadata(image_id, image_dataset, tag)
     snapshot_parent = dataset_parent <> "@#{image_id}"
-    image = create_image_metadata(image_id, image_snapshot, image_dataset, image_mountpoint, tag)
     create_snapshot(snapshot_parent, receiver)
 
     # Create image dataset by cloning the supplied dataset
@@ -65,8 +66,9 @@ defmodule Kleened.Core.ImageCreate do
     clone_zfs_dataset(snapshot_parent, image_dataset, receiver)
 
     # Wrap up
+    image_mountpoint = ZFS.mountpoint(image_dataset)
     copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
-    create_snapshot(image_snapshot, receiver)
+    create_snapshot(image_dataset <> Const.image_snapshot(), receiver)
     send_msg(receiver, {:ok, image})
   end
 
@@ -91,7 +93,7 @@ defmodule Kleened.Core.ImageCreate do
 
   defp create_image_using_fetch(receiver, %Config{url: url, tag: tag} = config) do
     image_id = Utils.uuid()
-    {image_dataset, image_mountpoint, image_snapshot} = create_image_attributes(image_id)
+    image_dataset = Const.image_dataset(image_id)
     tar_archive = Path.join("/", [Kleened.Core.Config.get("zroot"), "base.txz"])
 
     # Fetch tar-archive and extract it to the new image dataset
@@ -103,11 +105,12 @@ defmodule Kleened.Core.ImageCreate do
     )
 
     create_dataset(image_dataset, receiver)
+    image_mountpoint = ZFS.mountpoint(image_dataset)
     untar_file(tar_archive, image_mountpoint, receiver)
     copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
-    create_snapshot(image_snapshot, receiver)
+    create_snapshot(image_dataset <> Const.image_snapshot(), receiver)
 
-    image = create_image_metadata(image_id, image_snapshot, image_dataset, image_mountpoint, tag)
+    image = create_image_metadata(image_id, image_dataset, tag)
     send_msg(receiver, {:ok, image})
     File.rm(tar_archive)
   end
@@ -280,33 +283,18 @@ defmodule Kleened.Core.ImageCreate do
     end
   end
 
-  defp create_image_attributes(image_id) do
-    image_dataset = Path.join(Kleened.Core.Config.get("zroot"), ["image", "/", image_id])
-    image_mountpoint = Path.join("/", image_dataset)
-    image_snapshot = image_dataset <> "@kleene"
-    {image_dataset, image_mountpoint, image_snapshot}
-  end
-
-  defp create_image_metadata(image_id, snapshot, image_dataset, image_mountpoint, tag) do
-    layer = %Layer{
-      id: Kleened.Core.Utils.uuid(),
-      snapshot: snapshot,
-      dataset: image_dataset,
-      mountpoint: image_mountpoint
-    }
-
-    Kleened.Core.MetaData.add_layer(layer)
+  defp create_image_metadata(image_id, dataset, tag) do
     {name, tag} = Utils.decode_tagname(tag)
 
     image = %Schemas.Image{
       id: image_id,
-      layer_id: layer.id,
       user: "root",
       name: name,
       tag: tag,
       cmd: ["/bin/sh", "/etc/rc"],
       env: [],
-      created: DateTime.to_iso8601(DateTime.utc_now())
+      created: DateTime.to_iso8601(DateTime.utc_now()),
+      dataset: dataset
     }
 
     Kleened.Core.MetaData.add_image(image)

@@ -32,7 +32,6 @@ defmodule Kleened.Core.Application do
         children = [
           Kleened.Core.Config,
           Kleened.Core.MetaData,
-          Kleened.Core.Layer,
           Kleened.Core.Network,
           {Registry, keys: :unique, name: Kleened.Core.ExecInstances},
           {DynamicSupervisor,

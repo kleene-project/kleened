@@ -1,7 +1,7 @@
 defmodule MetaDataTest do
   use ExUnit.Case
   alias Kleened.Test.TestImage
-  alias Kleened.Core.{Config, Layer}
+  alias Kleened.Core.Config
   alias Kleened.API.Schemas
   import Kleened.Core.MetaData
   import TestHelper, only: [now: 0]
@@ -24,18 +24,6 @@ defmodule MetaDataTest do
     remove_network("test_id1")
     assert [host_network, network2] == list_networks(:include_host)
     remove_network("id2_test")
-  end
-
-  test "adding and getting layers" do
-    layer1 = %Layer{id: "lol", dataset: "tank/test", mountpoint: "/tank/test/"}
-    layer2 = %Layer{layer1 | snapshot: "/tank/test@testing"}
-    add_layer(layer1)
-    assert layer1 == get_layer("lol")
-    add_layer(layer2)
-    assert layer2 == get_layer("lol")
-    assert :not_found == get_layer("notexist")
-    remove_layer("lol")
-    assert :not_found == get_layer("lol")
   end
 
   test "adding and getting images" do

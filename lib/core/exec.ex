@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Exec do
-  alias Kleened.Core.{Container, MetaData, OS, FreeBSD, Layer, Utils, ExecInstances, Network}
+  alias Kleened.Core.{Container, MetaData, OS, FreeBSD, ZFS, Utils, ExecInstances, Network}
   alias Kleened.API.Schemas
 
   defmodule State do
@@ -285,7 +285,7 @@ defmodule Kleened.Core.Exec do
     %Schemas.Container{cont | user: user, cmd: cmd, env: env}
   end
 
-  defp jail_cleanup(%Schemas.Container{id: container_id, layer_id: layer_id}) do
+  defp jail_cleanup(%Schemas.Container{id: container_id, dataset: dataset}) do
     if Network.connected_to_vnet_networks?(container_id) do
       destoy_jail_epairs = fn network ->
         config = MetaData.get_endpoint(container_id, network.id)
@@ -300,7 +300,7 @@ defmodule Kleened.Core.Exec do
     # remove any devfs mounts of the jail. If it was closed with 'jail -r <jailname>' devfs should be removed automatically.
     # If the jail stops because there jailed process stops (i.e. 'jail -c <etc> /bin/sleep 10') then devfs is NOT removed.
     # A race condition can also occur such that "jail -r" does not unmount before this call to mount.
-    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
+    mountpoint = ZFS.mountpoint(dataset)
     {output, _exitcode} = OS.cmd(["mount", "-t", "devfs"])
     output |> String.split("\n") |> Enum.map(&umount_container_devfs(&1, mountpoint))
   end
@@ -324,7 +324,7 @@ defmodule Kleened.Core.Exec do
   defp jail_start_container(
          %Schemas.Container{
            id: id,
-           layer_id: layer_id,
+           dataset: dataset,
            cmd: command,
            user: user,
            jail_param: jail_param,
@@ -333,10 +333,8 @@ defmodule Kleened.Core.Exec do
          use_tty
        ) do
     Logger.info("Starting container #{inspect(cont.id)}")
-
     network_config = setup_connectivity_configuration(id)
-
-    %Layer{mountpoint: path} = Kleened.Core.MetaData.get_layer(layer_id)
+    path = ZFS.mountpoint(dataset)
 
     jail_param =
       jail_param

@@ -1,6 +1,6 @@
 alias OpenApiSpex.Cast
 alias Kleened.Test.TestImage
-alias Kleened.Core.{Const, Layer, Exec, MetaData, ZFS, OS}
+alias Kleened.Core.{Const, Exec, MetaData, ZFS, OS}
 alias :gun, as: Gun
 alias Kleened.API.Router
 alias Kleened.API.Schemas
@@ -811,9 +811,9 @@ defmodule TestHelper do
     DateTime.to_iso8601(DateTime.utc_now())
   end
 
-  def devfs_mounted(%Schemas.Container{layer_id: layer_id}) do
+  def devfs_mounted(%Schemas.Container{dataset: dataset}) do
     :timer.sleep(500)
-    %Layer{mountpoint: mountpoint} = Kleened.Core.MetaData.get_layer(layer_id)
+    mountpoint = ZFS.mountpoint(dataset)
     devfs_path = Path.join(mountpoint, "dev")
 
     case System.cmd("sh", ["-c", "mount | grep \"devfs on #{devfs_path}\""]) do
