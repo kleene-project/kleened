@@ -9,15 +9,11 @@ defmodule ImageTest do
   @moduletag :capture_log
 
   setup do
+    TestHelper.cleanup()
+
     on_exit(fn ->
       Logger.info("Cleaning up after test...")
-      MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
-
-      MetaData.list_images()
-      |> Enum.filter(fn %Schemas.Image{name: name, tag: tag} ->
-        name != "FreeBSD" or tag != "testing"
-      end)
-      |> Enum.map(fn %Schemas.Image{id: id} -> Kleened.Core.Image.remove(id) end)
+      TestHelper.cleanup()
     end)
 
     :ok

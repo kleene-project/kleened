@@ -11,14 +11,11 @@ defmodule NetworkTest do
   @dns_lookup_failure ";; connection timed out; no servers could be reached\n"
 
   setup do
-    on_exit(fn ->
-      Kleened.Core.MetaData.list_containers()
-      |> Enum.map(fn %{id: id} -> Container.remove(id) end)
-    end)
+    TestHelper.cleanup()
 
     on_exit(fn ->
-      Kleened.Core.MetaData.list_networks(:exclude_host)
-      |> Enum.map(fn %{id: id} -> Kleened.Core.Network.remove(id) end)
+      Logger.info("Cleaning up after test...")
+      TestHelper.cleanup()
     end)
 
     :ok

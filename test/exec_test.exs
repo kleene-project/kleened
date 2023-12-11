@@ -8,7 +8,9 @@ defmodule ExecTest do
   @moduletag :capture_log
 
   setup do
-    {:ok, %Schemas.Network{name: "default"} = testnet} =
+    TestHelper.cleanup()
+
+    {:ok, %Schemas.Network{name: "default"}} =
       Network.create(%Schemas.NetworkConfig{
         name: "default",
         subnet: "192.168.83.0/24",
@@ -17,10 +19,8 @@ defmodule ExecTest do
       })
 
     on_exit(fn ->
-      Kleened.Core.Network.remove(testnet.id)
-
-      Kleened.Core.MetaData.list_containers()
-      |> Enum.map(fn %{id: id} -> Container.remove(id) end)
+      Logger.info("Cleaning up after test...")
+      TestHelper.cleanup()
     end)
 
     :ok

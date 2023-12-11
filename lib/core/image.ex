@@ -117,7 +117,7 @@ defmodule Kleened.Core.Image do
     end
   end
 
-  @spec prune(String.t()) :: {:ok, [String.t()]}
+  @spec prune(false | true) :: {:ok, [String.t()]}
   def prune(all \\ false) do
     images = MetaData.list_image_datasets()
     prune_images(all, images, [])

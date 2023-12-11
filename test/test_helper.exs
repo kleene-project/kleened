@@ -1,6 +1,6 @@
 alias OpenApiSpex.Cast
 alias Kleened.Test.TestImage
-alias Kleened.Core.{Const, Exec, MetaData, ZFS, OS}
+alias Kleened.Core.{Const, Exec, Image, Container, Volume, Network, MetaData, ZFS, OS}
 alias :gun, as: Gun
 alias Kleened.API.Router
 alias Kleened.API.Schemas
@@ -28,6 +28,27 @@ defmodule TestHelper do
 
   @kleened_host {0, 0, 0, 0, 0, 0, 0, 1}
   @opts Router.init([])
+
+  def cleanup() do
+    Logger.info("Cleaning up after test...")
+    MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
+
+    MetaData.list_volumes() |> Enum.map(&Volume.remove(&1.name))
+
+    MetaData.list_networks(:exclude_host)
+    |> Enum.map(fn %{id: id} -> Network.remove(id) end)
+
+    # Image.prune(true)
+    MetaData.list_images()
+    |> Enum.filter(fn %Schemas.Image{name: name, tag: tag} ->
+      name != "FreeBSD" or tag != "testing"
+    end)
+    |> Enum.map(fn %Schemas.Image{id: id} -> Image.remove(id) end)
+  end
+
+  def setup() do
+    TestImage.create_test_base_image()
+  end
 
   def container_valid_run(api_spec, config) do
     {attach, config} = Map.pop(config, :attach, true)

@@ -8,9 +8,11 @@ defmodule VolumeTest do
   @moduletag :capture_log
 
   setup do
+    TestHelper.cleanup()
+
     on_exit(fn ->
-      Kleened.Core.MetaData.list_volumes()
-      |> Enum.map(&Volume.remove(&1.name))
+      Logger.info("Cleaning up after test...")
+      TestHelper.cleanup()
     end)
 
     :ok
