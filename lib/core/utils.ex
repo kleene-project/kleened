@@ -33,15 +33,6 @@ defmodule Kleened.Core.Utils do
     end
   end
 
-  def decode_ip(ip, ver) do
-    ip_charlist = String.to_charlist(ip)
-
-    case ver do
-      :ipv4 -> :inet.parse_ipv4_address(ip_charlist)
-      :ipv6 -> :inet.parse_ipv6_address(ip_charlist)
-    end
-  end
-
   def touch(path) do
     case System.cmd("/usr/bin/touch", [path], stderr_to_stdout: true) do
       {"", 0} -> true

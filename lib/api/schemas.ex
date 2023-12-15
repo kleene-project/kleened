@@ -68,6 +68,15 @@ defmodule Kleened.API.Schemas do
           nullable: true,
           default: []
         },
+        network_driver: %Schema{
+          type: :string,
+          description: """
+          What kind of network driver should the container use.
+          Possible values are `restricted`, `host`, `vnet`, `disabled`.
+          """,
+          example: "restricted",
+          enum: ["restricted", "host", "vnet", "disabled"]
+        },
         jail_param: %Schema{
           description: """
           List of jail parameters to use for the container.
@@ -119,6 +128,15 @@ defmodule Kleened.API.Schemas do
           items: %Schema{type: :string},
           default: [],
           example: ["DEBUG=0", "LANG=da_DK.UTF-8"]
+        },
+        network_driver: %Schema{
+          type: :string,
+          description: """
+          What kind of network driver is the container using.
+          Possible values are `restricted`, `host`, `vnet`, `disabled`.
+          """,
+          example: "restricted",
+          enum: ["restricted", "host", "vnet", "disabled"]
         },
         jail_param: %Schema{
           description: "List of jail parameters (see jail(8) for details)",
@@ -196,21 +214,225 @@ defmodule Kleened.API.Schemas do
     })
   end
 
+  defmodule NetworkConfig do
+    OpenApiSpex.schema(%{
+      description: "Network configuration",
+      type: :object,
+      properties: %{
+        name: %Schema{
+          type: :string,
+          description: "Name of the network.",
+          example: "westnet"
+        },
+        type: %Schema{
+          type: :string,
+          description: """
+          What kind of network should be created. Possible values are 'bridge', 'loopback', and 'custom'.
+          """,
+          example: "bridge",
+          enum: ["bridge", "loopback", "custom"]
+        },
+        subnet: %Schema{
+          type: :string,
+          description:
+            "The IPv4 subnet (in CIDR-format) that is used for the network. If set to `\"\"` no IPv4 subnet is used.",
+          example: "10.13.37.0/24",
+          default: ""
+        },
+        subnet6: %Schema{
+          type: :string,
+          description:
+            "The IPv6 subnet (in CIDR-format) that is used for the network. If set to `\"\"` no IPv6 subnet is used.",
+          example: "2001:db8:8a2e:370:7334::/64",
+          default: ""
+        },
+        interface: %Schema{
+          type: :string,
+          description: """
+          Name for the interface that is being used for the network. If set to `""` the name is automatically set to `kleened` prefixed with a integer.
+          If the `type` property is set to `custom` the value of `interface` must be the name of an existing interface.
+          The name must not exceed 15 characters.
+          """,
+          example: "kleene0",
+          default: ""
+        },
+        external_interfaces: %Schema{
+          description: """
+          Name of the external interfaces where incoming traffic is redirected from, if ports are being published externally on this network.
+          If set to the empty list `[]` Kleened uses the `gateway` interface.
+          """,
+          type: :array,
+          items: %Schema{type: :string},
+          default: [],
+          example: ["em0", "igb2"]
+        },
+        gateway: %Schema{
+          type: :string,
+          description: """
+          The default IPv4 router that is added to 'vnet' containers connecting to (bridge) networks.
+          If `nil` no gateway is used. If set to `""` the first IP of the subnet is added to `interface` and used as gateway.
+          This is only used by EndPoint's of type `vnet`. If set to `"host"`, the default gateway of the host sytem is used.
+          """,
+          example: "192.168.1.1"
+        },
+        gateway6: %Schema{
+          type: :string,
+          description: """
+          The default IPv6 router that is added to 'vnet' containers connecting to (bridge) networks.
+          If `nil` no gateway is used. If set to `""` the first IP of the subnet is added to `interface` and used as gateway.
+          This is only used by EndPoint's of type `vnet`. If set to `"host"`, the default gateway of the host sytem is used.
+          """,
+          # FIXME
+          example: "192.168.1.1"
+        },
+        nat: %Schema{
+          type: :boolean,
+          description:
+            "Whether or not to source NAT traffic from this network to the default gateway interface",
+          default: true
+        },
+        icc: %Schema{
+          type: :boolean,
+          description:
+            "Whether or not to enable connectivity between containers within the network.",
+          default: true
+        }
+
+        # ,
+        # internal: %Schema{
+        #  type: :boolean,
+        #  description: "",
+        #  default: false
+        # },
+        # ip_range: %Schema{
+        #  type: :string,
+        #  description: "",
+        #  example: "192.168.1.1/25"
+        # },
+        # ip_range6: %Schema{
+        #  type: :string,
+        #  description: "",
+        #  example: "2001:db8:8a2e:370:7334:4ef9:/80"
+        # }
+      },
+      required: [:name, :subnet, :driver]
+    })
+  end
+
+  defmodule Network do
+    OpenApiSpex.schema(%{
+      description: "summary description of a network",
+      type: :object,
+      properties: %{
+        id: %Schema{description: "The id of the network", type: :string},
+        name: %Schema{
+          type: :string,
+          description: "Name of the network.",
+          example: "westnet"
+        },
+        type: %Schema{
+          type: :string,
+          description: """
+          What kind of network this is.
+          Possible values are 'bridge', 'loopback', 'custom', and 'host' networks.
+          """,
+          example: "bridge",
+          enum: ["bridge", "loopback", "custom"]
+        },
+        subnet: %Schema{
+          type: :string,
+          description: "The IPv4 subnet (in CIDR-format) that is used for the network.",
+          example: "10.13.37.0/24"
+        },
+        subnet6: %Schema{
+          type: :string,
+          description: "The IPv6 subnet (in CIDR-format) that is used for the network.",
+          example: "2001:db8:8a2e:370:7334::/64"
+        },
+        interface: %Schema{
+          type: :string,
+          description: """
+          Name for the interface that is being used for the network. If set to `""` the name is automatically set to `kleened` prefixed with a integer.
+          If the `type` property is set to `custom` the value of `interface` must be the name of an existing interface.
+          The name must not exceed 15 characters.
+          """,
+          example: "kleene0",
+          default: ""
+        },
+        external_interfaces: %Schema{
+          description: """
+          Name of the external interfaces where incoming traffic is redirected from, if ports are being published externally on this network.
+          If an element is set to `"gateway"` the interface of the default router/gateway is used, if it exists.
+          """,
+          type: :array,
+          items: %Schema{type: :string},
+          default: ["gateway"],
+          example: ["em0", "igb2"]
+        },
+        gateway: %Schema{
+          type: :string,
+          description: """
+          The default IPv4 router that is added to 'vnet' containers connecting to the network.
+          If `""` no gateway is used.
+          """,
+          default: "",
+          example: "192.168.1.1"
+        },
+        gateway6: %Schema{
+          type: :string,
+          description: """
+          The default IPv6 router that is added to 'vnet' containers connecting to the network.
+          If `""` no gateway is used.
+          """,
+          default: "",
+          example: "192.168.1.1"
+        },
+        nat: %Schema{
+          type: :string,
+          description: """
+          Which interface should be used for NAT'ing outgoing traffic from the network.
+          If set to `"gateway"` the interface of the default router/gateway is used, if it exists.
+          If set to `\"\"` no NAT'ing is configured.
+          """,
+          default: "gateway",
+          example: "igb0"
+        },
+        icc: %Schema{
+          type: :boolean,
+          description:
+            "Whether or not to enable connectivity between containers within the network.",
+          default: true
+        }
+      }
+    })
+  end
+
   defmodule EndPointConfig do
     OpenApiSpex.schema(%{
       description: "Configuration of a connection between a network to a container.",
       type: :object,
       properties: %{
-        container: %Schema{
+        container_id: %Schema{
           type: :string,
-          description: "Name or (possibly truncated) id of the container"
+          description: "Id of the container using this endpoint."
+        },
+        network_id: %Schema{
+          type: :string,
+          description: "Name of the network that this endpoint belongs to."
         },
         ip_address: %Schema{
           type: :string,
           description:
-            "The ip(v4) address that should be assigned to the container. If this field is not set (or null) an unused ip contained in the subnet is auto-generated.",
-          default: nil,
+            "The IPv4 address that should be assigned to the container. If this field is `\"\"` an unused ip contained in the subnet is auto-generated. `null` if no address should be set.",
+          default: "",
           example: "10.13.37.33"
+        },
+        ip_address6: %Schema{
+          type: :string,
+          description:
+            "The IPv6 address that should be assigned to the container. If this field is `\"\"` an unused ip contained in the subnet is auto-generated. `null` if no address should be set.",
+          default: "",
+          example: "FIXME"
         }
       },
       required: [:container]
@@ -223,11 +445,11 @@ defmodule Kleened.API.Schemas do
       type: :object,
       properties: %{
         id: %Schema{type: :string, description: "EndPoint ID"},
-        network: %Schema{
+        network_id: %Schema{
           type: :string,
           description: "Name of the network that this endpoint belongs to."
         },
-        container: %Schema{
+        container_id: %Schema{
           type: :string,
           description: "ID of the container that this endpoint belongs to."
         },
@@ -237,45 +459,57 @@ defmodule Kleened.API.Schemas do
           nullable: true
         },
         ip_address: %Schema{
-          description: "IP address of the container connected to the network",
           type: :string,
-          nullable: true
+          description: "The IPv4 address of the container.",
+          default: nil,
+          example: "10.13.37.33"
+        },
+        ip_address6: %Schema{
+          type: :string,
+          description: "The IPv6 address of the container.",
+          default: nil,
+          example: "FIXME"
         }
       }
     })
   end
 
-  defmodule NetworkConfig do
+  defmodule PublishedPort do
     OpenApiSpex.schema(%{
-      description: "Network configuration",
+      description: "FIXME",
       type: :object,
       properties: %{
-        name: %Schema{
-          type: :string,
-          description: "Name of the network.",
-          example: "westnet"
-        },
-        subnet: %Schema{
-          type: :string,
-          description: "The subnet (in CIDR-format) that is used for the network.",
-          example: "10.13.37.0/24"
-        },
-        ifname: %Schema{
-          type: :string,
-          description:
-            "Name of the loopback interface that is being used for the network. Only used with the 'loopback' driver.",
-          example: "kleene0"
-        },
-        driver: %Schema{
-          type: :string,
-          description: """
-          Which driver to use for the network. Possible values are 'vnet', 'loopback', and 'host'.
-          See jails(8) and the networking documentation for details.
-          """,
-          example: "vnet"
+        container_id: %Schema{description: "FIXME", type: :string},
+        network_id: %Schema{description: "FIXME", type: :string},
+        host_ip: %Schema{description: "FIXME", type: :integer},
+        host_port: %Schema{description: "FIXME", type: :string},
+        container_port: %Schema{description: "FIXME", type: :string},
+        protocol: %Schema{description: "FIXME", type: :string, enum: ["tcp", "udp"]},
+        internal: %Schema{description: "FIXME", type: :boolean}
+      }
+    })
+  end
+
+  defmodule NetworkList do
+    OpenApiSpex.schema(%{
+      description: "List of networks.",
+      type: :array,
+      items: Kleened.API.Schemas.Network
+    })
+  end
+
+  defmodule NetworkInspect do
+    OpenApiSpex.schema(%{
+      description: "Detailed information on a volume.",
+      type: :object,
+      properties: %{
+        network: Kleened.API.Schemas.Network,
+        network_endpoints: %Schema{
+          type: :array,
+          description: "Endpoints of the network.",
+          items: Kleened.API.Schemas.EndPoint
         }
-      },
-      required: [:name, :subnet, :driver]
+      }
     })
   end
 
@@ -443,55 +677,6 @@ defmodule Kleened.API.Schemas do
       description: "List of images.",
       type: :array,
       items: Kleened.API.Schemas.Image
-    })
-  end
-
-  defmodule Network do
-    OpenApiSpex.schema(%{
-      description: "summary description of a network",
-      type: :object,
-      properties: %{
-        id: %Schema{description: "The id of the network", type: :string},
-        name: %Schema{description: "Name of the network", type: :string},
-        subnet: %Schema{description: "Subnet used for the network", type: :string},
-        driver: %Schema{
-          description: "Type of network.",
-          type: :string
-        },
-        loopback_if: %Schema{
-          description: "Name of the loopback interface (used for a 'loopback' network).",
-          type: :string,
-          default: ""
-        },
-        bridge_if: %Schema{
-          description: "Name of the bridge interface (used for a 'vnet' network).",
-          type: :string,
-          default: ""
-        }
-      }
-    })
-  end
-
-  defmodule NetworkList do
-    OpenApiSpex.schema(%{
-      description: "List of networks.",
-      type: :array,
-      items: Kleened.API.Schemas.Network
-    })
-  end
-
-  defmodule NetworkInspect do
-    OpenApiSpex.schema(%{
-      description: "Detailed information on a volume.",
-      type: :object,
-      properties: %{
-        network: Kleened.API.Schemas.Network,
-        network_endpoints: %Schema{
-          type: :array,
-          description: "Endpoints of the network.",
-          items: Kleened.API.Schemas.EndPoint
-        }
-      }
     })
   end
 

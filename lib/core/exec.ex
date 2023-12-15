@@ -285,11 +285,11 @@ defmodule Kleened.Core.Exec do
     %Schemas.Container{cont | user: user, cmd: cmd, env: env}
   end
 
-  defp jail_cleanup(%Schemas.Container{id: container_id, dataset: dataset}) do
-    if Network.connected_to_vnet_networks?(container_id) do
+  defp jail_cleanup(%Schemas.Container{id: container_id, network_driver: driver, dataset: dataset}) do
+    if driver == "vnet" do
       destoy_jail_epairs = fn network ->
         config = MetaData.get_endpoint(container_id, network.id)
-        FreeBSD.destroy_bridged_epair(config.epair, network.bridge_if)
+        FreeBSD.destroy_bridged_epair(config.epair, network.interface)
         config = %Schemas.EndPoint{config | epair: nil}
         MetaData.add_endpoint_config(container_id, network.id, config)
       end
@@ -329,11 +329,11 @@ defmodule Kleened.Core.Exec do
            user: user,
            jail_param: jail_param,
            env: env
-         } = cont,
+         } = container,
          use_tty
        ) do
-    Logger.info("Starting container #{inspect(cont.id)}")
-    network_config = setup_connectivity_configuration(id)
+    Logger.info("Starting container #{id}")
+    network_config = setup_connectivity_configuration(container)
     path = ZFS.mountpoint(dataset)
 
     jail_param =
@@ -379,75 +379,124 @@ defmodule Kleened.Core.Exec do
     false
   end
 
-  defp setup_connectivity_configuration(container_id) do
-    networks = MetaData.connected_networks(container_id)
+  defp setup_connectivity_configuration(%Schemas.Container{network_driver: "host"}) do
+    {:ok, ["ip4=inherit"]}
+  end
 
-    case network_type_used(networks) do
-      :no_networks ->
-        []
-
-      :host ->
-        ["ip4=inherit"]
-
-      :loopback ->
-        network_ids = Enum.map(networks, fn %Schemas.Network{id: id} -> id end)
-        ips = Enum.map(network_ids, &extract_ip(container_id, &1))
-
-        case Enum.join(ips, ",") do
-          "" -> []
-          ips_as_string -> ["ip4.addr=#{ips_as_string}"]
-        end
-
-      :vnet ->
-        create_vnet_network_config(networks, container_id, [])
+  defp setup_connectivity_configuration(container) do
+    case MetaData.connected_networks(container.id) do
+      [] -> {:ok, []}
+      networks -> setup_connectivity_configuration(container, networks)
     end
   end
 
+  defp setup_connectivity_configuration(
+         %Schemas.Container{network_driver: "alias"} = container,
+         networks
+       ) do
+    Enum.flatmap(networks, &create_alias_network_config(&1, container.id))
+  end
+
+  defp setup_connectivity_configuration(
+         %Schemas.Container{network_driver: "vnet"} = container,
+         networks
+       ) do
+    Enum.flatmap(networks, &create_vnet_network_config(&1, container.id))
+  end
+
+  defp create_alias_network_config(network, container) do
+    endpoint = MetaData.get_endpoint(container.id, network.id)
+
+    ip_jailparam =
+      case endpoint.ip_address do
+        "" -> []
+        ip -> ["ip4.addr=#{ip}"]
+      end
+
+    ip6_jailparam =
+      case endpoint.ip_address6 do
+        "" -> []
+        ip6 -> ["ip6.addr=#{ip6}"]
+      end
+
+    # NOTE This was previously done by having one ip4.addr param
+    # containing all ips in a comma-seperated list.
+    ip_jailparam ++ ip6_jailparam
+  end
+
   defp create_vnet_network_config(
-         [%Schemas.Network{id: id, bridge_if: bridge, subnet: subnet} | rest],
-         container_id,
-         network_configs
+         %Schemas.Network{
+           id: id,
+           interface: bridge,
+           subnet: subnet,
+           subnet6: subnet6,
+           gateway: gateway,
+           gateway6: gateway6
+         },
+         container_id
        ) do
     subnet = CIDR.parse(subnet)
-    gateway = subnet.first |> :inet.ntoa() |> :binary.list_to_bin()
+    subnet6 = CIDR.parse(subnet6)
 
-    %Schemas.EndPoint{ip_address: ip} = endpoint = MetaData.get_endpoint(container_id, id)
+    %Schemas.EndPoint{ip_address: ip, ip_address6: ip6} =
+      endpoint = MetaData.get_endpoint(container_id, id)
 
     epair = FreeBSD.create_epair()
     MetaData.add_endpoint_config(container_id, id, %Schemas.EndPoint{endpoint | epair: epair})
     # "exec.start=\"ifconfig #{epair}b name jail0\" " <>
     # "exec.poststop=\"ifconfig #{bridge} deletem #{epair}a\" " <>
     # "exec.poststop=\"ifconfig #{epair}a destroy\""
-    network_configs = [
+    base_config = [
       "vnet",
       "vnet.interface=#{epair}b",
       "exec.prestart=ifconfig #{bridge} addm #{epair}a",
-      "exec.prestart=ifconfig #{epair}a up",
-      "exec.start=ifconfig #{epair}b #{ip}/#{subnet.mask}",
-      "exec.start=route add -inet default #{gateway}"
-      | network_configs
+      "exec.prestart=ifconfig #{epair}a up"
     ]
 
-    create_vnet_network_config(rest, container_id, network_configs)
+    extended_config =
+      create_extended_config([],
+        subnet: {epair, subnet, ip},
+        gateway: gateway,
+        subnet6: {epair, subnet6, ip6},
+        gateway6: gateway6
+      )
+
+    base_config ++ extended_config
   end
 
-  defp create_vnet_network_config([], _, network_configs) do
-    network_configs
+  defp create_extended_config(config, [{_, ""} | rest]) do
+    # extended_config = [
+    #  "exec.start=ifconfig #{epair}b #{ip}/#{subnet.mask}",
+    #  "exec.start=route add -inet default #{gateway}"
+    # ]
+    create_extended_config(config, rest)
   end
 
-  def extract_ip(container_id, network_id) do
+  defp create_extended_config(config, subnet: {epair, subnet, ip} | rest) do
+    create_extended_config(
+      ["exec.start=ifconfig #{epair}b inet #{ip}/#{subnet.mask}" | config],
+      rest
+    )
+  end
+
+  defp create_extended_config(config, subnet6: {epair, subnet, ip} | rest) do
+    create_extended_config(
+      ["exec.start=ifconfig #{epair}b inet6 #{ip}/#{subnet.mask}" | config],
+      rest
+    )
+  end
+
+  defp create_extended_config(config, gateway: gateway | rest) do
+    create_extended_config(["exec.start=route add -inet default #{gateway}" | config], rest)
+  end
+
+  defp create_extended_config(config, gateway6: gateway | rest) do
+    create_extended_config(["exec.start=route add -inet6 default #{gateway}" | config], rest)
+  end
+
+  def extract_ip(container_id, network_id, "inet") do
     config = MetaData.get_endpoint(container_id, network_id)
     config.ip_address
-  end
-
-  defp network_type_used(networks) do
-    case networks do
-      [] -> :no_networks
-      [%Schemas.Network{driver: "host"}] -> :host
-      [%Schemas.Network{driver: "loopback"} | _] -> :loopback
-      [%Schemas.Network{driver: "vnet"} | _] -> :vnet
-      invalid_response -> Logger.error("Invalid response: #{inspect(invalid_response)}")
-    end
   end
 
   defp relay_msg(msg, state) do

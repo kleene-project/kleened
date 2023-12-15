@@ -37,6 +37,3 @@ api_listening_sockets:
 
     ### TCP IPv6 socket (localhost) without TLS
     - address: "http://[::1]:8080/"
-
-# Default interface used as default gateway for containers. If omitted kleened tries to detect it automatically.
-# default_gateway_if: "em0"

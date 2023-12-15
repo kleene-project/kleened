@@ -13,7 +13,7 @@ defmodule Kleened.Core.Network do
 
   @type t() :: %Schemas.Network{}
   @type network_id() :: String.t()
-  @type network_config :: %Schemas.NetworkConfig{}
+  @type network_config() :: %Schemas.NetworkConfig{}
   @type endpoint() :: %Schemas.EndPoint{}
 
   @default_pf_configuration """
@@ -49,8 +49,8 @@ defmodule Kleened.Core.Network do
   ### Docker Core style API's
   @spec create(network_config()) ::
           {:ok, Network.t()} | {:error, String.t()}
-  def create(options) do
-    GenServer.call(__MODULE__, {:create, options})
+  def create(config) do
+    GenServer.call(__MODULE__, {:create, config})
   end
 
   @spec connect(String.t(), %Schemas.EndPointConfig{}) ::
@@ -98,42 +98,66 @@ defmodule Kleened.Core.Network do
   def init([]) do
     pf_conf_path = Config.get("pf_config_path")
 
-    gateway =
-      case Config.get("default_gateway_if") do
-        nil ->
-          detect_gateway_if()
-
-        gw ->
-          gw
-      end
-
     FreeBSD.enable_ip_forwarding()
 
     if not Utils.touch(pf_conf_path) do
       Logger.error("Unable to access Kleeneds PF configuration file located at #{pf_conf_path}")
     end
 
-    create_loopback_interfaces()
-    state = %State{:pf_config_path => pf_conf_path, :gateway_interface => gateway}
+    create_network_interfaces()
+    state = %State{:pf_config_path => pf_conf_path}
 
     # Adding the special 'host' network (meaning use ip4=inherit when jails are connected to it)
     MetaData.add_network(%Schemas.Network{id: "host", name: "host", driver: "host", subnet: "n/a"})
 
     enable_pf()
-    configure_pf(pf_conf_path, gateway)
+    configure_pf(pf_conf_path)
     {:ok, state}
   end
 
   @impl true
-  def handle_call({:create, options}, _from, state) do
-    reply = create_(options, state)
+  def handle_call({:create, config}, _from, state) do
+    reply =
+      case validate_create_config(config) do
+        :ok -> create_(config, state)
+        {:error, reason} -> {:error, reason}
+      end
+
     {:reply, reply, state}
   end
 
-  def handle_call({:connect, network_idname, config}, _from, state) do
-    container = MetaData.get_container(config.container)
-    network = MetaData.get_network(network_idname)
-    reply = connect_(container, network, config)
+  def handle_call(
+        {:connect, net_idname, %Schemas.EndPoint{container: con_idname} = config},
+        _from,
+        state
+      ) do
+    reply =
+      with {:container, %Schemas.Container{} = container} <-
+             {:container, MetaData.get_container(con_idname)},
+           {:network, %Schemas.Network{} = network} <-
+             {:network, MetaData.get_network(net_idname)},
+           {:endpoint, :not_found} <-
+             {:endpoint, MetaData.get_endpoint(container.id, network.id)} do
+        connect_with_driver(container, network, config)
+      else
+        {:network, :not_found} ->
+          Logger.debug(
+            "cannot connect container #{config.container} to #{network_idname}: network not found"
+          )
+
+          {:error, "network not found"}
+
+        {:container, :not_found} ->
+          Logger.debug(
+            "cannot connect container #{config.container} to #{network_idname}: container not found"
+          )
+
+          {:error, "container not found"}
+
+        {:endpoint, _} ->
+          {:error, "container already connected to the network"}
+      end
+
     {:reply, reply, state}
   end
 
@@ -156,7 +180,8 @@ defmodule Kleened.Core.Network do
   end
 
   def handle_call({:remove, idname}, _from, state) do
-    remove_(idname, state)
+    reply = remove_(idname, state)
+    {:reply, reply, state}
   end
 
   def handle_call(:prune, _from, state) do
@@ -192,154 +217,227 @@ defmodule Kleened.Core.Network do
   ##########################
   ### Internal functions ###
   ##########################
-  def create_(%Schemas.NetworkConfig{name: "host"}, _state) do
-    {:error, "network name 'host' is reserved and cannot be used"}
-  end
+  def validate_create_config(%Schemas.NetworkConfig{
+        driver: driver,
+        name: name,
+        subnet: subnet,
+        subnet6: subnet6
+      }) do
+    case name == "host" do
+      false ->
+        case CIDR.parse(subnet) do
+          %CIDR{} ->
+            case CIDR.parse(subnet6) do
+              %CIDR{} ->
+                case MetaData.get_network(name) do
+                  :not_found ->
+                    :ok
 
-  def create_(
-        %Schemas.NetworkConfig{driver: driver, name: name, subnet: subnet, ifname: loopback_if},
-        state
-      ) do
-    parsed_subnet = CIDR.parse(subnet)
+                  _ ->
+                    {:error, "network name is already taken"}
+                end
 
-    cond do
-      MetaData.get_network(name) != :not_found ->
-        {:error, "network name is already taken"}
-
-      not is_map(parsed_subnet) or parsed_subnet.__struct__ != CIDR ->
-        {:error, "invalid subnet"}
-
-      driver == "loopback" ->
-        create_loopback_network(name, loopback_if, subnet, state)
-
-      driver == "vnet" ->
-        create_vnet_network(name, subnet, state)
-
-      true ->
-        {:error, "Unknown driver #{inspect(driver)}"}
-    end
-  end
-
-  defp remove_(idname, state) do
-    case MetaData.get_network(idname) do
-      %Schemas.Network{id: id, driver: "loopback", loopback_if: if_name} ->
-        container_ids = MetaData.connected_containers(id)
-        Enum.map(container_ids, &disconnect_(&1, id))
-        Utils.destroy_interface(if_name)
-        MetaData.remove_network(id)
-        configure_pf(state.pf_config_path, state.gateway_interface)
-        {:reply, {:ok, id}, state}
-
-      %Schemas.Network{id: id, driver: "vnet", bridge_if: if_name} ->
-        container_ids = MetaData.connected_containers(id)
-        Enum.map(container_ids, &disconnect_(&1, id))
-
-        # Just in case there are more members added:
-        remove_bridge_members(if_name)
-
-        Utils.destroy_interface(if_name)
-        MetaData.remove_network(id)
-        configure_pf(state.pf_config_path, state.gateway_interface)
-        {:reply, {:ok, id}, state}
-
-      :not_found ->
-        {:reply, {:error, "network not found."}, state}
-
-      %Schemas.Network{driver: "host"} ->
-        {:reply, {:error, "cannot delete host network"}, state}
-    end
-  end
-
-  defp connect_(_container, :not_found, _config) do
-    Logger.warn("Could not connect container to network: network not found")
-    {:error, "network not found"}
-  end
-
-  defp connect_(:not_found, _network, _config) do
-    Logger.warn("Could not connect container to network: container not found")
-    {:error, "container not found"}
-  end
-
-  defp connect_(container, network, config) do
-    case MetaData.get_endpoint(container.id, network.id) do
-      %Schemas.EndPoint{} ->
-        {:error, "container already connected to the network"}
-
-      :not_found ->
-        connect_with_driver(container, network, config)
-    end
-  end
-
-  defp connect_with_driver(
-         %Schemas.Container{id: container_id},
-         %Schemas.Network{id: "host"} = network,
-         _config
-       ) do
-    cond do
-      Container.is_running?(container_id) ->
-        # A jail with 'ip4="new"' (or using a VNET) cannot be modified to use 'ip="inherit"'
-        {:error, "cannot connect a running container to the hosts network"}
-
-      true ->
-        case MetaData.connected_networks(container_id) do
-          # A jail with 'ip4=inherit' cannot use VNET's or impose restrictions on ip-addresses
-          # using ip4.addr
-          [] ->
-            endpoint = %Schemas.EndPoint{
-              id: Utils.uuid(),
-              network: "host",
-              container: container_id
-            }
-
-            MetaData.add_endpoint_config(container_id, network.id, endpoint)
-            {:ok, endpoint}
-
-          _ ->
-            {:error, "cannot connect to host network simultaneously with other networks"}
-        end
-    end
-  end
-
-  defp connect_with_driver(
-         %Schemas.Container{id: container_id},
-         %Schemas.Network{driver: "loopback"} = network,
-         config
-       ) do
-    {ip, ip_validation_result} = process_ip_address_parameter(config, network)
-
-    cond do
-      connected_to_host_network?(container_id) ->
-        {:error, "connected to host network"}
-
-      connected_to_vnet_networks?(container_id) ->
-        {:error,
-         "already connected to a vnet network and containers can't be connected to both vnet and loopback networks"}
-
-      ip_validation_result != :ok ->
-        {:error, msg} = ip_validation_result
-        {:error, "could not validate the ipv4 address: #{msg}"}
-
-      true ->
-        config = %Schemas.EndPoint{
-          id: Utils.uuid(),
-          network: network.name,
-          container: container_id,
-          ip_address: ip
-        }
-
-        MetaData.add_endpoint_config(container_id, network.id, config)
-
-        case OS.cmd(~w"ifconfig #{network.loopback_if} alias #{ip}/32") do
-          {_, 0} ->
-            if Container.is_running?(container_id) do
-              add_jail_ip(container_id, ip)
+              {:error, reason} ->
+                {:error, "invalid subnet6: #{reason}"}
             end
 
-            {:ok, config}
-
-          {error_output, _nonzero_exitcode} ->
-            {:error, "could not add ip #{ip} to container #{container_id}: #{error_output}"}
+          {:error, reason} ->
+            {:error, "invalid subnet: #{reason}"}
         end
+
+      true ->
+        {:error, "network name 'host' is reserved and cannot be used"}
+    end
+  end
+
+  defp create_(
+         %Schemas.NetworkConfig{
+           interface: ""
+         } = config,
+         state
+       ) do
+    interface = generate_interface_name()
+    create_(%Schemas.NetworkConfig{config | interface: interface}, state)
+  end
+
+  defp create_(
+         %Schemas.NetworkConfig{
+           nat: "gateway"
+         } = config,
+         state
+       ) do
+    case detect_gateway_if() do
+      {:ok, nat_if} ->
+        create_(%Schemas.NetworkConfig{config | nat: nat_if}, state)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp create_(
+         %Schemas.NetworkConfig{
+           type: "loopback",
+           interface: if_name,
+           subnet: subnet,
+           subnet6: subnet6
+         },
+         state
+       ) do
+    create_interface("lo", ifname)
+    ifconfig_alias_add(subnet, if_name, "inet")
+    ifconfig_alias_add(subnet6, if_name, "inet6")
+    create_network_metadata(config, state)
+    configure_pf(state.pf_config_path)
+  end
+
+  defp create_(
+         %Schemas.NetworkConfig{
+           type: "bridge",
+           interface: ifname,
+           subnet: subnet,
+           subnet6: subnet6
+         },
+         state
+       ) do
+    create_interface("bridge", ifname)
+    ifconfig_alias_add(subnet, if_name, "inet")
+    ifconfig_alias_add(subnet6, if_name, "inet6")
+    create_network_metadata(config, state)
+    configure_pf(state.pf_config_path)
+  end
+
+  defp create_(
+         %Schemas.NetworkConfig{
+           type: "custom",
+           interface: ifname,
+           subnet: subnet,
+           subnet6: subnet6
+         },
+         state
+       ) do
+    ifconfig_alias_add(subnet, if_name, "inet")
+    ifconfig_alias_add(subnet6, if_name, "inet6")
+    create_network_metadata(config, state)
+    configure_pf(state.pf_config_path)
+  end
+
+  defp create_(%Schemas.NetworkConfig{type: driver}, _state) do
+    {:error, "Unknown driver #{inspect(driver)}"}
+  end
+
+  defp create_network_interfaces() do
+    MetaData.list_networks(:exclude_host)
+    |> Enum.map(fn
+      %Schemas.Network{type: "bridge", interface: interface} ->
+        create_interface("bridge", interface)
+
+      %Schemas.Network{type: "loopback", interface: interface} ->
+        create_interface("lo", interface)
+
+      _ ->
+        :ok
+    end)
+  end
+
+  defp create_interface(if_type, interface) do
+    if Utils.interface_exists(interface) do
+      Utils.destroy_interface(interface)
+    end
+
+    OS.cmd(~w"ifconfig #{if_type} create name #{interface}")
+  end
+
+  defp create_network_metadata(
+         %Schemas.NetworkConfig{
+           name: name,
+           type: type,
+           subnet: subnet,
+           subnet6: subnet6,
+           interface: interface,
+           external_interfaces: ext_ifs,
+           gateway: gateway,
+           nat: nat,
+           icc: icc
+         },
+         _state
+       ) do
+    network = %Schemas.Network{
+      id: Utils.uuid(),
+      name: name,
+      type: type,
+      subnet: subnet,
+      subnet6: subnet6,
+      interface: interface,
+      external_interfaces: ext_ifs,
+      gateway: gateway,
+      nat: nat,
+      icc: icc
+    }
+
+    MetaData.add_network(network)
+  end
+
+  defp remove_(idname, pf_config) do
+    case MetaData.get_network(idname) do
+      %Schemas.Network{type: "custom"} = network ->
+        _remove_metadata_and_pf(network, pf_config)
+
+      %Schemas.Network{type: "loopback" = network} ->
+        _remove_metadata_and_pf(network, pf_config)
+        Utils.destroy_interface(network.interface)
+        {:ok, id}
+
+      %Schemas.Network{type: "bridge"} = network ->
+        _remove_metadata_and_pf(network, pf_config)
+        # Just in case there are more members added:
+        remove_bridge_members(if_name)
+        Utils.destroy_interface(network.interface)
+        {:ok, id}
+
+      :not_found ->
+        {:error, "network not found."}
+
+      %Schemas.Network{driver: "host"} ->
+        {:error, "cannot delete host network"}
+    end
+  end
+
+  def _remove_metadata_and_pf(%Schemas.Network{id: id, interface: interface}, pf_config) do
+    container_ids = MetaData.connected_containers(id)
+    Enum.map(container_ids, &disconnect_(&1, id))
+    MetaData.remove_network(id)
+    configure_pf(pf_config)
+  end
+
+  defp connect_with_driver(
+         %Schemas.Container{network_driver: "host"},
+         _network,
+         _config
+       ) do
+    {:error, "containers with the 'host' network driver cannot connect to networks."}
+  end
+
+  defp connect_with_driver(
+         %Schemas.Container{network_driver: "alias", id: container_id},
+         network,
+         %Schemas.EndPointConfig{ip_address: ipv4_addr, ip_address6: ipv6_addr}
+       ) do
+    with {:ok, ip_address} = create_ip_address(ipv4_addr, network, "inet"),
+         {:ok, ip_address6} = create_ip_address(ipv6_addr, network, "inet6"),
+         :ok = add_container_ip_alias(ip_address, container, network, "inet"),
+         :ok = add_container_ip_alias(ip_address6, container, network, "inet6") do
+      config = %Schemas.EndPoint{
+        id: Utils.uuid(),
+        network: network.name,
+        container: container_id,
+        ip_address: ip_address,
+        ip_address6: ip_address6
+      }
+
+      MetaData.add_endpoint_config(container_id, network.id, config)
+    else
+      {:error, msg} -> {:error, msg}
     end
   end
 
@@ -348,33 +446,22 @@ defmodule Kleened.Core.Network do
          %Schemas.Network{driver: "vnet"} = network,
          config
        ) do
-    {ip, ip_validation_result} = process_ip_address_parameter(config, network)
+    with {:running, false} <- {:running, Container.is_running?(container.id)},
+         {:ok, ip_address} = create_ip_address(ipv4_addr, network, "inet"),
+         {:ok, ip_address6} = create_ip_address(ipv6_addr, network, "inet6") do
+      config = %Schemas.EndPoint{
+        id: Utils.uuid(),
+        network: network.name,
+        container: container_id,
+        ip_address: ip_address,
+        ip_address6: ip_address6
+      }
 
-    cond do
-      connected_to_host_network?(container.id) ->
-        {:error, "connected to host network"}
-
-      Utils.is_container_running?(container.id) ->
-        {:error, "cannot connect a running container to a vnet network"}
-
-      connected_to_loopback_networks?(container.id) ->
-        {:error,
-         "already connected to a loopback network and containers can't be connected to both vnet and loopback networks"}
-
-      ip_validation_result != :ok ->
-        {:error, msg} = ip_validation_result
-        {:error, "could not validate the ipv4 address: #{msg}"}
-
-      true ->
-        config = %Schemas.EndPoint{
-          id: Utils.uuid(),
-          network: network.name,
-          container: container.id,
-          ip_address: ip
-        }
-
-        MetaData.add_endpoint_config(container.id, network.id, config)
-        {:ok, config}
+      MetaData.add_endpoint_config(container_id, network.id, config)
+    else
+      {:error, msg} -> {:error, msg}
+      # FIXME: Does even matter? We can still set meta-data and then it should work on a restart.
+      {:running, true} -> {:error, "cannot connect a running vnet container to a network"}
     end
   end
 
@@ -385,77 +472,119 @@ defmodule Kleened.Core.Network do
       }'"
     )
 
-    {:reply, {:error, "unknown error"}}
+    {:error, "unknown error"}
   end
 
-  def disconnect_(container_idname, network_idname) do
-    cont = %Schemas.Container{id: container_id} = MetaData.get_container(container_idname)
-    network = MetaData.get_network(network_idname)
-    config = MetaData.get_endpoint(container_id, network.id)
+  def disconnect_(con_ident, net_ident) do
+    with {:container, container = %Schemas.Container{}} <-
+           {:container, MetaData.get_container(con_ident)},
+         {:network, network = %Schemas.Network{}} <- {:network, MetaData.get_network(net_ident)},
+         {:endpoint, config = %Schemas.EndPoint{}} <-
+           {:endpoint, MetaData.get_endpoint(container.id, network.id)} do
+    else
+      {:container, :not_found} -> {:error, "container not found"}
+      {:network, :not_found} -> {:error, "network not found"}
+      {:endpoint, :not_found} -> {:error, "endpoint configuration not found"}
+    end
 
     cond do
-      cont == :not_found ->
-        {:error, "container not found"}
-
-      network == :not_found ->
-        {:error, "network not found"}
-
-      config == :not_found ->
-        {:error, "endpoint configuration not found"}
-
-      network.driver == "host" ->
-        # The container needs to be restarted for the disconnect to take effect.
-        MetaData.remove_endpoint_config(container_id, network.id)
-
-      network.driver == "loopback" ->
+      container.network_driver == "alias" ->
         # Remove ip-addresses from the jail, network interface, and database
-        ifconfig_remove_alias(config.ip_address, network.loopback_if)
+        ifconfig_alias_remove(config.ip_address, network.loopback_if, "inet")
+        ifconfig_alias_remove(config.ip_address6, network.loopback_if, "inet6")
 
-        if Container.is_running?(container_id) do
-          remove_jail_ips(container_id, config.ip_address)
+        if Container.is_running?(container.id) do
+          remove_jail_ips(container, id, config.ip_address)
         end
 
-        MetaData.remove_endpoint_config(container_id, network.id)
+        MetaData.remove_endpoint_config(container.id, network.id)
 
-      network.driver == "vnet" ->
+      container.network_driver == "vnet" ->
         if config.epair != nil do
-          FreeBSD.destroy_bridged_vnet_epair(config.epair, network.bridge_if, container_id)
+          FreeBSD.destroy_bridged_vnet_epair(config.epair, network.interface, container.id)
         end
 
-        MetaData.remove_endpoint_config(container_id, network.id)
+        MetaData.remove_endpoint_config(container.id, network.id)
 
       true ->
-        Logger.error("this should not happen!")
+        Logger.warning("this should not happen!")
         {:error, "unknown error occured"}
     end
   end
 
-  defp process_ip_address_parameter(config, network) do
-    ip =
-      case config.ip_address do
-        nil ->
-          new_ip(network)
+  @spec create_ip_address(%Schemas.Network{}, "inet" | "inet6") ::
+          {:ok, String.t()} | {:error, String.t()}
+  defp create_ip_address(nil, network, protocol) do
+    {:ok, ""}
+  end
 
-        _ ->
-          config.ip_address
+  defp create_ip_address("", network, protocol) do
+    case new_ip(network, protocol) do
+      :out_of_ips ->
+        {:error, "no more #{protocol} IP's left in the network"}
+
+      ip_address ->
+        create_ip_address(ip_address, network, protocol)
+    end
+  end
+
+  defp create_ip_address(ip_address, network, protocol) do
+    case decode_ip(ip_address, protocol) do
+      {:error, msg} ->
+        {:error, "could not parse #{protocol} address #{ip}: #{msg}"}
+
+      {:ok, _ip_tuple} ->
+        {:ok, ip_address}
+    end
+  end
+
+  @spec add_container_ip_alias(String.t(), "inet" | "inet6") ::
+          :ok | {:error, String.t()}
+  defp add_container_ip_alias("", _container, _network, _protocol) do
+    :ok
+  end
+
+  defp add_container_ip_alias(ip_address, container, network, protocol) do
+    netmask =
+      case protocol do
+        "inet" -> "32"
+        "inet6" -> "128"
       end
 
-    ip_validation =
-      case ip do
-        :out_of_ips ->
-          {:error, "no more ip's left in the network"}
+    case OS.cmd(~w"ifconfig #{network.interface} #{protocol} #{ip_address}/#{netmask}") do
+      {_, 0} ->
+        if Container.is_running?(container.id) do
+          add_jail_ip(container.id, ip_address)
+        end
 
-        _ ->
-          case Utils.decode_ip(ip, :ipv4) do
-            {:error, msg} ->
-              {:error, msg}
+        :ok
 
-            {:ok, _ip_tuple} ->
-              :ok
-          end
-      end
+      {error_output, _nonzero_exitcode} ->
+        {:error, "could not add ip #{ip_address} to #{interface}: #{error_output}"}
+    end
+  end
 
-    {ip, ip_validation}
+  @spec create_ip_vnet(%Schemas.EndPoint{}, %Schemas.Network{}, "inet" | "inet6") ::
+          {:ok, String.t()} | {:error, String.t()}
+  defp create_ip_vnet(%Schemas.EndPoint{ip_address: nil}, container, network, "inet") do
+    {:ok, ""}
+  end
+
+  defp create_ip_vnet(%Schemas.EndPoint{ip_address6: nil}, container, network, "inet6") do
+    {:ok, ""}
+  end
+
+  defp create_ip_vnet(%Schemas.EndPoint{ip_address: address}, container, network, "inet6") do
+    {:ok, ""}
+  end
+
+  def decode_ip(ip, protocol) do
+    ip_charlist = String.to_charlist(ip)
+
+    case protocol do
+      "inet" -> :inet.parse_ipv4_address(ip_charlist)
+      "inet6" -> :inet.parse_ipv6_address(ip_charlist)
+    end
   end
 
   defp remove_bridge_members(bridge) do
@@ -475,54 +604,31 @@ defmodule Kleened.Core.Network do
     Enum.map(lines, remove_if_member)
   end
 
-  def configure_pf(pf_config_path, default_gw) do
+  def configure_pf(pf_config_path) do
     networks = MetaData.list_networks(:exclude_host)
 
     state = %{
-      :macros => [
-        "gw_if=\"#{default_gw}\" # This should be the interface of your default gateway"
-      ],
+      :macros => [],
       :translation => [],
       :filtering => []
     }
 
-    FreeBSD.enable_ip_forwarding()
     pf_config = create_pf_config(networks, state)
     load_pf_config(pf_config_path, pf_config)
   end
 
   def create_pf_config(
-        [%Schemas.Network{driver: "loopback", loopback_if: if_name, subnet: subnet} | rest],
+        [%Schemas.Network{id: network_id} = network | rest],
         %{macros: macros, translation: translation} = state
       ) do
-    new_macro = "kleene_loopback_#{if_name}_subnet=\"#{subnet}\""
-    nat_subnet = "nat on $gw_if from $kleene_loopback_#{if_name}_subnet to any -> ($gw_if)"
+    prefix = "kleene_network_#{network_id}"
+    updated_macros = add_network_macros(network, macros, prefix)
 
-    new_state = %{
-      state
-      | :macros => [new_macro | macros],
-        :translation => [nat_subnet | translation]
-    }
+    # "nat on $#{prefix}_nat_if from $#{prefix}_subnet to any -> ($#{prefix}_nat_if)"
+    nat_network =
+      "nat on $#{prefix}_nat_if inet from ($#{prefix}_interface:network) to any -> ($#{prefix}_nat_if)"
 
-    create_pf_config(rest, new_state)
-  end
-
-  def create_pf_config(
-        [%Schemas.Network{driver: "vnet", bridge_if: bridge_name, subnet: subnet} | rest],
-        %{macros: macros, translation: translation} = state
-      ) do
-    new_macro1 = "kleene_bridge_#{bridge_name}_subnet=\"#{subnet}\""
-    new_macro2 = "kleene_bridge_#{bridge_name}_if=\"#{bridge_name}\""
-
-    nat_bridged_network =
-      "nat on $gw_if inet from ($kleene_bridge_#{bridge_name}_if:network) to any -> ($gw_if)"
-
-    new_state = %{
-      state
-      | :macros => [new_macro1, new_macro2 | macros],
-        :translation => [nat_bridged_network | translation]
-    }
-
+    new_state = %{state | :macros => updated_macros, :translation => [nat_network | translation]}
     create_pf_config(rest, new_state)
   end
 
@@ -536,6 +642,21 @@ defmodule Kleened.Core.Network do
       kleene_translation: Enum.join(translation, "\n"),
       kleene_filtering: Enum.join(filtering, "\n")
     )
+  end
+
+  defp add_network_macros(
+         %Schemas.Network{
+           interface: interface,
+           subnet: subnet,
+           nat: nat_interface
+         },
+         macros,
+         prefix
+       ) do
+    macro_interface = "#{prefix}_interface=\"#{interface}\""
+    macro_subnet = "#{prefix}_subnet=\"#{subnet}\""
+    macro_nat_if = "#{prefix}_nat_if=\"#{nat_interface}\""
+    [macro_interface, macro_subnet, macro_nat_if | macros]
   end
 
   def enable_pf() do
@@ -565,120 +686,64 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  defp create_loopback_interfaces() do
-    MetaData.list_networks(:exclude_host)
-    |> Enum.map(fn
-      %Schemas.Network{driver: "loopback", loopback_if: if_name} ->
-        ifconfig_loopback_create(if_name)
+  defp generate_interface_name() do
+    existing_interfaces =
+      MetaData.list_networks(:exclude_host)
+      |> Enum.map(fn
+        %Schemas.Network{interface: interface} -> interface
+      end)
+      |> MapSet.new()
 
-      _ ->
-        :ok
-    end)
+    find_new_interface_name(existing_interfaces, 0)
   end
 
-  def create_loopback_network(name, if_name, subnet, state) do
-    network = %Schemas.Network{
-      id: Utils.uuid(),
-      name: name,
-      subnet: subnet,
-      loopback_if: if_name,
-      driver: "loopback"
-    }
+  defp find_new_interface_name(existing_interfaces, counter) do
+    interface = "kleene#{counter}"
 
-    case ifconfig_loopback_create(if_name) do
-      {_, 0} ->
-        MetaData.add_network(network)
-        configure_pf(state.pf_config_path, state.gateway_interface)
-        {:ok, network}
-
-      {error_output, _exitcode} ->
-        {:error, "ifconfig failed with output: #{error_output}"}
+    case MapSet.member?(existing_interfaces, interface) do
+      true -> find_new_interface_name(existing_interfaces, counter + 1)
+      false -> interface
     end
-  end
-
-  def create_vnet_network(name, subnet, state) do
-    network = %Schemas.Network{
-      id: Utils.uuid(),
-      name: name,
-      subnet: subnet,
-      driver: "vnet"
-    }
-
-    case OS.cmd(~w"ifconfig bridge create") do
-      {bridge_name, 0} ->
-        bridge_name = String.trim(bridge_name)
-        %CIDR{:first => ip, :mask => mask} = CIDR.parse(subnet)
-        # :inet.ntoa/1 produces erlang strings :S
-        ip = :binary.list_to_bin(:inet.ntoa(ip))
-
-        case OS.cmd(~w"ifconfig #{bridge_name} alias #{ip}/#{mask}") do
-          {"", 0} ->
-            network = %Schemas.Network{network | bridge_if: bridge_name}
-            MetaData.add_network(network)
-            configure_pf(state.pf_config_path, state.gateway_interface)
-            {:ok, network}
-
-          {error_msg, _nonzero} ->
-            {:error, error_msg}
-        end
-
-      {error_msg, _nonzero_exitcode} ->
-        Logger.warn(
-          "failed to create network '#{name}': could not create bridge interface: #{error_msg}"
-        )
-    end
-  end
-
-  defp ifconfig_loopback_create(if_name) do
-    if Utils.interface_exists(if_name) do
-      Utils.destroy_interface(if_name)
-    end
-
-    System.cmd("ifconfig", ["lo", "create", "name", if_name])
-  end
-
-  defp connected_to_host_network?(container_id) do
-    case MetaData.connected_networks(container_id) do
-      [%Schemas.Network{id: "host"}] -> true
-      _ -> false
-    end
-  end
-
-  def connected_to_loopback_networks?(container_id) do
-    MetaData.connected_networks(container_id)
-    |> Enum.any?(fn
-      %Schemas.Network{driver: "loopback"} -> true
-      _ -> false
-    end)
-  end
-
-  def connected_to_vnet_networks?(container_id) do
-    MetaData.connected_networks(container_id)
-    |> Enum.any?(fn
-      %Schemas.Network{driver: "vnet"} -> true
-      _ -> false
-    end)
   end
 
   def detect_gateway_if() do
+    case get_routing_table(:ipv4) do
+      {:ok, routing_table} ->
+        case Enum.find(routing_table, "", fn %{"destination" => dest} -> dest == "default" end) do
+          # Extract the interface name of the default gateway
+          %{"interface-name" => interface} -> {:ok, interface}
+          _ -> {:error, "could not find a default gateway"}
+        end
+
+      _ ->
+        {:error, "could not find routing table"}
+    end
+  end
+
+  def get_routing_table(protocol) do
+    address_family =
+      case protocol do
+        :ipv4 -> "Internet"
+        :ipv6 -> "Internet6"
+      end
+
     {output_json, 0} = System.cmd("netstat", ["--libxo", "json", "-rn"])
-    # IO.puts(Jason.Formatter.pretty_print(output_json))
     {:ok, output} = Jason.decode(output_json)
     routing_table = output["statistics"]["route-information"]["route-table"]["rt-family"]
 
-    # Extract the routes for ipv4
-    [%{"rt-entry" => routes}] =
-      Enum.filter(
-        routing_table,
-        # Selecting for "Internet6" gives the ipv6 routes
-        fn %{"address-family" => addr_fam} -> addr_fam == "Internet" end
-      )
+    case Enum.filter(
+           routing_table,
+           fn
+             %{"address-family" => ^address_family} -> true
+             %{"address-family" => _} -> false
+           end
+         ) do
+      [%{"rt-entry" => routes}] ->
+        {:ok, routes}
 
-    # Extract the interface name of the default gateway
-    %{"interface-name" => if_name} =
-      Enum.find(routes, "", fn %{"destination" => dest} -> dest == "default" end)
-
-    if_name
+      _ ->
+        {:error, "could not find an #{address_family} routing table"}
+    end
   end
 
   def add_jail_ip(container_id, ip) do
@@ -725,62 +790,111 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  defp ifconfig_remove_alias(ip, iface) do
-    case System.cmd("ifconfig", [iface, "-alias", "#{ip}"], stderr_to_stdout: true) do
-      {_, 0} -> :ok
-      {error, _} -> Logger.warn("Some error occured while removing #{ip} from #{iface}: #{error}")
+  defp ifconfig_alias_add("", _interface, _proto) do
+    :ok
+  end
+
+  defp ifconfig_alias_add(ip, interface, protocol) do
+    case OS.cmd(~w"ifconfig #{interface} #{protocol} #{ip} alias") do
+      {_output, 0} ->
+        :ok
+
+      {output, _nonzero_exitcode} ->
+        {:error, "error adding #{protocol} alias to interface: #{output}"}
     end
   end
 
-  defp new_ip(%Schemas.Network{driver: "loopback", loopback_if: if_name, subnet: subnet}) do
-    ips_in_use = ips_on_interface(if_name)
-    %CIDR{:first => first_ip, :last => last_ip} = CIDR.parse(subnet)
-    generate_ip(first_ip, last_ip, ips_in_use)
+  defp ifconfig_alias_remove("", _interface, _protocol) do
+    :ok
   end
 
-  defp new_ip(%Schemas.Network{driver: "vnet", id: network_id, subnet: subnet}) do
-    configs = MetaData.get_endpoints_from_network(network_id)
-    ips_in_use = MapSet.new(Enum.map(configs, & &1.ip_address))
+  defp ifconfig_alias_remove(ip, interface, protocol) do
+    case OS.cmd(~w"ifconfig #{interface} #{protocol} #{ip} -alias") do
+      {_, 0} ->
+        :ok
+
+      {output, _nonzero_exit} ->
+        {:error, "error adding #{protocol} alias to interface: #{output}"}
+    end
+  end
+
+  defp new_ip(%Schemas.Network{interface: interface, id: network_id, subnet: subnet}, protocol) do
+    ips_in_use = ips_on_interface(interface, protocol) ++ ips_from_endpoints(network_id, protocol)
+
     %CIDR{:first => first_ip, :last => last_ip} = CIDR.parse(subnet)
-    first_ip = first_ip |> ip2int() |> (&(&1 + 1)).() |> int2ip()
+    # first_ip = first_ip |> ip2int() |> (&(&1 + 1)).() |> int2ip("inet")
     # next_ip = first_ip
-    generate_ip(first_ip, last_ip, ips_in_use)
+    generate_ip(first_ip, last_ip, ips_in_use, protocol)
   end
 
-  defp generate_ip(first_ip, last_ip, ips_in_use) do
-    first_ip = ip2int(first_ip)
-    last_ip = ip2int(last_ip)
-    ips_in_use = MapSet.new(Enum.map(ips_in_use, &ip2int(&1)))
-    next_ip = first_ip
+  def ips_from_endpoints(network_id, protocol) do
+    configs = MetaData.get_endpoints_from_network(network_id)
 
-    generate_ip_(first_ip, last_ip, next_ip, ips_in_use)
+    raw_ip_list =
+      case protocol do
+        "inet" -> Enum.map(configs, & &1.ip_address)
+        "inet6" -> Enum.map(configs, & &1.ip_address6)
+      end
+
+    raw_ip_list |> Enum.filter(&(&1 != nil and &1 != ""))
   end
 
-  defp generate_ip_(_first_ip, last_ip, next_ip, _ips_in_use) when next_ip > last_ip do
-    :out_of_ips
-  end
-
-  defp generate_ip_(first_ip, last_ip, next_ip, ips_in_use) do
-    case MapSet.member?(ips_in_use, next_ip) do
-      true ->
-        generate_ip_(first_ip, last_ip, next_ip + 1, ips_in_use)
-
-      false ->
-        int2ip(next_ip)
-    end
-  end
-
-  defp ips_on_interface(if_name) do
+  defp ips_on_interface(if_name, protocol) do
     {output_json, 0} = System.cmd("netstat", ["--libxo", "json", "-I", if_name])
     {:ok, output} = Jason.decode(output_json)
 
-    output["statistics"]["interface"]
-    |> Enum.map(& &1["address"])
-    |> Enum.filter(&String.match?(&1, ~r"\."))
+    case protocol do
+      "inet" ->
+        output["statistics"]["interface"]
+        |> Enum.map(& &1["address"])
+        |> Enum.filter(&String.match?(&1, ~r"\."))
+
+      "inet6" ->
+        Logger.warn(
+          "HOW SHOULD THIS BE IMPLEMENTED? #{inspect(output["statistics"]["interface"])}"
+        )
+
+        output["statistics"]["interface"]
+        |> Enum.map(& &1["address6"])
+        |> Enum.filter(&String.match?(&1, ~r"\."))
+    end
   end
 
-  defp int2ip(n) do
+  defp generate_ip(first_ip, last_ip, ips_in_use, protocol) do
+    first_ip = ip2int(first_ip, protocol)
+    last_ip = ip2int(last_ip, protocol)
+    ips_in_use = MapSet.new(Enum.map(ips_in_use, &ip2int(&1, protocol)))
+    next_ip = first_ip
+
+    case next_unused_int_ip(first_ip, last_ip, next_ip, ips_in_use) do
+      :out_of_ips ->
+        :out_of_ips
+
+      ip_int ->
+        int2ip(ip_int, protocol)
+    end
+  end
+
+  defp next_unused_int_ip(_first_ip, last_ip, next_ip, _ips_in_use) when next_ip > last_ip do
+    :out_of_ips
+  end
+
+  defp next_unused_int_ip(first_ip, last_ip, next_ip, ips_in_use) do
+    case MapSet.member?(ips_in_use, next_ip) do
+      true ->
+        next_unused_int_ip(first_ip, last_ip, next_ip + 1, ips_in_use)
+
+      false ->
+        next_ip
+    end
+  end
+
+  defp int2ip(n, "inet") do
     int2ip_(n, 3, [])
+  end
+
+  defp int2ip(n, "inet6") do
+    int2ip_(n, 7, [])
   end
 
   defp int2ip_(n, 0, prev) do
@@ -797,16 +911,30 @@ defmodule Kleened.Core.Network do
     int2ip_(n_next, order - 1, [x | prev])
   end
 
-  defp ip2int({a, b, c, d}) do
-    d + c * pow(1) + b * pow(2) + a * pow(3)
+  defp ip2int({a, b, c, d}, "inet") do
+    d + c * pow_ipv4(1) + b * pow_ipv4(2) + a * pow_ipv4(3)
   end
 
-  defp ip2int(ip) do
+  defp ip2int(ip, "inet") do
     {:ok, {a, b, c, d}} = ip |> to_charlist() |> :inet.parse_address()
     ip2int({a, b, c, d})
   end
 
-  defp pow(n) do
+  defp ip2int({a, b, c, d, e, f, g, h}, "inet6") do
+    h + g * pow_ipv6(1) + f * pow_ipv6(2) + e * pow_ipv6(3) + d * pow_ipv6(4) + c * pow_ipv6(5) +
+      b * pow_ipv6(6) + a * pow_ipv6(7)
+  end
+
+  defp ip2int(ip, "inet6") do
+    {:ok, {a, b, c, d, e, f, g, h}} = ip |> to_charlist() |> :inet.parse_address()
+    ip2int({a, b, c, d, e, f, g, h})
+  end
+
+  defp pow_ipv6(n) do
+    :erlang.round(:math.pow(65536, n))
+  end
+
+  defp pow_ipv4(n) do
     :erlang.round(:math.pow(256, n))
   end
 end
