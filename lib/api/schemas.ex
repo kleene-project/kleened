@@ -72,10 +72,11 @@ defmodule Kleened.API.Schemas do
           type: :string,
           description: """
           What kind of network driver should the container use.
-          Possible values are `restricted`, `host`, `vnet`, `disabled`.
+          Possible values are `ipnet`, `host`, `vnet`, `disabled`.
           """,
-          example: "restricted",
-          enum: ["restricted", "host", "vnet", "disabled"]
+          default: "ipnet",
+          example: "host",
+          enum: ["ipnet", "host", "vnet", "disabled"]
         },
         jail_param: %Schema{
           description: """
@@ -133,10 +134,10 @@ defmodule Kleened.API.Schemas do
           type: :string,
           description: """
           What kind of network driver is the container using.
-          Possible values are `restricted`, `host`, `vnet`, `disabled`.
+          Possible values are `ipnet`, `host`, `vnet`, `disabled`.
           """,
-          example: "restricted",
-          enum: ["restricted", "host", "vnet", "disabled"]
+          example: "ipnet",
+          enum: ["ipnet", "host", "vnet", "disabled"]
         },
         jail_param: %Schema{
           description: "List of jail parameters (see jail(8) for details)",
@@ -269,27 +270,30 @@ defmodule Kleened.API.Schemas do
         gateway: %Schema{
           type: :string,
           description: """
-          The default IPv4 router that is added to 'vnet' containers connecting to (bridge) networks.
-          If `nil` no gateway is used. If set to `""` the first IP of the subnet is added to `interface` and used as gateway.
-          This is only used by EndPoint's of type `vnet`. If set to `"host"`, the default gateway of the host sytem is used.
+          The default IPv4 router that is added to 'vnet' containers connecting to bridged networks. This only affects bridge networks.
+          If set to `""` no gateway is used. If set to `"<auto>"` the first IP of the subnet is added to `interface` and used as gateway.
           """,
+          default: "",
           example: "192.168.1.1"
         },
         gateway6: %Schema{
           type: :string,
           description: """
-          The default IPv6 router that is added to 'vnet' containers connecting to (bridge) networks.
-          If `nil` no gateway is used. If set to `""` the first IP of the subnet is added to `interface` and used as gateway.
-          This is only used by EndPoint's of type `vnet`. If set to `"host"`, the default gateway of the host sytem is used.
+          The default IPv6 router that is added to 'vnet' containers connecting to bridged networks. This only affects bridge networks.
+          If set to `""` no gateway is used. If set to `"<auto>"` the first IP of the subnet is added to `interface` and used as gateway.
           """,
-          # FIXME
-          example: "192.168.1.1"
+          default: "",
+          example: "2001:db8:8a2e:370:7334::1"
         },
         nat: %Schema{
-          type: :boolean,
-          description:
-            "Whether or not to source NAT traffic from this network to the default gateway interface",
-          default: true
+          type: :string,
+          description: """
+          Which interface should be used for NAT'ing outgoing traffic from the network.
+          If set to `"<host-gateway>"` the interface of the hosts default router/gateway is used, if it exists.
+          If set to `\"\"` no NAT'ing is configured.
+          """,
+          default: "<host-gateway>",
+          example: "igb0"
         },
         icc: %Schema{
           type: :boolean,
@@ -315,7 +319,7 @@ defmodule Kleened.API.Schemas do
         #  example: "2001:db8:8a2e:370:7334:4ef9:/80"
         # }
       },
-      required: [:name, :subnet, :driver]
+      required: [:name, :type]
     })
   end
 
@@ -334,7 +338,7 @@ defmodule Kleened.API.Schemas do
           type: :string,
           description: """
           What kind of network this is.
-          Possible values are 'bridge', 'loopback', 'custom', and 'host' networks.
+          Possible values are `bridge`, `loopback`, `custom`, and `host` networks.
           """,
           example: "bridge",
           enum: ["bridge", "loopback", "custom"]
@@ -385,16 +389,15 @@ defmodule Kleened.API.Schemas do
           If `""` no gateway is used.
           """,
           default: "",
-          example: "192.168.1.1"
+          example: "2001:db8:8a2e:370:7334::1"
         },
         nat: %Schema{
           type: :string,
           description: """
           Which interface should be used for NAT'ing outgoing traffic from the network.
-          If set to `"gateway"` the interface of the default router/gateway is used, if it exists.
           If set to `\"\"` no NAT'ing is configured.
           """,
-          default: "gateway",
+          default: "",
           example: "igb0"
         },
         icc: %Schema{
@@ -412,18 +415,18 @@ defmodule Kleened.API.Schemas do
       description: "Configuration of a connection between a network to a container.",
       type: :object,
       properties: %{
-        container_id: %Schema{
+        container: %Schema{
           type: :string,
-          description: "Id of the container using this endpoint."
+          description: "Identifier of the container using this endpoint."
         },
-        network_id: %Schema{
+        network: %Schema{
           type: :string,
           description: "Name of the network that this endpoint belongs to."
         },
         ip_address: %Schema{
           type: :string,
           description:
-            "The IPv4 address that should be assigned to the container. If this field is `\"\"` an unused ip contained in the subnet is auto-generated. `null` if no address should be set.",
+            "The IPv4 address that should be assigned to the container. If set to `\"auto\"` an unused ip from the subnet will be used. If set to `\"\"` no address will be set.",
           default: "",
           example: "10.13.37.33"
         },
@@ -432,7 +435,7 @@ defmodule Kleened.API.Schemas do
           description:
             "The IPv6 address that should be assigned to the container. If this field is `\"\"` an unused ip contained in the subnet is auto-generated. `null` if no address should be set.",
           default: "",
-          example: "FIXME"
+          example: "2001:db8:8a2e:370:7334::2"
         }
       },
       required: [:container]

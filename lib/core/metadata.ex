@@ -139,12 +139,12 @@ defmodule Kleened.Core.MetaData do
     """)
   end
 
-  @spec add_endpoint_config(
+  @spec add_endpoint(
           Container.container_id(),
           Network.network_id(),
           %Schemas.EndPoint{}
         ) :: :ok
-  def add_endpoint_config(container_id, network_id, endpoint_config) do
+  def add_endpoint(container_id, network_id, endpoint_config) do
     sql(
       "INSERT OR REPLACE INTO endpoint_configs(container_id, network_id, config) VALUES (?, ?, ?)",
       [container_id, network_id, to_db(endpoint_config)]

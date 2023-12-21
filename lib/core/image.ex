@@ -43,8 +43,8 @@ defmodule Kleened.Core.Image do
               Network.create(%Schemas.NetworkConfig{
                 name: "buildnet_" <> image_id,
                 subnet: "172.18.0.0/24",
-                ifname: "kl" <> String.slice(image_id, 0..4),
-                driver: "loopback"
+                interface: "kl" <> String.slice(image_id, 0..4),
+                type: "loopback"
               })
 
             state = %State{
@@ -217,14 +217,15 @@ defmodule Kleened.Core.Image do
     state = send_status(line, state)
 
     with {:ok, new_image_ref} <- environment_replacement(image_ref, state),
-         %Schemas.Image{id: image_id} <- Kleened.Core.MetaData.get_image(new_image_ref) do
+         %Schemas.Image{} <- Kleened.Core.MetaData.get_image(new_image_ref) do
       {:ok, container_config} =
         OpenApiSpex.Cast.cast(
           Schemas.ContainerConfig.schema(),
           %{
             name: "builder_" <> state.image_id,
+            network_driver: "alias",
             jail_param: ["mount.devfs=true"],
-            image: image_id,
+            image: state.image_id,
             user: "root",
             cmd: [],
             env: []

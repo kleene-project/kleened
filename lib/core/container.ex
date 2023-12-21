@@ -235,7 +235,8 @@ defmodule Kleened.Core.Container do
            env: env,
            mounts: mounts,
            cmd: command,
-           jail_param: jail_param
+           jail_param: jail_param,
+           network_driver: network_driver
          } = config
        ) do
     Logger.debug("creating container on #{dataset} with config: #{inspect(config)}")
@@ -262,6 +263,7 @@ defmodule Kleened.Core.Container do
       image_id: image_id,
       user: user,
       jail_param: jail_param,
+      network_driver: network_driver,
       env: env,
       created: DateTime.to_iso8601(DateTime.utc_now()),
       running: false

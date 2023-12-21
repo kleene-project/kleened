@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Exec do
-  alias Kleened.Core.{Container, MetaData, OS, FreeBSD, ZFS, Utils, ExecInstances, Network}
+  alias Kleened.Core.{Container, MetaData, OS, FreeBSD, ZFS, Utils, ExecInstances}
   alias Kleened.API.Schemas
 
   defmodule State do
@@ -291,7 +291,7 @@ defmodule Kleened.Core.Exec do
         config = MetaData.get_endpoint(container_id, network.id)
         FreeBSD.destroy_bridged_epair(config.epair, network.interface)
         config = %Schemas.EndPoint{config | epair: nil}
-        MetaData.add_endpoint_config(container_id, network.id, config)
+        MetaData.add_endpoint(container_id, network.id, config)
       end
 
       MetaData.connected_networks(container_id) |> Enum.map(destoy_jail_epairs)
@@ -379,33 +379,37 @@ defmodule Kleened.Core.Exec do
     false
   end
 
+  defp setup_connectivity_configuration(%Schemas.Container{network_driver: "disabled"}) do
+    ["ip4=disable", "ip6=disable"]
+  end
+
   defp setup_connectivity_configuration(%Schemas.Container{network_driver: "host"}) do
-    {:ok, ["ip4=inherit"]}
+    ["ip4=inherit", "ip6=inherit"]
   end
 
   defp setup_connectivity_configuration(container) do
     case MetaData.connected_networks(container.id) do
-      [] -> {:ok, []}
+      [] -> []
       networks -> setup_connectivity_configuration(container, networks)
     end
   end
 
   defp setup_connectivity_configuration(
-         %Schemas.Container{network_driver: "alias"} = container,
+         %Schemas.Container{network_driver: "ipnet"} = container,
          networks
        ) do
-    Enum.flatmap(networks, &create_alias_network_config(&1, container.id))
+    Enum.flat_map(networks, &create_alias_network_config(&1, container.id))
   end
 
   defp setup_connectivity_configuration(
          %Schemas.Container{network_driver: "vnet"} = container,
          networks
        ) do
-    Enum.flatmap(networks, &create_vnet_network_config(&1, container.id))
+    Enum.flat_map(networks, &create_vnet_network_config(&1, container.id))
   end
 
-  defp create_alias_network_config(network, container) do
-    endpoint = MetaData.get_endpoint(container.id, network.id)
+  defp create_alias_network_config(network, container_id) do
+    endpoint = MetaData.get_endpoint(container_id, network.id)
 
     ip_jailparam =
       case endpoint.ip_address do
@@ -435,14 +439,11 @@ defmodule Kleened.Core.Exec do
          },
          container_id
        ) do
-    subnet = CIDR.parse(subnet)
-    subnet6 = CIDR.parse(subnet6)
-
     %Schemas.EndPoint{ip_address: ip, ip_address6: ip6} =
       endpoint = MetaData.get_endpoint(container_id, id)
 
     epair = FreeBSD.create_epair()
-    MetaData.add_endpoint_config(container_id, id, %Schemas.EndPoint{endpoint | epair: epair})
+    MetaData.add_endpoint(container_id, id, %Schemas.EndPoint{endpoint | epair: epair})
     # "exec.start=\"ifconfig #{epair}b name jail0\" " <>
     # "exec.poststop=\"ifconfig #{bridge} deletem #{epair}a\" " <>
     # "exec.poststop=\"ifconfig #{epair}a destroy\""
@@ -464,6 +465,13 @@ defmodule Kleened.Core.Exec do
     base_config ++ extended_config
   end
 
+  defp create_extended_config(config, []) do
+    # We need to reverse the order of jail parameters.
+    # Otherwise we would add the gateway before the subnet (and then fail)
+    # when starting the jail
+    Enum.reverse(config)
+  end
+
   defp create_extended_config(config, [{_, ""} | rest]) do
     # extended_config = [
     #  "exec.start=ifconfig #{epair}b #{ip}/#{subnet.mask}",
@@ -472,26 +480,38 @@ defmodule Kleened.Core.Exec do
     create_extended_config(config, rest)
   end
 
-  defp create_extended_config(config, subnet: {epair, subnet, ip} | rest) do
+  defp create_extended_config(config, [{:subnet, {_epair, "", ""}} | rest]) do
+    create_extended_config(config, rest)
+  end
+
+  defp create_extended_config(config, [{:subnet, {epair, subnet, ip}} | rest]) do
+    %CIDR{} = subnet = CIDR.parse(subnet)
+
     create_extended_config(
       ["exec.start=ifconfig #{epair}b inet #{ip}/#{subnet.mask}" | config],
       rest
     )
   end
 
-  defp create_extended_config(config, subnet6: {epair, subnet, ip} | rest) do
+  defp create_extended_config(config, [{:subnet6, {_epair, "", ""}} | rest]) do
+    create_extended_config(config, rest)
+  end
+
+  defp create_extended_config(config, [{:subnet6, {epair, subnet6, ip}} | rest]) do
+    %CIDR{} = subnet6 = CIDR.parse(subnet6)
+
     create_extended_config(
-      ["exec.start=ifconfig #{epair}b inet6 #{ip}/#{subnet.mask}" | config],
+      ["exec.start=ifconfig #{epair}b inet6 #{ip}/#{subnet6.mask}" | config],
       rest
     )
   end
 
-  defp create_extended_config(config, gateway: gateway | rest) do
+  defp create_extended_config(config, [{:gateway, gateway} | rest]) do
     create_extended_config(["exec.start=route add -inet default #{gateway}" | config], rest)
   end
 
-  defp create_extended_config(config, gateway6: gateway | rest) do
-    create_extended_config(["exec.start=route add -inet6 default #{gateway}" | config], rest)
+  defp create_extended_config(config, [{:gateway6, gateway6} | rest]) do
+    create_extended_config(["exec.start=route add -inet6 default #{gateway6}" | config], rest)
   end
 
   def extract_ip(container_id, network_id, "inet") do

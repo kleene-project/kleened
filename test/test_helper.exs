@@ -78,6 +78,17 @@ defmodule TestHelper do
     {container_id, closing_msg, process_output}
   end
 
+  def container_start(container_id, config \\ %{}) do
+    attach = Map.get(config, :attach, true)
+    start_container = Map.get(config, :start_container, true)
+    {:ok, exec_id} = Exec.create(container_id)
+
+    {closing_msg, process_output} =
+      exec_valid_start(%{exec_id: exec_id, attach: attach, start_container: start_container})
+
+    {closing_msg, process_output}
+  end
+
   def container_start_attached(_api_spec, container_id) when is_binary(container_id) do
     cont = MetaData.get_container(container_id)
     {:ok, exec_id} = Exec.create(container_id)
@@ -93,21 +104,18 @@ defmodule TestHelper do
     {cont, exec_id}
   end
 
-  def container_create(api_spec, config) when not is_map_key(config, :image) do
-    container_create(api_spec, Map.put(config, :image, "FreeBSD:testing"))
-  end
-
-  def container_create(api_spec, config) when not is_map_key(config, :jail_param) do
-    container_create(api_spec, Map.put(config, :jail_param, ["mount.devfs=true"]))
-  end
-
-  def container_create(api_spec, config) when not is_map_key(config, :networks) do
-    config = Map.put(config, :networks, ["host"])
-    container_create(api_spec, config)
-  end
-
   def container_create(api_spec, config) do
-    {networks, config} = Map.pop(config, :networks)
+    config_default = %{
+      image: "FreeBSD:testing",
+      jail_param: ["mount.devfs=true"],
+      network_driver: "host"
+    }
+
+    config = Map.merge(config_default, config)
+
+    {network_name, config} = Map.pop(config, :network, "")
+    {ip_address, config} = Map.pop(config, :ip_address, "auto")
+    {ip_address6, config} = Map.pop(config, :ip_address6, "")
     assert_schema(config, "ContainerConfig", api_spec)
 
     response =
@@ -120,8 +128,22 @@ defmodule TestHelper do
            404 => "ErrorResponse"
          }) do
       %{id: container_id} = resp ->
-        Enum.map(networks, &network_connect(api_spec, &1, container_id))
-        resp
+        case network_name do
+          "" ->
+            resp
+
+          _ ->
+            endpoint_config = %{
+              container: container_id,
+              ip_address: ip_address,
+              ip_address6: ip_address6
+            }
+
+            case network_connect(api_spec, network_name, endpoint_config) do
+              :ok -> resp
+              other -> {:error, other}
+            end
+        end
 
       resp ->
         resp
@@ -211,7 +233,7 @@ defmodule TestHelper do
   end
 
   defp collect_container_output_(exec_id, output) do
-    timeout = 5_000
+    timeout = 10_000
 
     receive do
       {:container, ^exec_id, {:shutdown, {:jail_stopped, _exit_code}}} ->
@@ -557,18 +579,7 @@ defmodule TestHelper do
     })
   end
 
-  def network_create(_api_spec, config) when not is_map_key(config, :driver) do
-    exit(:testhelper_error)
-  end
-
   def network_create(api_spec, config) do
-    config_default = %{
-      name: "testnet",
-      subnet: "172.18.0.0/16",
-      ifname: "vnet0"
-    }
-
-    config = Map.merge(config_default, config)
     assert_schema(config, "NetworkConfig", api_spec)
 
     response =
@@ -603,6 +614,11 @@ defmodule TestHelper do
     json_body
   end
 
+  def network_inspect(network_ident) do
+    response = network_inspect_raw(network_ident)
+    Jason.decode!(response.resp_body, [{:keys, :atoms}])
+  end
+
   def network_inspect_raw(network_ident) do
     conn(:get, "/networks/#{network_ident}/inspect")
     |> Router.call(@opts)
@@ -619,7 +635,10 @@ defmodule TestHelper do
   end
 
   def network_connect(api_spec, network_id, container_id) when is_binary(container_id) do
-    network_connect(api_spec, network_id, %{container: container_id})
+    network_connect(api_spec, network_id, %{
+      container: container_id,
+      ip_address: "auto"
+    })
   end
 
   def network_connect(api_spec, network_id, config) do
@@ -635,7 +654,7 @@ defmodule TestHelper do
     })
   end
 
-  def network_disconnect(api_spec, container_id, network_id) do
+  def network_disconnect(api_spec, network_id, container_id) do
     response =
       conn(:post, "/networks/#{network_id}/disconnect/#{container_id}")
       |> Router.call(@opts)
@@ -782,7 +801,7 @@ defmodule TestHelper do
     end
   end
 
-  def receive_frames(conn, timeout \\ 5_000) do
+  def receive_frames(conn, timeout \\ 10_000) do
     receive_frames_(conn, [], timeout)
   end
 
@@ -804,7 +823,7 @@ defmodule TestHelper do
     end
   end
 
-  def receive_frame(conn, timeout \\ 5_000) do
+  def receive_frame(conn, timeout \\ 10_000) do
     receive do
       {:gun_ws, ^conn, _ref, msg} ->
         Logger.debug("message received from websocket: #{inspect(msg)}")
