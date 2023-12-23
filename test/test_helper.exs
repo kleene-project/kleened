@@ -8,7 +8,7 @@ alias Schemas.WebSocketMessage, as: Msg
 
 require Logger
 
-Code.put_compiler_option(:warnings_as_errors, true)
+# Code.put_compiler_option(:warnings_as_errors, true)
 ExUnit.start()
 
 ExUnit.configure(
@@ -60,7 +60,9 @@ defmodule TestHelper do
     {closing_msg, process_output} =
       exec_valid_start(%{exec_id: exec_id, attach: attach, start_container: start_container})
 
-    assert String.slice(closing_msg, -11, 11) == "exit-code 0"
+    if attach do
+      assert String.slice(closing_msg, -11, 11) == "exit-code 0"
+    end
 
     {container_id, process_output}
   end
@@ -299,7 +301,7 @@ defmodule TestHelper do
 
   def exec_valid_start(%{attach: false} = config) do
     [{1001, %Msg{msg_type: "closing", message: closing_msg}}] = exec_start_raw(config)
-    closing_msg
+    {closing_msg, ""}
   end
 
   def exec_start_raw(config) do

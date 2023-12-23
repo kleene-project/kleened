@@ -44,21 +44,6 @@ defmodule Kleened.Core.Utils do
     DateTime.to_iso8601(DateTime.utc_now())
   end
 
-  def destroy_interface(kleene_if) do
-    if interface_exists(kleene_if) do
-      {"", _exitcode} = System.cmd("ifconfig", [kleene_if, "destroy"])
-    end
-  end
-
-  def interface_exists(kleene_if) do
-    {json, 0} = System.cmd("netstat", ["--libxo", "json", "-I", kleene_if])
-
-    case Jason.decode(json) do
-      {:ok, %{"statistics" => %{"interface" => []}}} -> false
-      {:ok, %{"statistics" => %{"interface" => _if_stats}}} -> true
-    end
-  end
-
   @spec unmount(String.t()) :: integer()
   def unmount(path) do
     {"", return_code} = System.cmd("/sbin/umount", [path])

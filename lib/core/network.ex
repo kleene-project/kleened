@@ -354,8 +354,8 @@ defmodule Kleened.Core.Network do
   end
 
   def create_interface(if_type, interface) do
-    if Utils.interface_exists(interface) do
-      Utils.destroy_interface(interface)
+    if interface_exists(interface) do
+      destroy_interface(interface)
     end
 
     OS.cmd(~w"ifconfig #{if_type} create name #{interface}")
@@ -400,14 +400,14 @@ defmodule Kleened.Core.Network do
 
       %Schemas.Network{type: "loopback"} = network ->
         _remove_metadata_and_pf(network, pf_config_path)
-        Utils.destroy_interface(network.interface)
+        destroy_interface(network.interface)
         {:ok, network.id}
 
       %Schemas.Network{type: "bridge"} = network ->
         _remove_metadata_and_pf(network, pf_config_path)
         # Just in case there are more members added:
         remove_bridge_members(network.interface)
-        Utils.destroy_interface(network.interface)
+        destroy_interface(network.interface)
         {:ok, network.id}
 
       :not_found ->
@@ -727,6 +727,21 @@ defmodule Kleened.Core.Network do
     case MapSet.member?(existing_interfaces, interface) do
       true -> find_new_interface_name(existing_interfaces, counter + 1)
       false -> interface
+    end
+  end
+
+  def destroy_interface(kleene_if) do
+    if interface_exists(kleene_if) do
+      {"", _exitcode} = System.cmd("ifconfig", [kleene_if, "destroy"])
+    end
+  end
+
+  def interface_exists(kleene_if) do
+    {json, 0} = System.cmd("netstat", ["--libxo", "json", "-I", kleene_if])
+
+    case Jason.decode(json) do
+      {:ok, %{"statistics" => %{"interface" => []}}} -> false
+      {:ok, %{"statistics" => %{"interface" => _if_stats}}} -> true
     end
   end
 
