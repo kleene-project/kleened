@@ -368,10 +368,9 @@ defmodule Kleened.Core.Network do
            subnet: subnet,
            subnet6: subnet6,
            interface: interface,
-           external_interfaces: ext_ifs,
            gateway: gateway,
-           nat: nat,
-           icc: icc
+           gateway6: gateway6,
+           nat: nat
          },
          _state
        ) do
@@ -382,10 +381,9 @@ defmodule Kleened.Core.Network do
       subnet: subnet,
       subnet6: subnet6,
       interface: interface,
-      external_interfaces: ext_ifs,
       gateway: gateway,
-      nat: nat,
-      icc: icc
+      gateway6: gateway6,
+      nat: nat
     }
 
     MetaData.add_network(network)
@@ -641,18 +639,22 @@ defmodule Kleened.Core.Network do
     load_pf_config(pf_config_path, pf_config)
   end
 
-  def create_pf_config(
-        [%Schemas.Network{id: network_id} = network | rest],
-        %{macros: macros, translation: translation} = state
-      ) do
-    prefix = "kleene_network_#{network_id}"
-    updated_macros = add_network_macros(network, macros, prefix)
+  def create_pf_config([network | rest], state) do
+    prefix = "kleene_network_#{network.id}"
 
-    # "nat on $#{prefix}_nat_if from $#{prefix}_subnet to any -> ($#{prefix}_nat_if)"
-    nat_network =
-      "nat on $#{prefix}_nat_if inet from ($#{prefix}_interface:network) to any -> ($#{prefix}_nat_if)"
+    potential_macros = [
+      interface: network.interface,
+      subnet: network.subnet,
+      subnet6: network.subnet6,
+      nat_if: network.nat
+    ]
 
-    new_state = %{state | :macros => updated_macros, :translation => [nat_network | translation]}
+    updated_macros = state.macros ++ network_macros(potential_macros, prefix)
+
+    updated_translation =
+      state.translation ++ network_translation(network.nat, network.interface, prefix)
+
+    new_state = %{state | :macros => updated_macros, :translation => updated_translation}
     create_pf_config(rest, new_state)
   end
 
@@ -668,29 +670,30 @@ defmodule Kleened.Core.Network do
     )
   end
 
-  defp add_network_macros(
-         %Schemas.Network{
-           interface: interface,
-           subnet: subnet,
-           nat: nat_interface
-         },
-         macros,
-         prefix
-       ) do
-    macro_interface = "#{prefix}_interface=\"#{interface}\""
-    macro_subnet = "#{prefix}_subnet=\"#{subnet}\""
-    macro_nat_if = "#{prefix}_nat_if=\"#{nat_interface}\""
-    [macro_interface, macro_subnet, macro_nat_if | macros]
+  defp network_translation(nat_if, network_if, prefix) do
+    nat_pf =
+      "nat on $#{prefix}_nat_if from ($#{prefix}_interface:network) to any -> ($#{prefix}_nat_if)"
+
+    case {String.length(nat_if), String.length(network_if)} do
+      {0, 0} -> [nat_pf]
+      _ -> []
+    end
+  end
+
+  defp network_macros(potential_macros, prefix) do
+    potential_macros
+    |> Enum.filter(fn {_, value} -> value != "" end)
+    |> Enum.map(fn {type, value} -> "#{prefix}_#{type}=\"#{value}\"" end)
   end
 
   def enable_pf() do
-    System.cmd("/sbin/pfctl", ["-e"], stderr_to_stdout: true)
+    OS.cmd(~w"/sbin/pfctl -e")
   end
 
   def load_pf_config(pf_config_path, config) do
     case File.write(pf_config_path, config, [:write]) do
       :ok ->
-        case System.cmd("/sbin/pfctl", ["-f", pf_config_path]) do
+        case OS.cmd(~w"/sbin/pfctl -f #{pf_config_path}") do
           {_, 0} ->
             :ok
 
