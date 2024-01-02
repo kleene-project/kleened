@@ -6,14 +6,18 @@ defmodule Kleened.Core.OS do
     {stdout, exit_code} = return_value = System.cmd(executable, args, stderr_to_stdout: true)
 
     case {exit_code, options} do
-      {_, %{suppress_warning: false}} when exit_code > 0 ->
+      {_, %{suppress_warning: false}} when exit_code != 0 ->
         Logger.warning(
-          "'#{Enum.join(command, " ")}' executed with exit-code #{exit_code}: \"#{stdout}\""
+          "'#{Enum.join(command, " ")}' executed with exit-code #{exit_code}: \"#{
+            String.trim(stdout)
+          }\""
         )
 
       _ ->
         Logger.debug(
-          "'#{Enum.join(command, " ")}' executed with exit-code #{exit_code}: \"#{stdout}\""
+          "'#{Enum.join(command, " ")}' executed with exit-code #{exit_code}: \"#{
+            String.trim(stdout)
+          }\""
         )
     end
 
