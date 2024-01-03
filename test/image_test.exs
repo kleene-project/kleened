@@ -307,7 +307,7 @@ defmodule ImageTest do
     assert expected_log == build_log
   end
 
-  test "verify 'WORKDIR' works with 'COPY'", %{api_spec: api_spec} do
+  test "verify 'WORKDIR' works with 'COPY'" do
     dockerfile = """
     FROM FreeBSD:testing
     WORKDIR /etc
@@ -326,13 +326,12 @@ defmodule ImageTest do
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
     {_image, _build_log} = TestHelper.image_valid_build(config)
 
-    {_container_id, output} =
-      TestHelper.container_valid_run(api_spec, %{name: "workdir_copy", image: "test:latest"})
+    {_, _, output} = TestHelper.container_valid_run(%{name: "workdir_copy", image: "test:latest"})
 
     assert ["lol\n"] == output
   end
 
-  test "verify 'WORKDIR' works with 'CMD'", %{api_spec: api_spec} do
+  test "verify 'WORKDIR' works with 'CMD'" do
     dockerfile = """
     FROM FreeBSD:testing
     WORKDIR /etc
@@ -350,8 +349,7 @@ defmodule ImageTest do
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
     {_image, _build_log} = TestHelper.image_valid_build(config)
 
-    {_container_id, output} =
-      TestHelper.container_valid_run(api_spec, %{name: "workdir_cmd", image: "test:latest"})
+    {_, _, output} = TestHelper.container_valid_run(%{name: "workdir_cmd", image: "test:latest"})
 
     assert ["/etc\n"] == output
   end
@@ -919,7 +917,7 @@ defmodule ImageTest do
     assert build_log == []
   end
 
-  test "creating a container using a snapshot from an image-build", %{api_spec: api_spec} do
+  test "creating a container using a snapshot from an image-build" do
     dockerfile = """
     FROM FreeBSD:testing
     COPY test.txt /etc/
@@ -940,7 +938,7 @@ defmodule ImageTest do
     snapshot = fetch_snapshot(image, "COPY test.txt /etc/")
 
     {_, _, output} =
-      TestHelper.container_run(api_spec, %{
+      TestHelper.container_valid_run(%{
         name: "image_testing1",
         image: "#{image.id}#{snapshot}",
         cmd: ["/bin/cat", "/etc/test.txt"]
@@ -949,10 +947,11 @@ defmodule ImageTest do
     assert output == ["lol\n"]
 
     {_, _, output} =
-      TestHelper.container_run(api_spec, %{
+      TestHelper.container_valid_run(%{
         name: "image_testing2",
         image: "#{image.id}#{snapshot}",
-        cmd: ["/bin/cat", "/etc/test2.txt"]
+        cmd: ["/bin/cat", "/etc/test2.txt"],
+        expected_exit_code: 1
       })
 
     expected_output = """
@@ -965,7 +964,7 @@ defmodule ImageTest do
     snapshot = fetch_snapshot(image, "RUN echo -n \"some text\" > /etc/test2.txt")
 
     {_, _, output} =
-      TestHelper.container_run(api_spec, %{
+      TestHelper.container_valid_run(%{
         name: "image_testing3",
         image: "test:latest#{snapshot}",
         cmd: ["/bin/cat", "/etc/test2.txt"]
@@ -974,7 +973,7 @@ defmodule ImageTest do
     assert output == ["some text"]
   end
 
-  test "creating a container using a snapshot from a failed image-build", %{api_spec: api_spec} do
+  test "creating a container using a snapshot from a failed image-build" do
     dockerfile = """
     FROM FreeBSD:testing
     COPY test.txt /etc/
@@ -997,23 +996,24 @@ defmodule ImageTest do
     image = MetaData.get_image(image_id)
     snapshot = fetch_snapshot(image, "COPY test.txt /etc/")
 
-    {_, _, process_output} =
-      TestHelper.container_run(api_spec, %{
+    {_, _, output} =
+      TestHelper.container_valid_run(%{
         name: "image_testing4",
         image: "#{image.id}#{snapshot}",
         cmd: ["/bin/cat", "/etc/test.txt"]
       })
 
-    assert process_output == ["lol\n"]
+    assert output == ["lol\n"]
 
-    {_, _, process_output} =
-      TestHelper.container_run(api_spec, %{
+    {_, _, output} =
+      TestHelper.container_valid_run(%{
         name: "image_testing5",
         image: "#{image.id}#{snapshot}",
-        cmd: ["/bin/cat", "/etc/test2.txt"]
+        cmd: ["/bin/cat", "/etc/test2.txt"],
+        expected_exit_code: 1
       })
 
-    assert Enum.join(process_output) == """
+    assert Enum.join(output) == """
            cat: /etc/test2.txt: No such file or directory
            jail: /usr/bin/env /bin/cat /etc/test2.txt: failed
            """
@@ -1022,7 +1022,7 @@ defmodule ImageTest do
   # The mini-jail userland used for the 'fetch' and 'zfs' image creation tests
   # have been created with https://github.com/Freaky/mkjail using the command
   # mkjail -a minimal_testjail.txz /usr/bin/env /usr/local/bin/python3.9 -c "print('lol')"
-  test "create base image using a method 'zfs-copy'", %{api_spec: api_spec} do
+  test "create base image using a method 'zfs-copy'" do
     config = %{
       method: "zfs-copy",
       zfs_dataset: "zroot/image_create_zfs_test",
@@ -1033,12 +1033,12 @@ defmodule ImageTest do
     ZFS.destroy_force(config.zfs_dataset)
 
     run_config = baseimage_run_config(image_id)
-    {_container_id, output} = TestHelper.container_valid_run(api_spec, run_config)
+    {_, _, output} = TestHelper.container_valid_run(run_config)
     assert output == ["testing minimaljail\n"]
-    assert container_resolv_conf_exists?(run_config, api_spec)
+    assert container_resolv_conf_exists?(run_config)
   end
 
-  test "create base image using a method 'zfs-clone'", %{api_spec: api_spec} do
+  test "create base image using a method 'zfs-clone'" do
     config = %{
       method: "zfs-clone",
       zfs_dataset: "zroot/kleene_basejail",
@@ -1053,12 +1053,12 @@ defmodule ImageTest do
         jail_param: ["mount.devfs=false"]
     }
 
-    {_container_id, output} = TestHelper.container_valid_run(api_spec, run_config)
+    {_, _, output} = TestHelper.container_valid_run(run_config)
     assert output == ["lol\n"]
-    assert container_resolv_conf_exists?(run_config, api_spec)
+    assert container_resolv_conf_exists?(run_config)
   end
 
-  test "create base image using a method 'fetch'", %{api_spec: api_spec} do
+  test "create base image using a method 'fetch'" do
     config = %{
       method: "fetch",
       url: "file://./test/data/minimal_testjail.txz",
@@ -1067,13 +1067,13 @@ defmodule ImageTest do
 
     image_id = TestHelper.base_image_create(config)
     run_config = baseimage_run_config(image_id)
-    {_container_id, output} = TestHelper.container_valid_run(api_spec, run_config)
+    {_, _, output} = TestHelper.container_valid_run(run_config)
     assert output == ["testing minimaljail\n"]
-    assert container_resolv_conf_exists?(run_config, api_spec)
+    assert container_resolv_conf_exists?(run_config)
   end
 
   #### Without copying 'resolv.conf' ####
-  test "create base image using a method 'zfs-copy' without 'dns'", %{api_spec: api_spec} do
+  test "create base image using a method 'zfs-copy' without 'dns'" do
     config = %{
       method: "zfs-copy",
       zfs_dataset: "zroot/image_create_zfs_test",
@@ -1085,12 +1085,12 @@ defmodule ImageTest do
     ZFS.destroy_force(config.zfs_dataset)
 
     run_config = baseimage_run_config(image_id)
-    {_container_id, output} = TestHelper.container_valid_run(api_spec, run_config)
+    {_, _, output} = TestHelper.container_valid_run(run_config)
     assert output == ["testing minimaljail\n"]
-    assert not container_resolv_conf_exists?(run_config, api_spec)
+    assert not container_resolv_conf_exists?(run_config)
   end
 
-  test "create base image using a method 'fetch' without 'dns'", %{api_spec: api_spec} do
+  test "create base image using a method 'fetch' without 'dns'" do
     config = %{
       method: "fetch",
       url: "file://./test/data/minimal_testjail.txz",
@@ -1101,9 +1101,9 @@ defmodule ImageTest do
     image_id = TestHelper.base_image_create(config)
     run_config = baseimage_run_config(image_id)
 
-    {_container_id, output} = TestHelper.container_valid_run(api_spec, run_config)
+    {_, _, output} = TestHelper.container_valid_run(run_config)
     assert output == ["testing minimaljail\n"]
-    assert not container_resolv_conf_exists?(run_config, api_spec)
+    assert not container_resolv_conf_exists?(run_config)
   end
 
   defp baseimage_run_config(image_id) do
@@ -1117,7 +1117,8 @@ defmodule ImageTest do
     }
   end
 
-  defp container_resolv_conf_exists?(run_config, api_spec) do
+  defp container_resolv_conf_exists?(run_config) do
+    api_spec = Kleened.API.Spec.spec()
     {_attach, config_create} = Map.pop(run_config, :attach)
     %{id: container_id} = TestHelper.container_create(api_spec, config_create)
     resolv_conf_path = "/" <> Config.get("zroot") <> "/container/#{container_id}/etc/resolv.conf"

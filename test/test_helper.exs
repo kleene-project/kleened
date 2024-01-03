@@ -50,34 +50,39 @@ defmodule TestHelper do
     TestImage.create_test_base_image()
   end
 
-  def container_valid_run(api_spec, config) do
-    {attach, config} = Map.pop(config, :attach, true)
-    {start_container, config} = Map.pop(config, :start_container, true)
+  def container_valid_run(config) do
+    {container_id, exec_config, expected_exit} = prepare_container_run(config)
 
-    %{id: container_id} = TestHelper.container_create(api_spec, config)
-    {:ok, exec_id} = Exec.create(container_id)
+    {closing_msg, output} = exec_valid_start(exec_config)
 
-    {closing_msg, process_output} =
-      exec_valid_start(%{exec_id: exec_id, attach: attach, start_container: start_container})
+    {attach, _} = Map.pop(config, :attach, true)
 
     if attach do
-      assert String.slice(closing_msg, -11, 11) == "exit-code 0"
+      assert String.slice(closing_msg, -11, 11) == "exit-code #{expected_exit}"
     end
 
-    {container_id, process_output}
+    {container_id, closing_msg, output}
   end
 
-  def container_run(api_spec, config) do
+  def container_run_async(config) do
+    # Ignoring expected_exit since the caller will deal with this
+    {container_id, exec_config, _expected_exit} = prepare_container_run(config)
+    {:ok, conn} = exec_valid_start_async(exec_config)
+    {container_id, exec_config.exec_id, conn}
+  end
+
+  defp prepare_container_run(config) do
+    api_spec = Kleened.API.Spec.spec()
     {attach, config} = Map.pop(config, :attach, true)
     {start_container, config} = Map.pop(config, :start_container, true)
+    {expected_exit, config} = Map.pop(config, :expected_exit_code, 0)
 
     %{id: container_id} = TestHelper.container_create(api_spec, config)
     {:ok, exec_id} = Exec.create(container_id)
 
-    {closing_msg, process_output} =
-      exec_valid_start(%{exec_id: exec_id, attach: attach, start_container: start_container})
+    exec_config = %{exec_id: exec_id, attach: attach, start_container: start_container}
 
-    {container_id, closing_msg, process_output}
+    {container_id, exec_config, expected_exit}
   end
 
   def container_start(container_id, config \\ %{}) do
@@ -288,7 +293,8 @@ defmodule TestHelper do
   end
 
   def exec_valid_start(%{attach: true} = config) do
-    [msg_json | rest] = exec_start_raw(config)
+    {:ok, conn} = exec_start_raw(config)
+    [msg_json | rest] = receive_frames(conn)
 
     assert {:ok, %Msg{data: "", message: "", msg_type: "starting"}} ==
              Cast.cast(Msg.schema(), Jason.decode!(msg_json, keys: :atoms!))
@@ -300,15 +306,26 @@ defmodule TestHelper do
   end
 
   def exec_valid_start(%{attach: false} = config) do
-    [{1001, %Msg{msg_type: "closing", message: closing_msg}}] = exec_start_raw(config)
+    {:ok, conn} = exec_start_raw(config)
+    [{1001, %Msg{msg_type: "closing", message: closing_msg}}] = receive_frames(conn)
     {closing_msg, ""}
+  end
+
+  def exec_valid_start_async(config) do
+    {:ok, conn} = exec_start_raw(config)
+    {:text, starting_message} = receive_frame(conn, 5_000)
+
+    assert {:ok, %Msg{data: "", message: "", msg_type: "starting"}} ==
+             Cast.cast(Msg.schema(), Jason.decode!(starting_message, keys: :atoms!))
+
+    {:ok, conn}
   end
 
   def exec_start_raw(config) do
     case initialize_websocket("/exec/start") do
       {:ok, stream_ref, conn} ->
         send_data(conn, stream_ref, Jason.encode!(config))
-        receive_frames(conn)
+        {:ok, conn}
 
       error_msg ->
         error_msg
@@ -803,7 +820,7 @@ defmodule TestHelper do
     end
   end
 
-  def receive_frames(conn, timeout \\ 10_000) do
+  def receive_frames(conn, timeout \\ 30_000) do
     receive_frames_(conn, [], timeout)
   end
 

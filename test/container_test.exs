@@ -106,7 +106,7 @@ defmodule ContainerTest do
     {:ok, exec_id} = Exec.create(container.id)
     config = %{exec_id: exec_id, attach: false, start_container: true}
 
-    assert "succesfully started execution instance in detached mode" ==
+    assert {"succesfully started execution instance in detached mode", ""} ==
              TestHelper.exec_valid_start(config)
 
     :timer.sleep(100)
@@ -161,9 +161,7 @@ defmodule ContainerTest do
     assert not TestHelper.devfs_mounted(cont)
   end
 
-  test "making nullfs-mounts into a container", %{
-    api_spec: api_spec
-  } do
+  test "making nullfs-mounts into a container" do
     File.rm("/host/testing_mounts.txt")
     mount_path = "/kleene_nullfs_testing"
 
@@ -175,7 +173,7 @@ defmodule ContainerTest do
       user: "root"
     }
 
-    {container_id, process_output} = TestHelper.container_valid_run(api_spec, config)
+    {container_id, _, process_output} = TestHelper.container_valid_run(config)
     assert process_output == []
     file_path = "/zroot/kleene/container/#{container_id}/#{mount_path}/testing_mounts.txt"
     assert File.read(file_path) == {:ok, ""}
@@ -187,10 +185,11 @@ defmodule ContainerTest do
       name: "testcont",
       cmd: ["/usr/bin/touch", "#{mount_path}/testing_mounts.txt"],
       mounts: [%{type: "nullfs", source: "/host", destination: mount_path, read_only: true}],
-      user: "root"
+      user: "root",
+      expected_exit_code: 1
     }
 
-    {_, _, output} = TestHelper.container_run(api_spec, config)
+    {_, _, output} = TestHelper.container_valid_run(config)
 
     expected_output = """
     touch: /kleene_nullfs_testing/testing_mounts.txt: Read-only file system
@@ -215,7 +214,7 @@ defmodule ContainerTest do
       user: "root"
     }
 
-    {container_id, process_output} = TestHelper.container_valid_run(api_spec, config)
+    {container_id, _, process_output} = TestHelper.container_valid_run(config)
     assert process_output == []
     file_path = "/zroot/kleene/container/#{container_id}/#{mount_path}/testing_mounts.txt"
     assert File.read(file_path) == {:ok, ""}
@@ -227,10 +226,11 @@ defmodule ContainerTest do
       name: "testcont",
       cmd: ["/usr/bin/touch", "#{mount_path}/testing_mounts.txt"],
       mounts: [%{type: "volume", source: volume.name, destination: mount_path, read_only: true}],
-      user: "root"
+      user: "root",
+      expected_exit_code: 1
     }
 
-    {_, _, output} = TestHelper.container_run(api_spec, config)
+    {_, _, output} = TestHelper.container_valid_run(config)
 
     expected_output = """
     touch: /kleene_volume_testing/testing_mounts.txt: Read-only file system
@@ -242,7 +242,7 @@ defmodule ContainerTest do
     TestHelper.volume_remove(api_spec, volume.name)
   end
 
-  test "mounting a non-existing volume into a container", %{api_spec: api_spec} do
+  test "mounting a non-existing volume into a container" do
     mount_path = "/kleene_volume_testing"
     volume_name = "will-be-created"
 
@@ -253,7 +253,7 @@ defmodule ContainerTest do
       user: "root"
     }
 
-    {container_id, process_output} = TestHelper.container_valid_run(api_spec, config)
+    {container_id, _, process_output} = TestHelper.container_valid_run(config)
     assert process_output == []
     file_path = "/zroot/kleene/container/#{container_id}/#{mount_path}/testing_mounts.txt"
     assert File.read(file_path) == {:ok, ""}
@@ -398,8 +398,7 @@ defmodule ContainerTest do
     assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
   end
 
-  test "jail parameters 'mount.devfs' and 'exec.clean' defaults can be replaced with jailparams",
-       %{api_spec: api_spec} do
+  test "jail parameters 'mount.devfs' and 'exec.clean' defaults can be replaced with jailparams" do
     # Override mount.devfs=true with mount.nodevfs
     config =
       container_config(%{
@@ -409,7 +408,7 @@ defmodule ContainerTest do
 
     # With mount.devfs=true you get:
     # ["fd\nnull\npts\nrandom\nstderr\nstdin\nstdout\nurandom\nzero\nzfs\n"]
-    assert {_, []} = TestHelper.container_valid_run(api_spec, config)
+    assert {_, _, []} = TestHelper.container_valid_run(config)
 
     # Override mount.devfs=true/exec.clean=true with mount.devfs=false/exec.noclean
     config =
@@ -418,7 +417,7 @@ defmodule ContainerTest do
         cmd: ["/bin/sh", "-c", "ls /dev && printenv"]
       })
 
-    {_container_id, output} = TestHelper.container_valid_run(api_spec, config)
+    {_, _, output} = TestHelper.container_valid_run(config)
     environment = TestHelper.from_environment_output(output)
     assert MapSet.member?(environment, "EMU=beam")
 
@@ -429,7 +428,7 @@ defmodule ContainerTest do
         cmd: ["/bin/sh", "-c", "ls /dev"]
       })
 
-    {_container_id, output} = TestHelper.container_valid_run(api_spec, config)
+    {_, _, output} = TestHelper.container_valid_run(config)
     assert ["fd\nnull\npts\nrandom\nstderr\nstdin\nstdout\nurandom\nzero\nzfs\n"] == output
 
     # Override exec.clean=true with exec.clean=true
@@ -439,14 +438,12 @@ defmodule ContainerTest do
         cmd: ["/bin/sh", "-c", "printenv"]
       })
 
-    {_container_id, output} = TestHelper.container_valid_run(api_spec, config)
+    {_, _, output} = TestHelper.container_valid_run(config)
     environment = TestHelper.from_environment_output(output)
     assert environment == TestHelper.jail_environment([])
   end
 
-  test "test that jail-param 'exec.jail_user' overrides ContainerConfig{user:}", %{
-    api_spec: api_spec
-  } do
+  test "test that jail-param 'exec.jail_user' overrides ContainerConfig{user:}" do
     config =
       container_config(%{
         jail_param: ["exec.jail_user=ntpd"],
@@ -454,11 +451,11 @@ defmodule ContainerTest do
         cmd: ["/usr/bin/id"]
       })
 
-    {_container_id, output} = TestHelper.container_valid_run(api_spec, config)
+    {_, _, output} = TestHelper.container_valid_run(config)
     assert ["uid=123(ntpd) gid=123(ntpd) groups=123(ntpd)\n"] == output
   end
 
-  test "start a container with environment variables set", %{api_spec: api_spec} do
+  test "start a container with environment variables set" do
     config = %{
       image: "FreeBSD:testing",
       name: "testcont",
@@ -468,11 +465,11 @@ defmodule ContainerTest do
       attach: true
     }
 
-    {_container_id, output} = TestHelper.container_valid_run(api_spec, config)
+    {_, _, output} = TestHelper.container_valid_run(config)
     TestHelper.compare_environment_output(output, ["LOOL=test2", "LOL=test"])
   end
 
-  test "start a container with environment variables", %{api_spec: api_spec} do
+  test "start a container with environment variables" do
     dockerfile = """
     FROM FreeBSD:testing
     ENV TEST=lol
@@ -495,7 +492,7 @@ defmodule ContainerTest do
         env: ["TEST3=loool"]
       })
 
-    {_container_id, output} = TestHelper.container_valid_run(api_spec, config)
+    {_, _, output} = TestHelper.container_valid_run(config)
 
     TestHelper.compare_environment_output(output, [
       "TEST=lol",
@@ -504,9 +501,7 @@ defmodule ContainerTest do
     ])
   end
 
-  test "start a container with environment variables and overwrite one of them", %{
-    api_spec: api_spec
-  } do
+  test "start a container with environment variables and overwrite one of them" do
     dockerfile = """
     FROM FreeBSD:testing
     ENV TEST=lol
@@ -529,7 +524,7 @@ defmodule ContainerTest do
         env: ~w"TEST=new_value"
       })
 
-    {_container_id, output} = TestHelper.container_valid_run(api_spec, config)
+    {_, _, output} = TestHelper.container_valid_run(config)
     TestHelper.compare_environment_output(output, ["TEST=new_value", "TEST2=lool test"])
   end
 
@@ -542,7 +537,7 @@ defmodule ContainerTest do
       attach: true
     }
 
-    {container_id, _output} = TestHelper.container_valid_run(api_spec, config)
+    {container_id, _, _} = TestHelper.container_valid_run(config)
 
     assert %{message: "you cannot remove a running container"} ==
              TestHelper.container_remove(api_spec, container_id)
