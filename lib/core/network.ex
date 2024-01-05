@@ -324,9 +324,21 @@ defmodule Kleened.Core.Network do
   defp configure_gateways(
          %Schemas.NetworkConfig{
            type: "bridge",
-           gateway: "<auto>"
+           gateway: "<auto>",
+           subnet: ""
          } = config
        ) do
+    configure_gateways(%Schemas.NetworkConfig{config | gateway: ""})
+  end
+
+  defp configure_gateways(
+         %Schemas.NetworkConfig{
+           type: "bridge",
+           gateway: "<auto>",
+           subnet: subnet
+         } = config
+       )
+       when subnet != "" do
     gateway = first_ip_address(config.subnet, "inet")
 
     case ifconfig_cidr_alias(gateway, config.subnet, config.interface, "inet") do
@@ -338,9 +350,21 @@ defmodule Kleened.Core.Network do
   defp configure_gateways(
          %Schemas.NetworkConfig{
            type: "bridge",
-           gateway6: "<auto>"
+           gateway6: "<auto>",
+           subnet6: ""
          } = config
        ) do
+    configure_gateways(%Schemas.NetworkConfig{config | gateway6: ""})
+  end
+
+  defp configure_gateways(
+         %Schemas.NetworkConfig{
+           type: "bridge",
+           gateway6: "<auto>",
+           subnet6: subnet6
+         } = config
+       )
+       when subnet6 != "" do
     gateway6 = first_ip_address(config.subnet6, "inet6")
 
     case ifconfig_cidr_alias(gateway6, config.subnet6, config.interface, "inet6") do
@@ -554,6 +578,14 @@ defmodule Kleened.Core.Network do
     {:ok, ""}
   end
 
+  defp create_ip_address(_, %Schemas.Network{subnet: ""}, "inet") do
+    {:ok, ""}
+  end
+
+  defp create_ip_address(_, %Schemas.Network{subnet6: ""}, "inet6") do
+    {:ok, ""}
+  end
+
   defp create_ip_address("auto", network, protocol) do
     case new_ip(network, protocol) do
       :out_of_ips ->
@@ -650,9 +682,7 @@ defmodule Kleened.Core.Network do
     ]
 
     updated_macros = state.macros ++ network_macros(potential_macros, prefix)
-
-    updated_translation =
-      state.translation ++ network_translation(network.nat, network.interface, prefix)
+    updated_translation = state.translation ++ network_translation(network.nat, prefix)
 
     new_state = %{state | :macros => updated_macros, :translation => updated_translation}
     create_pf_config(rest, new_state)
@@ -670,14 +700,12 @@ defmodule Kleened.Core.Network do
     )
   end
 
-  defp network_translation(nat_if, network_if, prefix) do
-    nat_pf =
-      "nat on $#{prefix}_nat_if from ($#{prefix}_interface:network) to any -> ($#{prefix}_nat_if)"
+  defp network_translation("", _prefix) do
+    []
+  end
 
-    case {String.length(nat_if), String.length(network_if)} do
-      {0, 0} -> [nat_pf]
-      _ -> []
-    end
+  defp network_translation(_nat_if, prefix) do
+    ["nat on $#{prefix}_nat_if from ($#{prefix}_interface:network) to any -> ($#{prefix}_nat_if)"]
   end
 
   defp network_macros(potential_macros, prefix) do

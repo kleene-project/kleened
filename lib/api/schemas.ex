@@ -68,16 +68,6 @@ defmodule Kleened.API.Schemas do
           nullable: true,
           default: []
         },
-        network_driver: %Schema{
-          type: :string,
-          description: """
-          What kind of network driver should the container use.
-          Possible values are `ipnet`, `host`, `vnet`, `disabled`.
-          """,
-          default: "ipnet",
-          example: "host",
-          enum: ["ipnet", "host", "vnet", "disabled"]
-        },
         jail_param: %Schema{
           description: """
           List of jail parameters to use for the container.
@@ -95,6 +85,16 @@ defmodule Kleened.API.Schemas do
           nullable: true,
           default: [],
           example: ["allow.raw_sockets=true", "osrelease=kleenejail"]
+        },
+        network_driver: %Schema{
+          type: :string,
+          description: """
+          What kind of network driver should the container use.
+          Possible values are `ipnet`, `host`, `vnet`, `disabled`.
+          """,
+          default: "ipnet",
+          example: "host",
+          enum: ["ipnet", "host", "vnet", "disabled"]
         }
       }
     })
@@ -233,6 +233,17 @@ defmodule Kleened.API.Schemas do
           example: "bridge",
           enum: ["bridge", "loopback", "custom"]
         },
+        interface: %Schema{
+          type: :string,
+          description: """
+          Name of the host interface used for the network.
+          If set to `""` the name is set to `kleened` prefixed with an integer.
+          If `type` is set to `custom` the value of `interface` must refer to an existing interface.
+          The name must not exceed 15 characters.
+          """,
+          example: "kleene0",
+          default: ""
+        },
         subnet: %Schema{
           type: :string,
           description:
@@ -247,30 +258,10 @@ defmodule Kleened.API.Schemas do
           example: "2001:db8:8a2e:370:7334::/64",
           default: ""
         },
-        interface: %Schema{
-          type: :string,
-          description: """
-          Name for the interface that is being used for the network. If set to `""` the name is automatically set to `kleened` prefixed with a integer.
-          If the `type` property is set to `custom` the value of `interface` must be the name of an existing interface.
-          The name must not exceed 15 characters.
-          """,
-          example: "kleene0",
-          default: ""
-        },
-        external_interfaces: %Schema{
-          description: """
-          Name of the external interfaces where incoming traffic is redirected from, if ports are being published externally on this network.
-          If set to the empty list `[]` Kleened uses the `gateway` interface.
-          """,
-          type: :array,
-          items: %Schema{type: :string},
-          default: [],
-          example: ["em0", "igb2"]
-        },
         gateway: %Schema{
           type: :string,
           description: """
-          The default IPv4 router that is added to 'vnet' containers connecting to bridged networks. This only affects bridge networks.
+          Only for bridge networks. The default IPv4 router that is added to 'vnet' containers connecting to bridged networks.
           If set to `""` no gateway is used. If set to `"<auto>"` the first IP of the subnet is added to `interface` and used as gateway.
           """,
           default: "",
@@ -279,8 +270,8 @@ defmodule Kleened.API.Schemas do
         gateway6: %Schema{
           type: :string,
           description: """
-          The default IPv6 router that is added to 'vnet' containers connecting to bridged networks. This only affects bridge networks.
-          If set to `""` no gateway is used. If set to `"<auto>"` the first IP of the subnet is added to `interface` and used as gateway.
+          Only for bridge networks. The default IPv6 router that is added to 'vnet' containers connecting to bridged networks.
+          See `gateway` for details.
           """,
           default: "",
           example: "2001:db8:8a2e:370:7334::1"
@@ -289,7 +280,7 @@ defmodule Kleened.API.Schemas do
           type: :string,
           description: """
           Which interface should be used for NAT'ing outgoing traffic from the network.
-          If set to `"<host-gateway>"` the interface of the hosts default router/gateway is used, if it exists.
+          If set to `"<host-gateway>"` the hosts gateway interface is used, if it exists.
           If set to `\"\"` no NAT'ing is configured.
           """,
           default: "<host-gateway>",
@@ -300,8 +291,17 @@ defmodule Kleened.API.Schemas do
           description:
             "Whether or not to enable connectivity between containers within the network.",
           default: true
+        },
+        external_interfaces: %Schema{
+          description: """
+          Name of the external interfaces where incoming traffic is redirected from, if ports are being published externally on this network.
+          If set to the empty list `[]` Kleened uses the `gateway` interface.
+          """,
+          type: :array,
+          items: %Schema{type: :string},
+          default: [],
+          example: ["em0", "igb2"]
         }
-
         # ,
         # internal: %Schema{
         #  type: :boolean,

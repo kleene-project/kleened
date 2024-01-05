@@ -1,14 +1,13 @@
 defmodule NetworkTest do
   use Kleened.Test.ConnCase
   require Logger
-  alias Kleened.Core.{Network, MetaData, OS, ZFS}
+  alias Kleened.Core.{Network, MetaData, OS}
   alias Kleened.API.Schemas
 
   @moduletag :capture_log
 
-  # @dns_lookup_cmd ["/usr/bin/host", "-t", "A", "freebsd.org", "1.1.1.1"]
-  # @dns_lookup_success "Using domain server:\nName: 1.1.1.1\nAddress: 1.1.1.1#53\nAliases: \n\nfreebsd.org has address 96.47.72.84\n"
-  # @dns_lookup_failure ";; connection timed out; no servers could be reached\n"
+  @host_interface "em0"
+  @host_ip "10.0.2.15"
 
   @cant_connect_vnet_with_loopback %{
     message: "containers using the 'vnet' network-driver can't connect to loopback networks"
@@ -193,6 +192,43 @@ defmodule NetworkTest do
     assert Network.interface_exists("custom_if")
     assert MetaData.get_network(network.id) == :not_found
     Network.destroy_interface(interface)
+  end
+
+  test "ip_address[6]'s are ignored when connecting to a network with no subnet[6]'s" do
+    interface = "testnet"
+    Network.destroy_interface(interface)
+
+    network =
+      create_network(%{
+        name: "loopback_net",
+        interface: interface,
+        subnet: "",
+        subnet6: "",
+        type: "loopback"
+      })
+
+    {container_id, _, addresses} =
+      netstat_in_container(%{
+        network_driver: "ipnet",
+        network: network.name,
+        ip_address: "10.56.78.2",
+        ip_address6: "auto"
+      })
+
+    assert [] == filter_by_interface(addresses, interface)
+
+    # Inspect container
+    assert %{
+             container: %Schemas.Container{network_driver: "ipnet"},
+             container_endpoints: [
+               %Schemas.EndPoint{
+                 epair: nil,
+                 ip_address: "",
+                 ip_address6: "",
+                 network_id: "loopback_net"
+               }
+             ]
+           } = TestHelper.container_inspect(container_id)
   end
 
   test "listing networks", %{api_spec: api_spec} do
@@ -439,7 +475,7 @@ defmodule NetworkTest do
              routes(routing_info)
   end
 
-  test "Manually set gateways for (IPv4 + 6) 'bridge' networks" do
+  test "Manually set gateways for (IPv4 + 6) for 'vnet' containers on 'bridge' networks" do
     Network.destroy_interface("kleene0")
 
     network =
@@ -512,6 +548,11 @@ defmodule NetworkTest do
 
     assert [
              %{
+               "destination" => "default",
+               "gateway" => "fdef:1234:5678:9999::",
+               "interface-name" => "epair0b"
+             },
+             %{
                "destination" => "fdef:1234:5678::/48",
                "interface-name" => "epair0b"
              },
@@ -523,10 +564,8 @@ defmodule NetworkTest do
                "destination" => "fe80::%epair0b/64",
                "interface-name" => "epair0b"
              },
-             # IPv6 link-local ip:
-             %{
-               "interface-name" => "lo0"
-             }
+             # IPv6 link-local ip, e.g.: "destination" => "fe80::55:f4ff:fe46:cd0b%epair0b"
+             %{"flags_pretty" => ["up", "host", "static"], "interface-name" => "lo0"}
            ] = routes6(routing_info)
   end
 
@@ -547,8 +586,6 @@ defmodule NetworkTest do
              %{"address" => "172.19.1.1", "network" => "172.19.1.0/24"},
              %{"address" => "fdef:1234:5678::1", "network" => "fdef:1234:5678::/48"}
            ] = filter_by_interface(host_addresses(), "kleene0")
-
-    OS.cmd(~w"ifconfig")
 
     ## ipnet
     {_container_id, routing_info, addresses} =
@@ -613,6 +650,11 @@ defmodule NetworkTest do
 
     assert [
              %{
+               "destination" => "default",
+               "gateway" => "fdef:1234:5678::1",
+               "interface-name" => "epair0b"
+             },
+             %{
                "destination" => "fdef:1234:5678::/48",
                "interface-name" => "epair0b"
              },
@@ -625,104 +667,244 @@ defmodule NetworkTest do
                "interface-name" => "epair0b"
              },
              # IPv6 link-local ip:
-             %{
-               "interface-name" => "lo0"
-             }
+             %{"flags_pretty" => ["up", "host", "static"], "interface-name" => "lo0"}
            ] = routes6(routing_info)
   end
 
-  test "'ipnet' containers can communicate with each other over all networks" do
+  test "'ipnet' containers can communicate with each other over all networks using IPv4" do
     interface = "kleened0"
     Network.destroy_interface(interface)
 
     # Loopback
-    network =
-      create_network(%{
+    inter_container_connectivity_test(%{
+      network: %{
         name: "testnet1",
         subnet: "172.18.1.0/24",
         type: "loopback"
-      })
+      },
+      server: %{network_driver: "ipnet"},
+      client: %{network_driver: "ipnet"},
+      protocol: "inet"
+    })
 
-    inter_container_connectivity_test(
-      %{network_driver: "ipnet"},
-      %{network_driver: "ipnet"},
-      network.id,
-      "inet"
-    )
-
-    # Bridge (using IPv6)
-    ## FIXME: doesn't work. Easier to debug when Klee have been updated
-    # network =
-    #  create_network(%{
-    #    name: "testnet2",
-    #    # subnet: "172.19.1.0/24",
-    #    subnet6: "fdef:1234:5678::/48",
-    #    type: "bridge"
-    #  })
-
-    # inter_container_connectivity_test(
-    #  %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
-    #  %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
-    #  network.id,
-    #  "inet6"
-    # )
+    # Bridge
+    inter_container_connectivity_test(%{
+      network: %{
+        name: "testnet2",
+        subnet: "172.19.1.0/24",
+        type: "bridge"
+      },
+      server: %{ip_address: "auto", ip_address6: "auto", network_driver: "ipnet"},
+      client: %{ip_address: "auto", ip_address6: "auto", network_driver: "ipnet"},
+      protocol: "inet"
+    })
 
     # Custom
-    network =
-      create_network(%{
+    inter_container_connectivity_test(%{
+      network: %{
         name: "testnet3",
         subnet: "172.20.1.0/24",
         interface: "em0",
         type: "custom"
-      })
-
-    inter_container_connectivity_test(
-      %{network_driver: "ipnet"},
-      %{network_driver: "ipnet"},
-      network.id,
-      "inet"
-    )
+      },
+      server: %{network_driver: "ipnet"},
+      client: %{network_driver: "ipnet"},
+      protocol: "inet"
+    })
   end
 
-  # test "'vnet' containers can communicate over a 'bridge' network" do
-  #  # FIXME: doesn't work. Easier to debug when Klee have been updated
-  #  api_spec = Kleened.API.Spec.spec()
-  #  Network.destroy_interface(interface)
+  test "'ipnet' containers can communicate with each other over all networks using IPv6" do
+    interface = "kleened0"
+    Network.destroy_interface(interface)
 
-  #  network =
-  #  interface = "kleened0"
-  #    create_network(%{
-  #      subnet: "172.19.1.0/24",
-  #      type: "bridge"
-  #    })
+    # Loopback
+    inter_container_connectivity_test(%{
+      network: %{
+        name: "testnet1",
+        subnet: "",
+        subnet6: "fdef:1111:5678::/64",
+        type: "loopback"
+      },
+      server: %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
+      client: %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
+      protocol: "inet6"
+    })
 
-  #  inter_container_connectivity_test(
-  #    %{network_driver: "vnet"},
-  #    %{network_driver: "vnet"},
-  #    network.id,
-  #    "inet"
-  #  )
-  # end
+    # Bridge (using IPv6)
+    inter_container_connectivity_test(%{
+      network: %{
+        name: "testnet2",
+        gateway: "",
+        gateway6: "",
+        subnet: "",
+        subnet6: "fdef:2222:5678::/64",
+        type: "bridge"
+      },
+      server: %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
+      client: %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
+      protocol: "inet6"
+    })
 
-  # test "'vnet' and 'ipnet' containers can communicate over a 'bridge' network" do
-  #  # FIXME: doesn't work. Easier to debug when Klee have been updated
-  #  api_spec = Kleened.API.Spec.spec()
-  #  interface = "kleened0"
-  #  Network.destroy_interface(interface)
+    ## Custom
+    inter_container_connectivity_test(%{
+      network: %{
+        name: "testnet3",
+        subnet: "",
+        subnet6: "fdef:3333:5678::/64",
+        interface: "lo0",
+        type: "custom"
+      },
+      server: %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
+      client: %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
+      protocol: "inet6"
+    })
+  end
 
-  #  network =
-  #    create_network(%{
-  #      subnet: "172.19.1.0/24",
-  #      type: "bridge"
-  #    })
+  test "'vnet' containers can communicate over a 'bridge' network" do
+    interface = "kleened0"
+    Network.destroy_interface(interface)
 
-  #  inter_container_connectivity_test(
-  #    %{network_driver: "vnet"},
-  #    %{network_driver: "vnet"},
-  #    network.id,
-  #    "inet"
-  #  )
-  # end
+    # bridge IPv4
+    inter_container_connectivity_test(%{
+      network: %{
+        name: "testnet1",
+        gateway: "<auto>",
+        gateway6: "",
+        subnet: "10.13.37.0/16",
+        subnet6: "",
+        type: "bridge"
+      },
+      server: %{ip_address: "auto", ip_address6: "", network_driver: "vnet"},
+      client: %{ip_address: "auto", ip_address6: "", network_driver: "vnet"},
+      protocol: "inet"
+    })
+
+    # Bridge (using IPv6)
+    inter_container_connectivity_test(%{
+      network: %{
+        name: "testnet2",
+        gateway: "",
+        gateway6: "<auto>",
+        subnet: "",
+        subnet6: "fdef:2222:5678::/64",
+        type: "bridge"
+      },
+      server: %{ip_address: "", ip_address6: "auto", network_driver: "vnet"},
+      client: %{ip_address: "", ip_address6: "auto", network_driver: "vnet"},
+      protocol: "inet6"
+    })
+  end
+
+  test "'vnet' and 'ipnet' containers can communicate over a 'bridge' network" do
+    interface = "kleened0"
+    Network.destroy_interface(interface)
+
+    # bridge IPv4
+    inter_container_connectivity_test(%{
+      network: %{
+        name: "testnet1",
+        gateway: "<auto>",
+        gateway6: "",
+        subnet: "10.13.37.0/16",
+        subnet6: "",
+        type: "bridge"
+      },
+      server: %{ip_address: "auto", ip_address6: "", network_driver: "vnet"},
+      client: %{ip_address: "auto", ip_address6: "", network_driver: "ipnet"},
+      protocol: "inet"
+    })
+
+    # Bridge (using IPv6)
+    inter_container_connectivity_test(%{
+      network: %{
+        name: "testnet2",
+        gateway: "",
+        gateway6: "<auto>",
+        subnet: "",
+        subnet6: "fdef:2222:5678::/64",
+        type: "bridge"
+      },
+      server: %{ip_address: "", ip_address6: "auto", network_driver: "vnet"},
+      client: %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
+      protocol: "inet6"
+    })
+  end
+
+  test "NAT'd connectivity of 'ipnet' containers" do
+    interface = "kleened0"
+    Network.destroy_interface(interface)
+
+    # loopback IPv4
+    container_connectivity_test(%{
+      network: %{
+        name: "testnet1",
+        gateway: "",
+        subnet: "10.13.37.0/24",
+        nat: "<host-gateway>",
+        type: "loopback"
+      },
+      client: %{network_driver: "ipnet"}
+    })
+
+    # bridge IPv4
+    container_connectivity_test(%{
+      network: %{
+        name: "testnet2",
+        gateway: "",
+        subnet: "10.13.38.0/24",
+        nat: "<host-gateway>",
+        type: "bridge"
+      },
+      client: %{network_driver: "ipnet"}
+    })
+  end
+
+  test "NAT'd connectivity of 'vnet' containers" do
+    interface = "kleened0"
+    Network.destroy_interface(interface)
+
+    # bridge IPv4
+    container_connectivity_test(%{
+      network: %{
+        name: "testnet2",
+        gateway: "<auto>",
+        subnet: "10.13.38.0/24",
+        nat: "<host-gateway>",
+        type: "bridge"
+      },
+      client: %{network_driver: "vnet"}
+    })
+  end
+
+  test "No NAT no connectivity for containers on rfc1819 networks" do
+    interface = "kleened0"
+    Network.destroy_interface(interface)
+
+    container_connectivity_test(%{
+      network: %{
+        name: "testnet1",
+        gateway: "",
+        subnet: "10.13.37.0/24",
+        type: "loopback",
+        nat: "",
+        expected_exit_code: 1
+      },
+      client: %{network_driver: "ipnet"}
+    })
+
+    container_connectivity_test(%{
+      network: %{
+        name: "testnet2",
+        # This is needed for bridge networks to get the @host_interface:
+        gateway: "<auto>",
+        subnet: "10.13.38.0/24",
+        type: "bridge",
+        nat: "",
+        expected_exit_code: 1
+      },
+      client: %{network_driver: "vnet"}
+    })
+  end
 
   test "exhaust all ips in a network", %{api_spec: api_spec} do
     create_network(%{name: "smallnet", subnet: "172.19.0.0/30", type: "loopback"})
@@ -788,52 +970,168 @@ defmodule NetworkTest do
     network
   end
 
-  defp inter_container_connectivity_test(config_server, config_client, network_id, protocol) do
-    api_spec = Kleened.API.Spec.spec()
+  defp container_connectivity_test(%{
+         network: config_network,
+         client: config_client
+       }) do
+    network = create_network(config_network)
+
+    port = listen_for_traffic()
+
+    config_client_default = %{
+      name: "client",
+      network: network.id,
+      ip_address: "auto",
+      ip_address6: "",
+      subnet6: "",
+      gateway6: "",
+      expected_exit_code: :anything
+    }
+
+    config_client = Map.merge(config_client_default, config_client)
+
+    config_client =
+      Map.put(config_client, :cmd, [
+        "/bin/sh",
+        "-c",
+        "host -W 1 freebsd.org 1.1.1.1"
+      ])
+
+    {container_id, _, _output} = TestHelper.container_valid_run(config_client)
+    %{container_endpoints: [endpoint]} = TestHelper.container_inspect(container_id)
+
+    msg1 = read_tcpdump(port)
+    msg2 = read_tcpdump(port)
+    Logger.warn(msg1)
+    Logger.warn(msg2)
+    assert String.contains?(msg1, "proto UDP")
+    assert String.contains?(msg2, "freebsd.org")
+
+    ip2check =
+      case config_network.nat do
+        "" -> endpoint.ip_address
+        _ -> @host_ip
+      end
+
+    Logger.warn(ip2check)
+    assert String.contains?(msg2, ip2check)
+
+    Port.close(port)
+  end
+
+  defp listen_for_traffic() do
+    port =
+      Port.open(
+        {:spawn_executable, "/bin/sh"},
+        [
+          :stderr_to_stdout,
+          :binary,
+          :exit_status,
+          {:args, ["-c", "tcpdump -l -n -vv -i #{@host_interface} udp and dst 1.1.1.1"]},
+          {:line, 1024}
+        ]
+      )
+
+    msg =
+      receive do
+        {^port, msg} -> msg
+      after
+        2_000 ->
+          Logger.warn("tcpdump not responding")
+      end
+
+    assert {:data, {:eol, <<"tcpdump: listening on", _::binary>>}} = msg
+    port
+  end
+
+  defp read_tcpdump(port) do
+    receive do
+      {^port, {:data, {:eol, msg}}} ->
+        msg
+
+      {^port, msg} ->
+        Logger.warn("what #{inspect(msg)}")
+
+      msg ->
+        Logger.warn("Hvad er der pa linjen: #{inspect(msg)}")
+        read_tcpdump(port)
+    after
+      1_000 ->
+        Logger.warn("Timed out while reading from tcp-dump")
+        :tcpdump_timeout
+    end
+  end
+
+  defp inter_container_connectivity_test(%{
+         network: config_network,
+         server: config_server,
+         client: config_client,
+         protocol: protocol
+       }) do
+    network = create_network(config_network)
 
     config_server_default = %{
+      name: "server",
       ip_address: "auto",
       ip_address6: ""
     }
 
-    cmd_server = ["/bin/sh", "-c", "nc -l 4000 > /test_connection"]
+    cmd_server =
+      case protocol do
+        "inet" -> ["/bin/sh", "-c", "nc -l 4000"]
+        "inet6" -> ["/bin/sh", "-c", "sleep 1 && nc -6 -l 4000"]
+      end
+
     config_server = Map.merge(config_server_default, config_server)
-    config_server = Map.put(config_server, :attach, false)
-    config_server = Map.put(config_server, :name, "server")
-    config_server = Map.put(config_server, :network, network_id)
+    config_server = Map.put(config_server, :attach, true)
+    config_server = Map.put(config_server, :network, network.id)
     config_server = Map.put(config_server, :cmd, cmd_server)
 
     config_client_default = %{
+      name: "client",
       ip_address: "auto",
       ip_address6: ""
     }
 
     config_client = Map.merge(config_client_default, config_client)
-    config_client = Map.put(config_client, :name, "client")
-    config_client = Map.put(config_client, :network, network_id)
+    config_client = Map.put(config_client, :network, network.id)
 
-    {container_id_server, _output} = TestHelper.container_valid_run(api_spec, config_server)
+    {container_id_server, _, conn} = TestHelper.container_valid_run_async(config_server)
 
-    endpoint = MetaData.get_endpoint(container_id_server, network_id)
+    endpoint = MetaData.get_endpoint(container_id_server, network.id)
 
-    address =
+    cmd_client =
       case protocol do
-        "inet" -> endpoint.ip_address
-        "inet6" -> endpoint.ip_address6
+        "inet" ->
+          ["/bin/sh", "-c", "echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address} 4000"]
+
+        "inet6" ->
+          [
+            "/bin/sh",
+            "-c",
+            "sleep 1 && echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address6} 4000"
+          ]
       end
 
-    cmd_client = ["/bin/sh", "-c", "echo \"traffic\" | nc -v -N #{address} 4000"]
     config_client = Map.put(config_client, :cmd, cmd_client)
 
-    {_container_id, _output} = TestHelper.container_valid_run(api_spec, config_client)
-    container = MetaData.get_container(container_id_server)
-    mountpoint = ZFS.mountpoint(container.dataset)
-    assert {:ok, "traffic\n"} == File.read(Path.join(mountpoint, "/test_connection"))
+    {_container_id, _, _output} = TestHelper.container_valid_run(config_client)
+    timeout = 1_0000
+
+    assert TestHelper.receive_frame(conn, timeout) ==
+             {:text, "{\"data\":\"\",\"message\":\"\",\"msg_type\":\"starting\"}"}
+
+    if config_server.network_driver == "vnet" and
+         (network.gateway != "" or network.gateway6 != "") do
+      assert {:text, <<"add net default: gateway", _::binary>>} =
+               TestHelper.receive_frame(conn, timeout)
+    end
+
+    assert TestHelper.receive_frame(conn, timeout) == {:text, "traffic\n"}
+    assert {:close, 1000, _} = TestHelper.receive_frame(conn, timeout)
   end
 
   defp netstat_in_container(config) do
-    api_spec = Kleened.API.Spec.spec()
-
     all_in_one_netstat =
       "echo \"SPLIT HERE\" && netstat --libxo json -rn && echo \"SPLIT HERE\" && netstat --libxo json -i"
 
@@ -846,7 +1144,7 @@ defmodule NetworkTest do
 
     config = Map.merge(config_default, config)
 
-    {container_id, output} = TestHelper.container_valid_run(api_spec, config)
+    {container_id, _, output} = TestHelper.container_valid_run(config)
 
     [_init_stuff, route_info, interface_info] =
       Enum.join(output, "") |> String.split("SPLIT HERE\n")

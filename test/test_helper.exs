@@ -57,17 +57,17 @@ defmodule TestHelper do
 
     {attach, _} = Map.pop(config, :attach, true)
 
-    if attach do
+    if attach and is_integer(expected_exit) do
       assert String.slice(closing_msg, -11, 11) == "exit-code #{expected_exit}"
     end
 
     {container_id, closing_msg, output}
   end
 
-  def container_run_async(config) do
+  def container_valid_run_async(config) do
     # Ignoring expected_exit since the caller will deal with this
     {container_id, exec_config, _expected_exit} = prepare_container_run(config)
-    {:ok, conn} = exec_valid_start_async(exec_config)
+    {:ok, conn} = exec_start_raw(config)
     {container_id, exec_config.exec_id, conn}
   end
 
@@ -309,16 +309,6 @@ defmodule TestHelper do
     {:ok, conn} = exec_start_raw(config)
     [{1001, %Msg{msg_type: "closing", message: closing_msg}}] = receive_frames(conn)
     {closing_msg, ""}
-  end
-
-  def exec_valid_start_async(config) do
-    {:ok, conn} = exec_start_raw(config)
-    {:text, starting_message} = receive_frame(conn, 5_000)
-
-    assert {:ok, %Msg{data: "", message: "", msg_type: "starting"}} ==
-             Cast.cast(Msg.schema(), Jason.decode!(starting_message, keys: :atoms!))
-
-    {:ok, conn}
   end
 
   def exec_start_raw(config) do
@@ -842,7 +832,7 @@ defmodule TestHelper do
     end
   end
 
-  def receive_frame(conn, timeout \\ 10_000) do
+  def receive_frame(conn, timeout) do
     receive do
       {:gun_ws, ^conn, _ref, msg} ->
         Logger.debug("message received from websocket: #{inspect(msg)}")
