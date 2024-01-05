@@ -223,9 +223,9 @@ defmodule Kleened.Core.Image do
           Schemas.ContainerConfig.schema(),
           %{
             name: "builder_" <> state.image_id,
-            network_driver: "alias",
+            network_driver: "ipnet",
             jail_param: ["mount.devfs=true"],
-            image: state.image_id,
+            image: new_image_ref,
             user: "root",
             cmd: [],
             env: []

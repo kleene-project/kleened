@@ -146,7 +146,6 @@ defmodule Kleened.Core.Exec do
 
   @impl true
   def handle_info({port, {:data, jail_output}}, %State{:port => port} = state) do
-    Logger.debug("#{inspect(port)} Msg from executing port: #{inspect(jail_output)}")
     relay_msg({:jail_output, jail_output}, state)
     {:noreply, state}
   end
@@ -523,7 +522,7 @@ defmodule Kleened.Core.Exec do
     wrapped_msg = {:container, state.exec_id, msg}
 
     Enum.map(state.subscribers, fn x ->
-      Logger.debug("relaying to #{inspect(x)}: #{inspect(msg)}")
+      Logger.debug("relaying from #{inspect(state.port)} to #{inspect(x)}: #{inspect(msg)}")
       Process.send(x, wrapped_msg, [])
     end)
   end

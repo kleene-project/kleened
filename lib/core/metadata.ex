@@ -55,7 +55,7 @@ defmodule Kleened.Core.MetaData do
   SELECT
     containers.id,
     json_extract(containers.container, '$.name') AS name,
-    json_extract(containers.container, '$.command') AS command,
+    json_extract(containers.container, '$.cmd') AS cmd,
     json_extract(containers.container, '$.image_id') AS image_id,
     json_extract(containers.container, '$.created') AS created,
     json_extract(images.image, '$.name') AS image_name,

@@ -41,7 +41,7 @@ defmodule Kleened.API.ExecStartWebSocket do
 
   # Called on connection initialization
   def init(req0, _opts) do
-    {:cowboy_websocket, req0, %State{handshaking: true}, %{idle_timeout: 60000}}
+    {:cowboy_websocket, req0, %State{handshaking: true}, %{idle_timeout: 60_000}}
   end
 
   # Called on websocket connection initialization.
