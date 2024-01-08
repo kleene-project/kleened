@@ -78,8 +78,7 @@ defmodule VolumeTest do
     volume1 = Volume.create("prunevol1")
     _volume2 = Volume.create("prunevol2")
 
-    %{id: id} =
-      TestHelper.container_create(api_spec, %{name: "volume_test", cmd: ["/bin/sleep", "10"]})
+    %{id: id} = TestHelper.container_create(%{name: "volume_test", cmd: ["/bin/sleep", "10"]})
 
     container = MetaData.get_container(id)
 

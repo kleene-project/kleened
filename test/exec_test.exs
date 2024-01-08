@@ -26,9 +26,9 @@ defmodule ExecTest do
     :ok
   end
 
-  test "attach to a container and receive some output from it", %{api_spec: api_spec} do
+  test "attach to a container and receive some output from it" do
     %{id: container_id} =
-      TestHelper.container_create(api_spec, %{
+      TestHelper.container_create(%{
         name: "test_container1",
         cmd: ["/bin/sh", "-c", "uname"]
       })
@@ -43,11 +43,9 @@ defmodule ExecTest do
     {:ok, ^container_id} = Container.remove(container_id)
   end
 
-  test "start a second process in a container and receive output from it", %{
-    api_spec: api_spec
-  } do
+  test "start a second process in a container and receive output from it" do
     %{id: container_id} =
-      TestHelper.container_create(api_spec, %{name: "testcont", cmd: ["/bin/sleep", "10"]})
+      TestHelper.container_create(%{name: "testcont", cmd: ["/bin/sleep", "10"]})
 
     {:ok, root_exec_id} = Exec.create(container_id)
     :ok = Exec.start(root_exec_id, %{attach: false, start_container: true})
@@ -72,7 +70,7 @@ defmodule ExecTest do
     api_spec: api_spec
   } do
     %{id: container_id} =
-      TestHelper.container_create(api_spec, %{name: "testcont", cmd: ["/bin/sleep", "10"]})
+      TestHelper.container_create(%{name: "testcont", cmd: ["/bin/sleep", "10"]})
 
     %{id: root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
 
@@ -124,7 +122,7 @@ defmodule ExecTest do
     api_spec: api_spec
   } do
     %{id: container_id} =
-      TestHelper.container_create(api_spec, %{name: "testcont", cmd: ["/bin/sleep", "10"]})
+      TestHelper.container_create(%{name: "testcont", cmd: ["/bin/sleep", "10"]})
 
     %{id: root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
 
@@ -163,8 +161,7 @@ defmodule ExecTest do
   test "Create a exec instance that allocates a pseudo-TTY", %{
     api_spec: api_spec
   } do
-    %{id: container_id} =
-      TestHelper.container_create(api_spec, %{name: "testcont", cmd: ["/usr/bin/tty"]})
+    %{id: container_id} = TestHelper.container_create(%{name: "testcont", cmd: ["/usr/bin/tty"]})
 
     # Start a process without attaching a PTY
     %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
@@ -188,8 +185,7 @@ defmodule ExecTest do
   test "Create an interactive exec instance (allocatiing a pseudo-TTY)", %{
     api_spec: api_spec
   } do
-    %{id: container_id} =
-      TestHelper.container_create(api_spec, %{name: "testcont", cmd: ["/bin/sh"]})
+    %{id: container_id} = TestHelper.container_create(%{name: "testcont", cmd: ["/bin/sh"]})
 
     # Start a process with a PTY attach
     %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id, tty: true})
@@ -212,7 +208,7 @@ defmodule ExecTest do
     api_spec: api_spec
   } do
     %{id: container_id} =
-      TestHelper.container_create(api_spec, %{name: "testcont", cmd: ["/bin/sleep", "10"]})
+      TestHelper.container_create(%{name: "testcont", cmd: ["/bin/sleep", "10"]})
 
     %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: "testcont"})
 
@@ -254,7 +250,7 @@ defmodule ExecTest do
     assert "invalid parameters: Missing field: attach" == msg
 
     %{id: container_id} =
-      TestHelper.container_create(api_spec, %{name: "testcont", cmd: ["/bin/sleep", "10"]})
+      TestHelper.container_create(%{name: "testcont", cmd: ["/bin/sleep", "10"]})
 
     assert %{message: "container not found"} ==
              TestHelper.exec_create(api_spec, %{container_id: "nottestcont"})

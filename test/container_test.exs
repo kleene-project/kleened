@@ -381,7 +381,7 @@ defmodule ContainerTest do
 
   test "create container from non-existing image", %{api_spec: api_spec} do
     assert %{message: "no such image 'nonexisting'"} ==
-             TestHelper.container_create(api_spec, %{name: "testcont", image: "nonexisting"})
+             TestHelper.container_create(%{name: "testcont", image: "nonexisting"})
   end
 
   test "start a container as non-root", %{api_spec: api_spec} do
@@ -570,7 +570,7 @@ defmodule ContainerTest do
   end
 
   defp container_succesfully_create(api_spec, config) do
-    %{id: container_id} = TestHelper.container_create(api_spec, config)
+    %{id: container_id} = TestHelper.container_create(config)
     MetaData.get_container(container_id)
   end
 

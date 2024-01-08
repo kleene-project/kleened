@@ -214,11 +214,11 @@ defmodule ImageTest do
     base_image = MetaData.get_image("FreeBSD:testing")
     # Image with no children and a tag
     image1 = build_dummy_image("FreeBSD:testing", "test:no-children")
-    TestHelper.container_create(api_spec, %{name: "prune1", image: image1.id})
+    TestHelper.container_create(%{name: "prune1", image: image1.id})
 
     # Image with no children and no tag
     image2 = build_dummy_image("FreeBSD:testing", "")
-    TestHelper.container_create(api_spec, %{name: "prune2", image: image2.id})
+    TestHelper.container_create(%{name: "prune2", image: image2.id})
     TestHelper.image_prune(api_spec, false)
     assert [image2, image1, base_image] == MetaData.list_images()
   end
@@ -230,13 +230,13 @@ defmodule ImageTest do
     image1 = build_dummy_image("FreeBSD:testing", "test:with-children")
     image2 = build_dummy_image(image1.id, "test:child1")
     build_dummy_image(image1.id, "")
-    TestHelper.container_create(api_spec, %{name: "prune3", image: image2.id})
+    TestHelper.container_create(%{name: "prune3", image: image2.id})
 
     # Image with children and no tag
     image3 = build_dummy_image("FreeBSD:testing", "")
     build_dummy_image(image3.id, "test:child2")
     image4 = build_dummy_image(image3.id, "")
-    TestHelper.container_create(api_spec, %{name: "prune4", image: image4.id})
+    TestHelper.container_create(%{name: "prune4", image: image4.id})
 
     TestHelper.image_prune(api_spec, true)
 
@@ -1120,7 +1120,7 @@ defmodule ImageTest do
   defp container_resolv_conf_exists?(run_config) do
     api_spec = Kleened.API.Spec.spec()
     {_attach, config_create} = Map.pop(run_config, :attach)
-    %{id: container_id} = TestHelper.container_create(api_spec, config_create)
+    %{id: container_id} = TestHelper.container_create(config_create)
     resolv_conf_path = "/" <> Config.get("zroot") <> "/container/#{container_id}/etc/resolv.conf"
     {_output, exit_code} = OS.cmd(["/bin/sh", "-c", "cat #{resolv_conf_path}"])
     Container.remove(container_id)

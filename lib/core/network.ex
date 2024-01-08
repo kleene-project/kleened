@@ -154,6 +154,9 @@ defmodule Kleened.Core.Network do
 
         {:endpoint, _} ->
           {:error, "container already connected to the network"}
+
+        {:error, msg} ->
+          {:error, msg}
       end
 
     {:reply, reply, state}
@@ -223,9 +226,9 @@ defmodule Kleened.Core.Network do
         gateway6: gateway6
       }) do
     with {:subnet, :ok} <- {:subnet, validate_ip(subnet, :subnet)},
-         {:subnet6, :ok} <- {:subnet6, validate_ip(subnet6, :subnet)},
+         {:subnet6, :ok} <- {:subnet6, validate_ip(subnet6, :subnet6)},
          {:gateway, :ok} <- {:gateway, validate_ip(gateway, :gateway)},
-         {:gateway6, :ok} <- {:gateway6, validate_ip(gateway6, :gateway)},
+         {:gateway6, :ok} <- {:gateway6, validate_ip(gateway6, :gateway6)},
          :not_found <- MetaData.get_network(name) do
       :ok
     else
@@ -586,7 +589,7 @@ defmodule Kleened.Core.Network do
     {:ok, ""}
   end
 
-  defp create_ip_address("auto", network, protocol) do
+  defp create_ip_address("<auto>", network, protocol) do
     case new_ip(network, protocol) do
       :out_of_ips ->
         {:error, "no more #{protocol} IP's left in the network"}
@@ -782,7 +785,7 @@ defmodule Kleened.Core.Network do
         case Enum.find(routing_table, "", fn %{"destination" => dest} -> dest == "default" end) do
           # Extract the interface name of the default gateway
           %{"interface-name" => interface} -> {:ok, interface}
-          _ -> {:error, "could not find a default gateway"}
+          _ -> {:error, "could not find a default gateway to use for NAT"}
         end
 
       _ ->
@@ -828,10 +831,19 @@ defmodule Kleened.Core.Network do
     :ok
   end
 
-  defp validate_ip(ip, _type) do
+  defp validate_ip(ip, type) do
     case CIDR.parse(ip) do
-      %CIDR{} -> :ok
-      {:error, reason} -> {:error, reason}
+      %CIDR{} = cidr ->
+        case {type, tuple_size(cidr.first)} do
+          {:gateway6, 8} -> :ok
+          {:subnet6, 8} -> :ok
+          {:subnet, 4} -> :ok
+          {:gateway, 4} -> :ok
+          _ -> {:error, "wrong IP protocol"}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

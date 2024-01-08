@@ -67,17 +67,16 @@ defmodule TestHelper do
   def container_valid_run_async(config) do
     # Ignoring expected_exit since the caller will deal with this
     {container_id, exec_config, _expected_exit} = prepare_container_run(config)
-    {:ok, conn} = exec_start_raw(config)
+    {:ok, conn} = exec_start_raw(exec_config)
     {container_id, exec_config.exec_id, conn}
   end
 
   defp prepare_container_run(config) do
-    api_spec = Kleened.API.Spec.spec()
     {attach, config} = Map.pop(config, :attach, true)
     {start_container, config} = Map.pop(config, :start_container, true)
     {expected_exit, config} = Map.pop(config, :expected_exit_code, 0)
 
-    %{id: container_id} = TestHelper.container_create(api_spec, config)
+    %{id: container_id} = TestHelper.container_create(config)
     {:ok, exec_id} = Exec.create(container_id)
 
     exec_config = %{exec_id: exec_id, attach: attach, start_container: start_container}
@@ -103,15 +102,17 @@ defmodule TestHelper do
     {cont, exec_id}
   end
 
-  def container_start_attached(api_spec, config) do
-    %{id: container_id} = container_create(api_spec, config)
+  def container_start_attached(_api_spec, config) do
+    %{id: container_id} = container_create(config)
     cont = MetaData.get_container(container_id)
     {:ok, exec_id} = Exec.create(container_id)
     :ok = Exec.start(exec_id, %{attach: true, start_container: true})
     {cont, exec_id}
   end
 
-  def container_create(api_spec, config) do
+  def container_create(config) do
+    api_spec = Kleened.API.Spec.spec()
+
     config_default = %{
       image: "FreeBSD:testing",
       jail_param: ["mount.devfs=true"],
@@ -121,7 +122,7 @@ defmodule TestHelper do
     config = Map.merge(config_default, config)
 
     {network_name, config} = Map.pop(config, :network, "")
-    {ip_address, config} = Map.pop(config, :ip_address, "auto")
+    {ip_address, config} = Map.pop(config, :ip_address, "<auto>")
     {ip_address6, config} = Map.pop(config, :ip_address6, "")
     assert_schema(config, "ContainerConfig", api_spec)
 
@@ -148,7 +149,7 @@ defmodule TestHelper do
 
             case network_connect(api_spec, network_name, endpoint_config) do
               :ok -> resp
-              other -> {:error, other}
+              other -> other
             end
         end
 
@@ -294,7 +295,7 @@ defmodule TestHelper do
 
   def exec_valid_start(%{attach: true} = config) do
     {:ok, conn} = exec_start_raw(config)
-    [msg_json | rest] = receive_frames(conn)
+    [msg_json | rest] = receive_frames(conn, 120_000)
 
     assert {:ok, %Msg{data: "", message: "", msg_type: "starting"}} ==
              Cast.cast(Msg.schema(), Jason.decode!(msg_json, keys: :atoms!))
@@ -588,7 +589,8 @@ defmodule TestHelper do
     })
   end
 
-  def network_create(api_spec, config) do
+  def network_create(config) do
+    api_spec = Kleened.API.Spec.spec()
     assert_schema(config, "NetworkConfig", api_spec)
 
     response =
@@ -646,7 +648,7 @@ defmodule TestHelper do
   def network_connect(api_spec, network_id, container_id) when is_binary(container_id) do
     network_connect(api_spec, network_id, %{
       container: container_id,
-      ip_address: "auto"
+      ip_address: "<auto>"
     })
   end
 
@@ -847,9 +849,9 @@ defmodule TestHelper do
       {:gun_down, ^conn, :ws, :closed, [_stream_ref]} ->
         {:error, "websocket closed unexpectedly"}
 
-      unknown ->
-        Logger.warn("unknown message received: #{inspect(unknown)}")
-        receive_frame(conn, timeout)
+        # unknown ->
+        #  Logger.warn("unknown message received: #{inspect(unknown)}")
+        #  receive_frame(conn, timeout)
     after
       timeout -> {:error, "timed out while waiting for websocket frames"}
     end

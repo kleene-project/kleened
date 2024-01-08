@@ -426,14 +426,14 @@ defmodule Kleened.API.Schemas do
         ip_address: %Schema{
           type: :string,
           description:
-            "The IPv4 address that should be assigned to the container. If set to `\"auto\"` an unused ip from the subnet will be used. If set to `\"\"` no address will be set.",
+            "The IPv4 address that should be assigned to the container. If set to `\"<auto>\"` an unused ip from the subnet will be used. If set to `\"\"` no address will be set.",
           default: "",
           example: "10.13.37.33"
         },
         ip_address6: %Schema{
           type: :string,
           description:
-            "The IPv6 address that should be assigned to the container. If this field is `\"\"` an unused ip contained in the subnet is auto-generated. `null` if no address should be set.",
+            "The IPv6 address that should be assigned to the container. If set to `\"<auto>\"` an unused ip from the subnet will be used. If set to `\"\"` no address will be set.",
           default: "",
           example: "2001:db8:8a2e:370:7334::2"
         }

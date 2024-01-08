@@ -207,28 +207,67 @@ defmodule NetworkTest do
         type: "loopback"
       })
 
-    {container_id, _, addresses} =
-      netstat_in_container(%{
+    %{message: "no IPv4 subnet defined for this network"} =
+      TestHelper.container_create(%{
+        name: "testnetwork1",
         network_driver: "ipnet",
         network: network.name,
         ip_address: "10.56.78.2",
-        ip_address6: "auto"
+        ip_address6: ""
       })
 
-    assert [] == filter_by_interface(addresses, interface)
+    %{message: "no IPv6 subnet defined for this network"} =
+      TestHelper.container_create(%{
+        name: "testnetwork2",
+        network_driver: "ipnet",
+        network: network.name,
+        ip_address: "",
+        ip_address6: "<auto>"
+      })
+  end
 
-    # Inspect container
-    assert %{
-             container: %Schemas.Container{network_driver: "ipnet"},
-             container_endpoints: [
-               %Schemas.EndPoint{
-                 epair: nil,
-                 ip_address: "",
-                 ip_address6: "",
-                 network_id: "loopback_net"
-               }
-             ]
-           } = TestHelper.container_inspect(container_id)
+  test "can't specify a IPv4 block in the 'subnet6'/'gateway6' field and vice versa" do
+    config_default = %{
+      subnet: "",
+      subnet6: "",
+      type: "loopback",
+      gateway: "",
+      gateway6: ""
+    }
+
+    assert %{message: "invalid subnet6: wrong IP protocol"} ==
+             TestHelper.network_create(
+               Map.merge(config_default, %{
+                 name: "testnet1",
+                 subnet6: "10.1.2.0/24"
+               })
+             )
+
+    assert %{message: "invalid gateway6: wrong IP protocol"} ==
+             TestHelper.network_create(
+               Map.merge(config_default, %{
+                 name: "testnet2",
+                 subnet6: "beef:beef::1",
+                 gateway6: "127.0.0.1"
+               })
+             )
+
+    assert %{message: "invalid subnet: wrong IP protocol"} ==
+             TestHelper.network_create(
+               Map.merge(config_default, %{
+                 name: "testnet3",
+                 subnet: "beef:beef::1/64"
+               })
+             )
+
+    assert %{message: "invalid gateway: wrong IP protocol"} ==
+             TestHelper.network_create(
+               Map.merge(config_default, %{
+                 name: "testnet4",
+                 subnet: "10.1.2.0/24",
+                 gateway: "beef:beef::1"
+               })
+             )
   end
 
   test "listing networks", %{api_spec: api_spec} do
@@ -257,7 +296,7 @@ defmodule NetworkTest do
     %Schemas.Network{id: network2_id} = create_network(%{name: "testnet2", type: "bridge"})
 
     %{id: container_id} =
-      TestHelper.container_create(api_spec, %{
+      TestHelper.container_create(%{
         name: "network_prune_test",
         cmd: ["/bin/sleep", "10"],
         network_driver: "ipnet",
@@ -286,7 +325,7 @@ defmodule NetworkTest do
     network = create_network(%{type: "loopback"})
 
     assert %{message: "network name is already taken"} ==
-             TestHelper.network_create(api_spec, %{
+             TestHelper.network_create(%{
                name: "testnet",
                subnet: "172.19.0.0/16",
                type: "loopback"
@@ -295,9 +334,9 @@ defmodule NetworkTest do
     assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
   end
 
-  test "try to create a network with an invalid subnet", %{api_spec: api_spec} do
+  test "try to create a network with an invalid subnet" do
     assert %{message: "invalid subnet: einval"} =
-             TestHelper.network_create(api_spec, %{
+             TestHelper.network_create(%{
                # Only CIDR-notation allowed
                name: "testnet",
                subnet: "172.18.0.0-16",
@@ -309,7 +348,7 @@ defmodule NetworkTest do
     network = create_network(%{})
 
     %{id: container_id} =
-      TestHelper.container_create(api_spec, %{
+      TestHelper.container_create(%{
         name: "network_test",
         cmd: ["/bin/sleep", "10"],
         network_driver: "ipnet",
@@ -326,7 +365,7 @@ defmodule NetworkTest do
     network = create_network(%{})
 
     %{id: container_id} =
-      TestHelper.container_create(api_spec, %{
+      TestHelper.container_create(%{
         name: "network_test",
         cmd: ["/bin/sleep", "10"],
         network: network.name,
@@ -493,8 +532,8 @@ defmodule NetworkTest do
       netstat_in_container(%{
         network: network.name,
         network_driver: "ipnet",
-        ip_address: "auto",
-        ip_address6: "auto"
+        ip_address: "<auto>",
+        ip_address6: "<auto>"
       })
 
     assert [
@@ -518,8 +557,8 @@ defmodule NetworkTest do
       netstat_in_container(%{
         network: network.name,
         network_driver: "vnet",
-        ip_address: "auto",
-        ip_address6: "auto"
+        ip_address: "<auto>",
+        ip_address6: "<auto>"
       })
 
     assert [
@@ -592,8 +631,8 @@ defmodule NetworkTest do
       netstat_in_container(%{
         network: network.name,
         network_driver: "ipnet",
-        ip_address: "auto",
-        ip_address6: "auto"
+        ip_address: "<auto>",
+        ip_address6: "<auto>"
       })
 
     assert [
@@ -620,8 +659,8 @@ defmodule NetworkTest do
       netstat_in_container(%{
         network: network.name,
         network_driver: "vnet",
-        ip_address: "auto",
-        ip_address6: "auto"
+        ip_address: "<auto>",
+        ip_address6: "<auto>"
       })
 
     assert [
@@ -694,8 +733,8 @@ defmodule NetworkTest do
         subnet: "172.19.1.0/24",
         type: "bridge"
       },
-      server: %{ip_address: "auto", ip_address6: "auto", network_driver: "ipnet"},
-      client: %{ip_address: "auto", ip_address6: "auto", network_driver: "ipnet"},
+      server: %{network_driver: "ipnet"},
+      client: %{network_driver: "ipnet"},
       protocol: "inet"
     })
 
@@ -725,8 +764,8 @@ defmodule NetworkTest do
         subnet6: "fdef:1111:5678::/64",
         type: "loopback"
       },
-      server: %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
-      client: %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
+      server: %{ip_address: "", ip_address6: "<auto>", network_driver: "ipnet"},
+      client: %{ip_address: "", ip_address6: "<auto>", network_driver: "ipnet"},
       protocol: "inet6"
     })
 
@@ -740,8 +779,8 @@ defmodule NetworkTest do
         subnet6: "fdef:2222:5678::/64",
         type: "bridge"
       },
-      server: %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
-      client: %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
+      server: %{ip_address: "", ip_address6: "<auto>", network_driver: "ipnet"},
+      client: %{ip_address: "", ip_address6: "<auto>", network_driver: "ipnet"},
       protocol: "inet6"
     })
 
@@ -754,8 +793,8 @@ defmodule NetworkTest do
         interface: "lo0",
         type: "custom"
       },
-      server: %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
-      client: %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
+      server: %{ip_address: "", ip_address6: "<auto>", network_driver: "ipnet"},
+      client: %{ip_address: "", ip_address6: "<auto>", network_driver: "ipnet"},
       protocol: "inet6"
     })
   end
@@ -774,8 +813,8 @@ defmodule NetworkTest do
         subnet6: "",
         type: "bridge"
       },
-      server: %{ip_address: "auto", ip_address6: "", network_driver: "vnet"},
-      client: %{ip_address: "auto", ip_address6: "", network_driver: "vnet"},
+      server: %{ip_address: "<auto>", ip_address6: "", network_driver: "vnet"},
+      client: %{ip_address: "<auto>", ip_address6: "", network_driver: "vnet"},
       protocol: "inet"
     })
 
@@ -789,8 +828,8 @@ defmodule NetworkTest do
         subnet6: "fdef:2222:5678::/64",
         type: "bridge"
       },
-      server: %{ip_address: "", ip_address6: "auto", network_driver: "vnet"},
-      client: %{ip_address: "", ip_address6: "auto", network_driver: "vnet"},
+      server: %{ip_address: "", ip_address6: "<auto>", network_driver: "vnet"},
+      client: %{ip_address: "", ip_address6: "<auto>", network_driver: "vnet"},
       protocol: "inet6"
     })
   end
@@ -809,8 +848,8 @@ defmodule NetworkTest do
         subnet6: "",
         type: "bridge"
       },
-      server: %{ip_address: "auto", ip_address6: "", network_driver: "vnet"},
-      client: %{ip_address: "auto", ip_address6: "", network_driver: "ipnet"},
+      server: %{ip_address: "<auto>", ip_address6: "", network_driver: "vnet"},
+      client: %{ip_address: "<auto>", ip_address6: "", network_driver: "ipnet"},
       protocol: "inet"
     })
 
@@ -824,8 +863,8 @@ defmodule NetworkTest do
         subnet6: "fdef:2222:5678::/64",
         type: "bridge"
       },
-      server: %{ip_address: "", ip_address6: "auto", network_driver: "vnet"},
-      client: %{ip_address: "", ip_address6: "auto", network_driver: "ipnet"},
+      server: %{ip_address: "", ip_address6: "<auto>", network_driver: "vnet"},
+      client: %{ip_address: "", ip_address6: "<auto>", network_driver: "ipnet"},
       protocol: "inet6"
     })
   end
@@ -906,17 +945,17 @@ defmodule NetworkTest do
     })
   end
 
-  test "exhaust all ips in a network", %{api_spec: api_spec} do
+  test "exhaust all ips in a network" do
     create_network(%{name: "smallnet", subnet: "172.19.0.0/30", type: "loopback"})
 
     config = %{cmd: ["/bin/ls"], network: "smallnet", network_driver: "ipnet"}
 
-    %{id: _id} = TestHelper.container_create(api_spec, Map.put(config, :name, "exhaust1"))
-    %{id: _id} = TestHelper.container_create(api_spec, Map.put(config, :name, "exhaust2"))
-    %{id: _id} = TestHelper.container_create(api_spec, Map.put(config, :name, "exhaust3"))
+    %{id: _id} = TestHelper.container_create(Map.put(config, :name, "exhaust1"))
+    %{id: _id} = TestHelper.container_create(Map.put(config, :name, "exhaust2"))
+    %{id: _id} = TestHelper.container_create(Map.put(config, :name, "exhaust3"))
 
-    assert {:error, %{message: "no more inet IP's left in the network"}} =
-             TestHelper.container_create(api_spec, Map.put(config, :name, "exhaust4"))
+    assert %{message: "no more inet IP's left in the network"} =
+             TestHelper.container_create(Map.put(config, :name, "exhaust4"))
   end
 
   defp routes(%{
@@ -958,7 +997,7 @@ defmodule NetworkTest do
     }
 
     config = Map.merge(config_default, config)
-    %{id: network_id} = TestHelper.network_create(api_spec, config)
+    %{id: network_id} = TestHelper.network_create(config)
     network = MetaData.get_network(network_id)
     network_inspected = TestHelper.network_inspect(network.name)
     assert_schema(network_inspected, "NetworkInspect", api_spec)
@@ -981,7 +1020,7 @@ defmodule NetworkTest do
     config_client_default = %{
       name: "client",
       network: network.id,
-      ip_address: "auto",
+      ip_address: "<auto>",
       ip_address6: "",
       subnet6: "",
       gateway6: "",
@@ -1070,11 +1109,22 @@ defmodule NetworkTest do
        }) do
     network = create_network(config_network)
 
-    config_server_default = %{
-      name: "server",
-      ip_address: "auto",
-      ip_address6: ""
-    }
+    config_server_default =
+      case protocol do
+        "inet" ->
+          %{
+            name: "server",
+            ip_address: "<auto>",
+            ip_address6: ""
+          }
+
+        "inet6" ->
+          %{
+            name: "server",
+            ip_address: "",
+            ip_address6: "<auto>"
+          }
+      end
 
     cmd_server =
       case protocol do
@@ -1089,7 +1139,7 @@ defmodule NetworkTest do
 
     config_client_default = %{
       name: "client",
-      ip_address: "auto",
+      ip_address: "<auto>",
       ip_address6: ""
     }
 
@@ -1097,6 +1147,11 @@ defmodule NetworkTest do
     config_client = Map.put(config_client, :network, network.id)
 
     {container_id_server, _, conn} = TestHelper.container_valid_run_async(config_server)
+
+    timeout = 1_0000
+
+    assert TestHelper.receive_frame(conn, timeout) ==
+             {:text, "{\"data\":\"\",\"message\":\"\",\"msg_type\":\"starting\"}"}
 
     endpoint = MetaData.get_endpoint(container_id_server, network.id)
 
@@ -1116,10 +1171,6 @@ defmodule NetworkTest do
     config_client = Map.put(config_client, :cmd, cmd_client)
 
     {_container_id, _, _output} = TestHelper.container_valid_run(config_client)
-    timeout = 1_0000
-
-    assert TestHelper.receive_frame(conn, timeout) ==
-             {:text, "{\"data\":\"\",\"message\":\"\",\"msg_type\":\"starting\"}"}
 
     if config_server.network_driver == "vnet" and
          (network.gateway != "" or network.gateway6 != "") do
@@ -1138,7 +1189,7 @@ defmodule NetworkTest do
     config_default = %{
       name: "nettest",
       cmd: ["/bin/sh", "-c", all_in_one_netstat],
-      ip_address: "auto",
+      ip_address: "<auto>",
       ip_adress6: ""
     }
 
@@ -1159,7 +1210,7 @@ defmodule NetworkTest do
     api_spec = Kleened.API.Spec.spec()
 
     %{id: container_id} =
-      TestHelper.container_create(api_spec, %{
+      TestHelper.container_create(%{
         name: "nettest",
         network: "",
         network_driver: driver
