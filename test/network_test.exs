@@ -194,7 +194,81 @@ defmodule NetworkTest do
     Network.destroy_interface(interface)
   end
 
-  test "ip_address[6]'s are ignored when connecting to a network with no subnet[6]'s" do
+  test "listing networks", %{api_spec: api_spec} do
+    Network.destroy_interface("kleene1")
+
+    assert [] = TestHelper.network_list(api_spec)
+
+    network1 = create_network(%{name: "testnet1", type: "bridge"})
+    create_network(%{name: "testnet2", type: "bridge"})
+
+    assert [
+             %{name: "testnet1"},
+             %{name: "testnet2"}
+           ] = TestHelper.network_list(api_spec)
+
+    assert TestHelper.network_remove(api_spec, network1.name) == %{id: network1.id}
+
+    assert [
+             %{name: "testnet2"}
+           ] = TestHelper.network_list(api_spec)
+  end
+
+  test "prune networks", %{api_spec: api_spec} do
+    network1 = create_network(%{name: "testnet1", type: "loopback"})
+
+    %Schemas.Network{id: network2_id} = create_network(%{name: "testnet2", type: "bridge"})
+
+    %{id: container_id} =
+      TestHelper.container_create(%{
+        name: "network_prune_test",
+        cmd: ["/bin/sleep", "10"],
+        network_driver: "ipnet",
+        network: "testnet1"
+      })
+
+    assert [network2_id] == TestHelper.network_prune(api_spec)
+    assert [%{name: "testnet1"}] = TestHelper.network_list(api_spec)
+    assert :ok == TestHelper.network_disconnect(api_spec, network1.id, container_id)
+  end
+
+  test "inspecting a network that doesn't exist" do
+    %Schemas.Network{} = create_network(%{type: "loopback"})
+    response = TestHelper.network_inspect_raw("notexist")
+    assert response.status == 404
+    assert response.resp_body == "{\"message\":\"network not found\"}"
+  end
+
+  test "remove a non-existing network", %{api_spec: api_spec} do
+    network = create_network(%{ifname: "kleene1", driver: "loopback"})
+    assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
+    assert TestHelper.network_remove(api_spec, network.name) == %{message: "network not found."}
+  end
+
+  test "create a network with same name twice", %{api_spec: api_spec} do
+    network = create_network(%{type: "loopback"})
+
+    assert %{message: "network name is already taken"} ==
+             TestHelper.network_create(%{
+               name: "testnet",
+               subnet: "172.19.0.0/16",
+               type: "loopback"
+             })
+
+    assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
+  end
+
+  test "try to create a network with an invalid subnet" do
+    assert %{message: "invalid subnet: einval"} =
+             TestHelper.network_create(%{
+               # Only CIDR-notation allowed
+               name: "testnet",
+               subnet: "172.18.0.0-16",
+               type: "bridge"
+             })
+  end
+
+  test "cannot set ip-adresses when there is no corresponding subnet defined on the network" do
     interface = "testnet"
     Network.destroy_interface(interface)
 
@@ -268,80 +342,6 @@ defmodule NetworkTest do
                  gateway: "beef:beef::1"
                })
              )
-  end
-
-  test "listing networks", %{api_spec: api_spec} do
-    Network.destroy_interface("kleene1")
-
-    assert [] = TestHelper.network_list(api_spec)
-
-    network1 = create_network(%{name: "testnet1", type: "bridge"})
-    create_network(%{name: "testnet2", type: "bridge"})
-
-    assert [
-             %{name: "testnet1"},
-             %{name: "testnet2"}
-           ] = TestHelper.network_list(api_spec)
-
-    assert TestHelper.network_remove(api_spec, network1.name) == %{id: network1.id}
-
-    assert [
-             %{name: "testnet2"}
-           ] = TestHelper.network_list(api_spec)
-  end
-
-  test "prune networks", %{api_spec: api_spec} do
-    network1 = create_network(%{name: "testnet1", type: "loopback"})
-
-    %Schemas.Network{id: network2_id} = create_network(%{name: "testnet2", type: "bridge"})
-
-    %{id: container_id} =
-      TestHelper.container_create(%{
-        name: "network_prune_test",
-        cmd: ["/bin/sleep", "10"],
-        network_driver: "ipnet",
-        network: "testnet1"
-      })
-
-    assert [network2_id] == TestHelper.network_prune(api_spec)
-    assert [%{name: "testnet1"}] = TestHelper.network_list(api_spec)
-    assert :ok == TestHelper.network_disconnect(api_spec, network1.id, container_id)
-  end
-
-  test "inspecting a network that doesn't exist" do
-    %Schemas.Network{} = create_network(%{type: "loopback"})
-    response = TestHelper.network_inspect_raw("notexist")
-    assert response.status == 404
-    assert response.resp_body == "{\"message\":\"network not found\"}"
-  end
-
-  test "remove a non-existing network", %{api_spec: api_spec} do
-    network = create_network(%{ifname: "kleene1", driver: "loopback"})
-    assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
-    assert TestHelper.network_remove(api_spec, network.name) == %{message: "network not found."}
-  end
-
-  test "create a network with same name twice", %{api_spec: api_spec} do
-    network = create_network(%{type: "loopback"})
-
-    assert %{message: "network name is already taken"} ==
-             TestHelper.network_create(%{
-               name: "testnet",
-               subnet: "172.19.0.0/16",
-               type: "loopback"
-             })
-
-    assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
-  end
-
-  test "try to create a network with an invalid subnet" do
-    assert %{message: "invalid subnet: einval"} =
-             TestHelper.network_create(%{
-               # Only CIDR-notation allowed
-               name: "testnet",
-               subnet: "172.18.0.0-16",
-               type: "bridge"
-             })
   end
 
   test "try to connect twice", %{api_spec: api_spec} do
@@ -710,6 +710,82 @@ defmodule NetworkTest do
            ] = routes6(routing_info)
   end
 
+  test "NAT'd connectivity of 'ipnet' containers" do
+    interface = "kleened0"
+    Network.destroy_interface(interface)
+
+    # loopback IPv4
+    container_connectivity_test(%{
+      network: %{
+        name: "testnet1",
+        gateway: "",
+        subnet: "10.13.37.0/24",
+        nat: "<host-gateway>",
+        type: "loopback"
+      },
+      client: %{network_driver: "ipnet"}
+    })
+
+    # bridge IPv4
+    container_connectivity_test(%{
+      network: %{
+        name: "testnet2",
+        gateway: "",
+        subnet: "10.13.38.0/24",
+        nat: "<host-gateway>",
+        type: "bridge"
+      },
+      client: %{network_driver: "ipnet"}
+    })
+  end
+
+  test "NAT'd connectivity of 'vnet' containers" do
+    interface = "kleened0"
+    Network.destroy_interface(interface)
+
+    # bridge IPv4
+    container_connectivity_test(%{
+      network: %{
+        name: "testnet2",
+        gateway: "<auto>",
+        subnet: "10.13.38.0/24",
+        nat: "<host-gateway>",
+        type: "bridge"
+      },
+      client: %{network_driver: "vnet"}
+    })
+  end
+
+  test "No NAT no connectivity for containers on rfc1819 networks" do
+    interface = "kleened0"
+    Network.destroy_interface(interface)
+
+    container_connectivity_test(%{
+      network: %{
+        name: "testnet1",
+        gateway: "",
+        subnet: "10.13.37.0/24",
+        type: "loopback",
+        nat: "",
+        expected_exit_code: 1
+      },
+      client: %{network_driver: "ipnet"}
+    })
+
+    container_connectivity_test(%{
+      network: %{
+        name: "testnet2",
+        # This is needed for bridge networks to get the @host_interface:
+        gateway: "<auto>",
+        subnet: "10.13.38.0/24",
+        type: "bridge",
+        nat: "",
+        expected_exit_code: 1
+      },
+      client: %{network_driver: "vnet"}
+    })
+  end
+
   test "'ipnet' containers can communicate with each other over all networks using IPv4" do
     interface = "kleened0"
     Network.destroy_interface(interface)
@@ -869,79 +945,59 @@ defmodule NetworkTest do
     })
   end
 
-  test "NAT'd connectivity of 'ipnet' containers" do
+  test "'ipnet' containers cannot communicate with each other over networks with no icc" do
     interface = "kleened0"
     Network.destroy_interface(interface)
 
-    # loopback IPv4
-    container_connectivity_test(%{
+    # Loopback
+    inter_container_connectivity_test(%{
       network: %{
-        name: "testnet1",
-        gateway: "",
-        subnet: "10.13.37.0/24",
-        nat: "<host-gateway>",
-        type: "loopback"
-      },
-      client: %{network_driver: "ipnet"}
-    })
-
-    # bridge IPv4
-    container_connectivity_test(%{
-      network: %{
-        name: "testnet2",
-        gateway: "",
-        subnet: "10.13.38.0/24",
-        nat: "<host-gateway>",
-        type: "bridge"
-      },
-      client: %{network_driver: "ipnet"}
-    })
-  end
-
-  test "NAT'd connectivity of 'vnet' containers" do
-    interface = "kleened0"
-    Network.destroy_interface(interface)
-
-    # bridge IPv4
-    container_connectivity_test(%{
-      network: %{
-        name: "testnet2",
-        gateway: "<auto>",
-        subnet: "10.13.38.0/24",
-        nat: "<host-gateway>",
-        type: "bridge"
-      },
-      client: %{network_driver: "vnet"}
-    })
-  end
-
-  test "No NAT no connectivity for containers on rfc1819 networks" do
-    interface = "kleened0"
-    Network.destroy_interface(interface)
-
-    container_connectivity_test(%{
-      network: %{
-        name: "testnet1",
-        gateway: "",
-        subnet: "10.13.37.0/24",
+        name: "testnet",
+        subnet: "172.18.1.0/24",
         type: "loopback",
-        nat: "",
-        expected_exit_code: 1
+        icc: false
       },
-      client: %{network_driver: "ipnet"}
+      server: %{network_driver: "ipnet"},
+      client: %{network_driver: "ipnet"},
+      protocol: "inet",
+      expect_timeout: true
     })
+  end
 
-    container_connectivity_test(%{
+  test "'vnet' containers cannot communicate with each other over networks with icc=false" do
+    interface = "kleened0"
+    Network.destroy_interface(interface)
+
+    inter_container_connectivity_test(%{
       network: %{
-        name: "testnet2",
-        # This is needed for bridge networks to get the @host_interface:
-        gateway: "<auto>",
-        subnet: "10.13.38.0/24",
+        name: "testnet",
+        subnet6: "beef:beef::/64",
+        gateway6: "<auto>",
         type: "bridge",
-        nat: "",
-        expected_exit_code: 1
+        icc: false
       },
-      client: %{network_driver: "vnet"}
+      server: %{network_driver: "vnet"},
+      client: %{network_driver: "vnet"},
+      protocol: "inet6",
+      expect_timeout: true
+    })
+  end
+
+  test "'vnet' and 'ipnet' containers cannot communicate with each other over networks with icc=false" do
+    interface = "kleened0"
+    Network.destroy_interface(interface)
+
+    inter_container_connectivity_test(%{
+      network: %{
+        name: "testnet",
+        subnet: "10.56.78.0/24",
+        type: "bridge",
+        icc: false
+      },
+      server: %{network_driver: "vnet"},
+      client: %{network_driver: "ipnet"},
+      protocol: "inet",
+      expect_timeout: true
     })
   end
 
@@ -982,31 +1038,6 @@ defmodule NetworkTest do
       end)
 
     routes
-  end
-
-  defp create_network(config) do
-    api_spec = Kleened.API.Spec.spec()
-
-    config_default = %{
-      name: "testnet",
-      subnet: "172.18.0.0/16",
-      subnet6: "",
-      type: "loopback",
-      gateway: "",
-      gateway6: ""
-    }
-
-    config = Map.merge(config_default, config)
-    %{id: network_id} = TestHelper.network_create(config)
-    network = MetaData.get_network(network_id)
-    network_inspected = TestHelper.network_inspect(network.name)
-    assert_schema(network_inspected, "NetworkInspect", api_spec)
-
-    assert network.name == config.name
-    assert network.id == network_inspected.network.id
-    assert network.name == network_inspected.network.name
-    assert interface_exists?(network.interface)
-    network
   end
 
   defp container_connectivity_test(%{
@@ -1089,10 +1120,10 @@ defmodule NetworkTest do
         msg
 
       {^port, msg} ->
-        Logger.warn("what #{inspect(msg)}")
+        msg
 
       msg ->
-        Logger.warn("Hvad er der pa linjen: #{inspect(msg)}")
+        Logger.warn("Non-tcpdump message received: #{inspect(msg)}")
         read_tcpdump(port)
     after
       1_000 ->
@@ -1101,50 +1132,40 @@ defmodule NetworkTest do
     end
   end
 
-  defp inter_container_connectivity_test(%{
-         network: config_network,
-         server: config_server,
-         client: config_client,
-         protocol: protocol
-       }) do
+  defp inter_container_connectivity_test(
+         %{
+           network: config_network,
+           server: config_server,
+           client: config_client,
+           protocol: protocol
+         } = config
+       ) do
     network = create_network(config_network)
 
-    config_server_default =
+    {default_ip_address, default_ip_address6} =
       case protocol do
-        "inet" ->
-          %{
-            name: "server",
-            ip_address: "<auto>",
-            ip_address6: ""
-          }
-
-        "inet6" ->
-          %{
-            name: "server",
-            ip_address: "",
-            ip_address6: "<auto>"
-          }
+        "inet" -> {"<auto>", ""}
+        "inet6" -> {"", "<auto>"}
       end
 
     cmd_server =
       case protocol do
-        "inet" -> ["/bin/sh", "-c", "nc -l 4000"]
-        "inet6" -> ["/bin/sh", "-c", "sleep 1 && nc -6 -l 4000"]
+        "inet" -> "nc -l 4000"
+        "inet6" -> "nc -6 -l 4000"
       end
 
-    config_server = Map.merge(config_server_default, config_server)
-    config_server = Map.put(config_server, :attach, true)
-    config_server = Map.put(config_server, :network, network.id)
-    config_server = Map.put(config_server, :cmd, cmd_server)
-
-    config_client_default = %{
-      name: "client",
-      ip_address: "<auto>",
-      ip_address6: ""
-    }
-
-    config_client = Map.merge(config_client_default, config_client)
-    config_client = Map.put(config_client, :network, network.id)
+    config_server =
+      Map.merge(
+        %{
+          name: "server",
+          ip_address: default_ip_address,
+          ip_address6: default_ip_address6,
+          attach: true,
+          network: network.id,
+          cmd: ["/bin/sh", "-c", cmd_server]
+        },
+        config_server
+      )
 
     {container_id_server, _, conn} = TestHelper.container_valid_run_async(config_server)
 
@@ -1157,29 +1178,41 @@ defmodule NetworkTest do
 
     cmd_client =
       case protocol do
-        "inet" ->
-          ["/bin/sh", "-c", "echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address} 4000"]
-
-        "inet6" ->
-          [
-            "/bin/sh",
-            "-c",
-            "sleep 1 && echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address6} 4000"
-          ]
+        "inet" -> "echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address} 4000"
+        "inet6" -> "sleep 1 && echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address6} 4000"
       end
 
-    config_client = Map.put(config_client, :cmd, cmd_client)
+    config_client =
+      Map.merge(
+        %{
+          name: "client",
+          ip_address: default_ip_address,
+          ip_address6: default_ip_address6,
+          network: network.id,
+          cmd: ["/bin/sh", "-c", cmd_client]
+        },
+        config_client
+      )
 
-    {_container_id, _, _output} = TestHelper.container_valid_run(config_client)
+    case Map.get(config, :expect_timeout, false) do
+      true ->
+        config_client = Map.put(config_client, :expected_exit_code, 1)
 
-    if config_server.network_driver == "vnet" and
-         (network.gateway != "" or network.gateway6 != "") do
-      assert {:text, <<"add net default: gateway", _::binary>>} =
-               TestHelper.receive_frame(conn, timeout)
+        {_container_id, _, output} = TestHelper.container_valid_run(config_client)
+        assert String.contains?(Enum.join(output, ""), "Operation timed out")
+
+      false ->
+        {_container_id, _, _output} = TestHelper.container_valid_run(config_client)
+
+        if config_server.network_driver == "vnet" and
+             (network.gateway != "" or network.gateway6 != "") do
+          assert {:text, <<"add net default: gateway", _::binary>>} =
+                   TestHelper.receive_frame(conn, timeout)
+        end
+
+        assert TestHelper.receive_frame(conn, timeout) == {:text, "traffic\n"}
+        assert {:close, 1000, _} = TestHelper.receive_frame(conn, timeout)
     end
-
-    assert TestHelper.receive_frame(conn, timeout) == {:text, "traffic\n"}
-    assert {:close, 1000, _} = TestHelper.receive_frame(conn, timeout)
   end
 
   defp netstat_in_container(config) do
@@ -1204,6 +1237,33 @@ defmodule NetworkTest do
 
     %{"statistics" => %{"interface" => addresses}} = Jason.decode!(interface_info)
     {container_id, routing, addresses}
+  end
+
+  defp create_network(config) do
+    api_spec = Kleened.API.Spec.spec()
+
+    config_default = %{
+      name: "testnet",
+      subnet: "172.18.0.0/16",
+      subnet6: "",
+      type: "loopback",
+      gateway: "",
+      gateway6: "",
+      allow_outgoing: true,
+      icc: true
+    }
+
+    config = Map.merge(config_default, config)
+    %{id: network_id} = TestHelper.network_create(config)
+    network = MetaData.get_network(network_id)
+    network_inspected = TestHelper.network_inspect(network.name)
+    assert_schema(network_inspected, "NetworkInspect", api_spec)
+
+    assert network.name == config.name
+    assert network.id == network_inspected.network.id
+    assert network.name == network_inspected.network.name
+    assert interface_exists?(network.interface)
+    network
   end
 
   defp failing_to_connect_container(networks, driver) do

@@ -289,7 +289,12 @@ defmodule Kleened.API.Schemas do
         icc: %Schema{
           type: :boolean,
           description:
-            "Whether or not to enable connectivity between containers within the network.",
+            "Whether or not to enable connectivity between containers within the same network.",
+          default: true
+        },
+        allow_outgoing: %Schema{
+          type: :boolean,
+          description: "",
           default: true
         },
         external_interfaces: %Schema{
@@ -302,12 +307,6 @@ defmodule Kleened.API.Schemas do
           default: [],
           example: ["em0", "igb2"]
         }
-        # ,
-        # internal: %Schema{
-        #  type: :boolean,
-        #  description: "",
-        #  default: false
-        # },
         # ip_range: %Schema{
         #  type: :string,
         #  description: "",
@@ -404,6 +403,11 @@ defmodule Kleened.API.Schemas do
           type: :boolean,
           description:
             "Whether or not to enable connectivity between containers within the network.",
+          default: true
+        },
+        allow_outgoing: %Schema{
+          type: :boolean,
+          description: "",
           default: true
         }
       }

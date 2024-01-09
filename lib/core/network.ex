@@ -31,13 +31,13 @@ defmodule Kleened.Core.Network do
   <%= kleene_translation %>
   ### KLEENED TRANSLATION RULES END #####
 
-  ### KLEENED FILTERING RULES START #####
   # block everything
   #block log all
 
   # skip loopback interface(s)
-  set skip on lo0
+  #set skip on lo0
 
+  ### KLEENED FILTERING RULES START #####
   <%= kleene_filtering %>
   ### KLEENED FILTERING RULES END #######
   """
@@ -397,7 +397,9 @@ defmodule Kleened.Core.Network do
            interface: interface,
            gateway: gateway,
            gateway6: gateway6,
-           nat: nat
+           nat: nat,
+           icc: icc,
+           allow_outgoing: allow_outgoing
          },
          _state
        ) do
@@ -410,7 +412,9 @@ defmodule Kleened.Core.Network do
       interface: interface,
       gateway: gateway,
       gateway6: gateway6,
-      nat: nat
+      nat: nat,
+      icc: icc,
+      allow_outgoing: allow_outgoing
     }
 
     MetaData.add_network(network)
@@ -581,12 +585,22 @@ defmodule Kleened.Core.Network do
     {:ok, ""}
   end
 
-  defp create_ip_address(_, %Schemas.Network{subnet: ""}, "inet") do
-    {:ok, ""}
+  defp create_ip_address("<auto>", %Schemas.Network{subnet: ""}, "inet") do
+    {:error, "cannot allocate address because there is no IPv4 subnet for this network"}
   end
 
-  defp create_ip_address(_, %Schemas.Network{subnet6: ""}, "inet6") do
-    {:ok, ""}
+  defp create_ip_address("<auto>", %Schemas.Network{subnet6: ""}, "inet6") do
+    {:error, "cannot allocate ip address because there is no IPv6 subnet for this network"}
+  end
+
+  defp create_ip_address(_ip_address, %Schemas.Network{subnet: ""}, "inet") do
+    {:error, "cannot set ip address because there is no IPv4 subnet for this network"}
+    # {:ok, ""}
+  end
+
+  defp create_ip_address(_ip_address, %Schemas.Network{subnet6: ""}, "inet6") do
+    {:error, "cannot set ip address because there is no IPv6 subnet for this network"}
+    # {:ok, ""}
   end
 
   defp create_ip_address("<auto>", network, protocol) do
@@ -675,7 +689,7 @@ defmodule Kleened.Core.Network do
   end
 
   def create_pf_config([network | rest], state) do
-    prefix = "kleene_network_#{network.id}"
+    prefix = "kleenet_#{network.id}"
 
     potential_macros = [
       interface: network.interface,
@@ -686,8 +700,15 @@ defmodule Kleened.Core.Network do
 
     updated_macros = state.macros ++ network_macros(potential_macros, prefix)
     updated_translation = state.translation ++ network_translation(network.nat, prefix)
+    updated_filering = network_filtering(network, prefix)
 
-    new_state = %{state | :macros => updated_macros, :translation => updated_translation}
+    new_state = %{
+      state
+      | macros: updated_macros,
+        translation: updated_translation,
+        filtering: updated_filering
+    }
+
     create_pf_config(rest, new_state)
   end
 
@@ -703,8 +724,54 @@ defmodule Kleened.Core.Network do
     )
   end
 
-  defp network_translation("", _prefix) do
-    []
+  defp network_filtering(network, prefix) do
+    filtering_rules =
+      Enum.reduce(
+        [:outgoing, :inter_container, :inter_container6],
+        [],
+        &network_filtering(network, prefix, &1, &2)
+      )
+
+    filtering_rules
+  end
+
+  defp network_filtering(network, prefix, :outgoing, rules) do
+    net_if = "$#{prefix}_interface:network"
+
+    new_rule =
+      case network.allow_outgoing do
+        true -> "pass out on #{net_if}"
+        false -> "block out on #{net_if}"
+      end
+
+    [new_rule | rules]
+  end
+
+  defp network_filtering(network, prefix, :inter_container, rules) do
+    subnet = "$#{prefix}_subnet"
+
+    case network.subnet do
+      "" -> rules
+      _ -> [icc_rule(prefix, network.icc, subnet) | rules]
+    end
+  end
+
+  defp network_filtering(network, prefix, :inter_container6, rules) do
+    subnet6 = "$#{prefix}_subnet6"
+
+    case network.subnet6 do
+      "" -> rules
+      _ -> [icc_rule(prefix, network.icc, subnet6) | rules]
+    end
+  end
+
+  defp icc_rule(prefix, icc, subnet) do
+    net_if = "$#{prefix}_interface"
+
+    case icc do
+      true -> "pass in on #{net_if} from #{subnet} to #{subnet}"
+      false -> "block in on #{net_if} from #{subnet} to #{subnet}"
+    end
   end
 
   defp network_translation(_nat_if, prefix) do
@@ -718,10 +785,13 @@ defmodule Kleened.Core.Network do
   end
 
   def enable_pf() do
-    OS.cmd(~w"/sbin/pfctl -e")
+    OS.cmd(~w"/sbin/pfctl -e", %{suppress_warning: true})
   end
 
   def load_pf_config(pf_config_path, config) do
+    # For debugging purposes:
+    # Logger.warn("PF Config:\n#{config}")
+
     case File.write(pf_config_path, config, [:write]) do
       :ok ->
         case OS.cmd(~w"/sbin/pfctl -f #{pf_config_path}") do

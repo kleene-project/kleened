@@ -479,7 +479,8 @@ defmodule Kleened.Core.Exec do
     create_extended_config(config, rest)
   end
 
-  defp create_extended_config(config, [{:subnet, {_epair, "", ""}} | rest]) do
+  defp create_extended_config(config, [{:subnet, {_epair, subnet, ip}} | rest])
+       when subnet == "" or ip == "" do
     create_extended_config(config, rest)
   end
 
@@ -492,15 +493,16 @@ defmodule Kleened.Core.Exec do
     )
   end
 
-  defp create_extended_config(config, [{:subnet6, {_epair, "", ""}} | rest]) do
+  defp create_extended_config(config, [{:subnet6, {_epair, subnet6, ip6}} | rest])
+       when subnet6 == "" or ip6 == "" do
     create_extended_config(config, rest)
   end
 
-  defp create_extended_config(config, [{:subnet6, {epair, subnet6, ip}} | rest]) do
+  defp create_extended_config(config, [{:subnet6, {epair, subnet6, ip6}} | rest]) do
     %CIDR{} = subnet6 = CIDR.parse(subnet6)
 
     create_extended_config(
-      ["exec.start=ifconfig #{epair}b inet6 #{ip}/#{subnet6.mask}" | config],
+      ["exec.start=ifconfig #{epair}b inet6 #{ip6}/#{subnet6.mask}" | config],
       rest
     )
   end
