@@ -292,7 +292,7 @@ defmodule Kleened.API.Schemas do
             "Whether or not to enable connectivity between containers within the same network.",
           default: true
         },
-        allow_outgoing: %Schema{
+        internal: %Schema{
           type: :boolean,
           description: "",
           default: true
@@ -405,9 +405,9 @@ defmodule Kleened.API.Schemas do
             "Whether or not to enable connectivity between containers within the network.",
           default: true
         },
-        allow_outgoing: %Schema{
+        internal: %Schema{
           type: :boolean,
-          description: "",
+          description: "Whether or not to allow upstream traffic",
           default: true
         }
       }
