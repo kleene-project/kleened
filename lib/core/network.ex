@@ -679,7 +679,7 @@ defmodule Kleened.Core.Network do
     networks = MetaData.list_networks(:exclude_host)
 
     state = %{
-      :macros => [],
+      :macros => [host_gw_macro()],
       :translation => [],
       :filtering => []
     }
@@ -690,7 +690,6 @@ defmodule Kleened.Core.Network do
 
   def create_pf_config([network | rest], state) do
     prefix = "kleenet_#{network.id}"
-
     updated_macros = state.macros ++ network_macros(network, prefix)
     updated_translation = state.translation ++ network_translation(network, prefix)
     updated_filering = network_filtering(network, prefix)
@@ -816,7 +815,7 @@ defmodule Kleened.Core.Network do
     subnet6 = "$#{prefix}_subnet6"
     interface = "$#{prefix}_interface"
     nat_interface = "$#{prefix}_nat_if"
-    host_gateway_interface = "$#{prefix}_host_gw_if"
+    host_gateway_interface = "$kleenet_host_gw_if"
     {subnet, subnet6, interface, nat_interface, host_gateway_interface}
   end
 
@@ -854,17 +853,14 @@ defmodule Kleened.Core.Network do
       nat_if: network.nat
     ]
 
-    macros =
-      potential_macros
-      |> Enum.filter(fn {_, value} -> value != "" end)
-      |> Enum.map(fn {type, value} -> "#{prefix}_#{type}=\"#{value}\"" end)
-
-    [host_gw_macro(prefix) | macros]
+    potential_macros
+    |> Enum.filter(fn {_, value} -> value != "" end)
+    |> Enum.map(fn {type, value} -> "#{prefix}_#{type}=\"#{value}\"" end)
   end
 
-  defp host_gw_macro(prefix) do
+  defp host_gw_macro() do
     case host_gateway_interface() do
-      {:ok, host_gw_if} -> ["#{prefix}_host_gw_if=\"#{host_gw_if}\""]
+      {:ok, host_gw_if} -> ["kleenet_host_gw_if=\"#{host_gw_if}\""]
       {:error, _} -> []
     end
   end
