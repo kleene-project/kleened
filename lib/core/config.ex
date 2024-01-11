@@ -22,17 +22,19 @@ defmodule Kleened.Core.Config do
   end
 
   defp initialize() do
-    initialize_system()
     cfg = open_config_file()
     error_if_not_defined(cfg, "zroot")
     error_if_not_defined(cfg, "api_listening_sockets")
+    error_if_not_defined(cfg, "pf_config_path")
+    error_if_not_defined(cfg, "pf_config_template_path")
+    error_if_not_defined(cfg, "pf_logging")
+    initialize_system(cfg)
     cfg = add_api_listening_options(cfg, [])
     cfg = initialize_kleene_root(cfg)
-    cfg = Map.put(cfg, "metadata_db", Path.join(["/", cfg["zroot"], "metadata.sqlite"]))
-    Map.put(cfg, "pf_config_path", Path.join(["/", cfg["zroot"], "pf_kleene.conf"]))
+    Map.put(cfg, "metadata_db", Path.join(["/", cfg["zroot"], "metadata.sqlite"]))
   end
 
-  def initialize_system() do
+  def initialize_system(config) do
     loader_conf = "/boot/loader.conf"
 
     if not kmod_loaded?("zfs") do
@@ -43,6 +45,10 @@ defmodule Kleened.Core.Config do
       kmod_load_or_error("pf")
     end
 
+    if config["pf_logging"] and not kmod_loaded?("pflog") do
+      kmod_load_or_error("pflog")
+    end
+
     if not sysrc_enabled?("pf_load", loader_conf) do
       sysrc_enable_or_error("pf_load", loader_conf)
     end
@@ -51,7 +57,7 @@ defmodule Kleened.Core.Config do
       sysrc_enable_or_error("pf_enable")
     end
 
-    if not sysrc_enabled?("pflog_enable") do
+    if config["pf_logging"] and not sysrc_enabled?("pflog_enable") do
       sysrc_enable_or_error("pflog_enable")
     end
   end
@@ -65,8 +71,11 @@ defmodule Kleened.Core.Config do
 
   def kmod_load_or_error(module) do
     case System.cmd("/sbin/kldload", [module], stderr_to_stdout: true) do
-      {_, 0} -> :ok
-      {reason, _} -> init_error(reason)
+      {_, 0} ->
+        Logger.info("Sucessfully loaded kernel module #{module}")
+
+      {reason, _} ->
+        init_error(reason)
     end
   end
 
@@ -81,8 +90,11 @@ defmodule Kleened.Core.Config do
     case System.cmd("/usr/sbin/sysrc", ["-n", "-f", file, "#{service}=\"YES\""],
            stderr_to_stdout: true
          ) do
-      {_, 0} -> :ok
-      {reason, _} -> init_error(reason)
+      {_, 0} ->
+        Logger.info("Sucessfully enabled service #{service} in #{file}")
+
+      {reason, _} ->
+        init_error(reason)
     end
   end
 

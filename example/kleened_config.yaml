@@ -2,6 +2,17 @@
 # Root ZFS dataset where Kleened stores the images, containers, and volumes. Must be set.
 zroot: "zroot/kleene"
 
+# Path to the template that is used to generate thee pf.conf(5) file for the host
+#
+#pf_config_template_path: "/zroot/kleene/pf.conf_kleene"
+pf_config_template_path: "/host/kleened/exmaple/pf.conf_kleene"
+
+# Path to the generated file that is loaded into pf(4)
+pf_config_path: "/etc/pf.conf"
+
+# Whether or not to log blocked packets to pflog0
+pf_logging: true
+
 # Sockets where the kleened-API is listenening.
 api_listening_sockets:
       ### TCP-socket using IPv4 using TLS _with_ client authentication and DH-parameters
