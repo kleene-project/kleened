@@ -31,6 +31,18 @@ defmodule TestHelper do
 
   def cleanup() do
     Logger.info("Cleaning up after test...")
+    runnning_containers = Container.list(all: false)
+
+    case length(runnning_containers) do
+      0 ->
+        :ok
+
+      _ ->
+        runnning_containers |> Enum.map(fn %{id: id} -> Container.stop(id) end)
+
+        :timer.sleep(500)
+    end
+
     MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
 
     MetaData.list_volumes() |> Enum.map(&Volume.remove(&1.name))
