@@ -6,41 +6,11 @@ defmodule Kleened.Core.Network do
 
   alias __MODULE__, as: Network
 
-  defmodule State do
-    defstruct pf_config_path: nil
-  end
-
   @type t() :: %Schemas.Network{}
   @type network_id() :: String.t()
   @type network_config() :: %Schemas.NetworkConfig{}
   @type endpoint() :: %Schemas.EndPoint{}
   @type protocol() :: String.t()
-
-  @default_pf_configuration """
-  # This is the pf(4) configuration file template that is used by Kleened.
-  # Feel free to add additional rules as long as the tags (and their ordering) below are preserved.
-  # Modify with care: It can potentially affect Kleened in unpredictable ways.
-  # The resulting configuration file that is loaded into pf is defined at the 'pf_config_path'
-  # entry in the kleene engine configuration file (kleened_config.yaml).
-
-  ### KLEENED MACROS START ###
-  <%= kleene_macros %>
-  ### KLEENED MACROS END #####
-
-  ### KLEENED TRANSLATION RULES START ###
-  <%= kleene_translation %>
-  ### KLEENED TRANSLATION RULES END #####
-
-  # block everything
-  #block log all
-
-  # skip loopback interface(s)
-  #set skip on lo0
-
-  ### KLEENED FILTERING RULES START #####
-  <%= kleene_filtering %>
-  ### KLEENED FILTERING RULES END #######
-  """
 
   def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
@@ -96,19 +66,13 @@ defmodule Kleened.Core.Network do
   ### Callback functions
   @impl true
   def init([]) do
-    pf_config_path = Config.get("pf_config_path")
-
     FreeBSD.enable_ip_forwarding()
 
-    if not Utils.touch(pf_config_path) do
-      Logger.error("Unable to access Kleeneds PF configuration file located at #{pf_config_path}")
-    end
-
     create_network_interfaces()
-    state = %State{:pf_config_path => pf_config_path}
+    state = %{}
 
     enable_pf()
-    configure_pf(pf_config_path)
+    configure_pf()
     {:ok, state}
   end
 
@@ -181,13 +145,13 @@ defmodule Kleened.Core.Network do
   end
 
   def handle_call({:remove, identifier}, _from, state) do
-    reply = remove_(identifier, state.pf_config_path)
+    reply = remove_(identifier)
     {:reply, reply, state}
   end
 
   def handle_call(:prune, _from, state) do
     pruned_networks = MetaData.list_unused_networks()
-    pruned_networks |> Enum.map(&remove_(&1, state.pf_config_path))
+    pruned_networks |> Enum.map(&remove_(&1))
     {:reply, {:ok, pruned_networks}, state}
   end
 
@@ -281,7 +245,7 @@ defmodule Kleened.Core.Network do
     create_interface("lo", config.interface)
     {:ok, config} = configure_gateways(config)
     network = create_network_metadata(config, state)
-    configure_pf(state.pf_config_path)
+    configure_pf()
     {:ok, network}
   end
 
@@ -292,7 +256,7 @@ defmodule Kleened.Core.Network do
     create_interface("bridge", config.interface)
     {:ok, config} = configure_gateways(config)
     network = create_network_metadata(config, state)
-    configure_pf(state.pf_config_path)
+    configure_pf()
     {:ok, network}
   end
 
@@ -302,7 +266,7 @@ defmodule Kleened.Core.Network do
        ) do
     {:ok, config} = configure_gateways(config)
     network = create_network_metadata(config, state)
-    configure_pf(state.pf_config_path)
+    configure_pf()
     {:ok, network}
   end
 
@@ -421,19 +385,19 @@ defmodule Kleened.Core.Network do
     network
   end
 
-  defp remove_(idname, pf_config_path) do
+  defp remove_(idname) do
     case MetaData.get_network(idname) do
       %Schemas.Network{type: "custom"} = network ->
-        _remove_metadata_and_pf(network, pf_config_path)
+        _remove_metadata_and_pf(network)
         {:ok, network.id}
 
       %Schemas.Network{type: "loopback"} = network ->
-        _remove_metadata_and_pf(network, pf_config_path)
+        _remove_metadata_and_pf(network)
         destroy_interface(network.interface)
         {:ok, network.id}
 
       %Schemas.Network{type: "bridge"} = network ->
-        _remove_metadata_and_pf(network, pf_config_path)
+        _remove_metadata_and_pf(network)
         # Just in case there are more members added:
         remove_bridge_members(network.interface)
         destroy_interface(network.interface)
@@ -444,11 +408,11 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  def _remove_metadata_and_pf(%Schemas.Network{id: id}, pf_config_path) do
+  def _remove_metadata_and_pf(%Schemas.Network{id: id}) do
     container_ids = MetaData.connected_containers(id)
     Enum.map(container_ids, &disconnect_(&1, id))
     MetaData.remove_network(id)
-    configure_pf(pf_config_path)
+    configure_pf()
   end
 
   defp connect_with_driver(%Schemas.Container{network_driver: "disabled"}, _network, _config) do
@@ -675,7 +639,7 @@ defmodule Kleened.Core.Network do
     Enum.map(lines, remove_if_member)
   end
 
-  def configure_pf(pf_config_path) do
+  def configure_pf() do
     networks = MetaData.list_networks(:exclude_host)
 
     state = %{
@@ -684,8 +648,13 @@ defmodule Kleened.Core.Network do
       :filtering => []
     }
 
-    pf_config = create_pf_config(networks, state)
-    load_pf_config(pf_config_path, pf_config)
+    case create_pf_config(networks, state) do
+      {:ok, pf_config} ->
+        load_pf_config(pf_config)
+
+      {:error, msg} ->
+        {:error, msg}
+    end
   end
 
   def create_pf_config([network | rest], state) do
@@ -709,14 +678,26 @@ defmodule Kleened.Core.Network do
         :translation => translation,
         :filtering => filtering
       }) do
-    EEx.eval_string(@default_pf_configuration,
-      kleene_macros: Enum.join(macros, "\n"),
-      kleene_translation: Enum.join(translation, "\n"),
-      kleene_filtering: Enum.join(filtering, "\n")
-    )
+    template_path = Config.get("pf_config_template_path")
+
+    case File.read(template_path) do
+      {:ok, config_template} ->
+        config =
+          EEx.eval_string(config_template,
+            kleene_macros: Enum.join(macros, "\n"),
+            kleene_translation: Enum.join(translation, "\n"),
+            kleene_filtering: Enum.join(filtering, "\n")
+          )
+
+        {:ok, config}
+
+      {:error, msg} ->
+        Logger.error("could not read the pf.conf-template  at #{template_path}: #{msg}")
+        {:error, msg}
+    end
   end
 
-  defp network_filtering(%Schemas.Network{internal: true, icc: true} = network, prefix) do
+  defp network_filtering(%Schemas.Network{internal: false, icc: true} = network, prefix) do
     {subnet, subnet6, interface, _nat_interface, _host_gateway_interface} =
       network_filtering_macros(prefix)
 
@@ -726,17 +707,17 @@ defmodule Kleened.Core.Network do
     use_necessary_ip_protocols(network, [ipv4_icc_rule], [ipv6_icc_rule])
   end
 
-  defp network_filtering(%Schemas.Network{internal: true, icc: false} = network, prefix) do
+  defp network_filtering(%Schemas.Network{internal: false, icc: false} = network, prefix) do
     {subnet, subnet6, interface, _nat_interface, _host_gateway_interface} =
       network_filtering_macros(prefix)
 
-    ipv4_icc_rule = "block in on #{interface} from #{subnet} to #{subnet}"
-    ipv6_icc_rule = "block in on #{interface} from #{subnet6} to #{subnet6}"
+    ipv4_icc_rule = "block in quick log on #{interface} from #{subnet} to #{subnet}"
+    ipv6_icc_rule = "block in quick log on #{interface} from #{subnet6} to #{subnet6}"
 
     use_necessary_ip_protocols(network, [ipv4_icc_rule], [ipv6_icc_rule])
   end
 
-  defp network_filtering(%Schemas.Network{internal: false, icc: true, nat: ""} = network, prefix) do
+  defp network_filtering(%Schemas.Network{internal: true, icc: true, nat: ""} = network, prefix) do
     {subnet, subnet6, interface, _nat_interface, host_gateway_interface} =
       network_filtering_macros(prefix)
 
@@ -754,7 +735,7 @@ defmodule Kleened.Core.Network do
   end
 
   defp network_filtering(
-         %Schemas.Network{internal: false, icc: true, nat: _nat_if} = network,
+         %Schemas.Network{internal: true, icc: true, nat: _nat_if} = network,
          prefix
        ) do
     {subnet, subnet6, interface, nat_interface, host_gateway_interface} =
@@ -773,13 +754,13 @@ defmodule Kleened.Core.Network do
     ])
   end
 
-  defp network_filtering(%Schemas.Network{internal: false, icc: false, nat: ""} = network, prefix) do
+  defp network_filtering(%Schemas.Network{internal: true, icc: false, nat: ""} = network, prefix) do
     {subnet, subnet6, interface, _nat_interface, host_gateway_interface} =
       network_filtering_macros(prefix)
 
     # icc-related:
-    ipv4_icc_rule = "block in on #{interface} from #{subnet} to #{subnet}"
-    ipv6_icc_rule = "block in on #{interface} from #{subnet6} to #{subnet6}"
+    ipv4_icc_rule = "block in quick log on #{interface} from #{subnet} to #{subnet}"
+    ipv6_icc_rule = "block in quick log on #{interface} from #{subnet6} to #{subnet6}"
     # internal-related:
     ipv4_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet}"
     ipv6_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
@@ -791,15 +772,15 @@ defmodule Kleened.Core.Network do
   end
 
   defp network_filtering(
-         %Schemas.Network{internal: false, icc: false, nat: _nat_if} = network,
+         %Schemas.Network{internal: true, icc: false, nat: _nat_if} = network,
          prefix
        ) do
     {subnet, subnet6, interface, nat_interface, host_gateway_interface} =
       network_filtering_macros(prefix)
 
     # icc-related:
-    ipv4_icc_rule = "block in on #{interface} from #{subnet} to #{subnet}"
-    ipv6_icc_rule = "block in on #{interface} from #{subnet6} to #{subnet6}"
+    ipv4_icc_rule = "block in quick log on #{interface} from #{subnet} to #{subnet}"
+    ipv6_icc_rule = "block in quick log on #{interface} from #{subnet6} to #{subnet6}"
     # internal-related:
     ipv4_internal_net_rule = "block out quick log on #{nat_interface} from #{subnet}"
     ipv6_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
@@ -840,7 +821,7 @@ defmodule Kleened.Core.Network do
 
     case network do
       %Schemas.Network{nat: ""} -> []
-      %Schemas.Network{internal: false} -> []
+      %Schemas.Network{internal: true} -> []
       _ -> nat_rule
     end
   end
@@ -869,9 +850,10 @@ defmodule Kleened.Core.Network do
     OS.cmd(~w"/sbin/pfctl -e", %{suppress_warning: true})
   end
 
-  def load_pf_config(pf_config_path, config) do
+  def load_pf_config(config) do
     # For debugging purposes:
-    # Logger.warn("PF Config:\n#{config}")
+    # Logger.debug("PF Config:\n#{config}")
+    pf_config_path = Config.get("pf_config_path")
 
     case File.write(pf_config_path, config, [:write]) do
       :ok ->
@@ -880,14 +862,10 @@ defmodule Kleened.Core.Network do
             :ok
 
           {"", 1} ->
-            Logger.error("Failed to load PF configuration file. 'pfctl' returned with an error.")
+            Logger.error("Failed to load PF configuration file.")
 
           {error_output, 1} ->
-            Logger.error(
-              "Failed to load PF configuration file. 'pfctl' returned the following error: #{
-                inspect(error_output)
-              }"
-            )
+            Logger.error("Failed to load PF configuration file: #{inspect(error_output)}")
         end
 
       {:error, reason} ->

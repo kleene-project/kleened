@@ -306,11 +306,11 @@ defmodule Kleened.Core.Container do
 
         case {output, exit_code} do
           {output, 0} ->
-            Logger.info("Stopped jail #{container_id} with exitcode #{exit_code}: #{output}")
+            Logger.info("Stopped jail #{container_id} with exit code #{exit_code}: #{output}")
             {:ok, container_id}
 
           {output, _} ->
-            Logger.warn("Stopped jail #{container_id} with exitcode #{exit_code}: #{output}")
+            Logger.warn("Stopped jail #{container_id} with exit code #{exit_code}: #{output}")
             msg = "/usr/sbin/jail exited abnormally with exit code #{exit_code}: '#{output}'"
             {:error, msg}
         end

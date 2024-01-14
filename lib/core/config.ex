@@ -27,7 +27,6 @@ defmodule Kleened.Core.Config do
     error_if_not_defined(cfg, "api_listening_sockets")
     error_if_not_defined(cfg, "pf_config_path")
     error_if_not_defined(cfg, "pf_config_template_path")
-    error_if_not_defined(cfg, "pf_logging")
     initialize_system(cfg)
     cfg = add_api_listening_options(cfg, [])
     cfg = initialize_kleene_root(cfg)
@@ -45,7 +44,7 @@ defmodule Kleened.Core.Config do
       kmod_load_or_error("pf")
     end
 
-    if config["pf_logging"] and not kmod_loaded?("pflog") do
+    if not kmod_loaded?("pflog") do
       kmod_load_or_error("pflog")
     end
 
@@ -57,7 +56,7 @@ defmodule Kleened.Core.Config do
       sysrc_enable_or_error("pf_enable")
     end
 
-    if config["pf_logging"] and not sysrc_enabled?("pflog_enable") do
+    if not sysrc_enabled?("pflog_enable") do
       sysrc_enable_or_error("pflog_enable")
     end
   end

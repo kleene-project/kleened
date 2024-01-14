@@ -512,6 +512,9 @@ defmodule NetworkTest do
 
     assert [%{"destination" => "172.19.1.1", "interface-name" => ^interface}] =
              routes(routing_info)
+
+    Network.remove(network.id)
+    Network.destroy_interface("kleene0")
   end
 
   test "Manually set gateways for (IPv4 + 6) for 'vnet' containers on 'bridge' networks" do
@@ -575,12 +578,12 @@ defmodule NetworkTest do
              },
              %{
                "destination" => "172.19.1.0/24",
-               "gateway" => "link#2",
+               "gateway" => <<"link#", _::binary>>,
                "interface-name" => "epair0b"
              },
              %{
                "destination" => "172.19.1.2",
-               "gateway" => "link#2",
+               "gateway" => <<"link#", _::binary>>,
                "interface-name" => "lo0"
              }
            ] = routes(routing_info)
@@ -677,12 +680,12 @@ defmodule NetworkTest do
              },
              %{
                "destination" => "172.19.1.0/24",
-               "gateway" => "link#2",
+               "gateway" => <<"link#", _::binary>>,
                "interface-name" => "epair0b"
              },
              %{
                "destination" => "172.19.1.3",
-               "gateway" => "link#2",
+               "gateway" => <<"link#", _::binary>>,
                "interface-name" => "lo0"
              }
            ] = routes(routing_info)
@@ -711,9 +714,6 @@ defmodule NetworkTest do
   end
 
   test "NAT'd connectivity of 'ipnet' containers" do
-    interface = "kleened0"
-    Network.destroy_interface(interface)
-
     # loopback IPv4
     container_connectivity_test(%{
       network: %{
@@ -756,7 +756,7 @@ defmodule NetworkTest do
     })
   end
 
-  test "No NAT no connectivity for containers on rfc1819 networks" do
+  test "No NAT means no connectivity on rfc1819 networks" do
     interface = "kleened0"
     Network.destroy_interface(interface)
 
@@ -783,6 +783,69 @@ defmodule NetworkTest do
         expected_exit_code: 1
       },
       client: %{network_driver: "vnet"}
+    })
+  end
+
+  test "no upstream connectivity on networks with no NAT and internal=true" do
+    container_connectivity_test(%{
+      network: %{
+        name: "testnet1",
+        gateway: "",
+        subnet: "10.13.37.0/24",
+        type: "loopback",
+        nat: "",
+        internal: true,
+        expected_exit_code: 1
+      },
+      client: %{network_driver: "ipnet"},
+      expect_fw_block: true
+    })
+
+    container_connectivity_test(%{
+      network: %{
+        name: "testnet2",
+        # This is needed for bridge networks to get the @host_interface:
+        gateway: "<auto>",
+        subnet: "10.13.38.0/24",
+        type: "bridge",
+        nat: "",
+        internal: true,
+        expected_exit_code: 1
+      },
+      client: %{network_driver: "vnet"},
+      expect_fw_block: true
+    })
+  end
+
+  test "no upstream connectivity on networks with auto-NAT and internal=true" do
+    container_connectivity_test(%{
+      network: %{
+        name: "testnet1",
+        gateway: "",
+        subnet: "10.13.37.0/24",
+        type: "loopback",
+        nat: "<host-gateway>",
+        internal: true,
+        expected_exit_code: 1
+      },
+      client: %{network_driver: "ipnet"},
+      expect_fw_block: true
+    })
+
+    container_connectivity_test(%{
+      network: %{
+        name: "testnet2",
+        # This is needed for bridge networks to get the @host_interface:
+        gateway: "<auto>",
+        subnet: "10.13.38.0/24",
+        type: "bridge",
+        nat: "<host-gateway>",
+        internal: true,
+        expected_exit_code: 1
+      },
+      # ,
+      client: %{network_driver: "vnet"},
+      expect_fw_block: true
     })
   end
 
@@ -960,7 +1023,7 @@ defmodule NetworkTest do
       server: %{network_driver: "ipnet"},
       client: %{network_driver: "ipnet"},
       protocol: "inet",
-      expect_timeout: true
+      expected_result: :blocked
     })
   end
 
@@ -979,7 +1042,7 @@ defmodule NetworkTest do
       server: %{network_driver: "vnet"},
       client: %{network_driver: "vnet"},
       protocol: "inet6",
-      expect_timeout: true
+      expected_result: :timeout
     })
   end
 
@@ -997,7 +1060,7 @@ defmodule NetworkTest do
       server: %{network_driver: "vnet"},
       client: %{network_driver: "ipnet"},
       protocol: "inet",
-      expect_timeout: true
+      expected_result: :timeout
     })
   end
 
@@ -1040,21 +1103,34 @@ defmodule NetworkTest do
     routes
   end
 
-  defp container_connectivity_test(%{
-         network: config_network,
-         client: config_client
-       }) do
+  defp container_connectivity_test(
+         %{
+           network: config_network,
+           client: config_client
+         } = testing_config
+       ) do
+    config_network_default = %{
+      icc: true,
+      internal: false,
+      nat: "<host-gateway>",
+      subnet6: "",
+      gateway6: ""
+    }
+
+    config_network = Map.merge(config_network_default, config_network)
     network = create_network(config_network)
 
-    port = listen_for_traffic()
+    port =
+      case Map.get(testing_config, :expect_fw_block, false) do
+        false -> listen_for_traffic()
+        true -> listen_for_blocked_traffic()
+      end
 
     config_client_default = %{
       name: "client",
       network: network.id,
       ip_address: "<auto>",
       ip_address6: "",
-      subnet6: "",
-      gateway6: "",
       expected_exit_code: :anything
     }
 
@@ -1078,15 +1154,43 @@ defmodule NetworkTest do
     assert String.contains?(msg2, "freebsd.org")
 
     ip2check =
-      case config_network.nat do
-        "" -> endpoint.ip_address
-        _ -> @host_ip
+      case {config_network.internal, config_network.nat} do
+        {false, ""} -> endpoint.ip_address
+        # The only case when NAT applies:
+        # Non-internal and with a specified nat-interface:
+        {false, _} -> @host_ip
+        {true, _} -> endpoint.ip_address
       end
 
     Logger.warn(ip2check)
     assert String.contains?(msg2, ip2check)
 
     Port.close(port)
+  end
+
+  defp listen_for_blocked_traffic() do
+    port =
+      Port.open(
+        {:spawn_executable, "/bin/sh"},
+        [
+          :stderr_to_stdout,
+          :binary,
+          :exit_status,
+          {:args, ["-c", "tcpdump -l -n -vv -ttt -i pflog0"]},
+          {:line, 1024}
+        ]
+      )
+
+    msg =
+      receive do
+        {^port, msg} -> msg
+      after
+        2_000 ->
+          Logger.warn("tcpdump not responding")
+      end
+
+    assert {:data, {:eol, <<"tcpdump: listening on", _::binary>>}} = msg
+    port
   end
 
   defp listen_for_traffic() do
@@ -1128,7 +1232,7 @@ defmodule NetworkTest do
     after
       1_000 ->
         Logger.warn("Timed out while reading from tcp-dump")
-        :tcpdump_timeout
+        "tcpdump timeout"
     end
   end
 
@@ -1194,14 +1298,39 @@ defmodule NetworkTest do
         config_client
       )
 
-    case Map.get(config, :expect_timeout, false) do
-      true ->
+    case Map.get(config, :expected_result, :success) do
+      # This is preferable but is quite sensitive/unstable w.r.t. captured packets etc.
+      :blocked ->
+        port = listen_for_blocked_traffic()
+        config_client = Map.put(config_client, :expected_exit_code, 1)
+
+        {container_id, _, output} = TestHelper.container_valid_run(config_client)
+        netcat_output = Enum.join(output, "")
+
+        assert String.contains?(netcat_output, "Operation timed out")
+
+        %{container_endpoints: [endpoint]} = TestHelper.container_inspect(container_id)
+
+        ip2check =
+          case protocol do
+            "inet" -> endpoint.ip_address
+            "inet6" -> endpoint.ip_address6
+          end
+
+        msg1 = read_tcpdump(port)
+        msg2 = read_tcpdump(port)
+        assert String.contains?(msg1, "proto TCP")
+        assert String.contains?(msg2, ip2check)
+
+      :timeout ->
         config_client = Map.put(config_client, :expected_exit_code, 1)
 
         {_container_id, _, output} = TestHelper.container_valid_run(config_client)
-        assert String.contains?(Enum.join(output, ""), "Operation timed out")
+        netcat_output = Enum.join(output, "")
 
-      false ->
+        assert String.contains?(netcat_output, "Operation timed out")
+
+      :success ->
         {_container_id, _, _output} = TestHelper.container_valid_run(config_client)
 
         if config_server.network_driver == "vnet" and
@@ -1249,7 +1378,7 @@ defmodule NetworkTest do
       type: "loopback",
       gateway: "",
       gateway6: "",
-      allow_outgoing: true,
+      internal: false,
       icc: true
     }
 

@@ -294,8 +294,9 @@ defmodule Kleened.API.Schemas do
         },
         internal: %Schema{
           type: :boolean,
-          description: "",
-          default: true
+          description:
+            "Whether or not the network is internal, i.e., not allowing outgoing upstream traffic",
+          default: false
         },
         external_interfaces: %Schema{
           description: """
@@ -407,7 +408,8 @@ defmodule Kleened.API.Schemas do
         },
         internal: %Schema{
           type: :boolean,
-          description: "Whether or not to allow upstream traffic",
+          description:
+            "Whether or not the network is internal, i.e., not allowing outgoing upstream traffic",
           default: true
         }
       }

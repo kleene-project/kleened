@@ -1,0 +1,23 @@
+# This is the pf(4) configuration file template that is used by Kleened.
+# Feel free to add additional rules as long as the tags (and their ordering) below are preserved.
+# Modify with care: It can potentially affect Kleened in unpredictable ways.
+# The resulting configuration file that is loaded into pf is defined at the 'pf_config_path'
+# entry in the kleene engine configuration file (kleened_config.yaml).
+
+### KLEENED MACROS START ###
+<%= kleene_macros %>
+### KLEENED MACROS END #####
+
+### KLEENED TRANSLATION RULES START ###
+<%= kleene_translation %>
+### KLEENED TRANSLATION RULES END #####
+
+# block everything
+#block log all
+
+# skip loopback interface(s)
+#set skip on lo0
+
+### KLEENED FILTERING RULES START #####
+<%= kleene_filtering %>
+### KLEENED FILTERING RULES END #######
