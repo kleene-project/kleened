@@ -1118,7 +1118,6 @@ defmodule ImageTest do
   end
 
   defp container_resolv_conf_exists?(run_config) do
-    api_spec = Kleened.API.Spec.spec()
     {_attach, config_create} = Map.pop(run_config, :attach)
     %{id: container_id} = TestHelper.container_create(config_create)
     resolv_conf_path = "/" <> Config.get("zroot") <> "/container/#{container_id}/etc/resolv.conf"

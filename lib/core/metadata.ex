@@ -117,15 +117,9 @@ defmodule Kleened.Core.MetaData do
     end
   end
 
-  @spec list_networks(:include_host | :exclude_host) :: [%Schemas.Network{}]
-  def list_networks(:include_host) do
+  @spec list_networks() :: [%Schemas.Network{}]
+  def list_networks() do
     sql("SELECT id, network FROM networks ORDER BY json_extract(network, '$.name')")
-  end
-
-  def list_networks(:exclude_host) do
-    sql(
-      "SELECT id, network FROM networks WHERE id != 'host' ORDER BY json_extract(network, '$.name')"
-    )
   end
 
   def list_unused_networks() do

@@ -23,7 +23,7 @@ defmodule ContainerTest do
     assert [] == TestHelper.container_list(api_spec)
 
     %Schemas.Container{id: container_id, name: name, image_id: img_id} =
-      container_succesfully_create(api_spec, %{name: "testcont"})
+      container_succesfully_create(%{name: "testcont"})
 
     %Schemas.Image{id: id} = Kleened.Core.MetaData.get_image("FreeBSD:testing")
     assert id == img_id
@@ -32,7 +32,7 @@ defmodule ContainerTest do
              TestHelper.container_list(api_spec)
 
     %Schemas.Container{id: container_id2, name: name2, image_id: ^img_id} =
-      container_succesfully_create(api_spec, %{name: "testcont2"})
+      container_succesfully_create(%{name: "testcont2"})
 
     assert [%{id: ^container_id2, name: ^name2, image_id: ^img_id}, %{id: ^container_id}] =
              TestHelper.container_list(api_spec)
@@ -51,13 +51,13 @@ defmodule ContainerTest do
     api_spec: api_spec
   } do
     %Schemas.Container{id: container_id1} =
-      container_succesfully_create(api_spec, %{name: "testprune1", cmd: ["/bin/sleep", "10"]})
+      container_succesfully_create(%{name: "testprune1", cmd: ["/bin/sleep", "10"]})
 
     %Schemas.Container{id: container_id2} =
-      container_succesfully_create(api_spec, %{name: "testprune2", cmd: ["/bin/sleep", "10"]})
+      container_succesfully_create(%{name: "testprune2", cmd: ["/bin/sleep", "10"]})
 
     %Schemas.Container{id: container_id3} =
-      container_succesfully_create(api_spec, %{name: "testprune2", cmd: ["/bin/sleep", "10"]})
+      container_succesfully_create(%{name: "testprune2", cmd: ["/bin/sleep", "10"]})
 
     {:ok, exec_id} = Exec.create(%Schemas.ExecConfig{container_id: container_id2})
     TestHelper.exec_valid_start(%{exec_id: exec_id, start_container: true, attach: false})
@@ -70,7 +70,7 @@ defmodule ContainerTest do
   end
 
   test "Inspect a container", %{api_spec: api_spec} do
-    %Schemas.Container{} = container_succesfully_create(api_spec, %{name: "testcontainer"})
+    %Schemas.Container{} = container_succesfully_create(%{name: "testcontainer"})
     response = TestHelper.container_inspect_raw("notexist")
     assert response.status == 404
     response = TestHelper.container_inspect_raw("testcontainer")
@@ -97,7 +97,7 @@ defmodule ContainerTest do
   test "start container without attaching to it", %{api_spec: api_spec} do
     %Schemas.Container{id: container_id} =
       container =
-      container_succesfully_create(api_spec, %{
+      container_succesfully_create(%{
         name: "ws_test_container",
         image: "FreeBSD:testing",
         cmd: ["/bin/sh", "-c", "uname"]
@@ -113,11 +113,11 @@ defmodule ContainerTest do
     assert %{id: container_id} == TestHelper.container_remove(api_spec, container_id)
   end
 
-  test "start a container (using devfs), attach to it and receive output", %{api_spec: api_spec} do
+  test "start a container (using devfs), attach to it and receive output" do
     cmd_expected = ["/bin/echo", "test test"]
 
     %Schemas.Container{id: container_id, cmd: cmd} =
-      container = container_succesfully_create(api_spec, %{name: "testcont", cmd: cmd_expected})
+      container = container_succesfully_create(%{name: "testcont", cmd: cmd_expected})
 
     assert cmd_expected == cmd
 
@@ -131,7 +131,7 @@ defmodule ContainerTest do
 
   test "start a container and force-stop it", %{api_spec: api_spec} do
     %Schemas.Container{id: container_id} =
-      container_succesfully_create(api_spec, %{name: "testcont", cmd: ["/bin/sleep", "10"]})
+      container_succesfully_create(%{name: "testcont", cmd: ["/bin/sleep", "10"]})
 
     {:ok, exec_id} = Exec.create(container_id)
     :ok = Exec.start(exec_id, %{attach: false, start_container: true})
@@ -266,7 +266,7 @@ defmodule ContainerTest do
   } do
     %Schemas.Container{id: container_id} =
       container =
-      container_succesfully_create(api_spec, %{
+      container_succesfully_create(%{
         name: "testcontainer",
         user: "ntpd",
         cmd: ["/bin/sleep", "10"],
@@ -323,7 +323,7 @@ defmodule ContainerTest do
 
   test "updating on a running container", %{api_spec: api_spec} do
     %Schemas.Container{id: container_id} =
-      container_succesfully_create(api_spec, %{
+      container_succesfully_create(%{
         name: "testcontainer",
         user: "root",
         cmd: ["/bin/sh", "/etc/rc"],
@@ -379,7 +379,7 @@ defmodule ContainerTest do
     Container.stop(container_id)
   end
 
-  test "create container from non-existing image", %{api_spec: api_spec} do
+  test "create container from non-existing image" do
     assert %{message: "no such image 'nonexisting'"} ==
              TestHelper.container_create(%{name: "testcont", image: "nonexisting"})
   end
@@ -545,9 +545,9 @@ defmodule ContainerTest do
     Container.stop(container_id)
   end
 
-  test "start container quickly several times to verify reproducibility", %{api_spec: api_spec} do
+  test "start container quickly several times to verify reproducibility" do
     container =
-      container_succesfully_create(api_spec, %{
+      container_succesfully_create(%{
         name: "ws_test_container",
         image: "FreeBSD:testing",
         cmd: ["/bin/sh", "-c", "uname"]
@@ -569,7 +569,7 @@ defmodule ContainerTest do
     Map.merge(defaults, config)
   end
 
-  defp container_succesfully_create(api_spec, config) do
+  defp container_succesfully_create(config) do
     %{id: container_id} = TestHelper.container_create(config)
     MetaData.get_container(container_id)
   end

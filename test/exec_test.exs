@@ -14,8 +14,8 @@ defmodule ExecTest do
       Network.create(%Schemas.NetworkConfig{
         name: "default",
         subnet: "192.168.83.0/24",
-        ifname: "kleene1",
-        driver: "loopback"
+        interface: "kleene1",
+        type: "loopback"
       })
 
     on_exit(fn ->
@@ -128,7 +128,7 @@ defmodule ExecTest do
 
     config = %{exec_id: root_exec_id, attach: false, start_container: true}
 
-    assert "succesfully started execution instance in detached mode" ==
+    assert {"succesfully started execution instance in detached mode", ""} ==
              TestHelper.exec_valid_start(config)
 
     %{id: exec_id} =
@@ -169,7 +169,7 @@ defmodule ExecTest do
     {:ok, _stream_ref, conn} =
       TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
 
-    {:text, msg} = TestHelper.receive_frame(conn)
+    {:text, msg} = TestHelper.receive_frame(conn, 5_000)
     assert <<"not a tty\n", _rest::binary>> = msg
 
     # Start a process with a PTY attach
@@ -178,7 +178,7 @@ defmodule ExecTest do
     {:ok, _stream_ref, conn} =
       TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
 
-    {:text, msg} = TestHelper.receive_frame(conn)
+    {:text, msg} = TestHelper.receive_frame(conn, 5_000)
     assert <<"/dev/pts/", _rest::binary>> = msg
   end
 
@@ -192,7 +192,7 @@ defmodule ExecTest do
     start_config = %{attach: true, start_container: true}
     {:ok, stream_ref, conn} = TestHelper.exec_start(exec_id, start_config)
 
-    assert {:text, "# "} == TestHelper.receive_frame(conn)
+    assert {:text, "# "} == TestHelper.receive_frame(conn, 5_000)
     TestHelper.send_data(conn, stream_ref, "pwd && exit\r\n")
     frames = TestHelper.receive_frames(conn)
 
@@ -212,7 +212,7 @@ defmodule ExecTest do
 
     %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: "testcont"})
 
-    assert "succesfully started execution instance in detached mode" ==
+    assert {"succesfully started execution instance in detached mode", ""} ==
              TestHelper.exec_valid_start(%{exec_id: exec_id, attach: false, start_container: true})
 
     # seems like '/usr/sbin/jail' returns before the kernel reports it as running?
@@ -230,7 +230,7 @@ defmodule ExecTest do
          api_spec: api_spec
        } do
     frames =
-      TestHelper.exec_start_raw(%{
+      TestHelper.exec_start(%{
         exec_id: "nonexisting",
         attach: "mustbeboolean",
         start_container: true
@@ -240,7 +240,7 @@ defmodule ExecTest do
     assert "invalid parameters: Invalid boolean. Got: string" == msg
 
     frames =
-      TestHelper.exec_start_raw(%{
+      TestHelper.exec_start(%{
         exec_id: "nonexisting",
         nonexisting_param: true,
         start_container: true
@@ -260,21 +260,20 @@ defmodule ExecTest do
     assert [
              "error: could not find a execution instance matching 'wrongid'",
              {1011, %Message{message: "error starting exec instance", msg_type: "error"}}
-           ] =
-             TestHelper.exec_start_raw(%{exec_id: "wrongid", attach: false, start_container: true})
+           ] = TestHelper.exec_start(%{exec_id: "wrongid", attach: false, start_container: true})
 
     assert [
              "error: cannot start container when 'start_container' is false.",
              {1011, %Message{message: "error starting exec instance", msg_type: "error"}}
            ] =
-             TestHelper.exec_start_raw(%{
+             TestHelper.exec_start(%{
                exec_id: root_exec_id,
                attach: false,
                start_container: false
              })
 
     assert [{1001, %Message{message: msg, msg_type: "closing"}}] =
-             TestHelper.exec_start_raw(%{
+             TestHelper.exec_start(%{
                exec_id: root_exec_id,
                attach: false,
                start_container: true
@@ -286,7 +285,7 @@ defmodule ExecTest do
              "error: executable already started",
              {1011, %Message{message: "error starting exec instance", msg_type: "error"}}
            ] ==
-             TestHelper.exec_start_raw(%{
+             TestHelper.exec_start(%{
                exec_id: root_exec_id,
                attach: false,
                start_container: true

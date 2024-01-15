@@ -47,7 +47,7 @@ defmodule TestHelper do
 
     MetaData.list_volumes() |> Enum.map(&Volume.remove(&1.name))
 
-    MetaData.list_networks(:exclude_host)
+    MetaData.list_networks()
     |> Enum.map(fn %{id: id} -> Network.remove(id) end)
 
     # Image.prune(true)
@@ -322,6 +322,11 @@ defmodule TestHelper do
     {:ok, conn} = exec_start_raw(config)
     [{1001, %Msg{msg_type: "closing", message: closing_msg}}] = receive_frames(conn)
     {closing_msg, ""}
+  end
+
+  def exec_start(config) do
+    {:ok, conn} = exec_start_raw(config)
+    receive_frames(conn, 5_000)
   end
 
   def exec_start_raw(config) do

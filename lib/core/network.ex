@@ -140,7 +140,7 @@ defmodule Kleened.Core.Network do
   end
 
   def handle_call(:list, _from, state) do
-    networks = MetaData.list_networks(:include_host)
+    networks = MetaData.list_networks()
     {:reply, networks, state}
   end
 
@@ -275,7 +275,7 @@ defmodule Kleened.Core.Network do
   end
 
   defp create_network_interfaces() do
-    MetaData.list_networks(:exclude_host)
+    MetaData.list_networks()
     |> Enum.map(fn
       %Schemas.Network{type: "bridge", interface: interface} ->
         create_interface("bridge", interface)
@@ -640,7 +640,7 @@ defmodule Kleened.Core.Network do
   end
 
   def configure_pf() do
-    networks = MetaData.list_networks(:exclude_host)
+    networks = MetaData.list_networks()
 
     state = %{
       :macros => [host_gw_macro()],
@@ -875,7 +875,7 @@ defmodule Kleened.Core.Network do
 
   defp generate_interface_name() do
     existing_interfaces =
-      MetaData.list_networks(:exclude_host)
+      MetaData.list_networks()
       |> Enum.map(fn
         %Schemas.Network{interface: interface} -> interface
       end)

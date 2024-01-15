@@ -9,20 +9,18 @@ defmodule MetaDataTest do
   @moduletag :capture_log
 
   test "adding, listing and removing networks" do
-    host_network = get_network("host")
-    assert [host_network] == list_networks(:include_host)
-    assert [] == list_networks(:exclude_host)
+    assert [] == list_networks()
 
     network1 = %Schemas.Network{id: "test_id1", name: "testname1"}
     network2 = %Schemas.Network{id: "id2_test", name: "testname2"}
     assert :ok = add_network(network1)
-    assert [network1] == list_networks(:exclude_host)
+    assert [network1] == list_networks()
     assert network1 == get_network("test_id1")
     assert network1 == get_network("tes")
     assert :ok = add_network(network2)
-    assert [network1, network2] == list_networks(:exclude_host)
+    assert [network1, network2] == list_networks()
     remove_network("test_id1")
-    assert [host_network, network2] == list_networks(:include_host)
+    assert [network2] == list_networks()
     remove_network("id2_test")
   end
 
