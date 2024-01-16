@@ -939,9 +939,6 @@ defmodule NetworkTest do
   end
 
   test "'vnet' containers can communicate over a 'bridge' network" do
-    interface = "kleened0"
-    Network.destroy_interface(interface)
-
     # bridge IPv4
     inter_container_connectivity_test(%{
       network: %{
@@ -970,6 +967,163 @@ defmodule NetworkTest do
       server: %{ip_address: "", ip_address6: "<auto>", network_driver: "vnet"},
       client: %{ip_address: "", ip_address6: "<auto>", network_driver: "vnet"},
       protocol: "inet6"
+    })
+  end
+
+  test "ipnet containers on different networks can't communicate with eachother" do
+    # bridge IPv4
+    inter_container_connectivity_test(%{
+      network_server: %{
+        name: "testnet1",
+        gateway: "",
+        gateway6: "",
+        subnet: "10.13.37.0/24",
+        subnet6: "",
+        type: "loopback"
+      },
+      network_client: %{
+        name: "testnet2",
+        gateway: "",
+        gateway6: "",
+        subnet: "10.13.38.0/24",
+        subnet6: "",
+        type: "loopback"
+      },
+      server: %{network_driver: "ipnet"},
+      client: %{network_driver: "ipnet"},
+      protocol: "inet",
+      expected_result: :blocked
+    })
+
+    # FIXME: IPv6 keeps connecting! :(
+    # Bridge (using IPv6)
+    # inter_container_connectivity_test(%{
+    #  network_server: %{
+    #    name: "testnet3",
+    #    gateway: "",
+    #    gateway6: "<auto>",
+    #    subnet: "",
+    #    subnet6: "fdef:3333:3333::/64",
+    #    nat: "",
+    #    type: "loopback"
+    #  },
+    #  network_client: %{
+    #    name: "testnet4",
+    #    gateway: "",
+    #    gateway6: "<auto>",
+    #    subnet: "",
+    #    subnet6: "fdef:4444:4444::/64",
+    #    nat: "",
+    #    type: "loopback"
+    #  },
+    #  server: %{network_driver: "ipnet"},
+    #  client: %{network_driver: "ipnet"},
+    #  protocol: "inet6",
+    #  expected_result: :timeout
+    # })
+  end
+
+  test "vnet containers on different networks can't communicate with eachother" do
+    # IPv4
+    inter_container_connectivity_test(%{
+      network_server: %{
+        name: "testnet1",
+        gateway: "<auto>",
+        gateway6: "",
+        subnet: "10.13.37.0/24",
+        subnet6: "",
+        type: "bridge"
+      },
+      network_client: %{
+        name: "testnet2",
+        gateway: "<auto>",
+        gateway6: "",
+        subnet: "10.13.38.0/24",
+        subnet6: "",
+        type: "bridge"
+      },
+      server: %{network_driver: "vnet"},
+      client: %{network_driver: "vnet"},
+      protocol: "inet",
+      expected_result: :blocked
+    })
+
+    # using IPv6 and bridge
+    inter_container_connectivity_test(%{
+      network_server: %{
+        name: "testnet3",
+        gateway: "",
+        gateway6: "<auto>",
+        subnet: "",
+        subnet6: "fdef:3333:3333::/64",
+        nat: "",
+        type: "bridge"
+      },
+      network_client: %{
+        name: "testnet4",
+        gateway: "",
+        gateway6: "<auto>",
+        subnet: "",
+        subnet6: "fdef:4444:4444::/64",
+        nat: "",
+        type: "bridge"
+      },
+      server: %{network_driver: "vnet"},
+      client: %{network_driver: "vnet"},
+      protocol: "inet6",
+      expected_result: :timeout
+    })
+  end
+
+  test "ipnet and vnet containers on different networks can't communicate with eachother" do
+    # IPv4
+    inter_container_connectivity_test(%{
+      network_server: %{
+        name: "testnet1",
+        gateway: "<auto>",
+        gateway6: "",
+        subnet: "10.13.37.0/24",
+        subnet6: "",
+        type: "bridge"
+      },
+      network_client: %{
+        name: "testnet2",
+        gateway: "<auto>",
+        gateway6: "",
+        subnet: "10.13.38.0/24",
+        subnet6: "",
+        type: "bridge"
+      },
+      server: %{network_driver: "ipnet"},
+      client: %{network_driver: "vnet"},
+      protocol: "inet",
+      expected_result: :blocked
+    })
+
+    # using IPv6 and bridge
+    inter_container_connectivity_test(%{
+      network_server: %{
+        name: "testnet3",
+        gateway: "",
+        gateway6: "<auto>",
+        subnet: "",
+        subnet6: "fdef:3333:3333::/64",
+        nat: "",
+        type: "bridge"
+      },
+      network_client: %{
+        name: "testnet4",
+        gateway: "",
+        gateway6: "<auto>",
+        subnet: "",
+        subnet6: "fdef:4444:4444::/64",
+        nat: "",
+        type: "bridge"
+      },
+      server: %{network_driver: "ipnet"},
+      client: %{network_driver: "vnet"},
+      protocol: "inet6",
+      expected_result: :timeout
     })
   end
 
@@ -1236,68 +1390,96 @@ defmodule NetworkTest do
     end
   end
 
+  defp default_ip("inet"), do: "<auto>"
+  defp default_ip("inet6"), do: ""
+
+  defp default_ip6("inet"), do: ""
+  defp default_ip6("inet6"), do: "<auto>"
+
+  defp cmd_server("inet"), do: "nc -l 4000"
+  defp cmd_server("inet6"), do: "sleep 1 && nc -6 -l 4000"
+
+  defp cmd_client("inet", endpoint),
+    do: "echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address} 4000"
+
+  defp cmd_client("inet6", endpoint),
+    do: "sleep 2 && echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address6} 4000"
+
+  # do: "echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address6} 4000"
+
+  defp create_inter_container_networks(%{network: config_network}) do
+    network = create_network(config_network)
+    {network, network}
+  end
+
+  defp create_inter_container_networks(%{
+         network_server: config_server,
+         network_client: config_client
+       }) do
+    server = create_network(config_server)
+    client = create_network(config_client)
+    {server, client}
+  end
+
   defp inter_container_connectivity_test(
          %{
-           network: config_network,
            server: config_server,
            client: config_client,
            protocol: protocol
          } = config
        ) do
-    network = create_network(config_network)
-
-    {default_ip_address, default_ip_address6} =
-      case protocol do
-        "inet" -> {"<auto>", ""}
-        "inet6" -> {"", "<auto>"}
-      end
-
-    cmd_server =
-      case protocol do
-        "inet" -> "nc -l 4000"
-        "inet6" -> "nc -6 -l 4000"
-      end
+    {network_server, network_client} = create_inter_container_networks(config)
 
     config_server =
       Map.merge(
         %{
           name: "server",
-          ip_address: default_ip_address,
-          ip_address6: default_ip_address6,
+          ip_address: default_ip(protocol),
+          ip_address6: default_ip6(protocol),
           attach: true,
-          network: network.id,
-          cmd: ["/bin/sh", "-c", cmd_server]
+          network: network_server.id,
+          cmd: ["/bin/sh", "-c", cmd_server(protocol)]
         },
         config_server
       )
 
-    {container_id_server, _, conn} = TestHelper.container_valid_run_async(config_server)
+    {container_id_server, _, server_conn} = TestHelper.container_valid_run_async(config_server)
 
-    timeout = 1_0000
-
-    assert TestHelper.receive_frame(conn, timeout) ==
+    assert TestHelper.receive_frame(server_conn, 1_000) ==
              {:text, "{\"data\":\"\",\"message\":\"\",\"msg_type\":\"starting\"}"}
 
-    endpoint = MetaData.get_endpoint(container_id_server, network.id)
-
-    cmd_client =
-      case protocol do
-        "inet" -> "echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address} 4000"
-        "inet6" -> "sleep 1 && echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address6} 4000"
-      end
+    endpoint = MetaData.get_endpoint(container_id_server, network_server.id)
 
     config_client =
       Map.merge(
         %{
           name: "client",
-          ip_address: default_ip_address,
-          ip_address6: default_ip_address6,
-          network: network.id,
-          cmd: ["/bin/sh", "-c", cmd_client]
+          ip_address: default_ip(protocol),
+          ip_address6: default_ip6(protocol),
+          network: network_client.id,
+          cmd: ["/bin/sh", "-c", cmd_client(protocol, endpoint)]
         },
         config_client
       )
 
+    verify_inter_container_results(
+      server_conn,
+      network_server,
+      config,
+      config_server,
+      config_client,
+      protocol
+    )
+  end
+
+  defp verify_inter_container_results(
+         server_conn,
+         network_server,
+         config,
+         config_server,
+         config_client,
+         protocol
+       ) do
     case Map.get(config, :expected_result, :success) do
       # This is preferable but is quite sensitive/unstable w.r.t. captured packets etc.
       :blocked ->
@@ -1331,16 +1513,17 @@ defmodule NetworkTest do
         assert String.contains?(netcat_output, "Operation timed out")
 
       :success ->
+        timeout = 5_000
         {_container_id, _, _output} = TestHelper.container_valid_run(config_client)
 
         if config_server.network_driver == "vnet" and
-             (network.gateway != "" or network.gateway6 != "") do
+             (network_server.gateway != "" or network_server.gateway6 != "") do
           assert {:text, <<"add net default: gateway", _::binary>>} =
-                   TestHelper.receive_frame(conn, timeout)
+                   TestHelper.receive_frame(server_conn, timeout)
         end
 
-        assert TestHelper.receive_frame(conn, timeout) == {:text, "traffic\n"}
-        assert {:close, 1000, _} = TestHelper.receive_frame(conn, timeout)
+        assert TestHelper.receive_frame(server_conn, timeout) == {:text, "traffic\n"}
+        assert {:close, 1000, _} = TestHelper.receive_frame(server_conn, timeout)
     end
   end
 

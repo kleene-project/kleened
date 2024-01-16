@@ -657,17 +657,23 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  defp prefix(network_id) do
+    "kleenet_#{network_id}"
+  end
+
   def create_pf_config([network | rest], state) do
-    prefix = "kleenet_#{network.id}"
-    updated_macros = state.macros ++ network_macros(network, prefix)
-    updated_translation = state.translation ++ network_translation(network, prefix)
-    updated_filering = network_filtering(network, prefix)
+    updated_macros = state.macros ++ network_macros(network)
+    updated_translation = state.translation ++ network_translation(network)
+
+    updated_filtering =
+      state.filtering ++
+        block_incoming_traffic_to_network(network) ++ network_filtering(network)
 
     new_state = %{
       state
       | macros: updated_macros,
         translation: updated_translation,
-        filtering: updated_filering
+        filtering: updated_filtering
     }
 
     create_pf_config(rest, new_state)
@@ -697,101 +703,95 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  defp network_filtering(%Schemas.Network{internal: false, icc: true} = network, prefix) do
+  defp block_incoming_traffic_to_network(network) do
     {subnet, subnet6, interface, _nat_interface, _host_gateway_interface} =
-      network_filtering_macros(prefix)
+      defined_network_macros(network.id)
 
-    ipv4_icc_rule = "pass in on #{interface} from #{subnet} to #{subnet}"
-    ipv6_icc_rule = "pass in on #{interface} from #{subnet6} to #{subnet6}"
+    ipv4_rule = "block in log from any to #{subnet}"
+    ipv6_rule = "block in log from any to #{subnet6}"
 
-    use_necessary_ip_protocols(network, [ipv4_icc_rule], [ipv6_icc_rule])
+    use_necessary_ip_protocols(network, [ipv4_rule], [ipv6_rule])
   end
 
-  defp network_filtering(%Schemas.Network{internal: false, icc: false} = network, prefix) do
+  defp icc_rule(network, proto) do
     {subnet, subnet6, interface, _nat_interface, _host_gateway_interface} =
-      network_filtering_macros(prefix)
+      defined_network_macros(network.id)
 
-    ipv4_icc_rule = "block in quick log on #{interface} from #{subnet} to #{subnet}"
-    ipv6_icc_rule = "block in quick log on #{interface} from #{subnet6} to #{subnet6}"
+    prefix = prefix(network.id)
 
-    use_necessary_ip_protocols(network, [ipv4_icc_rule], [ipv6_icc_rule])
+    case proto do
+      "inet" -> "pass quick on $#{prefix}_all_interfaces from #{subnet} to #{subnet}"
+      "inet6" -> "pass quick on $#{prefix}_all_interfaces from #{subnet6} to #{subnet6}"
+    end
   end
 
-  defp network_filtering(%Schemas.Network{internal: true, icc: true, nat: ""} = network, prefix) do
-    {subnet, subnet6, interface, _nat_interface, host_gateway_interface} =
-      network_filtering_macros(prefix)
+  defp network_filtering(%Schemas.Network{internal: false, icc: true} = network) do
+    {subnet, subnet6, interface, _nat_interface, _host_gateway_interface} =
+      defined_network_macros(network.id)
 
-    # icc-related:
-    ipv4_icc_rule = "pass in on #{interface} from #{subnet} to #{subnet}"
-    ipv6_icc_rule = "pass in on #{interface} from #{subnet6} to #{subnet6}"
+    use_necessary_ip_protocols(network, [icc_rule(network, "inet")], [icc_rule(network, "inet6")])
+  end
+
+  defp network_filtering(%Schemas.Network{internal: false, icc: false} = network) do
+    use_necessary_ip_protocols(network, [], [])
+  end
+
+  defp network_filtering(%Schemas.Network{internal: true, icc: true, nat: ""} = network) do
+    {subnet, subnet6, _interface, _nat_interface, host_gateway_interface} =
+      defined_network_macros(network.id)
+
     # internal-related:
     ipv4_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet}"
     ipv6_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
 
-    use_necessary_ip_protocols(network, [ipv4_icc_rule, ipv4_internal_net_rule], [
-      ipv6_icc_rule,
+    use_necessary_ip_protocols(network, [icc_rule(network, "inet"), ipv4_internal_net_rule], [
+      icc_rule(network, "inet6"),
       ipv6_internal_net_rule
     ])
   end
 
-  defp network_filtering(
-         %Schemas.Network{internal: true, icc: true, nat: _nat_if} = network,
-         prefix
-       ) do
-    {subnet, subnet6, interface, nat_interface, host_gateway_interface} =
-      network_filtering_macros(prefix)
+  defp network_filtering(%Schemas.Network{internal: true, icc: true, nat: _nat_if} = network) do
+    {subnet, subnet6, _interface, nat_interface, host_gateway_interface} =
+      defined_network_macros(network.id)
 
-    # icc-related:
-    ipv4_icc_rule = "pass in on #{interface} from #{subnet} to #{subnet}"
-    ipv6_icc_rule = "pass in on #{interface} from #{subnet6} to #{subnet6}"
     # internal-related:
     ipv4_internal_net_rule = "block out quick log on #{nat_interface} from #{subnet}"
     ipv6_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
 
-    use_necessary_ip_protocols(network, [ipv4_icc_rule, ipv4_internal_net_rule], [
-      ipv6_icc_rule,
+    use_necessary_ip_protocols(network, [icc_rule(network, "inet"), ipv4_internal_net_rule], [
+      icc_rule(network, "inet6"),
       ipv6_internal_net_rule
     ])
   end
 
-  defp network_filtering(%Schemas.Network{internal: true, icc: false, nat: ""} = network, prefix) do
-    {subnet, subnet6, interface, _nat_interface, host_gateway_interface} =
-      network_filtering_macros(prefix)
+  defp network_filtering(%Schemas.Network{internal: true, icc: false, nat: ""} = network) do
+    {subnet, subnet6, _interface, _nat_interface, host_gateway_interface} =
+      defined_network_macros(network.id)
 
-    # icc-related:
-    ipv4_icc_rule = "block in quick log on #{interface} from #{subnet} to #{subnet}"
-    ipv6_icc_rule = "block in quick log on #{interface} from #{subnet6} to #{subnet6}"
     # internal-related:
     ipv4_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet}"
     ipv6_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
 
-    use_necessary_ip_protocols(network, [ipv4_icc_rule, ipv4_internal_net_rule], [
-      ipv6_icc_rule,
+    use_necessary_ip_protocols(network, [ipv4_internal_net_rule], [
       ipv6_internal_net_rule
     ])
   end
 
-  defp network_filtering(
-         %Schemas.Network{internal: true, icc: false, nat: _nat_if} = network,
-         prefix
-       ) do
-    {subnet, subnet6, interface, nat_interface, host_gateway_interface} =
-      network_filtering_macros(prefix)
+  defp network_filtering(%Schemas.Network{internal: true, icc: false, nat: _nat_if} = network) do
+    {subnet, subnet6, _interface, nat_interface, host_gateway_interface} =
+      defined_network_macros(network.id)
 
-    # icc-related:
-    ipv4_icc_rule = "block in quick log on #{interface} from #{subnet} to #{subnet}"
-    ipv6_icc_rule = "block in quick log on #{interface} from #{subnet6} to #{subnet6}"
     # internal-related:
     ipv4_internal_net_rule = "block out quick log on #{nat_interface} from #{subnet}"
     ipv6_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
 
-    use_necessary_ip_protocols(network, [ipv4_icc_rule, ipv4_internal_net_rule], [
-      ipv6_icc_rule,
+    use_necessary_ip_protocols(network, [ipv4_internal_net_rule], [
       ipv6_internal_net_rule
     ])
   end
 
-  defp network_filtering_macros(prefix) do
+  defp defined_network_macros(network_id) do
+    prefix = prefix(network_id)
     subnet = "$#{prefix}_subnet"
     subnet6 = "$#{prefix}_subnet6"
     interface = "$#{prefix}_interface"
@@ -814,7 +814,9 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  defp network_translation(network, prefix) do
+  defp network_translation(network) do
+    prefix = prefix(network.id)
+
     nat_rule = [
       "nat on $#{prefix}_nat_if from ($#{prefix}_interface:network) to any -> ($#{prefix}_nat_if)"
     ]
@@ -826,17 +828,34 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  defp network_macros(network, prefix) do
-    potential_macros = [
-      interface: network.interface,
-      subnet: network.subnet,
-      subnet6: network.subnet6,
-      nat_if: network.nat
-    ]
+  defp network_macros(network) do
+    prefix = prefix(network.id)
 
-    potential_macros
-    |> Enum.filter(fn {_, value} -> value != "" end)
-    |> Enum.map(fn {type, value} -> "#{prefix}_#{type}=\"#{value}\"" end)
+    # Only set macros for stuff that is defined on the network
+    basic_macros =
+      [
+        interface: network.interface,
+        subnet: network.subnet,
+        subnet6: network.subnet6,
+        nat_if: network.nat
+      ]
+      |> Enum.filter(fn {_, value} -> value != "" end)
+      |> Enum.map(fn {type, value} -> "#{prefix}_#{type}=\"#{value}\"" end)
+
+    basic_macros ++ [all_network_interfaces(network)]
+  end
+
+  defp all_network_interfaces(network) do
+    prefix = prefix(network.id)
+
+    epairs =
+      MetaData.get_endpoints_from_network(network.id)
+      |> Enum.filter(&(&1.epair != nil and &1.epair != ""))
+      |> Enum.map(&"#{&1.epair}a")
+
+    all_interfaces = Enum.join([network.interface | epairs], ", ")
+
+    "#{prefix}_all_interfaces=\"{#{all_interfaces}}\""
   end
 
   defp host_gw_macro() do
@@ -852,7 +871,7 @@ defmodule Kleened.Core.Network do
 
   def load_pf_config(config) do
     # For debugging purposes:
-    # Logger.debug("PF Config:\n#{config}")
+    Logger.debug("PF Config:\n#{config}")
     pf_config_path = Config.get("pf_config_path")
 
     case File.write(pf_config_path, config, [:write]) do

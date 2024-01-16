@@ -404,7 +404,9 @@ defmodule Kleened.Core.Exec do
          %Schemas.Container{network_driver: "vnet"} = container,
          networks
        ) do
-    Enum.flat_map(networks, &create_vnet_network_config(&1, container.id))
+    config = Enum.flat_map(networks, &create_vnet_network_config(&1, container.id))
+    Kleened.Core.Network.configure_pf()
+    config
   end
 
   defp create_alias_network_config(network, container_id) do

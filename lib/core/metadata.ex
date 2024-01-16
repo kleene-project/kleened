@@ -97,7 +97,7 @@ defmodule Kleened.Core.MetaData do
     :ok
   end
 
-  @spec remove_network(String.t()) :: :ok | :not_found
+  @spec remove_network(String.t()) :: :ok
   def remove_network(network_id) do
     [] = sql("DELETE FROM networks WHERE id = ?", [network_id])
     :ok
@@ -162,8 +162,7 @@ defmodule Kleened.Core.MetaData do
     end
   end
 
-  @spec get_endpoints_from_network(Network.network_id()) ::
-          [%Schemas.EndPoint{}] | :not_found
+  @spec get_endpoints_from_network(Network.network_id()) :: [%Schemas.EndPoint{}]
   def get_endpoints_from_network(network_id) do
     sql(
       "SELECT config FROM endpoint_configs WHERE network_id = ?",
@@ -171,8 +170,7 @@ defmodule Kleened.Core.MetaData do
     )
   end
 
-  @spec get_endpoints_from_container(Container.container_id()) ::
-          [%Schemas.EndPoint{}] | :not_found
+  @spec get_endpoints_from_container(Container.container_id()) :: [%Schemas.EndPoint{}]
   def get_endpoints_from_container(container_id) do
     sql(
       "SELECT config FROM endpoint_configs WHERE container_id = ?",
