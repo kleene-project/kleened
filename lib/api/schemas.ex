@@ -95,6 +95,15 @@ defmodule Kleened.API.Schemas do
           default: "ipnet",
           example: "host",
           enum: ["ipnet", "host", "vnet", "disabled"]
+        },
+        public_ports: %Schema{
+          description: """
+          FIXME
+          """,
+          type: :array,
+          items: Kleened.API.Schemas.PublicPortConfig,
+          default: []
+          # example: [] to come!
         }
       }
     })
@@ -138,6 +147,15 @@ defmodule Kleened.API.Schemas do
           """,
           example: "ipnet",
           enum: ["ipnet", "host", "vnet", "disabled"]
+        },
+        public_ports: %Schema{
+          description: """
+          FIXME
+          """,
+          type: :array,
+          items: Kleened.API.Schemas.PublicPort,
+          default: []
+          # example: [] to come!
         },
         jail_param: %Schema{
           description: "List of jail parameters (see jail(8) for details)",
@@ -297,27 +315,7 @@ defmodule Kleened.API.Schemas do
           description:
             "Whether or not the network is internal, i.e., not allowing outgoing upstream traffic",
           default: false
-        },
-        external_interfaces: %Schema{
-          description: """
-          Name of the external interfaces where incoming traffic is redirected from, if ports are being published externally on this network.
-          If set to the empty list `[]` Kleened uses the `gateway` interface.
-          """,
-          type: :array,
-          items: %Schema{type: :string},
-          default: [],
-          example: ["em0", "igb2"]
         }
-        # ip_range: %Schema{
-        #  type: :string,
-        #  description: "",
-        #  example: "192.168.1.1/25"
-        # },
-        # ip_range6: %Schema{
-        #  type: :string,
-        #  description: "",
-        #  example: "2001:db8:8a2e:370:7334:4ef9:/80"
-        # }
       },
       required: [:name, :type]
     })
@@ -356,22 +354,12 @@ defmodule Kleened.API.Schemas do
         interface: %Schema{
           type: :string,
           description: """
-          Name for the interface that is being used for the network. If set to `""` the name is automatically set to `kleened` prefixed with a integer.
+          Name for the interface that is being used for the network.
           If the `type` property is set to `custom` the value of `interface` must be the name of an existing interface.
           The name must not exceed 15 characters.
           """,
           example: "kleene0",
           default: ""
-        },
-        external_interfaces: %Schema{
-          description: """
-          Name of the external interfaces where incoming traffic is redirected from, if ports are being published externally on this network.
-          If an element is set to `"gateway"` the interface of the default router/gateway is used, if it exists.
-          """,
-          type: :array,
-          items: %Schema{type: :string},
-          default: ["gateway"],
-          example: ["em0", "igb2"]
         },
         gateway: %Schema{
           type: :string,
@@ -483,19 +471,76 @@ defmodule Kleened.API.Schemas do
     })
   end
 
-  defmodule PublishedPort do
+  defmodule PublicPortConfig do
     OpenApiSpex.schema(%{
       description: "FIXME",
       type: :object,
       properties: %{
-        container_id: %Schema{description: "FIXME", type: :string},
-        network_id: %Schema{description: "FIXME", type: :string},
-        host_ip: %Schema{description: "FIXME", type: :integer},
-        host_port: %Schema{description: "FIXME", type: :string},
-        container_port: %Schema{description: "FIXME", type: :string},
-        protocol: %Schema{description: "FIXME", type: :string, enum: ["tcp", "udp"]},
-        internal: %Schema{description: "FIXME", type: :boolean}
-      }
+        interfaces: %Schema{
+          description:
+            "List of host interfaces where the port is published, i.e., where traffic to the designated `host_port` is redirected to the container's ip4/ip6 addresses on the specified network. If the list is empty, the hosts gateway interface is used.",
+          type: :array,
+          items: %Schema{type: :string},
+          default: []
+        },
+        # networks: traffic from these networks will be accessible
+        host_port: %Schema{
+          description:
+            "source port or portrange on the host where incoming traffic is redirected",
+          type: :integer
+        },
+        container_port: %Schema{
+          description: "port or portrange on the host that accepts traffic from `host_port`.",
+          type: :integer
+        },
+        protocol: %Schema{
+          description: "Whether to use TCP or UDP as transport protocol",
+          type: :string,
+          enum: ["tcp", "udp"],
+          default: "tcp"
+        }
+      },
+      required: [:interfaces, :host_port, :container_port]
+    })
+  end
+
+  defmodule PublicPort do
+    OpenApiSpex.schema(%{
+      description: "FIXME",
+      type: :object,
+      properties: %{
+        interfaces: %Schema{
+          description: """
+          List of host interfaces where `host_port` is going to be public, i.e., where traffic to the `host_port` is redirected to the container.
+          If the list is empty, the hosts gateway interface is used.
+          """,
+          type: :array,
+          items: %Schema{type: :string},
+          default: []
+        },
+        # networks: traffic from these networks will be accessible
+        host_port: %Schema{
+          description:
+            "source port or portrange on the host where incoming traffic is redirected",
+          type: :string
+        },
+        container_port: %Schema{
+          description: "port or portrange on the host that accepts traffic from `host_port`.",
+          type: :string
+        },
+        protocol: %Schema{description: "tcp or udp", type: :string, enum: ["tcp", "udp"]},
+        ip_address: %Schema{
+          description:
+            "ipv4 address within the container that receives traffic from the public port",
+          type: :string
+        },
+        ip_address6: %Schema{
+          description:
+            "ipv6 address within the container that receives traffic from the public port",
+          type: :string
+        }
+      },
+      required: [:interfaces, :host_port, :container_port, :protocol, :ip_address, :ip_address6]
     })
   end
 

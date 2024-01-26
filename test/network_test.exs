@@ -378,6 +378,19 @@ defmodule NetworkTest do
              TestHelper.network_disconnect(api_spec, network.id, container_id)
   end
 
+  test "exhaust all ips in a network" do
+    create_network(%{name: "smallnet", subnet: "172.19.0.0/30", type: "loopback"})
+
+    config = %{cmd: ["/bin/ls"], network: "smallnet", network_driver: "ipnet"}
+
+    %{id: _id} = TestHelper.container_create(Map.put(config, :name, "exhaust1"))
+    %{id: _id} = TestHelper.container_create(Map.put(config, :name, "exhaust2"))
+    %{id: _id} = TestHelper.container_create(Map.put(config, :name, "exhaust3"))
+
+    assert %{message: "no more inet IP's left in the network"} =
+             TestHelper.container_create(Map.put(config, :name, "exhaust4"))
+  end
+
   test "create a container that uses the 'host' network driver" do
     ip_addresses_on_host = only_ip_addresses(host_addresses())
 
@@ -992,7 +1005,7 @@ defmodule NetworkTest do
       server: %{network_driver: "ipnet"},
       client: %{network_driver: "ipnet"},
       protocol: "inet",
-      expected_result: :blocked
+      expected_result: :timeout
     })
 
     # FIXME: IPv6 keeps connecting! :(
@@ -1045,7 +1058,7 @@ defmodule NetworkTest do
       server: %{network_driver: "vnet"},
       client: %{network_driver: "vnet"},
       protocol: "inet",
-      expected_result: :blocked
+      expected_result: :timeout
     })
 
     # using IPv6 and bridge
@@ -1097,7 +1110,7 @@ defmodule NetworkTest do
       server: %{network_driver: "ipnet"},
       client: %{network_driver: "vnet"},
       protocol: "inet",
-      expected_result: :blocked
+      expected_result: :timeout
     })
 
     # using IPv6 and bridge
@@ -1177,7 +1190,7 @@ defmodule NetworkTest do
       server: %{network_driver: "ipnet"},
       client: %{network_driver: "ipnet"},
       protocol: "inet",
-      expected_result: :blocked
+      expected_result: :timeout
     })
   end
 
@@ -1218,17 +1231,187 @@ defmodule NetworkTest do
     })
   end
 
-  test "exhaust all ips in a network" do
-    create_network(%{name: "smallnet", subnet: "172.19.0.0/30", type: "loopback"})
+  test "container using 'host' network driver can't publish ports" do
+    %{message: "cannot publish ports of a container with a 'host' network driver"} =
+      TestHelper.container_create(%{
+        name: "test_public_port",
+        network_driver: "host",
+        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+      })
+  end
 
-    config = %{cmd: ["/bin/ls"], network: "smallnet", network_driver: "ipnet"}
+  test "container using 'disabled' network driver can't publish ports" do
+    %{message: "cannot publish ports of a container with a 'disabled' network driver"} =
+      TestHelper.container_create(%{
+        name: "test_public_port",
+        network_driver: "disabled",
+        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+      })
+  end
 
-    %{id: _id} = TestHelper.container_create(Map.put(config, :name, "exhaust1"))
-    %{id: _id} = TestHelper.container_create(Map.put(config, :name, "exhaust2"))
-    %{id: _id} = TestHelper.container_create(Map.put(config, :name, "exhaust3"))
+  test "ipnet-containers publishing ports can be reached by ipnet containers in other networks using the local ip/port" do
+    public_port_connectivity_test(%{
+      network_server: %{
+        name: "testnet0",
+        subnet: "10.13.37.0/24",
+        type: "loopback"
+      },
+      network_client: %{
+        name: "testnet1",
+        subnet: "10.13.38.0/24",
+        type: "loopback"
+      },
+      server: %{
+        network_driver: "ipnet",
+        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+      },
+      client: %{
+        network_driver: "ipnet"
+      },
+      protocol: "inet"
+    })
 
-    assert %{message: "no more inet IP's left in the network"} =
-             TestHelper.container_create(Map.put(config, :name, "exhaust4"))
+    public_port_connectivity_test(%{
+      network_server: %{
+        name: "testnet3",
+        subnet6: "fdef:1337:1337::/64",
+        type: "bridge"
+      },
+      network_client: %{
+        name: "testnet4",
+        subnet6: "fdef:1338:1338::/64",
+        type: "bridge"
+      },
+      server: %{
+        network_driver: "ipnet",
+        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+      },
+      client: %{
+        network_driver: "ipnet"
+      },
+      protocol: "inet6"
+    })
+  end
+
+  test "vnet-containers publishing ports can be reached by vnet containers in other networks using the local ip/port" do
+    public_port_connectivity_test(%{
+      network_server: %{
+        name: "testnet0",
+        subnet: "10.13.37.0/24",
+        gateway: "<auto>",
+        type: "bridge"
+      },
+      network_client: %{
+        name: "testnet1",
+        subnet: "10.13.38.0/24",
+        gateway: "<auto>",
+        type: "bridge"
+      },
+      server: %{
+        network_driver: "vnet",
+        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+      },
+      client: %{
+        network_driver: "vnet"
+      },
+      protocol: "inet"
+    })
+  end
+
+  test "containers on icc: false networks can access a published port from a container in another network" do
+    public_port_connectivity_test(%{
+      network_server: %{
+        name: "testnet0",
+        subnet: "10.13.37.0/24",
+        type: "loopback",
+        icc: false
+      },
+      network_client: %{
+        name: "testnet1",
+        subnet: "10.13.38.0/24",
+        type: "loopback",
+        icc: false
+      },
+      server: %{
+        network_driver: "ipnet",
+        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+      },
+      client: %{
+        network_driver: "ipnet"
+      },
+      protocol: "inet"
+    })
+  end
+
+  test "containers on icc: false networks can access a published port from a container in the same network" do
+    public_port_connectivity_test(%{
+      network: %{
+        name: "testnet0",
+        subnet: "10.13.37.0/24",
+        type: "loopback",
+        icc: false
+      },
+      server: %{
+        network_driver: "ipnet",
+        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+      },
+      client: %{
+        network_driver: "ipnet"
+      },
+      protocol: "inet"
+    })
+  end
+
+  test "container on internal=true and icc=false networks cannot access a published port from another container" do
+    public_port_connectivity_test(%{
+      network_server: %{
+        name: "testnet0",
+        subnet: "10.13.37.0/24",
+        type: "loopback"
+      },
+      network_client: %{
+        name: "testnet1",
+        subnet: "10.13.38.0/24",
+        type: "loopback",
+        internal: true,
+        icc: false
+      },
+      server: %{
+        network_driver: "ipnet",
+        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+      },
+      client: %{
+        network_driver: "ipnet"
+      },
+      protocol: "inet",
+      expected_result: :blocked
+    })
+  end
+
+  test "container on internal=true and icc=true networks cannot access a published port from another container" do
+    public_port_connectivity_test(%{
+      network_server: %{
+        name: "testnet0",
+        subnet: "10.13.37.0/24",
+        type: "loopback"
+      },
+      network_client: %{
+        name: "testnet1",
+        subnet: "10.13.38.0/24",
+        type: "loopback",
+        internal: true,
+        icc: true
+      },
+      server: %{
+        network_driver: "ipnet",
+        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+      },
+      client: %{
+        network_driver: "ipnet"
+      },
+      protocol: "inet",
+      expected_result: :blocked
+    })
   end
 
   defp routes(%{
@@ -1399,13 +1582,13 @@ defmodule NetworkTest do
   defp cmd_server("inet"), do: "nc -l 4000"
   defp cmd_server("inet6"), do: "sleep 1 && nc -6 -l 4000"
 
-  defp cmd_client("inet", endpoint),
-    do: "echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address} 4000"
+  defp cmd_client(ip_proto, endpoint, port \\ 4000)
 
-  defp cmd_client("inet6", endpoint),
-    do: "sleep 2 && echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address6} 4000"
+  defp cmd_client("inet", endpoint, port),
+    do: "echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address} #{port}"
 
-  # do: "echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address6} 4000"
+  defp cmd_client("inet6", endpoint, port),
+    do: "sleep 1 && echo \"traffic\" | nc -v -w 2 -N #{endpoint.ip_address6} #{port}"
 
   defp create_inter_container_networks(%{network: config_network}) do
     network = create_network(config_network)
@@ -1430,25 +1613,8 @@ defmodule NetworkTest do
        ) do
     {network_server, network_client} = create_inter_container_networks(config)
 
-    config_server =
-      Map.merge(
-        %{
-          name: "server",
-          ip_address: default_ip(protocol),
-          ip_address6: default_ip6(protocol),
-          attach: true,
-          network: network_server.id,
-          cmd: ["/bin/sh", "-c", cmd_server(protocol)]
-        },
-        config_server
-      )
-
-    {container_id_server, _, server_conn} = TestHelper.container_valid_run_async(config_server)
-
-    assert TestHelper.receive_frame(server_conn, 1_000) ==
-             {:text, "{\"data\":\"\",\"message\":\"\",\"msg_type\":\"starting\"}"}
-
-    endpoint = MetaData.get_endpoint(container_id_server, network_server.id)
+    {_container_id, endpoint, server_conn} =
+      start_nc_server_container(config_server, network_server, protocol)
 
     config_client =
       Map.merge(
@@ -1472,6 +1638,64 @@ defmodule NetworkTest do
     )
   end
 
+  defp public_port_connectivity_test(
+         %{
+           server: config_server,
+           client: config_client,
+           protocol: protocol
+         } = config
+       ) do
+    {network_server, network_client} = create_inter_container_networks(config)
+
+    {_container_id, server_endpoint, server_conn} =
+      start_nc_server_container(config_server, network_server, protocol)
+
+    config_client =
+      Map.merge(
+        %{
+          name: "client",
+          ip_address: default_ip(protocol),
+          ip_address6: default_ip6(protocol),
+          network: network_client.id,
+          cmd: ["/bin/sh", "-c", cmd_client(protocol, server_endpoint, 4000)]
+        },
+        config_client
+      )
+
+    verify_inter_container_results(
+      server_conn,
+      network_server,
+      config,
+      config_server,
+      config_client,
+      protocol
+    )
+  end
+
+  defp start_nc_server_container(config_server, network_server, protocol) do
+    config_server =
+      Map.merge(
+        %{
+          name: "server",
+          ip_address: default_ip(protocol),
+          ip_address6: default_ip6(protocol),
+          attach: true,
+          network: network_server.id,
+          cmd: ["/bin/sh", "-c", cmd_server(protocol)]
+        },
+        config_server
+      )
+
+    {container_id, _, server_conn} = TestHelper.container_valid_run_async(config_server)
+
+    assert TestHelper.receive_frame(server_conn, 1_000) ==
+             {:text, "{\"data\":\"\",\"message\":\"\",\"msg_type\":\"starting\"}"}
+
+    endpoint = MetaData.get_endpoint(container_id, network_server.id)
+
+    {container_id, endpoint, server_conn}
+  end
+
   defp verify_inter_container_results(
          server_conn,
          network_server,
@@ -1489,7 +1713,7 @@ defmodule NetworkTest do
         {container_id, _, output} = TestHelper.container_valid_run(config_client)
         netcat_output = Enum.join(output, "")
 
-        assert String.contains?(netcat_output, "Operation timed out")
+        assert String.contains?(netcat_output, "Permission denied")
 
         %{container_endpoints: [endpoint]} = TestHelper.container_inspect(container_id)
 

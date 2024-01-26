@@ -128,7 +128,8 @@ defmodule TestHelper do
     config_default = %{
       image: "FreeBSD:testing",
       jail_param: ["mount.devfs=true"],
-      network_driver: "host"
+      network_driver: "host",
+      public_ports: []
     }
 
     config = Map.merge(config_default, config)

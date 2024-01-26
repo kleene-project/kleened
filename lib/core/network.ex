@@ -63,6 +63,12 @@ defmodule Kleened.Core.Network do
     GenServer.call(__MODULE__, {:inspect_endpoint, container_id, network_id})
   end
 
+  @spec inspect_(String.t()) :: {:ok, %Schemas.NetworkInspect{}} | {:error, String.t()}
+  def validate_pubport_set(_pub_ports) do
+    # FIXME
+    :ok
+  end
+
   ### Callback functions
   @impl true
   def init([]) do
@@ -99,8 +105,10 @@ defmodule Kleened.Core.Network do
              {:network, MetaData.get_network(net_ident)},
            {:endpoint, :not_found} <-
              {:endpoint, MetaData.get_endpoint(container.id, network.id)},
-           :ok <- validate_connection_config(network, config) do
-        connect_with_driver(container, network, config)
+           :ok <- validate_connection_config(network, config),
+           {:ok, endpoint} <- connect_with_driver(container, network, config) do
+        configure_pf()
+        {:ok, endpoint}
       else
         {:network, :not_found} ->
           Logger.debug(
@@ -640,15 +648,7 @@ defmodule Kleened.Core.Network do
   end
 
   def configure_pf() do
-    networks = MetaData.list_networks()
-
-    state = %{
-      :macros => [host_gw_macro()],
-      :translation => [],
-      :filtering => []
-    }
-
-    case create_pf_config(networks, state) do
+    case create_pf_config() do
       {:ok, pf_config} ->
         load_pf_config(pf_config)
 
@@ -661,7 +661,160 @@ defmodule Kleened.Core.Network do
     "kleenet_#{network_id}"
   end
 
-  def create_pf_config([network | rest], state) do
+  defp create_pf_config() do
+    networks = MetaData.list_networks()
+    containers = MetaData.list_containers()
+
+    state = %{
+      :macros => host_gw_macro() ++ network_interfaces_macro(networks),
+      :translation => [],
+      :filtering => []
+    }
+
+    state = create_pf_network_config(networks, state)
+    state = create_pf_public_ports_config(containers, state)
+    render_pf_config(state)
+  end
+
+  defp create_pf_public_ports_config(
+         [%{public_ports: public_ports} = container | rest],
+         state
+       ) do
+    endpoints = MetaData.get_endpoints_from_container(container.id)
+    ip4 = extract_ip(endpoints, "inet")
+    ip6 = extract_ip(endpoints, "inet6")
+
+    update_port = fn
+      # FIXME Public ports - atm. this is not converted in MetaData.from_db
+      pub_port, ip4, "inet" -> %Schemas.PublicPort{pub_port | ip_address: ip4}
+      pub_port, ip6, "inet6" -> %Schemas.PublicPort{pub_port | ip_address6: ip6}
+    end
+
+    new_pub_ports =
+      case {ip4, ip6} do
+        {"", ""} ->
+          public_ports
+
+        {ip4, ""} ->
+          public_ports |> Enum.map(&update_port.(&1, ip4, "inet"))
+
+        {"", ip6} ->
+          public_ports |> Enum.map(&update_port.(&1, ip6, "inet6"))
+
+        {ip4, ip6} ->
+          public_ports
+          |> Enum.map(&update_port.(&1, ip4, "inet"))
+          |> Enum.map(&update_port.(&1, ip6, "inet6"))
+      end
+
+    MetaData.add_container(%Schemas.Container{container | public_ports: new_pub_ports})
+    new_state = create_pf_port_config(new_pub_ports, state)
+    create_pf_public_ports_config(rest, new_state)
+  end
+
+  defp create_pf_public_ports_config([], state) do
+    state
+  end
+
+  defp create_pf_port_config([pub_port | rest], state) do
+    updated_translation = state.translation ++ port_translation(pub_port)
+    updated_filtering = state.filtering ++ port_filtering(pub_port)
+
+    new_state = %{
+      state
+      | translation: updated_translation,
+        filtering: updated_filtering
+    }
+
+    create_pf_port_config(rest, new_state)
+  end
+
+  defp create_pf_port_config([], state) do
+    state
+  end
+
+  defp port_translation(
+         %Schemas.PublicPort{
+           interfaces: interfaces,
+           ip_address: ip4,
+           ip_address6: ip6,
+           host_port: host_port,
+           container_port: port,
+           protocol: proto
+         } = pub_port
+       ) do
+    ip4_translation =
+      for interface <- interfaces,
+          do:
+            "rdr on #{interface} inet proto #{proto} from any to (#{interface}) port #{host_port} -> #{
+              ip4
+            } port #{port}"
+
+    ip6_translation =
+      for interface <- interfaces,
+          do:
+            "rdr on #{interface} inet proto #{proto} from any to (#{interface}) port #{host_port} -> #{
+              ip6
+            } port #{port}"
+
+    use_necessary_ip_protocols(pub_port, ip4_translation, ip6_translation)
+  end
+
+  defp port_filtering(
+         %Schemas.PublicPort{
+           interfaces: interfaces,
+           ip_address: ip4,
+           ip_address6: ip6,
+           container_port: port,
+           protocol: protocol
+         } = pub_port
+       ) do
+    ip4_port_pass =
+      Enum.map(interfaces, fn interface ->
+        "pass quick on #{interface} proto #{protocol} from any to #{ip4} port #{port}"
+      end) ++
+        [
+          "pass quick on $kleenet_network_interfaces inet proto tcp from any to #{ip4} port #{
+            port
+          }"
+        ]
+
+    ip6_port_pass =
+      Enum.map(interfaces, fn interface ->
+        "pass quick on #{interface} proto #{protocol} from any to #{ip6} port #{port}"
+      end) ++
+        [
+          "pass quick on $kleenet_network_interfaces inet proto tcp from any to #{ip6} port #{
+            port
+          }"
+        ]
+
+    use_necessary_ip_protocols(pub_port, ip4_port_pass, ip6_port_pass)
+  end
+
+  def extract_ip([endpoint | rest], ip_type) do
+    case select_ip(endpoint, ip_type) do
+      non_ip when is_nil(non_ip) or non_ip == "" ->
+        extract_ip(rest, ip_type)
+
+      ip ->
+        ip
+    end
+  end
+
+  def extract_ip([], _ip_type) do
+    ""
+  end
+
+  defp select_ip(endpoint, "inet") do
+    endpoint.ip_address
+  end
+
+  defp select_ip(endpoint, "inet6") do
+    endpoint.ip_address6
+  end
+
+  defp create_pf_network_config([network | rest], state) do
     updated_macros = state.macros ++ network_macros(network)
     updated_translation = state.translation ++ network_translation(network)
 
@@ -676,14 +829,18 @@ defmodule Kleened.Core.Network do
         filtering: updated_filtering
     }
 
-    create_pf_config(rest, new_state)
+    create_pf_network_config(rest, new_state)
   end
 
-  def create_pf_config([], %{
-        :macros => macros,
-        :translation => translation,
-        :filtering => filtering
-      }) do
+  defp create_pf_network_config([], state) do
+    state
+  end
+
+  defp render_pf_config(%{
+         :macros => macros,
+         :translation => translation,
+         :filtering => filtering
+       }) do
     template_path = Config.get("pf_config_template_path")
 
     case File.read(template_path) do
@@ -704,7 +861,7 @@ defmodule Kleened.Core.Network do
   end
 
   defp block_incoming_traffic_to_network(network) do
-    {subnet, subnet6, interface, _nat_interface, _host_gateway_interface} =
+    {subnet, subnet6, _interface, _nat_interface, _host_gateway_interface} =
       defined_network_macros(network.id)
 
     ipv4_rule = "block in log from any to #{subnet}"
@@ -713,23 +870,10 @@ defmodule Kleened.Core.Network do
     use_necessary_ip_protocols(network, [ipv4_rule], [ipv6_rule])
   end
 
-  defp icc_rule(network, proto) do
-    {subnet, subnet6, interface, _nat_interface, _host_gateway_interface} =
-      defined_network_macros(network.id)
-
-    prefix = prefix(network.id)
-
-    case proto do
-      "inet" -> "pass quick on $#{prefix}_all_interfaces from #{subnet} to #{subnet}"
-      "inet6" -> "pass quick on $#{prefix}_all_interfaces from #{subnet6} to #{subnet6}"
-    end
-  end
-
   defp network_filtering(%Schemas.Network{internal: false, icc: true} = network) do
-    {subnet, subnet6, interface, _nat_interface, _host_gateway_interface} =
-      defined_network_macros(network.id)
-
-    use_necessary_ip_protocols(network, [icc_rule(network, "inet")], [icc_rule(network, "inet6")])
+    use_necessary_ip_protocols(network, [icc_allow(network, "inet")], [
+      icc_allow(network, "inet6")
+    ])
   end
 
   defp network_filtering(%Schemas.Network{internal: false, icc: false} = network) do
@@ -740,40 +884,44 @@ defmodule Kleened.Core.Network do
     {subnet, subnet6, _interface, _nat_interface, host_gateway_interface} =
       defined_network_macros(network.id)
 
-    # internal-related:
-    ipv4_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet}"
-    ipv6_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
+    ipv4_internal_nat_rule = "block out quick log on #{host_gateway_interface} from #{subnet}"
+    ipv6_internal_nat_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
 
-    use_necessary_ip_protocols(network, [icc_rule(network, "inet"), ipv4_internal_net_rule], [
-      icc_rule(network, "inet6"),
-      ipv6_internal_net_rule
-    ])
+    use_necessary_ip_protocols(
+      network,
+      [icc_allow(network, "inet"), outgoing_deny(subnet), ipv4_internal_nat_rule],
+      [
+        icc_allow(network, "inet6"),
+        outgoing_deny(subnet6),
+        ipv6_internal_nat_rule
+      ]
+    )
   end
 
   defp network_filtering(%Schemas.Network{internal: true, icc: true, nat: _nat_if} = network) do
     {subnet, subnet6, _interface, nat_interface, host_gateway_interface} =
       defined_network_macros(network.id)
 
-    # internal-related:
-    ipv4_internal_net_rule = "block out quick log on #{nat_interface} from #{subnet}"
-    ipv6_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
+    ipv4_internal_nat_rule = "block out quick log on #{nat_interface} from #{subnet}"
+    ipv6_internal_nat_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
 
-    use_necessary_ip_protocols(network, [icc_rule(network, "inet"), ipv4_internal_net_rule], [
-      icc_rule(network, "inet6"),
-      ipv6_internal_net_rule
-    ])
+    use_necessary_ip_protocols(
+      network,
+      [icc_allow(network, "inet"), outgoing_deny(subnet), ipv4_internal_nat_rule],
+      [
+        icc_allow(network, "inet6"),
+        outgoing_deny(subnet6),
+        ipv6_internal_nat_rule
+      ]
+    )
   end
 
   defp network_filtering(%Schemas.Network{internal: true, icc: false, nat: ""} = network) do
-    {subnet, subnet6, _interface, _nat_interface, host_gateway_interface} =
+    {subnet, subnet6, _interface, _nat_interface, _host_gateway_interface} =
       defined_network_macros(network.id)
 
-    # internal-related:
-    ipv4_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet}"
-    ipv6_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
-
-    use_necessary_ip_protocols(network, [ipv4_internal_net_rule], [
-      ipv6_internal_net_rule
+    use_necessary_ip_protocols(network, [outgoing_deny(subnet)], [
+      outgoing_deny(subnet6)
     ])
   end
 
@@ -781,13 +929,29 @@ defmodule Kleened.Core.Network do
     {subnet, subnet6, _interface, nat_interface, host_gateway_interface} =
       defined_network_macros(network.id)
 
-    # internal-related:
-    ipv4_internal_net_rule = "block out quick log on #{nat_interface} from #{subnet}"
-    ipv6_internal_net_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
+    ipv4_internal_nat_rule = "block out quick log on #{nat_interface} from #{subnet}"
+    ipv6_internal_nat_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
 
-    use_necessary_ip_protocols(network, [ipv4_internal_net_rule], [
-      ipv6_internal_net_rule
+    use_necessary_ip_protocols(network, [outgoing_deny(subnet), ipv4_internal_nat_rule], [
+      outgoing_deny(subnet6),
+      ipv6_internal_nat_rule
     ])
+  end
+
+  defp outgoing_deny(subnet) do
+    "block out quick log on $kleenet_network_interfaces from #{subnet}"
+  end
+
+  defp icc_allow(network, proto) do
+    {subnet, subnet6, _interface, _nat_interface, _host_gateway_interface} =
+      defined_network_macros(network.id)
+
+    prefix = prefix(network.id)
+
+    case proto do
+      "inet" -> "pass quick on $#{prefix}_all_interfaces from #{subnet} to #{subnet}"
+      "inet6" -> "pass quick on $#{prefix}_all_interfaces from #{subnet6} to #{subnet6}"
+    end
   end
 
   defp defined_network_macros(network_id) do
@@ -798,6 +962,20 @@ defmodule Kleened.Core.Network do
     nat_interface = "$#{prefix}_nat_if"
     host_gateway_interface = "$kleenet_host_gw_if"
     {subnet, subnet6, interface, nat_interface, host_gateway_interface}
+  end
+
+  defp use_necessary_ip_protocols(
+         %Schemas.PublicPort{ip_address: ip4, ip_address6: ip6},
+         ip4_rules,
+         ip6_rules
+       ) do
+    # Apply rules to IPv4 and/or IPv6 depending on what is defined for the network
+    case {ip4, ip6} do
+      {"", ""} -> []
+      {_ip4, ""} -> ip4_rules
+      {"", _ip6} -> ip6_rules
+      {_ip, _ip6} -> List.flatten([ip4_rules, ip6_rules])
+    end
   end
 
   defp use_necessary_ip_protocols(
@@ -858,10 +1036,28 @@ defmodule Kleened.Core.Network do
     "#{prefix}_all_interfaces=\"{#{all_interfaces}}\""
   end
 
+  defp network_interfaces_macro(networks) do
+    case length(networks) do
+      0 ->
+        []
+
+      _ ->
+        interfaces = Enum.map(networks, & &1.interface)
+        ["kleenet_network_interfaces=\"{#{Enum.join(interfaces, ",")}}\""]
+    end
+  end
+
   defp host_gw_macro() do
     case host_gateway_interface() do
-      {:ok, host_gw_if} -> ["kleenet_host_gw_if=\"#{host_gw_if}\""]
-      {:error, _} -> []
+      {:ok, host_gw} ->
+        ["kleenet_host_gw_if=\"#{host_gw}\""]
+
+      {:error, _} ->
+        Logger.warn(
+          "Could not detect any gateway interface on the host. Connectivity might not work."
+        )
+
+        []
     end
   end
 
@@ -933,7 +1129,7 @@ defmodule Kleened.Core.Network do
         case Enum.find(routing_table, "", fn %{"destination" => dest} -> dest == "default" end) do
           # Extract the interface name of the default gateway
           %{"interface-name" => interface} -> {:ok, interface}
-          _ -> {:error, "could not find a default gateway to use for NAT"}
+          _ -> {:error, "Could not find a default gateway."}
         end
 
       _ ->

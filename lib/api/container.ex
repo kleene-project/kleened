@@ -106,9 +106,6 @@ defmodule Kleened.API.Container do
         {:ok, %Schemas.Container{id: id}} ->
           send_resp(conn, 201, Utils.id_response(id))
 
-        {:error, :image_not_found} ->
-          send_resp(conn, 404, Utils.error_response("no such image '#{container_config.image}'"))
-
         {:error, reason} ->
           send_resp(conn, 404, Utils.error_response(reason))
       end

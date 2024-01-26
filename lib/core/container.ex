@@ -26,14 +26,14 @@ defmodule Kleened.Core.Container do
   ### ===================================================================
   ### API
   ### ===================================================================
-  @spec create(container_config) :: {:ok, Container.t()} | {:error, :image_not_found}
+  @spec create(container_config) :: {:ok, Container.t()} | {:error, String.t()}
   def create(options) do
     container_id = Kleened.Core.Utils.uuid()
     create_(container_id, options)
   end
 
   @spec create(String.t(), container_config) ::
-          {:ok, Container.t()} | {:error, :image_not_found}
+          {:ok, Container.t()} | {:error, String.t()}
   def create(container_id, options) do
     create_(container_id, options)
   end
@@ -98,36 +98,59 @@ defmodule Kleened.Core.Container do
   ### ===================================================================
   defp create_(
          container_id,
-         %Schemas.ContainerConfig{image: image_identifier} = config
+         %Schemas.ContainerConfig{image: image_ident} = config
        ) do
-    {image_name, potential_snapshot} = Utils.decode_snapshot(image_identifier)
-    image = MetaData.get_image(image_name)
+    {image_name, potential_image_snapshot} = Utils.decode_snapshot(image_ident)
 
-    case {image, potential_snapshot} do
-      {%Schemas.Image{}, ""} ->
-        dataset_snapshot = "#{image.dataset}#{Const.image_snapshot()}"
-        Logger.debug("Creating container from image #{dataset_snapshot}")
-        {:ok, dataset} = create_dataset(dataset_snapshot, container_id)
-        assemble_container(container_id, image, dataset, config)
+    with {:image, %Schemas.Image{} = image} <- {:image, MetaData.get_image(image_name)},
+         :ok <- valid_port_publishing_container(config),
+         {:ok, dataset} <- create_dataset(potential_image_snapshot, container_id, image) do
+      assemble_container(container_id, image, dataset, config)
+    else
+      {:image, :not_found} ->
+        {:error, "no such image '#{image_ident}'"}
 
-      {%Schemas.Image{}, snapshot} ->
-        dataset_snapshot = "#{image.dataset}#{snapshot}"
-        Logger.debug("Creating container from image snapshot #{dataset_snapshot}")
-
-        case create_dataset(dataset_snapshot, container_id) do
-          {:ok, dataset} ->
-            assemble_container(container_id, image, dataset, config)
-
-          {:error, reason} ->
-            {:error, reason}
-        end
-
-      {:not_found, _} ->
-        {:error, :image_not_found}
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
-  defp create_dataset(parent_snapshot, container_id) do
+  defp valid_port_publishing_container(%Schemas.ContainerConfig{
+         public_ports: []
+       }) do
+    :ok
+  end
+
+  defp valid_port_publishing_container(%Schemas.ContainerConfig{
+         network_driver: driver,
+         public_ports: public_ports
+       }) do
+    case driver do
+      "host" ->
+        {:error, "cannot publish ports of a container with a 'host' network driver"}
+
+      "disabled" ->
+        {:error, "cannot publish ports of a container with a 'disabled' network driver"}
+
+      _ ->
+        Network.validate_pubport_set(public_ports)
+    end
+  end
+
+  defp create_dataset(potential_image_snapshot, container_id, image) do
+    parent_snapshot =
+      case potential_image_snapshot do
+        "" ->
+          snapshot = "#{image.dataset}#{Const.image_snapshot()}"
+          Logger.info("Creating container from image #{snapshot}")
+          snapshot
+
+        snapshot ->
+          snapshot = "#{image.dataset}#{snapshot}"
+          Logger.info("Creating container from image snapshot #{snapshot}")
+          snapshot
+      end
+
     dataset = Path.join([Config.get("zroot"), "container", container_id])
 
     case Kleened.Core.ZFS.clone(parent_snapshot, dataset) do
@@ -236,12 +259,51 @@ defmodule Kleened.Core.Container do
            mounts: mounts,
            cmd: command,
            jail_param: jail_param,
-           network_driver: network_driver
+           network_driver: network_driver,
+           public_ports: pub_port_configs
          } = config
        ) do
     Logger.debug("creating container on #{dataset} with config: #{inspect(config)}")
 
     env = Utils.merge_environment_variable_lists(img_env, env)
+
+    host_gw =
+      case Network.host_gateway_interface() do
+        {:ok, host_gw} ->
+          host_gw
+
+        {:error, _reason} ->
+          Logger.warn(
+            "Could not detect any gateway interface on the host so connectivity might not work."
+          )
+
+          ""
+      end
+
+    pub_ports =
+      pub_port_configs
+      |> Enum.map(fn %Schemas.PublicPortConfig{
+                       interfaces: interfaces,
+                       host_port: host_port,
+                       container_port: container_port,
+                       protocol: protocol
+                     } ->
+        interfaces =
+          case {interfaces, host_gw} do
+            {[], ""} -> []
+            {[], host_gw} -> [host_gw]
+            _ -> interfaces
+          end
+
+        %Schemas.PublicPort{
+          interfaces: interfaces,
+          host_port: host_port,
+          container_port: container_port,
+          protocol: protocol,
+          ip_address: "",
+          ip_address6: ""
+        }
+      end)
 
     command =
       case command do
@@ -264,15 +326,22 @@ defmodule Kleened.Core.Container do
       user: user,
       jail_param: jail_param,
       network_driver: network_driver,
+      public_ports: pub_ports,
       env: env,
       created: DateTime.to_iso8601(DateTime.utc_now()),
       running: false
     }
 
-    case create_mounts(container, mounts) do
+    case Network.validate_pubport_set(pub_ports) do
       :ok ->
-        MetaData.add_container(container)
-        {:ok, container}
+        case create_mounts(container, mounts) do
+          :ok ->
+            MetaData.add_container(container)
+            {:ok, container}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
 
       {:error, reason} ->
         {:error, reason}
@@ -326,7 +395,7 @@ defmodule Kleened.Core.Container do
 
     containers =
       Enum.map(
-        MetaData.list_containers(),
+        MetaData.container_listing(),
         &Map.put(&1, :running, MapSet.member?(active_jails, &1[:id]))
       )
 

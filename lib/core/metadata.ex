@@ -253,7 +253,12 @@ defmodule Kleened.Core.MetaData do
 
   @spec list_containers() :: [%{}]
   def list_containers() do
-    Agent.get(__MODULE__, fn db -> list_containers_transaction(db) end)
+    sql("SELECT id, container FROM containers ORDER BY json_extract(container, '$.created')")
+  end
+
+  @spec container_listing() :: [%{}]
+  def container_listing() do
+    Agent.get(__MODULE__, fn db -> container_listing_transaction(db) end)
   end
 
   @spec add_volume(Volume.t()) :: :ok
@@ -383,8 +388,8 @@ defmodule Kleened.Core.MetaData do
     end
   end
 
-  @spec list_containers_transaction(db_conn()) :: [%{}]
-  defp list_containers_transaction(db) do
+  @spec container_listing_transaction(db_conn()) :: [%{}]
+  defp container_listing_transaction(db) do
     sql = "SELECT * FROM api_list_containers ORDER BY created DESC"
     {:ok, statement} = Sqlitex.Statement.prepare(db, sql)
     {:ok, rows} = Sqlitex.Statement.fetch_all(statement, into: %{})
@@ -480,7 +485,9 @@ defmodule Kleened.Core.MetaData do
       Keyword.has_key?(row, :container) ->
         map = from_json(row, :container)
         id = Keyword.get(row, :id)
-        struct(Schemas.Container, Map.put(map, :id, id))
+        container = struct(Schemas.Container, Map.put(map, :id, id))
+        pub_ports = Enum.map(container.public_ports, &struct(Schemas.PublicPort, &1))
+        %Schemas.Container{container | public_ports: pub_ports}
 
       Keyword.has_key?(row, :volume) ->
         map = from_json(row, :volume)
