@@ -63,10 +63,51 @@ defmodule Kleened.Core.Network do
     GenServer.call(__MODULE__, {:inspect_endpoint, container_id, network_id})
   end
 
-  @spec inspect_(String.t()) :: {:ok, %Schemas.NetworkInspect{}} | {:error, String.t()}
-  def validate_pubport_set(_pub_ports) do
-    # FIXME
+  @spec validate_pubports([%Schemas.PublicPort{}]) :: :ok | {:error, String.t()}
+  def validate_pubports([pub_port | rest]) do
+    with :ok <- verify_port_value(pub_port.host_port, :source),
+         :ok <- verify_port_value(pub_port.container_port, :dest) do
+      validate_pubports(rest)
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  def validate_pubports([]) do
     :ok
+  end
+
+  defp verify_port_value(port_raw, type) do
+    case {type, String.split(port_raw, ":")} do
+      {_, [port]} ->
+        is_integers?([port])
+
+      {:dest, [port, "*"]} ->
+        is_integers?([port])
+
+      {_, ports} when length(ports) == 2 ->
+        is_integers?(ports)
+
+      _ ->
+        {:error, "could not decode port publishing specification"}
+    end
+  end
+
+  defp is_integers?(ports) do
+    result =
+      ports
+      |> Enum.map(fn port_str ->
+        case Integer.parse(port_str) do
+          {port, ""} when 0 <= port and port <= 65535 -> true
+          _ -> false
+        end
+      end)
+      |> Enum.all?()
+
+    case result do
+      true -> :ok
+      false -> {:error, "invalid port value (should be in the range 0 - 65535)"}
+    end
   end
 
   ### Callback functions
@@ -765,10 +806,13 @@ defmodule Kleened.Core.Network do
            interfaces: interfaces,
            ip_address: ip4,
            ip_address6: ip6,
+           host_port: host_port,
            container_port: port,
            protocol: protocol
          } = pub_port
        ) do
+    port = format_container_port(host_port, port)
+
     ip4_port_pass =
       Enum.map(interfaces, fn interface ->
         "pass quick on #{interface} proto #{protocol} from any to #{ip4} port #{port}"
@@ -790,6 +834,25 @@ defmodule Kleened.Core.Network do
         ]
 
     use_necessary_ip_protocols(pub_port, ip4_port_pass, ip6_port_pass)
+  end
+
+  defp format_container_port(host_port, port) do
+    case String.split(port, ":") do
+      [port_start, "*"] ->
+        case String.split(host_port, ":") do
+          # There is only source port, so '<port>:*' just evaluates to '<port>'
+          [_one_host_port] ->
+            [port_start]
+
+          [host_port_start, host_port_end] ->
+            range = String.to_integer(host_port_end) - String.to_integer(host_port_start)
+            port_end = String.to_integer(port_start) + range
+            "#{port_start}:#{port_end}"
+        end
+
+      _ ->
+        port
+    end
   end
 
   def extract_ip([endpoint | rest], ip_type) do

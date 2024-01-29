@@ -83,6 +83,12 @@ defmodule TestHelper do
     {container_id, exec_config.exec_id, conn}
   end
 
+  def container_run(config) do
+    {_container_id, exec_config, _expected_exit} = prepare_container_run(config)
+    {:ok, conn} = exec_start_raw(exec_config)
+    receive_frames(conn, 120_000)
+  end
+
   defp prepare_container_run(config) do
     {attach, config} = Map.pop(config, :attach, true)
     {start_container, config} = Map.pop(config, :start_container, true)
@@ -270,7 +276,8 @@ defmodule TestHelper do
     end
   end
 
-  def exec_create(api_spec, config) do
+  def exec_create(config) do
+    api_spec = Kleened.API.Spec.spec()
     assert_schema(config, "ExecConfig", api_spec)
 
     response =

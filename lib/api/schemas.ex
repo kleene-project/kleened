@@ -487,11 +487,11 @@ defmodule Kleened.API.Schemas do
         host_port: %Schema{
           description:
             "source port or portrange on the host where incoming traffic is redirected",
-          type: :integer
+          type: :string
         },
         container_port: %Schema{
           description: "port or portrange on the host that accepts traffic from `host_port`.",
-          type: :integer
+          type: :string
         },
         protocol: %Schema{
           description: "Whether to use TCP or UDP as transport protocol",
@@ -511,14 +511,12 @@ defmodule Kleened.API.Schemas do
       properties: %{
         interfaces: %Schema{
           description: """
-          List of host interfaces where `host_port` is going to be public, i.e., where traffic to the `host_port` is redirected to the container.
-          If the list is empty, the hosts gateway interface is used.
+          List of host interfaces where incoming traffic to `host_port` is redirected to the container at `ip_address` and/or `ip_address6` on `container_port`.
           """,
           type: :array,
           items: %Schema{type: :string},
           default: []
         },
-        # networks: traffic from these networks will be accessible
         host_port: %Schema{
           description:
             "source port or portrange on the host where incoming traffic is redirected",

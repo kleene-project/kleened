@@ -72,7 +72,7 @@ defmodule ExecTest do
     %{id: container_id} =
       TestHelper.container_create(%{name: "testcont", cmd: ["/bin/sleep", "10"]})
 
-    %{id: root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
+    %{id: root_exec_id} = TestHelper.exec_create(%{container_id: container_id})
 
     {:ok, _stream_ref, root_conn} =
       TestHelper.exec_start(root_exec_id, %{attach: false, start_container: true})
@@ -87,7 +87,7 @@ defmodule ExecTest do
     assert [closing_msg] == TestHelper.receive_frames(root_conn)
 
     %{id: exec_id} =
-      TestHelper.exec_create(api_spec, %{
+      TestHelper.exec_create(%{
         container_id: container_id,
         cmd: ["/bin/sleep", "99"]
       })
@@ -124,7 +124,7 @@ defmodule ExecTest do
     %{id: container_id} =
       TestHelper.container_create(%{name: "testcont", cmd: ["/bin/sleep", "10"]})
 
-    %{id: root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
+    %{id: root_exec_id} = TestHelper.exec_create(%{container_id: container_id})
 
     config = %{exec_id: root_exec_id, attach: false, start_container: true}
 
@@ -132,7 +132,7 @@ defmodule ExecTest do
              TestHelper.exec_valid_start(config)
 
     %{id: exec_id} =
-      TestHelper.exec_create(api_spec, %{
+      TestHelper.exec_create(%{
         container_id: container_id,
         cmd: ["/bin/sleep", "11"]
       })
@@ -164,7 +164,7 @@ defmodule ExecTest do
     %{id: container_id} = TestHelper.container_create(%{name: "testcont", cmd: ["/usr/bin/tty"]})
 
     # Start a process without attaching a PTY
-    %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
+    %{id: exec_id} = TestHelper.exec_create(%{container_id: container_id})
 
     {:ok, _stream_ref, conn} =
       TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
@@ -173,7 +173,7 @@ defmodule ExecTest do
     assert <<"not a tty\n", _rest::binary>> = msg
 
     # Start a process with a PTY attach
-    %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id, tty: true})
+    %{id: exec_id} = TestHelper.exec_create(%{container_id: container_id, tty: true})
 
     {:ok, _stream_ref, conn} =
       TestHelper.exec_start(exec_id, %{attach: true, start_container: true})
@@ -188,7 +188,7 @@ defmodule ExecTest do
     %{id: container_id} = TestHelper.container_create(%{name: "testcont", cmd: ["/bin/sh"]})
 
     # Start a process with a PTY attach
-    %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id, tty: true})
+    %{id: exec_id} = TestHelper.exec_create(%{container_id: container_id, tty: true})
     start_config = %{attach: true, start_container: true}
     {:ok, stream_ref, conn} = TestHelper.exec_start(exec_id, start_config)
 
@@ -210,7 +210,7 @@ defmodule ExecTest do
     %{id: container_id} =
       TestHelper.container_create(%{name: "testcont", cmd: ["/bin/sleep", "10"]})
 
-    %{id: exec_id} = TestHelper.exec_create(api_spec, %{container_id: "testcont"})
+    %{id: exec_id} = TestHelper.exec_create(%{container_id: "testcont"})
 
     assert {"succesfully started execution instance in detached mode", ""} ==
              TestHelper.exec_valid_start(%{exec_id: exec_id, attach: false, start_container: true})
@@ -253,9 +253,9 @@ defmodule ExecTest do
       TestHelper.container_create(%{name: "testcont", cmd: ["/bin/sleep", "10"]})
 
     assert %{message: "container not found"} ==
-             TestHelper.exec_create(api_spec, %{container_id: "nottestcont"})
+             TestHelper.exec_create(%{container_id: "nottestcont"})
 
-    %{id: root_exec_id} = TestHelper.exec_create(api_spec, %{container_id: container_id})
+    %{id: root_exec_id} = TestHelper.exec_create(%{container_id: container_id})
 
     assert [
              "error: could not find a execution instance matching 'wrongid'",
@@ -295,7 +295,7 @@ defmodule ExecTest do
     assert Utils.is_container_running?(container_id)
 
     %{id: exec_id} =
-      TestHelper.exec_create(api_spec, %{
+      TestHelper.exec_create(%{
         container_id: container_id,
         cmd: ["/bin/sleep", "99"]
       })

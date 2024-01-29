@@ -103,9 +103,9 @@ defmodule Kleened.Core.Container do
     {image_name, potential_image_snapshot} = Utils.decode_snapshot(image_ident)
 
     with {:image, %Schemas.Image{} = image} <- {:image, MetaData.get_image(image_name)},
-         :ok <- valid_port_publishing_container(config),
+         {:ok, pub_ports} <- validate_public_ports(config),
          {:ok, dataset} <- create_dataset(potential_image_snapshot, container_id, image) do
-      assemble_container(container_id, image, dataset, config)
+      assemble_container(container_id, image, dataset, pub_ports, config)
     else
       {:image, :not_found} ->
         {:error, "no such image '#{image_ident}'"}
@@ -115,25 +115,62 @@ defmodule Kleened.Core.Container do
     end
   end
 
-  defp valid_port_publishing_container(%Schemas.ContainerConfig{
+  defp validate_public_ports(%Schemas.ContainerConfig{
          public_ports: []
        }) do
-    :ok
+    {:ok, []}
   end
 
-  defp valid_port_publishing_container(%Schemas.ContainerConfig{
-         network_driver: driver,
-         public_ports: public_ports
+  defp validate_public_ports(%Schemas.ContainerConfig{
+         network_driver: driver
+       })
+       when driver == "host" or driver == "disabled" do
+    {:error, "cannot publish ports of a container using the '#{driver}' network driver"}
+  end
+
+  defp validate_public_ports(%Schemas.ContainerConfig{
+         public_ports: public_ports_config
        }) do
-    case driver do
-      "host" ->
-        {:error, "cannot publish ports of a container with a 'host' network driver"}
+    host_gw =
+      case Network.host_gateway_interface() do
+        {:ok, host_gw} ->
+          host_gw
 
-      "disabled" ->
-        {:error, "cannot publish ports of a container with a 'disabled' network driver"}
+        {:error, _reason} ->
+          Logger.warn(
+            "Could not detect any gateway interface on the host so connectivity might not work."
+          )
 
-      _ ->
-        Network.validate_pubport_set(public_ports)
+          ""
+      end
+
+    public_ports =
+      Enum.map(public_ports_config, fn %Schemas.PublicPortConfig{
+                                         interfaces: interfaces,
+                                         host_port: host_port,
+                                         container_port: container_port,
+                                         protocol: protocol
+                                       } ->
+        interfaces =
+          case {interfaces, host_gw} do
+            {[], ""} -> []
+            {[], _} -> [host_gw]
+            _ -> interfaces
+          end
+
+        %Schemas.PublicPort{
+          interfaces: interfaces,
+          host_port: host_port,
+          container_port: container_port,
+          protocol: protocol,
+          ip_address: "",
+          ip_address6: ""
+        }
+      end)
+
+    case Network.validate_pubports(public_ports) do
+      :ok -> {:ok, public_ports}
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -252,6 +289,7 @@ defmodule Kleened.Core.Container do
            env: img_env
          },
          dataset,
+         pub_ports,
          %Schemas.ContainerConfig{
            name: name,
            user: user,
@@ -259,51 +297,12 @@ defmodule Kleened.Core.Container do
            mounts: mounts,
            cmd: command,
            jail_param: jail_param,
-           network_driver: network_driver,
-           public_ports: pub_port_configs
+           network_driver: network_driver
          } = config
        ) do
     Logger.debug("creating container on #{dataset} with config: #{inspect(config)}")
 
     env = Utils.merge_environment_variable_lists(img_env, env)
-
-    host_gw =
-      case Network.host_gateway_interface() do
-        {:ok, host_gw} ->
-          host_gw
-
-        {:error, _reason} ->
-          Logger.warn(
-            "Could not detect any gateway interface on the host so connectivity might not work."
-          )
-
-          ""
-      end
-
-    pub_ports =
-      pub_port_configs
-      |> Enum.map(fn %Schemas.PublicPortConfig{
-                       interfaces: interfaces,
-                       host_port: host_port,
-                       container_port: container_port,
-                       protocol: protocol
-                     } ->
-        interfaces =
-          case {interfaces, host_gw} do
-            {[], ""} -> []
-            {[], host_gw} -> [host_gw]
-            _ -> interfaces
-          end
-
-        %Schemas.PublicPort{
-          interfaces: interfaces,
-          host_port: host_port,
-          container_port: container_port,
-          protocol: protocol,
-          ip_address: "",
-          ip_address6: ""
-        }
-      end)
 
     command =
       case command do
@@ -332,16 +331,10 @@ defmodule Kleened.Core.Container do
       running: false
     }
 
-    case Network.validate_pubport_set(pub_ports) do
+    case create_mounts(container, mounts) do
       :ok ->
-        case create_mounts(container, mounts) do
-          :ok ->
-            MetaData.add_container(container)
-            {:ok, container}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
+        MetaData.add_container(container)
+        {:ok, container}
 
       {:error, reason} ->
         {:error, reason}

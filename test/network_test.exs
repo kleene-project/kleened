@@ -1232,20 +1232,20 @@ defmodule NetworkTest do
   end
 
   test "container using 'host' network driver can't publish ports" do
-    %{message: "cannot publish ports of a container with a 'host' network driver"} =
+    %{message: "cannot publish ports of a container using the 'host' network driver"} =
       TestHelper.container_create(%{
         name: "test_public_port",
         network_driver: "host",
-        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+        public_ports: [%{interfaces: [], host_port: "4000", container_port: "4000"}]
       })
   end
 
   test "container using 'disabled' network driver can't publish ports" do
-    %{message: "cannot publish ports of a container with a 'disabled' network driver"} =
+    %{message: "cannot publish ports of a container using the 'disabled' network driver"} =
       TestHelper.container_create(%{
         name: "test_public_port",
         network_driver: "disabled",
-        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+        public_ports: [%{interfaces: [], host_port: "4000", container_port: "4000"}]
       })
   end
 
@@ -1263,7 +1263,7 @@ defmodule NetworkTest do
       },
       server: %{
         network_driver: "ipnet",
-        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+        public_ports: [%{interfaces: [], host_port: "4000", container_port: "4000"}]
       },
       client: %{
         network_driver: "ipnet"
@@ -1284,7 +1284,7 @@ defmodule NetworkTest do
       },
       server: %{
         network_driver: "ipnet",
-        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+        public_ports: [%{interfaces: [], host_port: "4000", container_port: "4000"}]
       },
       client: %{
         network_driver: "ipnet"
@@ -1309,7 +1309,7 @@ defmodule NetworkTest do
       },
       server: %{
         network_driver: "vnet",
-        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+        public_ports: [%{interfaces: [], host_port: "4000", container_port: "4000"}]
       },
       client: %{
         network_driver: "vnet"
@@ -1334,7 +1334,7 @@ defmodule NetworkTest do
       },
       server: %{
         network_driver: "ipnet",
-        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+        public_ports: [%{interfaces: [], host_port: "4000", container_port: "4000"}]
       },
       client: %{
         network_driver: "ipnet"
@@ -1353,7 +1353,7 @@ defmodule NetworkTest do
       },
       server: %{
         network_driver: "ipnet",
-        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+        public_ports: [%{interfaces: [], host_port: "4000", container_port: "4000"}]
       },
       client: %{
         network_driver: "ipnet"
@@ -1378,7 +1378,7 @@ defmodule NetworkTest do
       },
       server: %{
         network_driver: "ipnet",
-        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+        public_ports: [%{interfaces: [], host_port: "4000", container_port: "4000"}]
       },
       client: %{
         network_driver: "ipnet"
@@ -1404,7 +1404,7 @@ defmodule NetworkTest do
       },
       server: %{
         network_driver: "ipnet",
-        public_ports: [%{interfaces: [], host_port: 4000, container_port: 4000}]
+        public_ports: [%{interfaces: [], host_port: "4000", container_port: "4000"}]
       },
       client: %{
         network_driver: "ipnet"
@@ -1412,6 +1412,84 @@ defmodule NetworkTest do
       protocol: "inet",
       expected_result: :blocked
     })
+  end
+
+  test "ports can be published using port ranges as specified in pf.conf(5)" do
+    {network_server, network_client} =
+      create_inter_container_networks(%{
+        network_server: %{
+          name: "testnet0",
+          subnet: "10.13.37.0/24",
+          type: "loopback"
+        },
+        network_client: %{
+          name: "testnet1",
+          subnet: "10.13.38.0/24",
+          type: "loopback"
+        }
+      })
+
+    # Starting server (listening on port 4000)
+    {container_id, endpoint, listen4000_conn} =
+      start_nc_server_container(
+        %{
+          network_driver: "ipnet",
+          public_ports: [%{interfaces: [], host_port: "5000:6000", container_port: "4000:*"}]
+        },
+        network_server,
+        "inet"
+      )
+
+    # Start additional servers within the same container (listening on port 4500 and 5000)
+    listener_config = fn port ->
+      %{container_id: container_id, cmd: shell("nc -l #{port}"), attach: false}
+    end
+
+    %{id: exec_id} = TestHelper.exec_create(listener_config.(4500))
+
+    {:ok, _stream_ref, listen4500_conn} =
+      TestHelper.exec_start(exec_id, %{attach: true, start_container: false})
+
+    %{id: exec_id} = TestHelper.exec_create(listener_config.(5000))
+
+    {:ok, _stream_ref, listen5000_conn} =
+      TestHelper.exec_start(exec_id, %{attach: true, start_container: false})
+
+    # Verification:
+    timeout = 5_000
+
+    config_client = %{
+      name: "client",
+      ip_address: "<auto>",
+      ip_address6: "",
+      network_driver: "ipnet",
+      network: network_client.id,
+      cmd: ["/bin/sh", "-c", cmd_client("inet", endpoint, 4500)]
+    }
+
+    {_, _, _output} = TestHelper.container_valid_run(config_client)
+    assert TestHelper.receive_frame(listen4500_conn, timeout) == {:text, "traffic\n"}
+
+    config_client = %{config_client | cmd: ["/bin/sh", "-c", cmd_client("inet", endpoint, 5000)]}
+    {_, _, _output} = TestHelper.container_valid_run(config_client)
+    assert TestHelper.receive_frame(listen5000_conn, timeout) == {:text, "traffic\n"}
+
+    config_client = %{config_client | cmd: ["/bin/sh", "-c", cmd_client("inet", endpoint, 4000)]}
+    {_, _, _output} = TestHelper.container_valid_run(config_client)
+    assert TestHelper.receive_frame(listen4000_conn, timeout) == {:text, "traffic\n"}
+  end
+
+  test "invalid port publishing specification" do
+    config = %{
+      name: "server",
+      network_driver: "ipnet",
+      public_ports: [%{interfaces: [], host_port: "3leet", container_port: "4000"}],
+      attach: true,
+      cmd: ["/bin/sh", "-c", cmd_server("inet")]
+    }
+
+    assert %{message: "invalid port value (should be in the range 0 - 65535)"} ==
+             TestHelper.container_create(config)
   end
 
   defp routes(%{
@@ -1485,8 +1563,6 @@ defmodule NetworkTest do
 
     msg1 = read_tcpdump(port)
     msg2 = read_tcpdump(port)
-    Logger.warn(msg1)
-    Logger.warn(msg2)
     assert String.contains?(msg1, "proto UDP")
     assert String.contains?(msg2, "freebsd.org")
 
@@ -1578,6 +1654,8 @@ defmodule NetworkTest do
 
   defp default_ip6("inet"), do: ""
   defp default_ip6("inet6"), do: "<auto>"
+
+  defp shell(cmd), do: ["/bin/sh", "-c", cmd]
 
   defp cmd_server("inet"), do: "nc -l 4000"
   defp cmd_server("inet6"), do: "sleep 1 && nc -6 -l 4000"
