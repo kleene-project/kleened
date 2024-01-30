@@ -1,4 +1,5 @@
 defmodule MetaDataTest do
+  require Logger
   use ExUnit.Case
   alias Kleened.Test.TestImage
   alias Kleened.Core.Config
@@ -82,7 +83,7 @@ defmodule MetaDataTest do
     assert :not_found == get_container("1338")
     delete_container("1337")
     delete_container("1339")
-    assert [] == list_containers()
+    assert [] == container_listing()
   end
 
   test "list all containers" do
@@ -90,11 +91,17 @@ defmodule MetaDataTest do
     add_image(%Schemas.Image{id: "lol", created: now()})
     add_image(%Schemas.Image{id: "lel", name: "test", tag: "latest", created: now()})
     add_container(%Schemas.Container{id: "1337", image_id: "lol", name: "test1", created: now()})
+
     add_container(%Schemas.Container{id: "1338", image_id: "lel", name: "test2", created: now()})
 
-    add_container(%Schemas.Container{id: "1339", image_id: test_id, name: "test3", created: now()})
+    add_container(%Schemas.Container{
+      id: "1339",
+      image_id: test_id,
+      name: "test3",
+      created: now()
+    })
 
-    containers = list_containers()
+    containers = container_listing()
 
     assert [
              %{id: "1339", image_id: ^test_id, name: "test3"},
@@ -107,7 +114,7 @@ defmodule MetaDataTest do
     delete_container("1337")
     delete_container("1338")
     delete_container("1339")
-    assert [] == list_containers()
+    assert [] == container_listing()
   end
 
   test "adding, listing, and removing volumes" do

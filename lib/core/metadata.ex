@@ -486,7 +486,7 @@ defmodule Kleened.Core.MetaData do
         map = from_json(row, :container)
         id = Keyword.get(row, :id)
         container = struct(Schemas.Container, Map.put(map, :id, id))
-        pub_ports = Enum.map(container.public_ports, &struct(Schemas.PublicPort, &1))
+        pub_ports = Enum.map(container.public_ports, &struct(Schemas.PublishedPort, &1))
         %Schemas.Container{container | public_ports: pub_ports}
 
       Keyword.has_key?(row, :volume) ->

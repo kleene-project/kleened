@@ -145,7 +145,7 @@ defmodule Kleened.Core.Container do
       end
 
     public_ports =
-      Enum.map(public_ports_config, fn %Schemas.PublicPortConfig{
+      Enum.map(public_ports_config, fn %Schemas.PublishedPortConfig{
                                          interfaces: interfaces,
                                          host_port: host_port,
                                          container_port: container_port,
@@ -158,7 +158,7 @@ defmodule Kleened.Core.Container do
             _ -> interfaces
           end
 
-        %Schemas.PublicPort{
+        %Schemas.PublishedPort{
           interfaces: interfaces,
           host_port: host_port,
           container_port: container_port,

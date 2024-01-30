@@ -63,7 +63,7 @@ defmodule Kleened.Core.Network do
     GenServer.call(__MODULE__, {:inspect_endpoint, container_id, network_id})
   end
 
-  @spec validate_pubports([%Schemas.PublicPort{}]) :: :ok | {:error, String.t()}
+  @spec validate_pubports([%Schemas.PublishedPort{}]) :: :ok | {:error, String.t()}
   def validate_pubports([pub_port | rest]) do
     with :ok <- verify_port_value(pub_port.host_port, :source),
          :ok <- verify_port_value(pub_port.container_port, :dest) do
@@ -146,7 +146,6 @@ defmodule Kleened.Core.Network do
              {:network, MetaData.get_network(net_ident)},
            {:endpoint, :not_found} <-
              {:endpoint, MetaData.get_endpoint(container.id, network.id)},
-           :ok <- validate_connection_config(network, config),
            {:ok, endpoint} <- connect_with_driver(container, network, config) do
         configure_pf()
         {:ok, endpoint}
@@ -574,24 +573,6 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  defp validate_connection_config(%Schemas.Network{subnet: ""}, %Schemas.EndPointConfig{
-         ip_address: ip_address
-       })
-       when ip_address != "" do
-    {:error, "no IPv4 subnet defined for this network"}
-  end
-
-  defp validate_connection_config(%Schemas.Network{subnet6: ""}, %Schemas.EndPointConfig{
-         ip_address6: ip_address6
-       })
-       when ip_address6 != "" do
-    {:error, "no IPv6 subnet defined for this network"}
-  end
-
-  defp validate_connection_config(_, _) do
-    :ok
-  end
-
   @spec create_ip_address(String.t(), %Schemas.Network{}, protocol()) ::
           {:ok, String.t()} | {:error, String.t()}
   defp create_ip_address("", _network, _protocol) do
@@ -599,21 +580,19 @@ defmodule Kleened.Core.Network do
   end
 
   defp create_ip_address("<auto>", %Schemas.Network{subnet: ""}, "inet") do
-    {:error, "cannot allocate address because there is no IPv4 subnet for this network"}
+    {:ok, ""}
   end
 
   defp create_ip_address("<auto>", %Schemas.Network{subnet6: ""}, "inet6") do
-    {:error, "cannot allocate ip address because there is no IPv6 subnet for this network"}
+    {:ok, ""}
   end
 
   defp create_ip_address(_ip_address, %Schemas.Network{subnet: ""}, "inet") do
-    {:error, "cannot set ip address because there is no IPv4 subnet for this network"}
-    # {:ok, ""}
+    {:error, "cannot set ip address because there is no IPv4 subnet defined for this network"}
   end
 
   defp create_ip_address(_ip_address, %Schemas.Network{subnet6: ""}, "inet6") do
-    {:error, "cannot set ip address because there is no IPv6 subnet for this network"}
-    # {:ok, ""}
+    {:error, "cannot set ip address because there is no IPv6 subnet defined for this network"}
   end
 
   defp create_ip_address("<auto>", network, protocol) do
@@ -726,9 +705,8 @@ defmodule Kleened.Core.Network do
     ip6 = extract_ip(endpoints, "inet6")
 
     update_port = fn
-      # FIXME Public ports - atm. this is not converted in MetaData.from_db
-      pub_port, ip4, "inet" -> %Schemas.PublicPort{pub_port | ip_address: ip4}
-      pub_port, ip6, "inet6" -> %Schemas.PublicPort{pub_port | ip_address6: ip6}
+      pub_port, ip4, "inet" -> %Schemas.PublishedPort{pub_port | ip_address: ip4}
+      pub_port, ip6, "inet6" -> %Schemas.PublishedPort{pub_port | ip_address6: ip6}
     end
 
     new_pub_ports =
@@ -775,7 +753,7 @@ defmodule Kleened.Core.Network do
   end
 
   defp port_translation(
-         %Schemas.PublicPort{
+         %Schemas.PublishedPort{
            interfaces: interfaces,
            ip_address: ip4,
            ip_address6: ip6,
@@ -802,7 +780,7 @@ defmodule Kleened.Core.Network do
   end
 
   defp port_filtering(
-         %Schemas.PublicPort{
+         %Schemas.PublishedPort{
            interfaces: interfaces,
            ip_address: ip4,
            ip_address6: ip6,
@@ -1028,7 +1006,7 @@ defmodule Kleened.Core.Network do
   end
 
   defp use_necessary_ip_protocols(
-         %Schemas.PublicPort{ip_address: ip4, ip_address6: ip6},
+         %Schemas.PublishedPort{ip_address: ip4, ip_address6: ip6},
          ip4_rules,
          ip6_rules
        ) do
@@ -1130,7 +1108,7 @@ defmodule Kleened.Core.Network do
 
   def load_pf_config(config) do
     # For debugging purposes:
-    Logger.debug("PF Config:\n#{config}")
+    # Logger.debug("PF Config:\n#{config}")
     pf_config_path = Config.get("pf_config_path")
 
     case File.write(pf_config_path, config, [:write]) do

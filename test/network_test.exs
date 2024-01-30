@@ -281,7 +281,7 @@ defmodule NetworkTest do
         type: "loopback"
       })
 
-    %{message: "no IPv4 subnet defined for this network"} =
+    %{message: "cannot set ip address because there is no IPv4 subnet defined for this network"} =
       TestHelper.container_create(%{
         name: "testnetwork1",
         network_driver: "ipnet",
@@ -290,13 +290,13 @@ defmodule NetworkTest do
         ip_address6: ""
       })
 
-    %{message: "no IPv6 subnet defined for this network"} =
+    %{message: "cannot set ip address because there is no IPv6 subnet defined for this network"} =
       TestHelper.container_create(%{
         name: "testnetwork2",
         network_driver: "ipnet",
         network: network.name,
         ip_address: "",
-        ip_address6: "<auto>"
+        ip_address6: "fdef:1234:5678::10"
       })
   end
 

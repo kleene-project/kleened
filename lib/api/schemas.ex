@@ -97,13 +97,11 @@ defmodule Kleened.API.Schemas do
           enum: ["ipnet", "host", "vnet", "disabled"]
         },
         public_ports: %Schema{
-          description: """
-          FIXME
-          """,
+          description:
+            "List of listening ports that should accept traffic from sources external to the container.",
           type: :array,
-          items: Kleened.API.Schemas.PublicPortConfig,
+          items: Kleened.API.Schemas.PublishedPortConfig,
           default: []
-          # example: [] to come!
         }
       }
     })
@@ -149,13 +147,11 @@ defmodule Kleened.API.Schemas do
           enum: ["ipnet", "host", "vnet", "disabled"]
         },
         public_ports: %Schema{
-          description: """
-          FIXME
-          """,
+          description:
+            "List of listening ports that should accept traffic from sources external to the container.",
           type: :array,
-          items: Kleened.API.Schemas.PublicPort,
+          items: Kleened.API.Schemas.PublishedPort,
           default: []
-          # example: [] to come!
         },
         jail_param: %Schema{
           description: "List of jail parameters (see jail(8) for details)",
@@ -465,15 +461,16 @@ defmodule Kleened.API.Schemas do
           type: :string,
           description: "The IPv6 address of the container.",
           default: nil,
-          example: "FIXME"
+          example: "2610:1c1:1:606c::50:15"
         }
       }
     })
   end
 
-  defmodule PublicPortConfig do
+  defmodule PublishedPortConfig do
     OpenApiSpex.schema(%{
-      description: "FIXME",
+      description:
+        "Necessary configurations for publishing a port of a container and opening it up for incoming traffic from external sources.",
       type: :object,
       properties: %{
         interfaces: %Schema{
@@ -483,7 +480,6 @@ defmodule Kleened.API.Schemas do
           items: %Schema{type: :string},
           default: []
         },
-        # networks: traffic from these networks will be accessible
         host_port: %Schema{
           description:
             "source port or portrange on the host where incoming traffic is redirected",
@@ -504,9 +500,10 @@ defmodule Kleened.API.Schemas do
     })
   end
 
-  defmodule PublicPort do
+  defmodule PublishedPort do
     OpenApiSpex.schema(%{
-      description: "FIXME",
+      description:
+        "A published port of a container, i.e., opening up the port for incoming traffic from external sources.",
       type: :object,
       properties: %{
         interfaces: %Schema{
