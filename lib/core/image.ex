@@ -233,7 +233,12 @@ defmodule Kleened.Core.Image do
         )
 
       {:ok, container} = Kleened.Core.Container.create(state.image_id, container_config)
-      Network.connect(state.network, %Schemas.EndPointConfig{container: container.id})
+
+      Network.connect(state.network, %Schemas.EndPointConfig{
+        container: container.id,
+        ip_address: "<auto>"
+      })
+
       new_state = update_state(%State{state | container: container})
       process_instructions(new_state)
     else
@@ -405,6 +410,7 @@ defmodule Kleened.Core.Image do
   end
 
   defp terminate_failed_build(%State{cleanup: true} = state) do
+    Container.stop(state.container.id)
     Container.remove(state.container.id)
     Network.remove(state.network)
     send_msg(state.msg_receiver, {:image_build_failed, "image build failed"})
@@ -412,6 +418,8 @@ defmodule Kleened.Core.Image do
 
   defp terminate_failed_build(%State{cleanup: false} = state) do
     # When the build process terminates abruptly the state is not being updated, so do it now.
+    Container.stop(state.container.id)
+    state = %State{state | image_tag: "failed_build"}
     %Schemas.Image{instructions: instructions} = assemble_and_save_image(update_state(state))
 
     [_instruction, snapshot] =
@@ -434,8 +442,9 @@ defmodule Kleened.Core.Image do
            cmd: cmd
          }
        }) do
+    Container.stop(container_id)
     Network.disconnect(container_id, network)
-    {:ok, _network_id} = Network.remove(network)
+    Network.remove(network)
     :ok = container_to_image(container_dataset, container_id)
     MetaData.delete_container(container_id)
 
@@ -567,6 +576,9 @@ defmodule Kleened.Core.Image do
   defp relay_output_and_await_shutdown(id, exec_id, state) do
     receive do
       {:container, ^exec_id, {:shutdown, {:jail_stopped, exit_code}}} ->
+        exit_code
+
+      {:container, ^exec_id, {:shutdown, {:jailed_process_exited, exit_code}}} ->
         exit_code
 
       {:container, ^exec_id, msg} ->

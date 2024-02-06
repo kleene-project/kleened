@@ -72,7 +72,8 @@ defmodule Kleened.API.Image do
         ],
         responses: %{
           200 => response("no error", "application/json", Schemas.IdResponse),
-          404 => response("no such image", "application/json", Schemas.ErrorResponse)
+          404 => response("no such image", "application/json", Schemas.ErrorResponse),
+          500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
     end
