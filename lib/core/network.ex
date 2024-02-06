@@ -1185,7 +1185,7 @@ defmodule Kleened.Core.Network do
         :ipv6 -> "Internet6"
       end
 
-    {output_json, 0} = System.cmd("netstat", ["--libxo", "json", "-rn"])
+    {output_json, 0} = OS.cmd(["netstat", "--libxo", "json", "-rn"])
     {:ok, output} = Jason.decode(output_json)
     routing_table = output["statistics"]["route-information"]["route-table"]["rt-family"]
 

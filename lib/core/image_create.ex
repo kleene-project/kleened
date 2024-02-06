@@ -168,7 +168,7 @@ defmodule Kleened.Core.ImageCreate do
   end
 
   defp untar_file(tar_archive, image_mountpoint, receiver) do
-    port = OS.cmd_async(["/usr/bin/tar", "-vxf", tar_archive, "-C", image_mountpoint])
+    port = OS.cmd_async(["/usr/bin/tar", "-vxf", tar_archive, "-C", image_mountpoint], true)
 
     case process_tar_messages(port, receiver, 0, 0) do
       :ok ->
