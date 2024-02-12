@@ -663,10 +663,10 @@ defmodule Kleened.API.Schemas do
         autotag: %Schema{
           description: """
           Whether or not to auto-genereate a nametag `FreeBSD-<version>:latest` based on `uname(1)`.
-          *Method `\"fetch-auto\"` only*.
+          Overrides `tag` if set to true`. *Method `\"fetch-auto\"` only*.
           """,
           type: :boolean,
-          default: true
+          default: false
         }
       }
     })
@@ -877,7 +877,12 @@ defmodule Kleened.API.Schemas do
           type: :string
         },
         created: %Schema{description: "When the container was created", type: :string},
-        running: %Schema{description: "whether or not the container is running", type: :boolean}
+        running: %Schema{description: "whether or not the container is running", type: :boolean},
+        jid: %Schema{
+          description: "Jail ID if it is a running container",
+          type: :integer,
+          nullable: true
+        }
       }
     })
   end

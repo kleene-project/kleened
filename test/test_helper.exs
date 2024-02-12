@@ -1,4 +1,4 @@
-alias OpenApiSpex.Cast
+docker_process_sqlalias(OpenApiSpex.Cast)
 alias Kleened.Test.TestImage
 alias Kleened.Core.{Const, Exec, Image, Container, Volume, Network, MetaData, ZFS, OS}
 alias :gun, as: Gun

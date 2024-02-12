@@ -384,12 +384,22 @@ defmodule Kleened.Core.Container do
 
   @spec list_([list_containers_opts()]) :: [%{}]
   defp list_(options) do
-    active_jails = MapSet.new(running_jails())
+    active_jails = Map.new(running_jails())
 
     containers =
       Enum.map(
         MetaData.container_listing(),
-        &Map.put(&1, :running, MapSet.member?(active_jails, &1[:id]))
+        fn container ->
+          case Map.has_key?(active_jails, container.id) do
+            true ->
+              container
+              |> Map.put(:running, true)
+              |> Map.put(:jid, active_jails[container.id])
+
+            false ->
+              container |> Map.put(:running, false) |> Map.put(:jid, nil)
+          end
+        end
       )
 
     case Keyword.get(options, :all, false) do
@@ -418,10 +428,9 @@ defmodule Kleened.Core.Container do
     :ok
   end
 
-  def running_jails() do
+  defp running_jails() do
     {jails_json, 0} = System.cmd("jls", ["-v", "--libxo=json"], stderr_to_stdout: true)
     {:ok, jails} = Jason.decode(jails_json)
-    jails = Enum.map(jails["jail-information"]["jail"], & &1["name"])
-    jails
+    Enum.map(jails["jail-information"]["jail"], &{&1["name"], &1["jid"]})
   end
 end
