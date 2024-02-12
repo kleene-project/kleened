@@ -166,7 +166,7 @@ defmodule Kleened.Core.Image do
   end
 
   defp create_dataset2clones() do
-    kleened_root = Config.get("zroot")
+    kleened_root = Config.get("kleene_root")
     {output, 0} = OS.cmd(~w"/sbin/zfs list -H -t snapshot -o name,clones -r #{kleened_root}")
     processed_output = output |> String.split("\n") |> Enum.map(&String.split(&1, "\t"))
     Enum.reduce(processed_output, %{}, &create_dataset2clones_/2)

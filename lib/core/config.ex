@@ -23,14 +23,14 @@ defmodule Kleened.Core.Config do
 
   defp initialize() do
     cfg = open_config_file()
-    error_if_not_defined(cfg, "zroot")
+    error_if_not_defined(cfg, "kleene_root")
     error_if_not_defined(cfg, "api_listening_sockets")
     error_if_not_defined(cfg, "pf_config_path")
     error_if_not_defined(cfg, "pf_config_template_path")
     initialize_system()
     cfg = add_api_listening_options(cfg, [])
     cfg = initialize_kleene_root(cfg)
-    Map.put(cfg, "metadata_db", Path.join(["/", cfg["zroot"], "metadata.sqlite"]))
+    Map.put(cfg, "metadata_db", Path.join(["/", cfg["kleene_root"], "metadata.sqlite"]))
   end
 
   def initialize_system() do
@@ -105,7 +105,7 @@ defmodule Kleened.Core.Config do
   end
 
   defp initialize_kleene_root(cfg) do
-    root = Map.get(cfg, "zroot")
+    root = Map.get(cfg, "kleene_root")
     root_status = ZFS.info(root)
 
     case root_status do

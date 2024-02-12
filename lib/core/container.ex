@@ -188,7 +188,7 @@ defmodule Kleened.Core.Container do
           snapshot
       end
 
-    dataset = Path.join([Config.get("zroot"), "container", container_id])
+    dataset = Path.join([Config.get("kleene_root"), "container", container_id])
 
     case Kleened.Core.ZFS.clone(parent_snapshot, dataset) do
       {_, 0} -> {:ok, dataset}

@@ -94,7 +94,7 @@ defmodule Kleened.Core.ImageCreate do
   defp create_image_using_fetch(receiver, %Config{url: url, tag: tag} = config) do
     image_id = Utils.uuid()
     image_dataset = Const.image_dataset(image_id)
-    tar_archive = Path.join("/", [Kleened.Core.Config.get("zroot"), "base.txz"])
+    tar_archive = Path.join("/", [Kleened.Core.Config.get("kleene_root"), "base.txz"])
 
     # Fetch tar-archive and extract it to the new image dataset
     fetch_file_from_url(url, tar_archive, receiver)

@@ -1,6 +1,6 @@
 ---
-# Root ZFS dataset where Kleened stores the images, containers, and volumes. Must be set.
-zroot: "zroot/kleene"
+# Root ZFS dataset where Kleened stores images, containers, and volumes. Must be set.
+kleene_root: "zroot/kleene"
 
 # Path to the template that is used to generate thee pf.conf(5) file for the host
 pf_config_template_path: "/usr/local/etc/kleened/pf.conf.kleene"

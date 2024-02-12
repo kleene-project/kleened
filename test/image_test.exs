@@ -1120,7 +1120,10 @@ defmodule ImageTest do
   defp container_resolv_conf_exists?(run_config) do
     {_attach, config_create} = Map.pop(run_config, :attach)
     %{id: container_id} = TestHelper.container_create(config_create)
-    resolv_conf_path = "/" <> Config.get("zroot") <> "/container/#{container_id}/etc/resolv.conf"
+
+    resolv_conf_path =
+      "/" <> Config.get("kleene_root") <> "/container/#{container_id}/etc/resolv.conf"
+
     {_output, exit_code} = OS.cmd(["/bin/sh", "-c", "cat #{resolv_conf_path}"])
     Container.remove(container_id)
     exit_code == 0
@@ -1277,7 +1280,7 @@ defmodule ImageTest do
   end
 
   defp create_test_context(name) do
-    dataset = Path.join(Config.get("zroot"), name)
+    dataset = Path.join(Config.get("kleene_root"), name)
     mountpoint = Path.join("/", dataset)
     Kleened.Core.ZFS.create(dataset)
     {"", 0} = System.cmd("sh", ["-c", "echo 'lol' > #{mountpoint}/test.txt"])

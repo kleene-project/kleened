@@ -4,7 +4,7 @@ defmodule Kleened.Core.Const do
   end
 
   def image_dataset(image_id) do
-    Path.join(Kleened.Core.Config.get("zroot"), ["image", "/", image_id])
+    Path.join(Kleened.Core.Config.get("kleene_root"), ["image", "/", image_id])
   end
 
   def image_builder_status_message(step, nsteps, line) do

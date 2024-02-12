@@ -3,7 +3,6 @@ defmodule ZFSTest do
   require Logger
 
   alias Kleened.Core.{Const, Config, MetaData}
-  alias Config
   import Kleened.Core.ZFS
 
   @moduletag :capture_log
@@ -14,7 +13,7 @@ defmodule ZFSTest do
   end
 
   test "create clone test" do
-    zroot_test = Config.get("zroot") <> "/create_clone_test"
+    zroot_test = Config.get("kleene_root") <> "/create_clone_test"
     create(zroot_test)
     image = MetaData.get_image("FreeBSD:testing")
 
@@ -26,8 +25,8 @@ defmodule ZFSTest do
   end
 
   test "rename test" do
-    zroot_test = Config.get("zroot") <> "/rename_test"
-    zroot_test_new = Config.get("zroot") <> "/rename_test_newname"
+    zroot_test = Config.get("kleene_root") <> "/rename_test"
+    zroot_test_new = Config.get("kleene_root") <> "/rename_test_newname"
     assert {_, 0} = create(zroot_test)
     assert {_, 0} = rename(zroot_test, zroot_test_new)
     assert {_, 0} = destroy(zroot_test_new)

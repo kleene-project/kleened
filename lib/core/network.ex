@@ -1245,10 +1245,6 @@ defmodule Kleened.Core.Network do
   end
 
   defp get_jail_ips(container_id) do
-    # jls --libxo json -v -j 83 produceres
-    # {"__version": "2",
-    #  "jail-information": {"jail": [{"jid":83,"hostname":"","path":"/zroot/kleene_basejail","name":"83","state":"ACTIVE","cpusetid":4, "ipv4_addrs": ["172.17.0.1","172.17.0.2"], "ipv6_addrs": []}]}
-    # }
     case System.cmd("/usr/sbin/jls", ["--libxo", "json", "-v", "-j", container_id]) do
       {output_json, 0} ->
         {:ok, jail_info} = Jason.decode(output_json)
