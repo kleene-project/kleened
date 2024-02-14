@@ -1,5 +1,6 @@
 defmodule Mix.Tasks.Compile.RunPty do
   def run(_args) do
+    File.mkdir_p!("priv/bin")
     {result, _errcode} = System.cmd("make", ["runpty"], stderr_to_stdout: true)
     IO.binwrite(result)
   end

@@ -32,7 +32,10 @@ defmodule Kleened.Core.OS do
           {executable, args}
 
         true ->
-          {"priv/bin/runpty", command}
+          case Application.get_env(:kleened, :env) do
+            :prod -> {"/usr/local/bin/kleened_pty", command}
+            _ -> {"priv/bin/kleened_pty", command}
+          end
       end
 
     port =

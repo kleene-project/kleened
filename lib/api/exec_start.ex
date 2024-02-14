@@ -95,6 +95,11 @@ defmodule Kleened.API.ExecStartWebSocket do
     {:ok, state}
   end
 
+  def websocket_handle({:binary, message}, %{exec_id: exec_id, handshaking: false} = state) do
+    :ok = Exec.send(exec_id, message)
+    {:ok, state}
+  end
+
   def websocket_handle({:ping, _}, state) do
     {:ok, state}
   end
