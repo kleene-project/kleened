@@ -10,8 +10,37 @@ defmodule Kleened.Core.Application do
     start(nil, nil)
   end
 
-  def api_socket_listeners() do
-    listeners = Kleened.Core.Config.get("api_listeners")
+  def start(_type, _args) do
+    socket_configurations = Kleened.Core.Config.bootstrap()
+
+    children = [
+      Kleened.Core.Config,
+      Kleened.Core.MetaData,
+      Kleened.Core.Network,
+      {Registry, keys: :unique, name: Kleened.Core.ExecInstances},
+      {DynamicSupervisor, name: Kleened.Core.ExecPool, strategy: :one_for_one, max_restarts: 0}
+      | api_socket_listeners(socket_configurations)
+    ]
+
+    # See https://hexdocs.pm/elixir/Supervisor.html
+    # for other strategies and supported options
+    opts = [strategy: :one_for_one, name: Kleened.Core.Supervisor]
+
+    case Supervisor.start_link(children, opts) do
+      {:ok, pid} ->
+        {:ok, pid}
+
+      {:error,
+       {:shutdown,
+        {:failed_to_start_child, Kleened.Core.Config, {%RuntimeError{message: msg}, _}}}} ->
+        {:error, "could not start kleened: #{msg}"}
+
+      unknown_return ->
+        {:error, "could not start kleened: #{inspect(unknown_return)}"}
+    end
+  end
+
+  def api_socket_listeners(listeners) do
     indexed_listeners = Enum.zip(Enum.to_list(1..length(listeners)), listeners)
 
     Enum.map(indexed_listeners, fn {index, {scheme, cowboy_options}} ->
@@ -21,42 +50,5 @@ defmodule Kleened.Core.Application do
         options: [{:dispatch, Kleened.API.Router.dispatch()} | cowboy_options]
       )
     end)
-  end
-
-  def start(_type, _args) do
-    case Kleened.Core.Config.start_link([]) do
-      {:error, {%RuntimeError{message: reason}, _stacktrace}} ->
-        {:error, reason}
-
-      {:ok, pid} ->
-        children = [
-          Kleened.Core.Config,
-          Kleened.Core.MetaData,
-          Kleened.Core.Network,
-          {Registry, keys: :unique, name: Kleened.Core.ExecInstances},
-          {DynamicSupervisor,
-           name: Kleened.Core.ExecPool, strategy: :one_for_one, max_restarts: 0}
-          | api_socket_listeners()
-        ]
-
-        GenServer.stop(pid)
-
-        # See https://hexdocs.pm/elixir/Supervisor.html
-        # for other strategies and supported options
-        opts = [strategy: :one_for_one, name: Kleened.Core.Supervisor]
-
-        case Supervisor.start_link(children, opts) do
-          {:ok, pid} ->
-            {:ok, pid}
-
-          {:error,
-           {:shutdown,
-            {:failed_to_start_child, Kleened.Core.Config, {%RuntimeError{message: msg}, _}}}} ->
-            {:error, "could not start kleened: #{msg}"}
-
-          unknown_return ->
-            {:error, "could not start kleened: #{inspect(unknown_return)}"}
-        end
-    end
   end
 end

@@ -43,3 +43,11 @@ api_listening_sockets:
 
     ### TCP IPv6 socket (localhost) without TLS
     - address: "http://[::1]:8080/"
+
+# Log to /var/log/kleened.log
+enable_logging: true
+
+# Verbosity of logs on. Useful set of logging-values: debug, info, notice, warning, error, critical
+# All Elixir levels: debug, info, notice, warning, error, critical, alert, emergency
+# log_level: <value> is interpreted as "all messages that are <value> or worse"
+log_level: "debug"

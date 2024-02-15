@@ -5,6 +5,20 @@ defmodule Kleened.Core.Config do
 
   @default_config_path "/usr/local/etc/kleened/config.yaml"
 
+  def bootstrap() do
+    cfg = open_config_file()
+    initialize_logging(cfg)
+    error_if_not_defined(cfg, "kleene_root")
+    error_if_not_defined(cfg, "api_listening_sockets")
+    error_if_not_defined(cfg, "pf_config_path")
+    error_if_not_defined(cfg, "pf_config_template_path")
+    error_if_not_defined(cfg, "enable_logging")
+    error_if_not_defined(cfg, "log_level")
+    initialize_system()
+    initialize_kleene_root(cfg)
+    add_api_listening_options(cfg, [])
+  end
+
   def start_link([]) do
     Agent.start_link(&initialize/0, name: __MODULE__)
   end
@@ -23,21 +37,30 @@ defmodule Kleened.Core.Config do
 
   defp initialize() do
     cfg = open_config_file()
-    error_if_not_defined(cfg, "kleene_root")
-    error_if_not_defined(cfg, "api_listening_sockets")
-    error_if_not_defined(cfg, "pf_config_path")
-    error_if_not_defined(cfg, "pf_config_template_path")
-    initialize_system()
-    cfg = add_api_listening_options(cfg, [])
-    cfg = initialize_kleene_root(cfg)
+    root = Map.get(cfg, "kleene_root")
+    Map.put(cfg, "volume_root", Path.join([root, "volumes"]))
     Map.put(cfg, "metadata_db", Path.join(["/", cfg["kleene_root"], "metadata.sqlite"]))
+  end
+
+  defp initialize_logging(config) do
+    if config["enable_logging"] do
+      :logger.add_handlers(:kleened)
+    end
+
+    log_levels =
+      MapSet.new(["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"])
+
+    if MapSet.member?(log_levels, config["log_level"]) do
+      log_level = String.to_existing_atom(config["log_level"])
+      Logger.configure(level: log_level)
+    end
   end
 
   def initialize_system() do
     loader_conf = "/boot/loader.conf"
 
     if not kmod_loaded?("zfs") do
-      {:error, "zfs module not loaded"}
+      init_error("zfs module not loaded - kleened cannot function without zfs.")
     end
 
     if not kmod_loaded?("pf") do
@@ -110,10 +133,12 @@ defmodule Kleened.Core.Config do
 
     case root_status do
       %{"exists?" => false} ->
-        config_error("kleenes root zfs filesystem #{root} does not seem to exist. Exiting.")
+        config_error("kleened's root zfs filesystem #{root} does not seem to exist. Exiting.")
 
       %{"mountpoint" => nil} ->
-        config_error("kleenes root zfs filesystem #{root} does not have any mountpoint. Exiting.")
+        config_error(
+          "kleened's root zfs filesystem #{root} does not have any mountpoint. Exiting."
+        )
 
       _ ->
         :ok
@@ -122,7 +147,6 @@ defmodule Kleened.Core.Config do
     create_dataset_if_not_exist(Path.join([root, "image"]))
     create_dataset_if_not_exist(Path.join([root, "container"]))
     create_dataset_if_not_exist(Path.join([root, "volumes"]))
-    Map.put(cfg, "volume_root", Path.join([root, "volumes"]))
   end
 
   defp create_dataset_if_not_exist(dataset) do
@@ -195,10 +219,10 @@ defmodule Kleened.Core.Config do
   end
 
   defp add_api_listening_options(
-         %{"api_listening_sockets" => []} = config,
+         %{"api_listening_sockets" => []},
          listeners
        ) do
-    Map.put(config, "api_listeners", listeners)
+    listeners
   end
 
   defp add_api_listening_options(_config, _listeners) do
