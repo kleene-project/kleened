@@ -105,16 +105,84 @@ defmodule Kleened.Core.Image do
     end
   end
 
-  @spec remove(String.t()) :: :ok | :not_found
+  @spec remove(String.t()) :: :ok | {:error, String.t()}
   def remove(id_or_nametag) do
     case MetaData.get_image(id_or_nametag) do
       :not_found ->
-        :not_found
+        {:error, "Error: No such image: #{id_or_nametag}\n"}
 
-      %Schemas.Image{id: id, dataset: dataset} ->
-        {_, 0} = ZFS.destroy_force(dataset)
-        MetaData.delete_image(id)
+      %Schemas.Image{} = image ->
+        case zfs_kleene_clones(image.dataset) do
+          :no_clones ->
+            case ZFS.cmd("destroy -r -v #{image.dataset}") do
+              {_, 0} ->
+                MetaData.delete_image(image.id)
+                :ok
+
+              {output, 1} ->
+                MetaData.delete_image(image.id)
+                {:error, "deleted image but could not remove image dataset: #{output}"}
+            end
+
+          {:container_clones, container_ids} ->
+            msg = "could not remove image #{image.id} since it is used for containers:"
+            clone_error_message(msg, container_ids)
+
+          {:image_clones, image_ids} ->
+            msg = "could not remove image #{image.id} since it is used for images:"
+            clone_error_message(msg, image_ids)
+        end
     end
+  end
+
+  defp clone_error_message(msg, id_list) do
+    msg = [msg | id_list] |> Enum.join("\n")
+    {:error, msg}
+  end
+
+  defp zfs_kleene_clones(dataset) do
+    with {output, 1} <- ZFS.cmd("destroy -n -r -p #{dataset}"),
+         true <- String.contains?(output, "filesystem has dependent clones"),
+         [_, _ | datasets] = String.split(output, "\n"),
+         {:container_clones, []} <- zfs_container_clones(datasets),
+         {:image_clones, []} <- zfs_image_clones(datasets) do
+      :no_clones
+    else
+      {_, 0} -> :no_clones
+      false -> :no_clones
+      {:container_clones, _container_ids} = clones -> clones
+      {:image_clones, _image_ids} = clones -> clones
+    end
+  end
+
+  defp zfs_container_clones(datasets) do
+    container_root = Config.get("container_root") <> "/"
+    container_ids = extract_clones(container_root, datasets)
+    {:container_clones, container_ids}
+  end
+
+  defp zfs_image_clones(datasets) do
+    image_root = Config.get("image_root") <> "/"
+    image_datasets_and_clones = extract_clones(image_root, datasets)
+    # Remove @image snapshot lines - otherwise there are duplicates
+    image_ids =
+      Enum.filter(image_datasets_and_clones, fn dataset ->
+        case String.split(dataset, "@") do
+          [_] -> true
+          [_, _] -> false
+        end
+      end)
+
+    {:image_clones, image_ids}
+  end
+
+  defp extract_clones(root, datasets) do
+    datasets
+    |> Enum.filter(&String.starts_with?(&1, root))
+    |> Enum.map(fn dataset ->
+      ["", object_id] = String.split(dataset, root)
+      object_id
+    end)
   end
 
   @spec prune(false | true) :: {:ok, [String.t()]}

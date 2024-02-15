@@ -38,7 +38,9 @@ defmodule Kleened.Core.Config do
   defp initialize() do
     cfg = open_config_file()
     root = Map.get(cfg, "kleene_root")
-    Map.put(cfg, "volume_root", Path.join([root, "volumes"]))
+    cfg = Map.put(cfg, "container_root", Path.join([root, "container"]))
+    cfg = Map.put(cfg, "image_root", Path.join([root, "image"]))
+    cfg = Map.put(cfg, "volume_root", Path.join([root, "volumes"]))
     Map.put(cfg, "metadata_db", Path.join(["/", cfg["kleene_root"], "metadata.sqlite"]))
   end
 

@@ -1,4 +1,4 @@
-docker_process_sqlalias(OpenApiSpex.Cast)
+alias OpenApiSpex.Cast
 alias Kleened.Test.TestImage
 alias Kleened.Core.{Const, Exec, Image, Container, Volume, Network, MetaData, ZFS, OS}
 alias :gun, as: Gun
@@ -603,7 +603,9 @@ defmodule TestHelper do
     |> Router.call(@opts)
   end
 
-  def image_remove(api_spec, image_id) do
+  def image_remove(image_id) do
+    api_spec = Kleened.API.Spec.spec()
+
     response =
       conn(:delete, "/images/#{image_id}")
       |> Router.call(@opts)

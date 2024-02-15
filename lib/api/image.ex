@@ -85,8 +85,7 @@ defmodule Kleened.API.Image do
         :ok ->
           Plug.Conn.send_resp(conn, 200, Utils.id_response(image_id))
 
-        :not_found ->
-          msg = "Error: No such image: #{image_id}\n"
+        {:error, msg} ->
           Plug.Conn.send_resp(conn, 404, Utils.error_response(msg))
       end
     end

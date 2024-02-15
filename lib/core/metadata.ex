@@ -208,7 +208,7 @@ defmodule Kleened.Core.MetaData do
     Agent.get(__MODULE__, fn db -> add_image_transaction(db, image) end)
   end
 
-  @spec get_image(String.t()) :: Image.t() | :not_found
+  @spec get_image(String.t()) :: %Schemas.Image{} | :not_found
   def get_image(id_or_nametag) do
     Agent.get(__MODULE__, fn db -> get_image_transaction(db, id_or_nametag) end)
   end

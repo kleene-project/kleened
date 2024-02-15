@@ -63,7 +63,7 @@ defmodule Kleened.Core.ZFS do
     end
   end
 
-  @spec cmd([String.t()]) :: integer()
+  @spec cmd([String.t()]) :: {String.t(), integer()}
   def cmd(cmd, suppress_warning \\ true) do
     options = %{suppress_warning: suppress_warning}
     OS.cmd(["/sbin/zfs" | String.split(cmd, " ")], options)
