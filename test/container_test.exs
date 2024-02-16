@@ -545,6 +545,24 @@ defmodule ContainerTest do
     Container.stop(container_id)
   end
 
+  test "try to remove a container twice", %{api_spec: api_spec} do
+    config = %{
+      name: "remove_while_running",
+      image: "FreeBSD:testing",
+      user: "root",
+      cmd: ~w"echo testing",
+      attach: true
+    }
+
+    {container_id, _, _} = TestHelper.container_valid_run(config)
+
+    assert %{id: container_id} ==
+             TestHelper.container_remove(api_spec, container_id)
+
+    assert %{message: "no such container"} ==
+             TestHelper.container_remove(api_spec, container_id)
+  end
+
   test "start container quickly several times to verify reproducibility" do
     container =
       container_succesfully_create(%{

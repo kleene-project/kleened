@@ -34,6 +34,7 @@ defmodule Kleened.Core.ImageCreate do
        ) do
     # Initialize
     image_id = Utils.uuid()
+    validate_dataset(config.zfs_dataset, receiver)
     image_dataset = Const.image_dataset(image_id)
     image = create_image_metadata(image_id, image_dataset, tag)
     snapshot_parent = dataset_parent <> "@#{image_id}"
@@ -56,6 +57,7 @@ defmodule Kleened.Core.ImageCreate do
          %Config{zfs_dataset: dataset_parent, tag: tag} = config
        ) do
     image_id = Utils.uuid()
+    validate_dataset(config.zfs_dataset, receiver)
     image_dataset = Const.image_dataset(image_id)
     image = create_image_metadata(image_id, image_dataset, tag)
     snapshot_parent = dataset_parent <> "@#{image_id}"
@@ -224,6 +226,12 @@ defmodule Kleened.Core.ImageCreate do
 
       {^port, {:exit_status, _nonzero_exit_code}} ->
         :error
+    end
+  end
+
+  defp validate_dataset(dataset, receiver) do
+    if not ZFS.exists?(dataset) do
+      exit(receiver, "invalid dataset")
     end
   end
 

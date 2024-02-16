@@ -152,9 +152,8 @@ defmodule Kleened.Core.Config do
   end
 
   defp create_dataset_if_not_exist(dataset) do
-    case ZFS.info(dataset) do
-      %{:exists? => true} -> :ok
-      %{:exists? => false} -> ZFS.create(dataset)
+    if not ZFS.exists?(dataset) do
+      ZFS.create(dataset)
     end
   end
 

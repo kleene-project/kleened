@@ -48,6 +48,13 @@ defmodule Kleened.Core.ZFS do
     end
   end
 
+  def exists?(dataset) do
+    case OS.cmd(["/bin/sh", "-c", "zfs list -H -o name | grep #{dataset}"], false) do
+      {_output, 0} -> true
+      {_output, _nonzero_exit} -> false
+    end
+  end
+
   @spec info(String.t()) :: %{:exists? => boolean(), :mountpoint => String.t() | nil}
   def info(filesystem_or_snapshot) do
     case cmd("list -H -o mountpoint #{filesystem_or_snapshot}", false) do

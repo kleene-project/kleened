@@ -1096,6 +1096,24 @@ defmodule ImageTest do
     assert container_resolv_conf_exists?(run_config)
   end
 
+  test "fail to create base image using a method 'zfs-clone' because dataset starts with '/'" do
+    config = %{
+      method: "zfs-clone",
+      zfs_dataset: "/zroot/kleene_basejail",
+      tag: "zfscreate:testing"
+    }
+
+    [_, _, closing_message] = TestHelper.image_create(config)
+
+    assert closing_message ==
+             {1011,
+              %Kleened.API.Schemas.WebSocketMessage{
+                data: "",
+                message: "image creation failed: invalid dataset",
+                msg_type: "error"
+              }}
+  end
+
   test "create base image using a method 'fetch'" do
     config = %{
       method: "fetch",
