@@ -290,7 +290,6 @@ defmodule Kleened.API.Container do
         ],
         responses: %{
           200 => response("no error", "application/json", Schemas.IdResponse),
-          304 => response("container not running", "application/json", Schemas.ErrorResponse),
           404 =>
             response("no such container", "application/json", Schemas.ErrorResponse,
               example: %{message: "no such container"}
@@ -306,9 +305,6 @@ defmodule Kleened.API.Container do
       case Container.stop(conn.params.container_id) do
         {:ok, id} ->
           send_resp(conn, 200, Utils.id_response(id))
-
-        {:error, "container not running" = msg} ->
-          send_resp(conn, 304, Utils.error_response(msg))
 
         {:error, msg} ->
           send_resp(conn, 404, Utils.error_response(msg))
