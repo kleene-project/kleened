@@ -397,15 +397,28 @@ defmodule TestHelper do
   end
 
   def image_invalid_build(config) do
-    config = Map.merge(%{quiet: false, cleanup: true}, config)
+    config = imagebuild_config(config)
     build_log_raw = image_build_raw(config)
     process_failed_buildlog(build_log_raw)
   end
 
   def image_valid_build(config) do
-    config = Map.merge(%{quiet: false, cleanup: true}, config)
+    config = imagebuild_config(config)
     build_log_raw = image_build_raw(config)
     process_buildlog(build_log_raw, config)
+  end
+
+  def imagebuild_config(config) do
+    container_config = %{
+      network_driver: "host",
+      jail_param: ["mount.devfs=true"],
+      user: "root",
+      cmd: [],
+      env: []
+    }
+
+    defaults = %{quiet: false, cleanup: true, networks: [], container_config: container_config}
+    Map.merge(defaults, config)
   end
 
   def process_failed_buildlog([msg_json | rest]) do

@@ -44,46 +44,40 @@ defmodule Kleened.API.ImageBuild do
 
   # Ignore messages from the client: No interactive possibility atm.
   def websocket_handle({:text, message_raw}, %{handshaking: true} = state) do
-    case Jason.decode(message_raw) do
-      {:ok, message} ->
-        case Cast.cast(Schemas.ImageBuildConfig.schema(), message) do
-          {:ok,
-           %Schemas.ImageBuildConfig{
-             context: context,
-             dockerfile: dockerfile,
-             tag: tag,
-             buildargs: buildargs,
-             cleanup: cleanup,
-             quiet: quiet
-           }} ->
-            buildargs = Core.Utils.map2envlist(buildargs)
+    with {:json, {:ok, message}} <- {:json, Jason.decode(message_raw)},
+         {:ok, config} <- Cast.cast(Schemas.ImageBuildConfig.schema(), message),
+         {:ok, container_config} <-
+           Cast.cast(Schemas.ContainerConfig.schema(), config.container_config),
+         buildargs = Core.Utils.map2envlist(config.buildargs),
+         {:build, {:ok, image_id, _pid}} <-
+           {:build,
+            Image.build(%Schemas.ImageBuildConfig{
+              config
+              | container_config: container_config,
+                buildargs: buildargs
+            })} do
+      Logger.debug("Building image. Await output.")
+      {[{:text, Utils.starting_message(image_id)}], %{handshaking: false, image_id: image_id}}
+    else
+      {:error, [openapispex_error | _rest]} ->
+        Logger.notice("Error casting OpenAPI schema. Closing websocket.")
+        error_message = Cast.Error.message(openapispex_error)
+        error = Utils.error_message("invalid parameters")
+        {[{:text, error_message}, {:close, 1002, error}], state}
 
-            case Image.build(context, dockerfile, tag, buildargs, cleanup, quiet) do
-              {:ok, image_id, _pid} ->
-                Logger.debug("Building image. Await output.")
-
-                {[{:text, Utils.starting_message(image_id)}],
-                 %{handshaking: false, image_id: image_id}}
-
-              {:error, msg} ->
-                Logger.info("Error building image. Closing websocket.")
-
-                {[
-                   {:text, Utils.starting_message("")},
-                   {:text, msg},
-                   {:close, 1011, Utils.error_message("failed to process Dockerfile")}
-                 ], state}
-            end
-
-          {:error, [openapispex_error | _rest]} ->
-            error_message = Cast.Error.message(openapispex_error)
-            error = Utils.error_message("invalid parameters")
-            {[{:text, error_message}, {:close, 1002, error}], state}
-        end
-
-      {:error, json_error} ->
+      {:json, {:error, json_error}} ->
+        Logger.notice("Error parsing json. Closing websocket.")
         error = Utils.error_message("invalid json")
         {[{:text, json_error}, {:close, 1002, error}], state}
+
+      {:build, {:error, msg}} ->
+        Logger.notice("Error building image. Closing websocket.")
+
+        {[
+           {:text, Utils.starting_message("")},
+           {:text, msg},
+           {:close, 1011, Utils.error_message("failed to process Dockerfile")}
+         ], state}
     end
   end
 

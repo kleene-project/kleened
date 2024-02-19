@@ -29,7 +29,7 @@ defmodule Kleened.Core.Network do
     GenServer.call(__MODULE__, {:connect, network_idname, config}, 30_000)
   end
 
-  @spec connect(String.t(), String.t()) :: :ok | {:error, String.t()}
+  @spec disconnect(String.t(), String.t()) :: :ok | {:error, String.t()}
   def disconnect(container_idname, network_idname) do
     GenServer.call(__MODULE__, {:disconnect, container_idname, network_idname})
   end

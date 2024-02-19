@@ -24,6 +24,7 @@ defmodule Kleened.API.Schemas do
 
           If `<tag>` is omitted, `latest` is assumed.
           """,
+          nullable: true,
           example: [
             "FreeBSD:13.2-STABLE",
             "FreeBSD:13.2-STABLE@6b3c821605d4",
@@ -564,7 +565,8 @@ defmodule Kleened.API.Schemas do
 
   defmodule ImageBuildConfig do
     OpenApiSpex.schema(%{
-      description: "Configuration for an image build.",
+      description:
+        "Configuration for an image build, including container configuration for the build container.",
       type: :object,
       properties: %{
         context: %Schema{
@@ -599,9 +601,17 @@ defmodule Kleened.API.Schemas do
           type: :object,
           default: %{},
           example: %{"USERNAME" => "Stephen", "JAIL_MGMT_ENGINE" => "kleene"}
+        },
+        container_config: %OpenApiSpex.Reference{"$ref": "#/components/schemas/ContainerConfig"},
+        networks: %Schema{
+          description:
+            "List of endpoint-configs for the networks that the build container will be connected to.",
+          type: :array,
+          items: Kleened.API.Schemas.EndPointConfig,
+          default: []
         }
       },
-      required: [:context]
+      required: [:context, :container_config]
     })
   end
 

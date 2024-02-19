@@ -4,12 +4,8 @@ defmodule Kleened.Core.Image do
   require Logger
 
   defmodule State do
-    defstruct context: nil,
-              image_id: nil,
-              image_name: nil,
-              image_tag: nil,
-              network: nil,
-              buildargs_supplied: nil,
+    defstruct image_id: nil,
+              build_config: nil,
               buildargs_collected: nil,
               msg_receiver: nil,
               current_step: nil,
@@ -18,18 +14,21 @@ defmodule Kleened.Core.Image do
               snapshots: nil,
               total_steps: nil,
               container: nil,
-              workdir: nil,
-              cleanup: true,
-              quiet: false
+              workdir: nil
   end
 
   @type t() :: %Schemas.Image{}
 
-  @spec build(String.t(), String.t(), String.t(), String.t(), boolean(), boolean()) ::
-          {:ok, pid()} | {:error, String.t()}
-  def build(context_path, dockerfile, tag, buildargs, cleanup, quiet \\ false) do
-    {name, tag} = Kleened.Core.Utils.decode_tagname(tag)
-    dockerfile_path = Path.join(context_path, dockerfile)
+  @spec build(%Schemas.ImageBuildConfig{}) :: {:ok, pid()} | {:error, String.t()}
+  def build(
+        %Schemas.ImageBuildConfig{
+          context: context,
+          dockerfile: dockerfile,
+          tag: tag
+        } = build_config
+      ) do
+    {_name, _tag} = Kleened.Core.Utils.decode_tagname(tag)
+    dockerfile_path = Path.join(context, dockerfile)
 
     case File.read(dockerfile_path) do
       {:ok, dockerfile} ->
@@ -39,21 +38,17 @@ defmodule Kleened.Core.Image do
           :ok ->
             image_id = Kleened.Core.Utils.uuid()
 
-            {:ok, buildnet} =
-              Network.create(%Schemas.NetworkConfig{
-                name: "buildnet_" <> image_id,
-                subnet: "172.18.0.0/24",
-                interface: "kl" <> String.slice(image_id, 0..4),
-                type: "loopback"
-              })
+            build_config = %Schemas.ImageBuildConfig{
+              build_config
+              | container_config: %Schemas.ContainerConfig{
+                  build_config.container_config
+                  | name: "builder_#{image_id}"
+                }
+            }
 
             state = %State{
-              context: context_path,
+              build_config: build_config,
               image_id: image_id,
-              image_name: name,
-              image_tag: tag,
-              network: buildnet.id,
-              buildargs_supplied: buildargs,
               buildargs_collected: [],
               msg_receiver: self(),
               current_step: 1,
@@ -62,9 +57,7 @@ defmodule Kleened.Core.Image do
               snapshots: [],
               total_steps: length(instructions),
               container: %Schemas.Container{env: []},
-              workdir: "/",
-              cleanup: cleanup,
-              quiet: quiet
+              workdir: "/"
             }
 
             pid = Process.spawn(fn -> process_instructions(state) end, [:link])
@@ -284,34 +277,23 @@ defmodule Kleened.Core.Image do
     Logger.info("Processing instruction: FROM #{image_ref}")
     state = send_status(line, state)
 
-    with {:ok, new_image_ref} <- environment_replacement(image_ref, state),
-         %Schemas.Image{} <- Kleened.Core.MetaData.get_image(new_image_ref) do
-      {:ok, container_config} =
-        OpenApiSpex.Cast.cast(
-          Schemas.ContainerConfig.schema(),
-          %{
-            name: "builder_" <> state.image_id,
-            network_driver: "ipnet",
-            jail_param: ["mount.devfs=true"],
-            image: new_image_ref,
-            user: "root",
-            cmd: [],
-            env: []
-          }
-        )
-
-      {:ok, container} = Kleened.Core.Container.create(state.image_id, container_config)
-
-      Network.connect(state.network, %Schemas.EndPointConfig{
-        container: container.id,
-        ip_address: "<auto>"
-      })
-
+    with {:ok, image} = determine_parent_image(image_ref, state),
+         %Schemas.Image{} <- Kleened.Core.MetaData.get_image(image),
+         {:ok, container} <-
+           Kleened.Core.Container.create(state.image_id, %Schemas.ContainerConfig{
+             state.build_config.container_config
+             | image: image
+           }),
+         :ok <- create_build_container_connectivity(container, state.build_config.networks) do
       new_state = update_state(%State{state | container: container})
       process_instructions(new_state)
     else
       :not_found ->
         send_msg(state.msg_receiver, "parent image not found")
+        terminate_failed_build(state)
+
+      {:error, reason} ->
+        send_msg(state.msg_receiver, "error: #{reason}")
         terminate_failed_build(state)
 
       _ ->
@@ -473,21 +455,26 @@ defmodule Kleened.Core.Image do
   end
 
   defp terminate_failed_build(%State{container: %Schemas.Container{id: nil}} = state) do
-    Network.remove(state.network)
     send_msg(state.msg_receiver, {:image_build_failed, "image build failed"})
   end
 
-  defp terminate_failed_build(%State{cleanup: true} = state) do
+  defp terminate_failed_build(
+         %State{build_config: %Schemas.ImageBuildConfig{cleanup: true}} = state
+       ) do
     Container.stop(state.container.id)
     Container.remove(state.container.id)
-    Network.remove(state.network)
     send_msg(state.msg_receiver, {:image_build_failed, "image build failed"})
   end
 
-  defp terminate_failed_build(%State{cleanup: false} = state) do
+  defp terminate_failed_build(
+         %State{build_config: build_config = %Schemas.ImageBuildConfig{cleanup: false}} = state
+       ) do
     # When the build process terminates abruptly the state is not being updated, so do it now.
     Container.stop(state.container.id)
-    state = %State{state | image_tag: "failed_build"}
+    {image_name, _image_tag} = Kleened.Core.Utils.decode_tagname(state.build_config.tag)
+    build_config = %Schemas.ImageBuildConfig{build_config | tag: "#{image_name}:failed_build"}
+    state = %State{state | build_config: build_config}
+
     %Schemas.Image{instructions: instructions} = assemble_and_save_image(update_state(state))
 
     [_instruction, snapshot] =
@@ -497,11 +484,11 @@ defmodule Kleened.Core.Image do
   end
 
   defp assemble_and_save_image(%State{
-         network: network,
-         image_name: image_name,
-         image_tag: image_tag,
          processed_instructions: instructions,
          snapshots: snapshots,
+         build_config: %Schemas.ImageBuildConfig{
+           tag: nametag
+         },
          container: %Schemas.Container{
            id: container_id,
            dataset: container_dataset,
@@ -510,9 +497,9 @@ defmodule Kleened.Core.Image do
            cmd: cmd
          }
        }) do
+    {image_name, image_tag} = Kleened.Core.Utils.decode_tagname(nametag)
     Container.stop(container_id)
-    Network.disconnect(container_id, network)
-    Network.remove(network)
+    Network.disconnect_all(container_id)
     :ok = container_to_image(container_dataset, container_id)
     MetaData.delete_container(container_id)
 
@@ -571,12 +558,12 @@ defmodule Kleened.Core.Image do
          %State{
            instructions: [{line, _instruction} | _rest],
            msg_receiver: pid,
-           buildargs_collected: args_collected,
-           buildargs_supplied: args_supplied,
+           buildargs_collected: buildargs_collected,
+           build_config: %Schemas.ImageBuildConfig{buildargs: buildargs},
            container: %Schemas.Container{env: env}
          }
        ) do
-    args = merge_buildargs(args_supplied, args_collected)
+    args = merge_buildargs(buildargs, buildargs_collected)
     env = Utils.merge_environment_variable_lists(args, env)
     command = ~w"/usr/bin/env -i" ++ env ++ ["/bin/sh", "-c", "echo -n #{expression}"]
 
@@ -591,11 +578,11 @@ defmodule Kleened.Core.Image do
   end
 
   defp create_environment_variables(%State{
-         buildargs_collected: args_collected,
-         buildargs_supplied: args_supplied,
+         buildargs_collected: buildargs_collected,
+         build_config: %Schemas.ImageBuildConfig{buildargs: buildargs},
          container: %Schemas.Container{env: env}
        }) do
-    args = merge_buildargs(args_supplied, args_collected)
+    args = merge_buildargs(buildargs, buildargs_collected)
     Utils.merge_environment_variable_lists(args, env)
   end
 
@@ -650,14 +637,14 @@ defmodule Kleened.Core.Image do
         exit_code
 
       {:container, ^exec_id, msg} ->
-        if not state.quiet do
+        if not state.build_config.quiet do
           send_msg(state.msg_receiver, msg)
         end
 
         relay_output_and_await_shutdown(id, exec_id, state)
 
       {:container, ^exec_id, {:jail_output, msg}} ->
-        if not state.quiet do
+        if not state.build_config.quiet do
           send_msg(state.msg_receiver, {:jail_output, msg})
         end
 
@@ -666,6 +653,30 @@ defmodule Kleened.Core.Image do
       other ->
         Logger.error("Weird stuff received: #{inspect(other)}")
     end
+  end
+
+  defp determine_parent_image(image_from_dockerfile, state) do
+    case state.build_config.container_config.image do
+      nil -> environment_replacement(image_from_dockerfile, state)
+      user_supplied_image -> {:ok, user_supplied_image}
+    end
+  end
+
+  defp create_build_container_connectivity(container, [endpoint_config | rest]) do
+    network = endpoint_config.network
+
+    case Network.connect(network, %Schemas.EndPointConfig{
+           endpoint_config
+           | container: container.id
+             # ip_address: "<auto>"
+         }) do
+      {:ok, _endpoint} -> create_build_container_connectivity(container, rest)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp create_build_container_connectivity(_container, []) do
+    :ok
   end
 
   defp adapt_run_command_to_workdir(cmd, workdir) do
@@ -707,12 +718,12 @@ defmodule Kleened.Core.Image do
 
   defp wildcard_expand_srcs(srcdest, state) do
     {dest, srcs_relative} = List.pop_at(srcdest, -1)
-    context_depth = length(Path.split(state.context))
+    context_depth = length(Path.split(state.build_config.context))
 
     expanded_sources =
       Enum.flat_map(srcs_relative, fn src_rel ->
         # Wildcard-expand on the hosts absolute paths
-        src_expanded_list = Path.join(state.context, src_rel) |> Path.wildcard()
+        src_expanded_list = Path.join(state.build_config.context, src_rel) |> Path.wildcard()
 
         # Remove context-root from expanded paths
         Enum.map(src_expanded_list, &(Path.split(&1) |> Enum.drop(context_depth) |> Path.join()))
@@ -739,7 +750,7 @@ defmodule Kleened.Core.Image do
   defp mount_context(%State{msg_receiver: pid} = state) do
     mount_config = %Schemas.MountPointConfig{
       type: "nullfs",
-      source: state.context,
+      source: state.build_config.context,
       destination: "/kleene_temporary_context_store"
     }
 
@@ -753,7 +764,7 @@ defmodule Kleened.Core.Image do
     end
   end
 
-  defp send_status(_line, %State{:quiet => true} = state) do
+  defp send_status(_line, %State{build_config: %Schemas.ImageBuildConfig{quiet: true}} = state) do
     state
   end
 

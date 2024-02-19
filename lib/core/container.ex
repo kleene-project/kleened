@@ -32,7 +32,7 @@ defmodule Kleened.Core.Container do
     create_(container_id, options)
   end
 
-  @spec create(String.t(), container_config) ::
+  @spec create(container_id(), container_config) ::
           {:ok, Container.t()} | {:error, String.t()}
   def create(container_id, options) do
     create_(container_id, options)
