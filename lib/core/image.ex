@@ -401,7 +401,8 @@ defmodule Kleened.Core.Image do
       container_id: container.id,
       cmd: cmd,
       env: create_environment_variables(state),
-      user: container.user
+      user: container.user,
+      tty: true
     }
 
     case succesfully_run_execution(config, state) do
