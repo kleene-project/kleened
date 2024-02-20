@@ -658,8 +658,13 @@ defmodule Kleened.Core.Image do
 
   defp determine_parent_image(image_from_dockerfile, state) do
     case state.build_config.container_config.image do
-      nil -> environment_replacement(image_from_dockerfile, state)
-      user_supplied_image -> {:ok, user_supplied_image}
+      nil ->
+        environment_replacement(image_from_dockerfile, state)
+
+      user_supplied_image ->
+        msg = "Using user-supplied parent image: '#{user_supplied_image}'"
+        send_msg(state.msg_receiver, {:jail_output, msg})
+        {:ok, user_supplied_image}
     end
   end
 

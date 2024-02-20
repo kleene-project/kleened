@@ -8,10 +8,10 @@ defmodule Kleened.Core.Const do
   end
 
   def image_builder_status_message(step, nsteps, line) do
-    "Step #{step}/#{nsteps} : #{line}\n"
+    "Step #{step}/#{nsteps} : #{line}"
   end
 
   def image_builder_snapshot_message(snapshot) do
-    "--> Snapshot created: #{snapshot}\n"
+    "--> Snapshot created: #{snapshot}"
   end
 end

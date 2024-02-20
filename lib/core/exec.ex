@@ -154,6 +154,7 @@ defmodule Kleened.Core.Exec do
         {port, {:exit_status, exit_code}},
         %State{port: port} = state
       ) do
+    Logger.notice("execution of #{state.exec_id} within #{state.container.id} stopped")
     shutdown_process(exit_code, state)
     {:stop, :normal, %State{state | :port => nil}}
   end
