@@ -1,0 +1,53 @@
+---
+# Root ZFS dataset where Kleened stores images, containers, and volumes. Must be set.
+kleene_root: "zroot/kleene"
+
+# Path to the template that is used to generate thee pf.conf(5) file for the host
+pf_config_template_path: "/usr/local/etc/kleened/pf.conf.kleene"
+
+# Path to the generated file that is loaded into pf(4)
+pf_config_path: "/etc/pf.conf"
+
+# Sockets where the kleened-API is listenening.
+api_listening_sockets:
+      ### TCP-socket using IPv4 using TLS _with_ client authentication and DH-parameters
+      # The format is http[s]://[ip4|ip6][:port][/path/to/unix_socket].
+    - address: "https://127.0.0.1:8085"
+
+      # Path to the PEM encoded certificate file. May also contain the private key. Ignored if TLS is not used.
+      tlscert: "/usr/local/etc/kleened/certs/server-cert.pem"
+
+      # Path to the PEM encoded private key file, if different from the certfile. Ignored if TLS is not used.
+      tlskey: "/usr/local/etc/kleened/certs/server-key.pem"
+
+      # Path to the PEM encoded Diffie-Hellman parameters file. Ignored if TLS is not used.
+      tlsdh: "/usr/local/etc/kleened/certs/dhparams.pem"
+
+      # Set to 'true' to request a certificate from the client. Defaults to 'false'. Ignored if TLS is not used.
+      tlsverify: true
+
+      # Path to PEM encoded trusted certificates file used to verify client certificates (i.e. when 'tlsverify' is set to true).
+      # Ignored if TLS is not used.
+      tlscacert: "/usr/local/etc/kleened/certs/ca.pem"
+
+    ### UNIX-socket using TLS without client authentication and Diffie-Hellman parameters
+    ### NOTE: Any previous sockets/files will be overwritten
+    - address: "https:///var/run/kleened.tlssock"
+      tlscert: "/usr/local/etc/kleened/certs/server-cert.pem"
+      tlskey: "/usr/local/etc/kleened/certs/server-key.pem"
+      tlsverify: false
+      tlscacert: "/usr/local/etc/kleened/certs/ca.pem"
+
+    ### UNIX-socket without TLS without
+    - address: "http:///var/run/kleened.sock"
+
+    ### TCP IPv6 socket (localhost) without TLS
+    - address: "http://[::1]:8080/"
+
+# Log to /var/log/kleened.log
+enable_logging: true
+
+# Verbosity of logs on. Useful set of logging-values: debug, info, notice, warning, error, critical
+# All Elixir levels: debug, info, notice, warning, error, critical, alert, emergency
+# log_level: <value> is interpreted as "all messages that are <value> or worse"
+log_level: "debug"

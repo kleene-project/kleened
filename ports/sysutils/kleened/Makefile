@@ -24,7 +24,7 @@ USE_RC_SUBR=	kleened
 
 USE_GITHUB=		yes
 
-GH_TUPLE=       lgandersen:jocker:9b50b2a:DEFAULT
+GH_TUPLE=       lgandersen:jocker:552de4c:DEFAULT
 
 MIX_TARGET=		release
 ELIXIR_APP_NAME?=	${PORTNAME}
@@ -48,8 +48,9 @@ do-build:
 	@cd ${WRKSRC} && ${SETENV} MIX_HOME=${LOCALBASE}/bin ${MIX_COMPILE}
 
 do-install:
-	${INSTALL_DATA} ${WRKSRC}/example/kleened_config.yaml ${STAGEDIR}${PREFIX}/etc/
-	${INSTALL_DATA} ${WRKSRC}/example/pf.conf.kleene ${STAGEDIR}${PREFIX}/etc/
+	${MKDIR} ${STAGEDIR}${PREFIX}/etc/kleened
+	${INSTALL_DATA} ${WRKSRC}/example/kleened_config.yaml ${STAGEDIR}${PREFIX}/etc/kleened/config.yaml
+	${INSTALL_DATA} ${WRKSRC}/example/pf.conf.kleene ${STAGEDIR}${PREFIX}/etc/kleened/
 	${INSTALL_PROGRAM} ${WRKSRC}/priv/bin/kleened_pty ${STAGEDIR}${PREFIX}/bin/kleened_pty
 	${MKDIR} ${STAGEDIR}${PREFIX}/lib/kleened/bin
 	${INSTALL_SCRIPT} ${WRKSRC}/_build/prod/rel/kleened/bin/kleened ${STAGEDIR}${PREFIX}/lib/kleened/bin/
