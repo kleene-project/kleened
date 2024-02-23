@@ -273,12 +273,36 @@ defmodule Kleened.Core.Image do
     verify_instructions(rest)
   end
 
+  defp validate_image_reference(image) do
+    case Utils.decode_snapshot(image) do
+      {_nametag, ""} ->
+        :ok
+
+      {nametag, snapshot} ->
+        case Kleened.Core.MetaData.get_image(nametag) do
+          :not_found ->
+            {:error, "could not find image #{nametag}"}
+
+          %Kleened.API.Schemas.Image{} = image ->
+            case OS.shell(
+                   "/sbin/zfs list -t snapshot -o name -H #{image.dataset} | grep #{snapshot}"
+                 ) do
+              {_, 0} ->
+                :ok
+
+              {_, _non_zero_exitcode} ->
+                {:error, "invalid snapshot #{snapshot}"}
+            end
+        end
+    end
+  end
+
   defp process_instructions(%State{instructions: [{line, {:from, image_ref}} | _]} = state) do
     Logger.info("Processing instruction: FROM #{image_ref}")
     state = send_status(line, state)
 
-    with {:ok, image} = determine_parent_image(image_ref, state),
-         %Schemas.Image{} <- Kleened.Core.MetaData.get_image(image),
+    with {:ok, image} <- determine_parent_image(image_ref, state),
+         :ok <- validate_image_reference(image),
          {:ok, container} <-
            Kleened.Core.Container.create(state.image_id, %Schemas.ContainerConfig{
              state.build_config.container_config
@@ -289,7 +313,7 @@ defmodule Kleened.Core.Image do
       process_instructions(new_state)
     else
       :not_found ->
-        send_msg(state.msg_receiver, "parent image not found")
+        send_msg(state.msg_receiver, "error: parent image not found")
         terminate_failed_build(state)
 
       {:error, reason} ->
@@ -473,15 +497,24 @@ defmodule Kleened.Core.Image do
     # When the build process terminates abruptly the state is not being updated, so do it now.
     Container.stop(state.container.id)
     {image_name, _image_tag} = Kleened.Core.Utils.decode_tagname(state.build_config.tag)
-    build_config = %Schemas.ImageBuildConfig{build_config | tag: "#{image_name}:failed_build"}
+    build_config = %Schemas.ImageBuildConfig{build_config | tag: "#{image_name}:failed"}
     state = %State{state | build_config: build_config}
 
     %Schemas.Image{instructions: instructions} = assemble_and_save_image(update_state(state))
 
-    [_instruction, snapshot] =
-      instructions |> Enum.filter(fn [_, snapshot] -> snapshot != "" end) |> List.last()
+    snapshots = instructions |> Enum.filter(fn [_, snapshot] -> snapshot != "" end)
 
-    send_msg(state.msg_receiver, {:image_build_failed, {"image build failed", snapshot}})
+    case snapshots do
+      [] ->
+        send_msg(
+          state.msg_receiver,
+          {:image_build_failed, {"image build failed", "no snapshots available"}}
+        )
+
+      snapshots ->
+        [_instruction, snapshot] = List.last(snapshots)
+        send_msg(state.msg_receiver, {:image_build_failed, {"image build failed", snapshot}})
+    end
   end
 
   defp assemble_and_save_image(%State{

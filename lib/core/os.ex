@@ -24,6 +24,10 @@ defmodule Kleened.Core.OS do
     return_value
   end
 
+  def shell(command, options \\ %{suppress_warning: false}) do
+    cmd(["/bin/sh", "-c", command], options)
+  end
+
   def cmd_async(command, use_pty \\ false) do
     {executable, args} =
       case use_pty do
