@@ -157,6 +157,28 @@ defmodule ImageTest do
     assert File.read(Path.join(mountpoint, "/root/test_1.txt")) == {:ok, "lol1\n"}
   end
 
+  test "remove an image using substring of image-id" do
+    dockerfile = """
+    FROM FreeBSD:testing
+    RUN echo "lol1" > /root/test_1.txt
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+
+    {image, _build_log} =
+      TestHelper.image_valid_build(%{
+        context: @tmp_context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:latest"
+      })
+
+    mountpoint = image_mountpoint(image)
+
+    id_segment = String.slice(image.id, 0, 2)
+    assert %{id: id_segment} == TestHelper.image_remove(id_segment)
+    assert File.read(Path.join(mountpoint, "/root/test_1.txt")) == {:error, :enoent}
+  end
+
   test "build and inspect an image", %{api_spec: api_spec} do
     dockerfile = """
     FROM FreeBSD:testing
@@ -627,7 +649,7 @@ defmodule ImageTest do
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
     {:failed_build, _image_id, build_log} = TestHelper.image_invalid_build(config)
-    assert last_log_entry(build_log) == "parent image not found"
+    assert last_log_entry(build_log) == "error: no such image 'doesnotexist'"
 
     config = Map.put(config, :buildargs, %{"testvar" => "FreeBSD:testing"})
     {_image, build_log} = TestHelper.image_valid_build(config)
@@ -1223,6 +1245,29 @@ defmodule ImageTest do
     assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
   end
 
+  test "build with 'cleanup: false': No 'failed image' created if build crashed efore any snapshots have been taken" do
+    dockerfile = """
+    FROM nonexisting
+    RUN echo "test" > /etc/testing
+    """
+
+    context = create_test_context("test_image_run_nonzero_exitcode")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    {:failed_build, "a0903eeaf1af",
+     ["Step 1/2 : FROM nonexisting", "error: no such image 'nonexisting'"]} ==
+      TestHelper.image_invalid_build(%{
+        context: context,
+        dockerfile: @tmp_dockerfile,
+        quiet: false,
+        cleanup: false,
+        tag: "test-nocleanup:latest"
+      })
+
+    # Only the test-image remains
+    assert length(MetaData.list_images()) == 1
+  end
+
   test "try building an image from a invalid Dockerfile (no linebreak)" do
     dockerfile = """
     FROM FreeBSD:testing
@@ -1258,7 +1303,7 @@ defmodule ImageTest do
         dockerfile: @tmp_dockerfile
       })
 
-    assert build_log == ["Step 1/2 : FROM nonexisting\n", "parent image not found"]
+    assert build_log == ["Step 1/2 : FROM nonexisting", "error: no such image 'nonexisting'"]
   end
 
   test "try building an image from a invalid Dockerfile (illegal comment)" do
@@ -1278,8 +1323,8 @@ defmodule ImageTest do
       })
 
     assert build_log == [
-             "Step 1/2 : FROM FreeBSD:testing\n",
-             "Step 2/2 : ENV TEST=\"something\" # You cannot make comments like this.\n",
+             "Step 1/2 : FROM FreeBSD:testing",
+             "Step 2/2 : ENV TEST=\"something\" # You cannot make comments like this.",
              "failed environment substition of: ENV TEST=\"something\" # You cannot make comments like this."
            ]
   end

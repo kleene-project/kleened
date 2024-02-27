@@ -210,7 +210,18 @@ defmodule Kleened.Core.MetaData do
 
   @spec get_image(String.t()) :: %Schemas.Image{} | :not_found
   def get_image(id_or_nametag) do
-    Agent.get(__MODULE__, fn db -> get_image_transaction(db, id_or_nametag) end)
+    {name, tag} = Kleened.Core.Utils.decode_tagname(id_or_nametag)
+
+    query = """
+    SELECT id, image FROM images WHERE substr(id, 1, ?) = ?
+    UNION
+    SELECT id, image FROM images WHERE json_extract(image, '$.name') = ? AND json_extract(image, '$.tag') = ?
+    """
+
+    case sql(query, [String.length(id_or_nametag), id_or_nametag, name, tag]) do
+      [] -> :not_found
+      [row | _rest] -> row
+    end
   end
 
   @spec delete_image(String.t()) :: :ok
@@ -242,7 +253,7 @@ defmodule Kleened.Core.MetaData do
     query = """
     SELECT id, container FROM containers WHERE substr(id, 1, ?) = ?
     UNION
-    SELECT id, container FROM containers WHERE json_extract(container, '$.name')=?
+    SELECT id, container FROM containers WHERE json_extract(container, '$.name') = ?
     """
 
     case sql(query, [String.length(id_or_name), id_or_name, id_or_name]) do
@@ -366,26 +377,6 @@ defmodule Kleened.Core.MetaData do
     {id, json} = to_db(image)
     execute_sql(db, "INSERT OR REPLACE INTO images(id, image) VALUES (?, ?)", [id, json])
     :ok
-  end
-
-  @spec get_image_transaction(db_conn(), String.t()) :: [term()]
-  defp get_image_transaction(db, id_or_nametag) do
-    select_by_id = "SELECT id, image FROM images WHERE id = ?"
-    {name, tag} = Kleened.Core.Utils.decode_tagname(id_or_nametag)
-
-    select_by_nametag =
-      "SELECT id, image FROM images WHERE json_extract(image, '$.name') = ? AND json_extract(image, '$.tag') = ?"
-
-    result =
-      case execute_sql(db, select_by_id, [id_or_nametag]) do
-        [] -> execute_sql(db, select_by_nametag, [name, tag])
-        rows -> rows
-      end
-
-    case result do
-      [] -> :not_found
-      [image] -> image
-    end
   end
 
   @spec container_listing_transaction(db_conn()) :: [%{}]
