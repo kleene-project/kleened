@@ -26,7 +26,7 @@ defmodule TestHelper do
   import Plug.Conn
   import OpenApiSpex.TestAssertions
 
-  @kleened_host {0, 0, 0, 0, 0, 0, 0, 1}
+  @kleened_host "/var/run/kleened.sock"
   @opts Router.init([])
 
   def cleanup() do
@@ -808,11 +808,11 @@ defmodule TestHelper do
   end
 
   def initialize_websocket(endpoint) do
-    {:ok, conn} = Gun.open(@kleened_host, 8080, %{protocols: [:http]})
+    {:ok, conn} = Gun.open_unix(@kleened_host, %{protocols: [:http]})
 
-    {:ok, :http} = Gun.await_up(conn)
+    {:ok, _} = Gun.await_up(conn)
 
-    :gun.ws_upgrade(conn, :binary.bin_to_list(endpoint))
+    :gun.ws_upgrade(conn, :binary.bin_to_list(endpoint), [{<<"host">>, <<"localhost">>}])
 
     receive do
       {:gun_upgrade, ^conn, stream_ref, ["websocket"], _headers} ->

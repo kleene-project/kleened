@@ -772,7 +772,7 @@ defmodule Kleened.Core.Network do
     ip6_translation =
       for interface <- interfaces,
           do:
-            "rdr on #{interface} inet proto #{proto} from any to (#{interface}) port #{host_port} -> #{
+            "rdr on #{interface} inet6 proto #{proto} from any to (#{interface}) port #{host_port} -> #{
               ip6
             } port #{port}"
 
@@ -793,7 +793,7 @@ defmodule Kleened.Core.Network do
 
     ip4_port_pass =
       Enum.map(interfaces, fn interface ->
-        "pass quick on #{interface} proto #{protocol} from any to #{ip4} port #{port}"
+        "pass quick on #{interface} inet proto #{protocol} from any to #{ip4} port #{port}"
       end) ++
         [
           "pass quick on $kleenet_network_interfaces inet proto tcp from any to #{ip4} port #{
@@ -803,10 +803,10 @@ defmodule Kleened.Core.Network do
 
     ip6_port_pass =
       Enum.map(interfaces, fn interface ->
-        "pass quick on #{interface} proto #{protocol} from any to #{ip6} port #{port}"
+        "pass quick on #{interface} inet6 proto #{protocol} from any to #{ip6} port #{port}"
       end) ++
         [
-          "pass quick on $kleenet_network_interfaces inet proto tcp from any to #{ip6} port #{
+          "pass quick on $kleenet_network_interfaces inet6 proto tcp from any to #{ip6} port #{
             port
           }"
         ]
@@ -1072,7 +1072,7 @@ defmodule Kleened.Core.Network do
       |> Enum.filter(&(&1.epair != nil and &1.epair != ""))
       |> Enum.map(&"#{&1.epair}a")
 
-    all_interfaces = Enum.join([network.interface | epairs], ", ")
+    all_interfaces = Enum.join([network.interface, "lo0" | epairs], ", ")
 
     "#{prefix}_all_interfaces=\"{#{all_interfaces}}\""
   end
@@ -1083,8 +1083,9 @@ defmodule Kleened.Core.Network do
         []
 
       _ ->
-        interfaces = Enum.map(networks, & &1.interface)
-        ["kleenet_network_interfaces=\"{#{Enum.join(interfaces, ",")}}\""]
+        interfaces = Enum.map(networks, & &1.interface) |> Enum.join(",")
+
+        ["kleenet_network_interfaces=\"{lo0, #{interfaces}}\""]
     end
   end
 
@@ -1185,7 +1186,7 @@ defmodule Kleened.Core.Network do
         :ipv6 -> "Internet6"
       end
 
-    {output_json, 0} = OS.cmd(["netstat", "--libxo", "json", "-rn"])
+    {output_json, 0} = OS.cmd(["netstat", "--libxo", "json", "-rn"], %{suppress_logging: true})
     {:ok, output} = Jason.decode(output_json)
     routing_table = output["statistics"]["route-information"]["route-table"]["rt-family"]
 

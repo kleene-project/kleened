@@ -2,23 +2,28 @@ defmodule Kleened.Core.OS do
   require Logger
 
   @spec cmd([String.t()], %{}) :: {String.t(), integer()}
-  def cmd([executable | args] = command, options \\ %{suppress_warning: false}) do
+  def cmd(
+        [executable | args] = command,
+        options \\ %{}
+      ) do
+    suppress_warning = Map.get(options, :suppress_warning, false)
+    suppress_logging = Map.get(options, :suppress_logging, false)
     {stdout, exit_code} = return_value = System.cmd(executable, args, stderr_to_stdout: true)
 
-    case {exit_code, options} do
-      {_, %{suppress_warning: false}} when exit_code != 0 ->
-        Logger.warning(
-          "'#{Enum.join(command, " ")}' executed with exit-code #{exit_code}: \"#{
-            String.trim(stdout)
-          }\""
-        )
+    if not suppress_warning and exit_code != 0 do
+      Logger.warning(
+        "'#{Enum.join(command, " ")}' executed with exit-code #{exit_code}: \"#{
+          String.trim(stdout)
+        }\""
+      )
+    end
 
-      _ ->
-        Logger.debug(
-          "'#{Enum.join(command, " ")}' executed with exit-code #{exit_code}: \"#{
-            String.trim(stdout)
-          }\""
-        )
+    if not suppress_logging do
+      Logger.debug(
+        "'#{Enum.join(command, " ")}' executed with exit-code #{exit_code}: \"#{
+          String.trim(stdout)
+        }\""
+      )
     end
 
     return_value

@@ -63,8 +63,8 @@ defmodule NetworkTest do
                %Schemas.EndPoint{
                  epair: nil,
                  ip_address: "172.19.1.1",
-                 ip_address6: "",
-                 network_id: "loopback_net"
+                 network_id: "loopback_net",
+                 ip_address6: ""
                }
              ]
            } = TestHelper.container_inspect(container_id)
@@ -879,6 +879,7 @@ defmodule NetworkTest do
     })
 
     # Bridge
+
     inter_container_connectivity_test(%{
       network: %{
         name: "testnet2",
