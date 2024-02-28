@@ -8,7 +8,7 @@ defmodule Kleened.Core.Container do
   alias __MODULE__, as: Container
 
   require Logger
-  alias Kleened.Core.{Config, Const, MetaData, Mount, Network, Utils, OS}
+  alias Kleened.Core.{Config, Const, MetaData, Mount, Network, Utils, OS, FreeBSD, ZFS}
   alias Kleened.API.Schemas
 
   @type t() :: %Schemas.Container{}
@@ -59,8 +59,8 @@ defmodule Kleened.Core.Container do
   @spec stop(id_or_name()) :: {:ok, String.t()} | {:error, String.t()}
   def stop(id_or_name) do
     case MetaData.get_container(id_or_name) do
-      %Schemas.Container{id: container_id} ->
-        stop_container(container_id)
+      %Schemas.Container{} = container ->
+        stop_container(container)
 
       :not_found ->
         {:error, "container not found"}
@@ -358,13 +358,16 @@ defmodule Kleened.Core.Container do
   end
 
   @spec stop_container(%State{}) :: {:ok, String.t()} | {:error, String.t()}
-  def stop_container(container_id) do
+  defp stop_container(%Schemas.Container{id: container_id, dataset: dataset}) do
     case Utils.is_container_running?(container_id) do
       true ->
         Logger.debug("Shutting down jail #{container_id}")
 
         {output, exit_code} =
           System.cmd("/usr/sbin/jail", ["-r", container_id], stderr_to_stdout: true)
+
+        mountpoint = ZFS.mountpoint(dataset)
+        FreeBSD.clear_devfs(mountpoint)
 
         case {output, exit_code} do
           {output, 0} ->
@@ -384,7 +387,7 @@ defmodule Kleened.Core.Container do
 
   @spec list_([list_containers_opts()]) :: [%{}]
   defp list_(options) do
-    active_jails = Map.new(running_jails())
+    active_jails = Map.new(FreeBSD.running_jails())
 
     containers =
       Enum.map(
@@ -426,11 +429,5 @@ defmodule Kleened.Core.Container do
 
   defp create_mounts(_container, []) do
     :ok
-  end
-
-  defp running_jails() do
-    {jails_json, 0} = System.cmd("jls", ["-v", "--libxo=json"], stderr_to_stdout: true)
-    {:ok, jails} = Jason.decode(jails_json)
-    Enum.map(jails["jail-information"]["jail"], &{&1["name"], &1["jid"]})
   end
 end

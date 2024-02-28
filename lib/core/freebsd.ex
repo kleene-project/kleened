@@ -20,6 +20,12 @@ defmodule Kleened.Core.FreeBSD do
     :ok
   end
 
+  def get_interface_addresses(interface_name) do
+    {output_json, 0} = OS.cmd(~w"/usr/bin/netstat --libxo json -I #{interface_name}")
+    %{"statistics" => %{"interface" => addresses}} = Jason.decode!(output_json)
+    addresses
+  end
+
   def create_epair() do
     case OS.cmd(~w"/sbin/ifconfig epair create") do
       {epair_a_raw, 0} ->
@@ -70,5 +76,22 @@ defmodule Kleened.Core.FreeBSD do
         Logger.warn("could not destroy #{epair}b: #{error_msg}")
         {:error, error_msg}
     end
+  end
+
+  def clear_devfs(mountpoint) do
+    devfs_mountpoint = "#{mountpoint}/dev"
+    {output_json, 0} = OS.cmd(~w"mount --libxo json -t devfs")
+    %{"mount" => %{"mounted" => devfs_mounts}} = Jason.decode!(output_json)
+
+    devfs_mounts
+    |> Enum.map(fn %{"node" => devfs_mountpoint} -> devfs_mountpoint end)
+    |> Enum.filter(&(devfs_mountpoint == &1))
+    |> Enum.map(&OS.cmd(["/sbin/umount", &1]))
+  end
+
+  def running_jails() do
+    {jails_json, 0} = System.cmd("jls", ["-v", "--libxo=json"], stderr_to_stdout: true)
+    {:ok, jails} = Jason.decode(jails_json)
+    Enum.map(jails["jail-information"]["jail"], &{&1["name"], &1["jid"]})
   end
 end

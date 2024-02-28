@@ -7,11 +7,12 @@ defmodule VolumeTest do
 
   @moduletag :capture_log
 
-  setup do
+  setup %{host_state: state} do
     TestHelper.cleanup()
 
     on_exit(fn ->
       Logger.info("Cleaning up after test...")
+      TestHelper.compare_to_baseline_environment(state)
       TestHelper.cleanup()
     end)
 
@@ -55,6 +56,7 @@ defmodule VolumeTest do
     response = TestHelper.volume_inspect("test-notexist")
     assert response.status == 404
     response = TestHelper.volume_inspect(volume.name)
+    TestHelper.volume_remove(api_spec, volume.name)
     assert response.status == 200
     result = Jason.decode!(response.resp_body, [{:keys, :atoms}])
     assert %{volume: %{name: "test-inspect"}} = result
@@ -91,6 +93,7 @@ defmodule VolumeTest do
     {:ok, _mount} = Mount.create(container, mount_config)
     assert ["prunevol2"] = TestHelper.volume_prune(api_spec)
     assert [%{name: "prunevol1"}] = TestHelper.volume_list(api_spec)
+    TestHelper.volume_remove(api_spec, volume1.name)
     Container.remove(id)
   end
 end

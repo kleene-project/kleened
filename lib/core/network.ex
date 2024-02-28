@@ -1157,11 +1157,9 @@ defmodule Kleened.Core.Network do
   end
 
   def interface_exists(kleene_if) do
-    {json, 0} = System.cmd("netstat", ["--libxo", "json", "-I", kleene_if])
-
-    case Jason.decode(json) do
-      {:ok, %{"statistics" => %{"interface" => []}}} -> false
-      {:ok, %{"statistics" => %{"interface" => _if_stats}}} -> true
+    case FreeBSD.get_interface_addresses(kleene_if) do
+      [] -> false
+      _if_stats -> true
     end
   end
 
@@ -1346,8 +1344,7 @@ defmodule Kleened.Core.Network do
   end
 
   defp ips_on_interface(interface, protocol) do
-    {output_json, 0} = System.cmd("netstat", ["--libxo", "json", "-I", interface])
-    %{"statistics" => %{"interface" => addresses}} = Jason.decode!(output_json)
+    addresses = FreeBSD.get_interface_addresses(interface)
     extract_ips(addresses, protocol)
   end
 

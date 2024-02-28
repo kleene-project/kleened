@@ -1,19 +1,19 @@
 defmodule ImageTest do
   use Kleened.Test.ConnCase
-  alias Kleened.Test.TestImage
-  alias Kleened.Core.{Config, MetaData, ZFS, OS, Container}
+  alias Kleened.Core.{Config, MetaData, ZFS, OS, Container, FreeBSD}
   alias Kleened.API.Schemas
   alias Schemas.WebSocketMessage, as: Message
 
   require Logger
   @moduletag :capture_log
 
-  setup do
+  setup %{host_state: state} do
     TestHelper.cleanup()
 
     on_exit(fn ->
       Logger.info("Cleaning up after test...")
       TestHelper.cleanup()
+      TestHelper.compare_to_baseline_environment(state)
     end)
 
     :ok
@@ -222,7 +222,7 @@ defmodule ImageTest do
     TestHelper.image_prune(api_spec, true)
     assert [] == MetaData.list_images()
 
-    TestImage.create_test_base_image()
+    Kleened.Test.Utils.create_test_base_image()
     base_image = MetaData.get_image("FreeBSD:testing")
 
     # Image with no children and a tag
@@ -342,6 +342,7 @@ defmodule ImageTest do
     mountpoint = image_mountpoint(image)
     assert File.read(Path.join(mountpoint, "/testdir/testfile")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "/home/test.txt")) == {:ok, "lol\n"}
+    remove_test_context(context)
   end
 
   test "verify 'WORKDIR' behaviour: Relative path" do
@@ -371,6 +372,7 @@ defmodule ImageTest do
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
     {_image, build_log} = TestHelper.image_valid_build(config)
     assert expected_log == build_log
+    remove_test_context(context)
   end
 
   test "verify 'WORKDIR' works with 'COPY'" do
@@ -395,6 +397,7 @@ defmodule ImageTest do
     {_, _, output} = TestHelper.container_valid_run(%{name: "workdir_copy", image: "test:latest"})
 
     assert ["lol\n"] == output
+    remove_test_context(context)
   end
 
   test "verify 'WORKDIR' works with 'CMD'" do
@@ -418,6 +421,7 @@ defmodule ImageTest do
     {_, _, output} = TestHelper.container_valid_run(%{name: "workdir_cmd", image: "test:latest"})
 
     assert ["/etc\n"] == output
+    remove_test_context(context)
   end
 
   test "create an image with a 'COPY' instruction" do
@@ -439,6 +443,7 @@ defmodule ImageTest do
     mountpoint = image_mountpoint(image)
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert MetaData.list_containers() == []
+    remove_test_context(context)
   end
 
   test "create an image with a 'COPY' instruction where <dest> does exist yet" do
@@ -460,6 +465,7 @@ defmodule ImageTest do
     mountpoint = image_mountpoint(image)
     assert File.read(Path.join(mountpoint, "root/lol/test.txt")) == {:ok, "lol\n"}
     assert MetaData.list_containers() == []
+    remove_test_context(context)
   end
 
   test "create an image with a 'COPY' instruction where <dest> is a file" do
@@ -482,6 +488,7 @@ defmodule ImageTest do
     mountpoint = image_mountpoint(image)
     assert File.read(Path.join(mountpoint, "root/lol/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
+    remove_test_context(context)
   end
 
   test "create an image with a wildcard-expandable 'COPY' instruction" do
@@ -504,6 +511,7 @@ defmodule ImageTest do
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
     assert File.read(Path.join(mountpoint, "root/test2.txt")) == {:ok, "lel\n"}
     assert MetaData.list_containers() == []
+    remove_test_context(context)
   end
 
   test "create an image with a 'COPY' instruction using symlinks" do
@@ -527,6 +535,7 @@ defmodule ImageTest do
     mountpoint = image_mountpoint(image)
     # we cannot check the symbolic link from the host:
     assert File.read(Path.join(mountpoint, "etc/testdir/test.txt")) == {:ok, "lol\n"}
+    remove_test_context(context)
   end
 
   test "create an image with a 'CMD' instruction", %{api_spec: api_spec} do
@@ -597,6 +606,24 @@ defmodule ImageTest do
       })
 
     assert Enum.sort(image.env) == ["TEST=$5$2Fun7BK4thgtd4ao$j1kidg9P"]
+  end
+
+  test "verify that a RUN that keeps the jail alive will not affect image creation" do
+    dockerfile = """
+    FROM FreeBSD:testing
+    RUN service sshd onestart
+    """
+
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
+
+    {_image, _output} =
+      TestHelper.image_valid_build(%{
+        context: @tmp_context,
+        dockerfile: @tmp_dockerfile,
+        tag: "test:latest"
+      })
+
+    assert FreeBSD.running_jails() == []
   end
 
   test "verify that RUN instructions uses the ENV variables set earlier in the Dockerfile" do
@@ -888,6 +915,7 @@ defmodule ImageTest do
 
     assert [] == build_log
     assert File.read(Path.join(mountpoint, "root/test.txt")) == {:ok, "lol\n"}
+    remove_test_context(context)
   end
 
   test "declaring a ARG-variable a second time overrides the first value" do
@@ -957,6 +985,7 @@ defmodule ImageTest do
     assert File.read(Path.join(mountpoint, "root/test_1.txt")) == {:ok, "lol1\n"}
     assert File.read(Path.join(mountpoint, "root/test_2.txt")) == {:ok, "lol2\n"}
     assert MetaData.list_containers() == []
+    remove_test_context(context)
   end
 
   test "building an image quietly" do
@@ -981,6 +1010,30 @@ defmodule ImageTest do
       })
 
     assert build_log == []
+    remove_test_context(context)
+  end
+
+  test "building an image with a few empty lines in the Dockerfile" do
+    dockerfile = """
+    FROM FreeBSD:testing
+
+
+    RUN echo "testing"
+    """
+
+    context = create_test_context("test_image_builder_quiet")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    {_image, build_log} =
+      TestHelper.image_valid_build(%{
+        context: context,
+        dockerfile: @tmp_dockerfile,
+        quiet: true,
+        tag: "test:latest"
+      })
+
+    assert build_log == []
+    remove_test_context(context)
   end
 
   test "creating a container using a snapshot from an image-build" do
@@ -1037,6 +1090,7 @@ defmodule ImageTest do
       })
 
     assert output == ["some text"]
+    remove_test_context(context)
   end
 
   test "creating a container using a snapshot from a failed image-build" do
@@ -1083,6 +1137,8 @@ defmodule ImageTest do
            cat: /etc/test2.txt: No such file or directory
            jail: /usr/bin/env /bin/cat /etc/test2.txt: failed
            """
+
+    remove_test_context(context)
   end
 
   # The mini-jail userland used for the 'fetch' and 'zfs' image creation tests
@@ -1208,6 +1264,8 @@ defmodule ImageTest do
 
     assert last_log_entry(build_log) ==
              "The command '/bin/sh -c ls notexist' returned a non-zero code: 1"
+
+    remove_test_context(context)
   end
 
   test "image-build stops prematurely from non-zero exitcode but creates the image anyway", %{
@@ -1243,6 +1301,7 @@ defmodule ImageTest do
     {_cont, exec_id} = TestHelper.container_start_attached(api_spec, config)
     assert_receive {:container, ^exec_id, {:jail_output, "test\n"}}
     assert_receive {:container, ^exec_id, {:shutdown, {:jail_stopped, 0}}}
+    remove_test_context(context)
   end
 
   test "build with 'cleanup: false': No 'failed image' created if build crashed efore any snapshots have been taken" do
@@ -1254,18 +1313,19 @@ defmodule ImageTest do
     context = create_test_context("test_image_run_nonzero_exitcode")
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
-    {:failed_build, "a0903eeaf1af",
-     ["Step 1/2 : FROM nonexisting", "error: no such image 'nonexisting'"]} ==
-      TestHelper.image_invalid_build(%{
-        context: context,
-        dockerfile: @tmp_dockerfile,
-        quiet: false,
-        cleanup: false,
-        tag: "test-nocleanup:latest"
-      })
+    assert {:failed_build, _image_id,
+            ["Step 1/2 : FROM nonexisting", "error: no such image 'nonexisting'"]} =
+             TestHelper.image_invalid_build(%{
+               context: context,
+               dockerfile: @tmp_dockerfile,
+               quiet: false,
+               cleanup: false,
+               tag: "test-nocleanup:latest"
+             })
 
     # Only the test-image remains
     assert length(MetaData.list_images()) == 1
+    remove_test_context(context)
   end
 
   test "try building an image from a invalid Dockerfile (no linebreak)" do
@@ -1287,6 +1347,8 @@ defmodule ImageTest do
 
     assert last_log_entry(build_log) ==
              "invalid instruction:   \"this should faile because we omitted the '\\' above\""
+
+    remove_test_context(context)
   end
 
   test "try building an image with an invalid image name in the FROM-instruction" do
@@ -1327,6 +1389,8 @@ defmodule ImageTest do
              "Step 2/2 : ENV TEST=\"something\" # You cannot make comments like this.",
              "failed environment substition of: ENV TEST=\"something\" # You cannot make comments like this."
            ]
+
+    remove_test_context(context)
   end
 
   defp baseimage_run_config(image_id) do
@@ -1384,6 +1448,10 @@ defmodule ImageTest do
       end)
 
     snapshot
+  end
+
+  def remove_test_context(<<"/", dataset::binary>>) do
+    Kleened.Core.ZFS.cmd("destroy #{dataset}")
   end
 
   defp create_test_context(name) do

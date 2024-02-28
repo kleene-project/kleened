@@ -110,7 +110,7 @@ defmodule Kleened.Core.Exec do
 
   def handle_call({:stop, %{stop_container: true}}, _from, state) do
     Logger.debug("#{state.exec_id}: stopping container")
-    reply = Container.stop_container(state.container.id)
+    reply = Container.stop(state.container.id)
     await_exit_and_shutdown(reply, state)
   end
 
@@ -301,8 +301,7 @@ defmodule Kleened.Core.Exec do
     # If the jail stops because there jailed process stops (i.e. 'jail -c <etc> /bin/sleep 10') then devfs is NOT removed.
     # A race condition can also occur such that "jail -r" does not unmount before this call to mount.
     mountpoint = ZFS.mountpoint(dataset)
-    {output, _exitcode} = OS.cmd(["mount", "-t", "devfs"])
-    output |> String.split("\n") |> Enum.map(&umount_container_devfs(&1, mountpoint))
+    FreeBSD.clear_devfs(mountpoint)
   end
 
   defp jexec_container(
@@ -530,16 +529,5 @@ defmodule Kleened.Core.Exec do
       Logger.debug("relaying from #{inspect(state.port)} to #{inspect(x)}: #{inspect(msg)}")
       Process.send(x, wrapped_msg, [])
     end)
-  end
-
-  defp umount_container_devfs(line, mountpoint) do
-    case String.contains?(line, mountpoint) do
-      true ->
-        devfs_path = Path.join(mountpoint, "dev")
-        OS.cmd(["/sbin/umount", devfs_path])
-
-      _ ->
-        :ok
-    end
   end
 end

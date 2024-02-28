@@ -1,7 +1,6 @@
 defmodule MetaDataTest do
   require Logger
   use ExUnit.Case
-  alias Kleened.Test.TestImage
   alias Kleened.Core.Config
   alias Kleened.API.Schemas
   import Kleened.Core.MetaData
@@ -190,7 +189,7 @@ defmodule MetaDataTest do
     assert not file_exists?(db_file)
     Application.start(:kleened)
     assert file_exists?(db_file)
-    TestImage.create_test_base_image()
+    Kleened.Test.Utils.create_test_base_image()
   end
 
   defp dbfile() do

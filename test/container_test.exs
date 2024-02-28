@@ -6,12 +6,13 @@ defmodule ContainerTest do
 
   @moduletag :capture_log
 
-  setup do
+  setup %{host_state: state} do
     TestHelper.cleanup()
 
     on_exit(fn ->
       Logger.info("Cleaning up after test...")
       TestHelper.cleanup()
+      TestHelper.compare_to_baseline_environment(state)
     end)
 
     :ok

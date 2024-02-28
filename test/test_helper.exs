@@ -1,5 +1,4 @@
 alias OpenApiSpex.Cast
-alias Kleened.Test.TestImage
 alias Kleened.Core.{Const, Exec, Image, Container, Volume, Network, MetaData, ZFS, OS}
 alias :gun, as: Gun
 alias Kleened.API.Router
@@ -18,7 +17,7 @@ ExUnit.configure(
   max_failures: 1
 )
 
-TestImage.create_test_base_image()
+Kleened.Test.Utils.create_test_base_image()
 
 defmodule TestHelper do
   import ExUnit.Assertions
@@ -29,8 +28,34 @@ defmodule TestHelper do
   @kleened_host "/var/run/kleened.sock"
   @opts Router.init([])
 
+  def compare_to_baseline_environment(%{
+        addresses: before_addresses,
+        mount_devfs: before_mount_devfs,
+        datasets: before_datasets,
+        test_image_dataset: before_test_image
+      }) do
+    %{
+      addresses: after_addresses,
+      mount_devfs: after_mount_devfs,
+      datasets: after_datasets
+    } = Kleened.Test.Utils.get_host_state()
+
+    %Schemas.Image{dataset: after_test_image} = MetaData.get_image("FreeBSD:testing")
+    test_images = [before_test_image, after_test_image]
+
+    assert before_addresses == after_addresses
+    assert before_mount_devfs == after_mount_devfs
+
+    assert ignore_test_images(test_images, before_datasets) ==
+             ignore_test_images(test_images, after_datasets)
+  end
+
+  def ignore_test_images(test_images, datasets) do
+    test_images = MapSet.new(test_images)
+    MapSet.difference(datasets, test_images)
+  end
+
   def cleanup() do
-    Logger.info("Cleaning up after test...")
     runnning_containers = Container.list(all: false)
 
     case length(runnning_containers) do
@@ -59,7 +84,7 @@ defmodule TestHelper do
   end
 
   def setup() do
-    TestImage.create_test_base_image()
+    Kleened.Test.Utils.create_test_base_image()
   end
 
   def container_valid_run(config) do
