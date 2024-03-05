@@ -335,10 +335,17 @@ defmodule Kleened.Core.Exec do
     network_config = setup_connectivity_configuration(container)
     path = ZFS.mountpoint(dataset)
 
+    # Since booleans can have two different forms:
+    # - w/o 'no' prefix ['nopersist', 'exec.noclean']
+    # - <param>=true/false ['persist=false', 'exec.clean=false']
+    # 'paramtype' can both be a list of two or one variant(s)
+    default_exec_stop = "exec.stop=\"/bin/sh /etc/rc.shutdown\""
+
     jail_param =
       jail_param
       |> update_jailparam_if_not_exist(["exec.jail_user"], "exec.jail_user=#{user}")
       |> update_jailparam_if_not_exist(["exec.clean", "exec.noclean"], "exec.clean=true")
+      |> update_jailparam_if_not_exist(["exec.stop", "exec.nostop"], default_exec_stop)
       |> update_jailparam_if_not_exist(["mount.devfs", "mount.nodevfs"], "mount.devfs=true")
 
     args =
@@ -362,10 +369,6 @@ defmodule Kleened.Core.Exec do
   end
 
   defp if_paramtype_exist?([jail_param | rest], paramtype) do
-    # Since booleans can have two different forms:
-    # - with/without 'no' prefix ('nopersist', 'exec.noclean')
-    # - <param>=true/false ('persist=false', 'exec.clean=false')
-    # 'parmatype' can both be a list of two or one variant(s)
     case paramtype
          |> Enum.map(&(String.slice(jail_param, 0, String.length(&1)) == &1))
          |> Enum.any?() do

@@ -8,7 +8,7 @@ shell:
 	iex -S mix
 
 test-shell:
-	MIX_ENV=test mix run -e "Kleened.Test.TestImage.create_test_base_image()"
+	MIX_ENV=test mix run -e "Kleened.Test.Utils.create_test_base_image()"
 	MIX_ENV=test iex -S mix
 
 clear-kleened:

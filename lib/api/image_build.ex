@@ -60,8 +60,8 @@ defmodule Kleened.API.ImageBuild do
       {[{:text, Utils.starting_message(image_id)}], %{handshaking: false, image_id: image_id}}
     else
       {:error, [openapispex_error | _rest]} ->
-        Logger.notice("Error casting OpenAPI schema. Closing websocket.")
         error_message = Cast.Error.message(openapispex_error)
+        Logger.notice("Error casting OpenAPI schema. #{inspect(error_message)}. Closing websocke")
         error = Utils.error_message("invalid parameters")
         {[{:text, error_message}, {:close, 1002, error}], state}
 
