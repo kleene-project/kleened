@@ -106,7 +106,7 @@ defmodule Kleened.API.ExecStartWebSocket do
 
   def websocket_handle(msg, state) do
     # Ignore unknown messages
-    Logger.warn("unknown message received: #{inspect(msg)}")
+    Logger.warning("unknown message received: #{inspect(msg)}")
     {:ok, state}
   end
 
@@ -132,7 +132,7 @@ defmodule Kleened.API.ExecStartWebSocket do
   end
 
   def websocket_info(message, state) do
-    Logger.warn("unknown message received: #{inspect(message)}")
+    Logger.warning("unknown message received: #{inspect(message)}")
     {:ok, state}
   end
 

@@ -530,7 +530,7 @@ defmodule Kleened.Core.Network do
   end
 
   defp connect_with_driver(container, network, _config) do
-    Logger.warn(
+    Logger.warning(
       "Unknown error occured when connecting container '#{container.id}' to network '#{network.id}'"
     )
 
@@ -563,7 +563,7 @@ defmodule Kleened.Core.Network do
           MetaData.remove_endpoint_config(container.id, network.id)
 
         true ->
-          Logger.warn("this should not happen!")
+          Logger.warning("this should not happen!")
           {:error, "unknown error occured"}
       end
     else
@@ -1095,7 +1095,7 @@ defmodule Kleened.Core.Network do
         ["kleenet_host_gw_if=\"#{host_gw}\""]
 
       {:error, _} ->
-        Logger.warn(
+        Logger.warning(
           "Could not detect any gateway interface on the host. Connectivity might not work."
         )
 
@@ -1251,7 +1251,7 @@ defmodule Kleened.Core.Network do
         ip_addrs
 
       {error_msg, _error_code} ->
-        Logger.warn("Could not retrieve jail-info on jail #{container_id}: '#{error_msg}'")
+        Logger.warning("Could not retrieve jail-info on jail #{container_id}: '#{error_msg}'")
         []
     end
   end

@@ -165,7 +165,7 @@ defmodule Kleened.Core.Exec do
   end
 
   def handle_info(unknown_msg, state) do
-    Logger.warn("Unknown message: #{inspect(unknown_msg)}")
+    Logger.warning("Unknown message: #{inspect(unknown_msg)}")
     {:noreply, state}
   end
 
@@ -184,7 +184,7 @@ defmodule Kleened.Core.Exec do
         {:ok, "succesfully sent termination signal to executable"}
 
       {output, non_zero} ->
-        Logger.warn(
+        Logger.warning(
           "Could not kill process, kill exited with code #{non_zero} and output: #{output}"
         )
 

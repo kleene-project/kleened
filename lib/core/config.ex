@@ -312,12 +312,12 @@ defmodule Kleened.Core.Config do
             config
 
           :no ->
-            Logger.warn("config file did not contain a valid configuration")
+            Logger.warning("config file did not contain a valid configuration")
             %{}
         end
 
       other_msg ->
-        Logger.warn(
+        Logger.warning(
           "an error occurred while trying to open config file #{@default_config_path}: #{
             inspect(other_msg)
           }"

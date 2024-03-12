@@ -12,7 +12,7 @@ defmodule Kleened.Core.FreeBSD do
         OS.cmd(~w"/sbin/sysctl net.inet.ip.forwarding=1")
 
       {_unknown_output, _exitcode} ->
-        Logger.warn(
+        Logger.warning(
           "could not understand the output from 'sysctl' when inspecting ip forwarding configuration"
         )
     end
@@ -32,7 +32,7 @@ defmodule Kleened.Core.FreeBSD do
         String.slice(epair_a_raw, 0, String.length(epair_a_raw) - 2)
 
       {error_msg, _nonzero} ->
-        Logger.warn("could not create anew epair, ifconfig failed with: #{error_msg}")
+        Logger.warning("could not create anew epair, ifconfig failed with: #{error_msg}")
         nil
     end
   end
@@ -47,7 +47,7 @@ defmodule Kleened.Core.FreeBSD do
         destroy_bridged_epair(epair, bridge)
 
       {error_msg, _exitcode} ->
-        Logger.warn(
+        Logger.warning(
           "could not reclaim interface #{epair}b from jail #{container_id}: #{error_msg}"
         )
 
@@ -65,7 +65,7 @@ defmodule Kleened.Core.FreeBSD do
         :ok
 
       {error_msg, _exitcode} ->
-        Logger.warn("could not remove interface #{epair}a from bridge: #{error_msg}")
+        Logger.warning("could not remove interface #{epair}a from bridge: #{error_msg}")
     end
 
     case OS.cmd(~w"ifconfig #{epair}a destroy") do
@@ -73,7 +73,7 @@ defmodule Kleened.Core.FreeBSD do
         :ok
 
       {error_msg, _exitcode} ->
-        Logger.warn("could not destroy #{epair}b: #{error_msg}")
+        Logger.warning("could not destroy #{epair}b: #{error_msg}")
         {:error, error_msg}
     end
   end

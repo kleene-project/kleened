@@ -40,7 +40,7 @@ defmodule Kleened.Core.ZFS do
   def mountpoint(dataset) do
     case info(dataset) do
       %{mountpoint: nil} ->
-        Logger.warn("No mountpoint found for dataset '#{dataset}'")
+        Logger.warning("No mountpoint found for dataset '#{dataset}'")
         ""
 
       %{mountpoint: mountpoint} ->

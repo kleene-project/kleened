@@ -94,7 +94,7 @@ defmodule Kleened.API.ImageCreate do
   end
 
   def websocket_info(unknown_msg, state) do
-    Logger.warn("unknown message received:received:  #{inspect(unknown_msg)}")
+    Logger.warning("unknown message received:received:  #{inspect(unknown_msg)}")
     {:ok, state}
   end
 end

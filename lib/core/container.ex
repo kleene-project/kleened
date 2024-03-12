@@ -137,7 +137,7 @@ defmodule Kleened.Core.Container do
           host_gw
 
         {:error, _reason} ->
-          Logger.warn(
+          Logger.warning(
             "Could not detect any gateway interface on the host so connectivity might not work."
           )
 
@@ -375,7 +375,7 @@ defmodule Kleened.Core.Container do
             {:ok, container_id}
 
           {output, _} ->
-            Logger.warn("Stopped jail #{container_id} with exit code #{exit_code}: #{output}")
+            Logger.warning("Stopped jail #{container_id} with exit code #{exit_code}: #{output}")
             msg = "/usr/sbin/jail exited abnormally with exit code #{exit_code}: '#{output}'"
             {:error, msg}
         end
