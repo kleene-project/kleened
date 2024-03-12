@@ -1,0 +1,11 @@
+### KLEENED MACROS START ###
+<%= kleene_macros %>
+### KLEENED MACROS END #####
+
+### KLEENED TRANSLATION RULES START ###
+<%= kleene_translation %>
+### KLEENED TRANSLATION RULES END #####
+
+### KLEENED FILTERING RULES START #####
+<%= kleene_filtering %>
+### KLEENED FILTERING RULES END #######

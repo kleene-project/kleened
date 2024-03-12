@@ -29,27 +29,16 @@ erl_crash.dump
 *.o
 *.d
 
-# Ignore package tarball (built via "mix hex.build").
-jocker-*.tar
-
 # Ignore auto-generated test-files
 /tmp_dockerfile
 
 # Ignore vim-session files
 vim_*
 
-# Ignore cli-binary
-/jocker
-
-# Ignore sqlite database files
-*.sqlite
-
 # Ignore test data blobs
 test/data/minimal_testjail.txz
 
-# Ignore vagrant directory
-/.vagrant/
-
+# Ignore vscode directory
 /.vscode
 
 # Ignore comiled binary programs

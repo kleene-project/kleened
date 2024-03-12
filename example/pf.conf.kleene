@@ -12,12 +12,6 @@
 <%= kleene_translation %>
 ### KLEENED TRANSLATION RULES END #####
 
-# block everything
-#block log all
-
-# skip loopback interface(s)
-#set skip on lo0
-
 ### KLEENED FILTERING RULES START #####
 <%= kleene_filtering %>
 ### KLEENED FILTERING RULES END #######
