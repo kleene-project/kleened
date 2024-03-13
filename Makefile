@@ -7,15 +7,6 @@ test:
 shell:
 	iex -S mix
 
-test-shell:
-	MIX_ENV=test mix run -e "Kleened.Test.Utils.create_test_base_image()"
-	MIX_ENV=test iex -S mix
-
-clear-kleened:
-	zfs destroy -rf zroot/kleene
-	zfs create zroot/kleene
-	rm /var/run/kleened.*
-
 codecov:
 	MIX_ENV=test mix coveralls.html -o ./coveralls --max-failures 5
 
