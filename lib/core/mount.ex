@@ -13,7 +13,7 @@ defmodule Kleened.Core.Mount do
           %Schemas.MountPointConfig{}
         ) :: {:ok, %Schemas.MountPoint{}}
   def create(
-        container,
+        %Schemas.Container{dataset: dataset} = container,
         %Schemas.MountPointConfig{
           type: "volume",
           source: volume_name,
@@ -21,21 +21,32 @@ defmodule Kleened.Core.Mount do
           read_only: read_only
         }
       ) do
-    source =
+    volume =
       case MetaData.get_volume(volume_name) do
-        %Schemas.Volume{} = volume ->
-          volume.mountpoint
-
-        :not_found ->
-          volume = Volume.create(volume_name)
-          volume.mountpoint
+        %Schemas.Volume{} = volume -> volume
+        :not_found -> Volume.create(volume_name)
       end
 
-    case create_nullfs_mount(container, source, destination, read_only) do
-      {:ok, mountpoint} ->
-        mountpoint = %Schemas.MountPoint{mountpoint | type: "volume", source: volume_name}
-        MetaData.add_mount(mountpoint)
-        {:ok, mountpoint}
+    mountpoint = ZFS.mountpoint(dataset)
+    absolute_destination = Path.join(mountpoint, destination)
+
+    case create_directory(absolute_destination) do
+      :ok ->
+        case populate_volume_if_empty(absolute_destination, volume) do
+          :ok ->
+            case create_nullfs_mount(container, volume.mountpoint, destination, read_only) do
+              {:ok, mountpoint} ->
+                mountpoint = %Schemas.MountPoint{mountpoint | type: "volume", source: volume.name}
+                MetaData.add_mount(mountpoint)
+                {:ok, mountpoint}
+
+              {:error, reason} ->
+                {:error, reason}
+            end
+
+          {:error, reason} ->
+            {:error, reason}
+        end
 
       {:error, reason} ->
         {:error, reason}
@@ -55,14 +66,39 @@ defmodule Kleened.Core.Mount do
           read_only: read_only
         }
       ) do
-    case create_nullfs_mount(container, source, destination, read_only) do
-      {:ok, mountpoint} ->
-        mountpoint = %Schemas.MountPoint{mountpoint | type: "nullfs", source: source}
-        MetaData.add_mount(mountpoint)
-        {:ok, mountpoint}
+    mountpoint = ZFS.mountpoint(container.dataset)
+    absolute_destination = Path.join(mountpoint, destination)
+
+    case create_directory(absolute_destination) do
+      :ok ->
+        case create_nullfs_mount(container, source, destination, read_only) do
+          {:ok, mountpoint} ->
+            mountpoint = %Schemas.MountPoint{mountpoint | type: "nullfs", source: source}
+            MetaData.add_mount(mountpoint)
+            {:ok, mountpoint}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp populate_volume_if_empty(absolute_destination, volume) do
+    case OS.cmd(~w"/bin/ls -AB #{absolute_destination}") do
+      {"", 0} ->
+        :ok
+
+      {_nonempty, 0} ->
+        case OS.shell("/bin/cp -a #{absolute_destination}/* #{volume.mountpoint}") do
+          {_, 0} -> :ok
+          {output, _non_zero_exit} -> {:error, output}
+        end
+
+      {output, _non_zero_exit} ->
+        {:error, output}
     end
   end
 
@@ -103,28 +139,33 @@ defmodule Kleened.Core.Mount do
     mountpoint = ZFS.mountpoint(dataset)
     absolute_destination = Path.join(mountpoint, destination)
 
-    case OS.cmd(["/bin/mkdir", "-p", absolute_destination]) do
+    mount_cmd =
+      case read_only do
+        false -> ["/sbin/mount_nullfs", source, absolute_destination]
+        true -> ["/sbin/mount_nullfs", "-o", "ro", source, absolute_destination]
+      end
+
+    case OS.cmd(mount_cmd) do
       {"", 0} ->
-        mount_cmd =
-          case read_only do
-            false -> ["/sbin/mount_nullfs", source, absolute_destination]
-            true -> ["/sbin/mount_nullfs", "-o", "ro", source, absolute_destination]
-          end
+        mountpoint = %Schemas.MountPoint{
+          container_id: container_id,
+          destination: destination,
+          read_only: read_only
+        }
 
-        case OS.cmd(mount_cmd) do
-          {"", 0} ->
-            mountpoint = %Schemas.MountPoint{
-              container_id: container_id,
-              destination: destination,
-              read_only: read_only
-            }
+        {:ok, mountpoint}
 
-            {:ok, mountpoint}
+      {output, _nonzero_exitcode} ->
+        {:error, output}
+    end
+  end
 
-          {output, _nonzero_exitcode} ->
-            {:error, output}
-        end
+  defp create_directory(destination) do
+    case OS.cmd(["/bin/mkdir", "-p", destination]) do
+      {"", 0} ->
+        :ok
 
+      # We can catch a specific error to determine if 'destination' is a file
       {output, _nonzero_exitcode} ->
         {:error, output}
     end

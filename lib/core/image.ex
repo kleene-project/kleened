@@ -273,10 +273,13 @@ defmodule Kleened.Core.Image do
     verify_instructions(rest)
   end
 
-  defp validate_image_reference(image) do
-    case Utils.decode_snapshot(image) do
+  defp validate_image_reference(image_ident) do
+    case Utils.decode_snapshot(image_ident) do
       {_nametag, ""} ->
-        :ok
+        case Kleened.Core.MetaData.get_image(image_ident) do
+          %Kleened.API.Schemas.Image{} = image -> {:ok, image}
+          :not_found -> {:error, "could not find image #{image_ident}"}
+        end
 
       {nametag, snapshot} ->
         case Kleened.Core.MetaData.get_image(nametag) do
@@ -288,7 +291,7 @@ defmodule Kleened.Core.Image do
                    "/sbin/zfs list -t snapshot -o name -H #{image.dataset} | grep #{snapshot}"
                  ) do
               {_, 0} ->
-                :ok
+                {:ok, image}
 
               {_, _non_zero_exitcode} ->
                 {:error, "invalid snapshot #{snapshot}"}
@@ -301,12 +304,13 @@ defmodule Kleened.Core.Image do
     Logger.info("Processing instruction: FROM #{image_ref}")
     state = send_status(line, state)
 
-    with {:ok, image} <- determine_parent_image(image_ref, state),
-         :ok <- validate_image_reference(image),
+    with {:ok, image_ident} <- determine_parent_image(image_ref, state),
+         {:ok, image} <- validate_image_reference(image_ident),
          {:ok, container} <-
            Kleened.Core.Container.create(state.image_id, %Schemas.ContainerConfig{
              state.build_config.container_config
-             | image: image
+             | image: image.id,
+               cmd: image.cmd
            }),
          :ok <- create_build_container_connectivity(container, state.build_config.networks) do
       new_state = update_state(%State{state | container: container})

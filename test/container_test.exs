@@ -1,7 +1,7 @@
 defmodule ContainerTest do
   require Logger
   use Kleened.Test.ConnCase
-  alias Kleened.Core.{Container, Exec, Utils, MetaData}
+  alias Kleened.Core.{Container, Exec, Utils, MetaData, OS}
   alias Kleened.API.Schemas
 
   @moduletag :capture_log
@@ -200,11 +200,10 @@ defmodule ContainerTest do
     assert Enum.join(output) == expected_output
   end
 
-  test "mounting volumes into a container", %{
+  test "mounting a volume into a container with rw permissions", %{
     api_spec: api_spec
   } do
     volume = TestHelper.volume_create(api_spec, "volume-mounting-test")
-
     mount_path = "/kleene_volume_testing"
 
     # RW mount
@@ -221,6 +220,14 @@ defmodule ContainerTest do
     assert File.read(file_path) == {:ok, ""}
     file_path = "/zroot/kleene/volumes/#{volume.name}/testing_mounts.txt"
     assert File.read(file_path) == {:ok, ""}
+    TestHelper.volume_remove(api_spec, volume.name)
+  end
+
+  test "mounting a volume into a container with read-only permissions", %{
+    api_spec: api_spec
+  } do
+    volume = TestHelper.volume_create(api_spec, "volume-mounting-test")
+    mount_path = "/kleene_volume_testing"
 
     # Read-only mount
     config = %{
@@ -239,6 +246,30 @@ defmodule ContainerTest do
     """
 
     assert Enum.join(output) == expected_output
+
+    TestHelper.volume_remove(api_spec, volume.name)
+  end
+
+  test "mounting an empty volume into a non-empty directory of the container", %{
+    api_spec: api_spec
+  } do
+    volume = TestHelper.volume_create(api_spec, "volume-populate-test")
+    mount_path = "/etc/defaults"
+
+    # RW mount
+    config = %{
+      name: "testcont",
+      cmd: ["/usr/bin/touch", "#{mount_path}/test_volume_mount"],
+      mounts: [%{type: "volume", source: volume.name, destination: mount_path}],
+      user: "root"
+    }
+
+    {_container_id, _, process_output} = TestHelper.container_valid_run(config)
+    assert process_output == []
+    {output, 0} = OS.cmd(~w"/bin/ls #{volume.mountpoint}")
+
+    assert output ==
+             "bluetooth.device.conf\ndevfs.rules\nperiodic.conf\nrc.conf\ntest_volume_mount\n"
 
     TestHelper.volume_remove(api_spec, volume.name)
   end
