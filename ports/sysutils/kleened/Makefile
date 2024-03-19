@@ -1,5 +1,3 @@
-# $FreeBSD$
-
 PORTNAME=		kleened
 PORTVERSION=	0.0.1
 DISTVERSIONPREFIX=	v
@@ -10,60 +8,75 @@ COMMENT=		Docker-inspired tool for container management in FreeBSD
 
 LICENSE=		BSD2CLAUSE
 
+BUILD_DEPENDS=	mix:lang/elixir rebar3:devel/rebar3 \
+	            ${LOCALBASE}/lib/elixir/lib/hex/ebin:devel/elixir-hex
+
+#RUN_DEPENDS=	erlc:lang/erlang
+
 USES=			ssl
-
-BUILD_DEPENDS=	elixir:lang/elixir rebar3:devel/rebar3 \
-				${LOCALBASE}/lib/elixir/lib/hex/lib/hex.ex:devel/elixir-hex
-
-#BUILD_DEPENDS=	elixir:lang/elixir rebar3:erlang-rebar3_hex \
-#				${LOCALBASE}/lib/elixir/lib/hex/lib/hex.ex:devel/elixir-hex
-
-RUN_DEPENDS=	erlc:lang/erlang
-
+USE_GITHUB=		yes
+GH_TUPLE=		lgandersen:jocker:2147a36:DEFAULT
 USE_RC_SUBR=	kleened
 
-USE_GITHUB=		yes
+MIX_TARGET=			release
+ELIXIR_LOCALE=		en_US.UTF-8
+ELIXIR_APP_NAME=	${PORTNAME}
+MIX_ENV=			MIX_REBAR3=${LOCALBASE}/bin/rebar3 \
+					LANG=${ELIXIR_LOCALE} \
+					LC_ALL=${ELIXIR_LOCALE} \
+					MIX_PATH=${LOCALBASE}/lib/elixir/lib/hex/ebin \
+					MIX_HOME=${LOCALBASE}/bin/mix
+MIX_ENV_NAME=		prod
+MIX_CMD=			${LOCALBASE}/bin/mix
+MIX_COMPILE=		${SETENV} ${MIX_ENV} MIX_ENV=${MIX_ENV_NAME} ${MIX_CMD} ${MIX_TARGET}
 
-GH_TUPLE=       lgandersen:jocker:552de4c:DEFAULT
-
-MIX_TARGET=		release
-ELIXIR_APP_NAME?=	${PORTNAME}
-MIX_ENV?=
-ELIXIR_LOCALE?=		en_US.UTF-8
-MIX_ENV_NAME?=		prod
-MIX_CMD?=		${LOCALBASE}/bin/mix
-MIX_COMPILE?=		${SETENV} ${MIX_ENV} MIX_REBAR3=/usr/local/bin/rebar3 LANG=${ELIXIR_LOCALE} LC_ALL=${ELIXIR_LOCALE} MIX_ENV=${MIX_ENV_NAME} ${MIX_CMD} ${MIX_TARGET}
-
-ERTS_VSN=		erts-13.2.2.4
-CRYPTO_VSN=		crypto-5.1.4.1
-
-PLIST_SUB=	ERTS_VSN=${ERTS_VSN} CRYPTO_VSN=${CRYPTO_VSN}
-
-RELEASE_PATH=	${WRKSRC}/_build/prod/rel/kleened
+RELEASE_PATH=		${WRKSRC}/_build/prod/rel/kleened
 RELEASE_BINARIES=	escript dialyzer erlexec beam.smp heart dyn_erl to_erl \
 					erlc epmd run_erl typer inet_gethost erl_child_setup ct_run \
 					erl_call yielding_c_fun
 
+.include <bsd.port.pre.mk>
+
 do-build:
-	@cd ${WRKSRC} && ${SETENV} MIX_HOME=${LOCALBASE}/bin ${MIX_COMPILE}
+	@cd ${WRKSRC} && ${MIX_COMPILE}
 
 do-install:
-	${MKDIR} ${STAGEDIR}${PREFIX}/etc/kleened
-	${INSTALL_DATA} ${WRKSRC}/example/kleened_config.yaml ${STAGEDIR}${PREFIX}/etc/kleened/config.yaml
-	${INSTALL_DATA} ${WRKSRC}/example/pf.conf.kleene ${STAGEDIR}${PREFIX}/etc/kleened/
-	${INSTALL_PROGRAM} ${WRKSRC}/priv/bin/kleened_pty ${STAGEDIR}${PREFIX}/bin/kleened_pty
-	${MKDIR} ${STAGEDIR}${PREFIX}/lib/kleened/bin
-	${INSTALL_SCRIPT} ${WRKSRC}/_build/prod/rel/kleened/bin/kleened ${STAGEDIR}${PREFIX}/lib/kleened/bin/
-	cd ${RELEASE_PATH}/lib && ${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/lib/kleened/lib
-	cd ${RELEASE_PATH}/${ERTS_VSN}/bin && ${COPYTREE_BIN} . ${STAGEDIR}${PREFIX}/lib/kleened/${ERTS_VSN}/bin
-	cd ${RELEASE_PATH}/releases && ${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/lib/kleened/releases
-	${INSTALL_SCRIPT} ${RELEASE_PATH}/releases/0.0.1/elixir ${STAGEDIR}${PREFIX}/lib/kleened/releases/0.0.1/
-	${INSTALL_SCRIPT} ${RELEASE_PATH}/releases/0.0.1/iex ${STAGEDIR}${PREFIX}/lib/kleened/releases/0.0.1/
-	@${STRIP_CMD} ${STAGEDIR}${PREFIX}/lib/kleened/lib/${CRYPTO_VSN}/priv/lib/*.so
+	@${MKDIR} ${STAGEDIR}${PREFIX}/etc/kleened
+	@${INSTALL_DATA} ${WRKSRC}/example/kleened_config.yaml \
+		${STAGEDIR}${PREFIX}/etc/kleened/config.yaml
+	@${INSTALL_DATA} ${WRKSRC}/example/pf.conf.kleene \
+		${STAGEDIR}${PREFIX}/etc/kleened/
+	@${INSTALL_PROGRAM} ${WRKSRC}/priv/bin/kleened_pty \
+		${STAGEDIR}${PREFIX}/bin/kleened_pty
+	@${MKDIR} ${STAGEDIR}${PREFIX}/lib/kleened/bin
+	@${INSTALL_SCRIPT} ${WRKSRC}/_build/prod/rel/kleened/bin/kleened \
+		${STAGEDIR}${PREFIX}/lib/kleened/bin/
+	@cd ${RELEASE_PATH}/lib && \
+		${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/lib/kleened/lib
+	@cd ${RELEASE_PATH} && ERTS_DIR=$$(${FIND} erts-* -depth 1 -type d) && \
+		${COPYTREE_BIN} ./$$ERTS_DIR ${STAGEDIR}${PREFIX}/lib/kleened/
+	@cd ${RELEASE_PATH}/releases && \
+		${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/lib/kleened/releases
+	@cd ${RELEASE_PATH}/releases && \
+		${INSTALL_DATA} ${WRKSRC}/_build/prod/rel/kleened/releases/start_erl.data ${STAGEDIR}${PREFIX}/lib/kleened/releases/
+	@${INSTALL_SCRIPT} ${RELEASE_PATH}/releases/0.0.1/elixir \
+		${STAGEDIR}${PREFIX}/lib/kleened/releases/0.0.1/
+	@${INSTALL_SCRIPT} ${RELEASE_PATH}/releases/0.0.1/iex \
+		${STAGEDIR}${PREFIX}/lib/kleened/releases/0.0.1/
+	@CRYPTO_DIR=$$(${FIND} ${STAGEDIR}${PREFIX}/lib/kleened/lib/crypto-* -depth 0) \
+		&& ${STRIP_CMD} $$CRYPTO_DIR/priv/lib/*.so
+	@ASN1_DIR=$$(${FIND} ${STAGEDIR}${PREFIX}/lib/kleened/lib/asn1-* -depth 0) \
+		&& ${STRIP_CMD} $$ASN1_DIR/priv/lib/asn1rt_nif.so
 	@${STRIP_CMD} ${STAGEDIR}${PREFIX}/lib/kleened/lib/esqlite-0.4.1/priv/esqlite3_nif.so
-	@${STRIP_CMD} ${STAGEDIR}${PREFIX}/lib/kleened/lib/asn1-5.0.21/priv/lib/asn1rt_nif.so
 .for bin in ${RELEASE_BINARIES}
-	@${STRIP_CMD} ${STAGEDIR}${PREFIX}/lib/kleened/${ERTS_VSN}/bin/${bin}
+	@cd ${STAGEDIR}${PREFIX}/lib/kleened/ && ERTS_DIR=$$(${FIND} erts-* -depth 1 -type d) && \
+		${STRIP_CMD} ${STAGEDIR}${PREFIX}/lib/kleened/$$ERTS_DIR/${bin}
 .endfor
 
-.include <bsd.port.mk>
+post-install:
+	@cd ${STAGEDIR}${PREFIX} && \
+		${FIND} lib/kleened/erts-* -type f -o -type l | ${SORT} >> ${TMPPLIST}
+	@cd ${STAGEDIR}${PREFIX} && \
+		${FIND} lib/kleened/lib/* -type f -o -type l | ${SORT} >> ${TMPPLIST}
+
+.include <bsd.port.post.mk>
