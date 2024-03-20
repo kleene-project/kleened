@@ -43,9 +43,9 @@ do-build:
 do-install:
 	@${MKDIR} ${STAGEDIR}${PREFIX}/etc/kleened
 	@${INSTALL_DATA} ${WRKSRC}/example/kleened_config.yaml \
-		${STAGEDIR}${PREFIX}/etc/kleened/config.yaml
+		${STAGEDIR}${PREFIX}/etc/kleened/config.yaml.sample
 	@${INSTALL_DATA} ${WRKSRC}/example/pf.conf.kleene \
-		${STAGEDIR}${PREFIX}/etc/kleened/
+		${STAGEDIR}${PREFIX}/etc/kleened/pf.conf.kleene.sample
 	@${INSTALL_PROGRAM} ${WRKSRC}/priv/bin/kleened_pty \
 		${STAGEDIR}${PREFIX}/bin/kleened_pty
 	@${MKDIR} ${STAGEDIR}${PREFIX}/lib/kleened/bin

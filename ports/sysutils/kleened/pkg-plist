@@ -1,6 +1,6 @@
 bin/kleened_pty
-%%ETCDIR%%/config.yaml
-%%ETCDIR%%/pf.conf.kleene
+@sample %%ETCDIR%%/config.yaml.sample
+@sample %%ETCDIR%%/pf.conf.kleene.sample
 lib/kleened/bin/kleened
 lib/kleened/releases/0.0.1/consolidated/Elixir.Collectable.beam
 lib/kleened/releases/0.0.1/consolidated/Elixir.Enumerable.beam
