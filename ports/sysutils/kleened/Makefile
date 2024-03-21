@@ -15,7 +15,7 @@ BUILD_DEPENDS=	mix:lang/elixir rebar3:devel/rebar3 \
 
 USES=			ssl
 USE_GITHUB=		yes
-GH_TUPLE=		lgandersen:jocker:b62c45b:DEFAULT
+GH_TUPLE=		lgandersen:jocker:bf847fb:DEFAULT
 USE_RC_SUBR=	kleened
 
 SUB_FILES=			pkg-message
