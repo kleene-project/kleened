@@ -47,14 +47,7 @@ defmodule Kleened.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:esqlite, "0.4.1",
-       override: true,
-       system_env: [
-         #   {"ESQLITE_USE_SYSTEM", "yes"},
-         {"ESQLITE_CFLAGS",
-          "$CFLAGS -DSQLITE_THREADSAFE=1 -DSQLITE_ENABLE_JSON1 -DSQLITE_USE_URI -DSQLITE_ENABLE_FTS3 -DSQLITE_ENABLE_FTS3_PARENTHESIS -I./c_src/sqlite3"}
-       ]},
-      {:sqlitex, "~> 1.7"},
+      {:exqlite, "0.20.0"},
       {:jason, "~> 1.2"},
       {:yaml_elixir, "~> 2.4"},
       {:cidr, "~> 1.1"},

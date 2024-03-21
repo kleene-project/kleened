@@ -1,5 +1,6 @@
 defmodule Kleened.Core.MetaData do
   require Logger
+  alias Exqlite.Basic
   alias Kleened.Core.{Config, Image, Container, Network, Volume}
   alias Kleened.API.Schemas
 
@@ -71,19 +72,16 @@ defmodule Kleened.Core.MetaData do
   def start_link([]) do
     filepath = Config.get("metadata_db")
 
-    db =
-      case Sqlitex.open(filepath) do
-        {:error, {:cantopen, _error_msg}} ->
-          Logger.error(
-            "unable to open database at #{filepath}: Do you have the correct privileges?"
-          )
+    case Basic.open(filepath) do
+      {:error, reason} ->
+        Logger.error("unable to open database at #{filepath}: #{inspect(reason)}")
 
-        {:ok, db} ->
-          db
-      end
+        raise RuntimeError, message: "failed to start kleened"
 
-    create_tables(db)
-    Agent.start_link(fn -> db end, name: __MODULE__)
+      {:ok, db} ->
+        create_tables(db)
+        Agent.start_link(fn -> db end, name: __MODULE__)
+    end
   end
 
   def stop() do
@@ -350,9 +348,7 @@ defmodule Kleened.Core.MetaData do
   end
 
   defp execute_sql(db, sql, param) do
-    {:ok, statement} = Sqlitex.Statement.prepare(db, sql)
-    {:ok, statement} = Sqlitex.Statement.bind_values(statement, param)
-    Sqlitex.Statement.fetch_all(statement) |> from_db
+    Basic.exec(db, sql, param) |> Basic.rows() |> from_db
   end
 
   @spec add_image_transaction(db_conn(), Image.t()) :: [term()]
@@ -382,9 +378,7 @@ defmodule Kleened.Core.MetaData do
   @spec container_listing_transaction(db_conn()) :: [%{}]
   defp container_listing_transaction(db) do
     sql = "SELECT * FROM api_list_containers ORDER BY created DESC"
-    {:ok, statement} = Sqlitex.Statement.prepare(db, sql)
-    {:ok, rows} = Sqlitex.Statement.fetch_all(statement, into: %{})
-    rows
+    {:ok, [[1]], ["value"]} = Basic.exec(db, sql, []) |> Basic.rows()
   end
 
   @spec remove_mounts_transaction(
@@ -515,28 +509,26 @@ defmodule Kleened.Core.MetaData do
   def str2pid(pidstr), do: :erlang.list_to_pid(String.to_charlist(pidstr))
 
   def fetch_all(db, sql, values \\ []) do
-    {:ok, statement} = Sqlitex.Statement.prepare(db, sql)
-    {:ok, statement} = Sqlitex.Statement.bind_values(statement, values)
-    Sqlitex.Statement.fetch_all(statement) |> from_db
+    Basic.exec(db, sql, values) |> Basic.rows()
   end
 
   def drop_tables(db) do
-    {:ok, []} = Sqlitex.query(db, "DROP VIEW api_list_containers")
-    {:ok, []} = Sqlitex.query(db, "DROP TABLE images")
-    {:ok, []} = Sqlitex.query(db, "DROP TABLE containers")
-    {:ok, []} = Sqlitex.query(db, "DROP TABLE volumes")
-    {:ok, []} = Sqlitex.query(db, "DROP TABLE mounts")
-    {:ok, []} = Sqlitex.query(db, "DROP TABLE networks")
-    {:ok, []} = Sqlitex.query(db, "DROP TABLE endpoint_configs")
+    {:ok, []} = Basic.exec(db, "DROP VIEW api_list_containers")
+    {:ok, []} = Basic.exec(db, "DROP TABLE images")
+    {:ok, []} = Basic.exec(db, "DROP TABLE containers")
+    {:ok, []} = Basic.exec(db, "DROP TABLE volumes")
+    {:ok, []} = Basic.exec(db, "DROP TABLE mounts")
+    {:ok, []} = Basic.exec(db, "DROP TABLE networks")
+    {:ok, []} = Basic.exec(db, "DROP TABLE endpoint_configs")
   end
 
   def create_tables(db) do
-    {:ok, []} = Sqlitex.query(db, @table_network)
-    {:ok, []} = Sqlitex.query(db, @table_endpoint_configs)
-    {:ok, []} = Sqlitex.query(db, @table_images)
-    {:ok, []} = Sqlitex.query(db, @table_containers)
-    {:ok, []} = Sqlitex.query(db, @table_volumes)
-    {:ok, []} = Sqlitex.query(db, @table_mounts)
-    {:ok, []} = Sqlitex.query(db, @view_api_list_containers)
+    {:ok, []} = Basic.exec(db, @table_network)
+    {:ok, []} = Basic.exec(db, @table_endpoint_configs)
+    {:ok, []} = Basic.exec(db, @table_images)
+    {:ok, []} = Basic.exec(db, @table_containers)
+    {:ok, []} = Basic.exec(db, @table_volumes)
+    {:ok, []} = Basic.exec(db, @table_mounts)
+    {:ok, []} = Basic.exec(db, @view_api_list_containers)
   end
 end

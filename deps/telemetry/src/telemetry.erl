@@ -63,7 +63,12 @@
 %% or `&handle_event/4' ) as event handlers.
 %%
 %% All the handlers are executed by the process dispatching event. If the function fails (raises,
-%% exits or throws) then the handler is removed.
+%% exits or throws) then the handler is removed and a failure event is emitted.
+%%
+%% Handler failure events `[telemetry, handler, failure]' should only be used for monitoring
+%% and diagnostic purposes. Re-attaching a failed handler will likely result in the handler
+%% failing again.
+%%
 %% Note that you should not rely on the order in which handlers are invoked.
 -spec attach(HandlerId, EventName, Function, Config) -> ok | {error, already_exists} when
       HandlerId :: handler_id(),
@@ -86,7 +91,12 @@ attach(HandlerId, EventName, Function, Config) ->
 %% or `&handle_event/4' ) as event handlers.
 %%
 %% All the handlers are executed by the process dispatching event. If the function fails (raises,
-%% exits or throws) then the handler is removed.
+%% exits or throws) a handler failure event is emitted and then the handler is removed.
+%%
+%% Handler failure events `[telemetry, handler, failure]' should only be used for monitoring
+%% and diagnostic purposes. Re-attaching a failed handler will likely result in the handler
+%% failing again.
+%%
 %% Note that you should not rely on the order in which handlers are invoked.
 -spec attach_many(HandlerId, [EventName], Function, Config) -> ok | {error, already_exists} when
       HandlerId :: handler_id(),
@@ -140,7 +150,7 @@ execute(EventName, Value, Metadata) when is_number(Value) ->
     ?LOG_WARNING("Using execute/3 with a single event value is deprecated. "
                  "Use a measurement map instead.", []),
     execute(EventName, #{value => Value}, Metadata);
-execute(EventName, Measurements, Metadata) when is_map(Measurements) and is_map(Metadata) ->
+execute([_ | _] = EventName, Measurements, Metadata) when is_map(Measurements) and is_map(Metadata) ->
     Handlers = telemetry_handler_table:list_for_event(EventName),
     ApplyFun =
         fun(#handler{id=HandlerId,
@@ -151,6 +161,14 @@ execute(EventName, Measurements, Metadata) when is_map(Measurements) and is_map(
             catch
                 ?WITH_STACKTRACE(Class, Reason, Stacktrace)
                     detach(HandlerId),
+                    FailureMetadata = #{event_name => EventName,
+                                        handler_id => HandlerId,
+                                        handler_config => Config,
+                                        kind => Class,
+                                        reason => Reason,
+                                        stacktrace => Stacktrace},
+                    FailureMeasurements = #{monotonic_time => erlang:monotonic_time(), system_time => erlang:system_time()},
+                    execute([telemetry, handler, failure], FailureMeasurements, FailureMetadata),
                     ?LOG_ERROR("Handler ~p has failed and has been detached. "
                                "Class=~p~nReason=~p~nStacktrace=~p~n",
                                [HandlerId, Class, Reason, Stacktrace])
@@ -158,29 +176,32 @@ execute(EventName, Measurements, Metadata) when is_map(Measurements) and is_map(
         end,
     lists:foreach(ApplyFun, Handlers).
 
-%% @doc Emit start, and stop/exception events, invoking the handlers attached to each.
+%% @doc Runs the provided `SpanFunction', emitting start and stop/exception events, invoking the handlers attached to each.
+%%
+%% The `SpanFunction' must return a `{result, stop_metadata}' tuple.
 %%
 %% When this function is called, 2 events will be emitted via {@link execute/3}. Those events will be one of the following
 %% pairs:
 %% <ul>
-%% <li>`EventPrefix ++ [start]' and  `EventPrefix ++ [stop]'</li>
+%% <li>`EventPrefix ++ [start]' and `EventPrefix ++ [stop]'</li>
 %% <li>`EventPrefix ++ [start]' and `EventPrefix ++ [exception]'</li>
 %% </ul>
 %%
-%% However, note that in case the current processes crashes due to an exit signal
+%% However, note that in case the current process crashes due to an exit signal
 %% of another process, then none or only part of those events would be emitted.
 %% Below is a breakdown of the measurements and metadata associated with each individual event.
 %%
 %% When providing `StartMetadata' and `StopMetadata', these values will be sent independently to `start' and
 %% `stop' events. If an exception occurs, exception metadata will be merged onto the `StartMetadata'. In general,
-%% `StopMetadata' should only provide values that are additive to `StartMetadata' so that handlers, such as those
-%% used for metrics, can rely entirely on the `stop' event.
+%% it is <strong>highly recommended</strong> that `StopMetadata' should include the values from `StartMetadata'
+%% so that handlers, such as those used for metrics, can rely entirely on the `stop' event. Failure to include
+%% all of `StartMetadata' in `StopMetadata' can add significant complexity to event handlers.
 %%
 %% A default span context is added to event metadata under the `telemetry_span_context' key if none is provided by
 %% the user in the `StartMetadata'. This context is useful for tracing libraries to identify unique
-%% executions of span events within a process to match start, stop, and exception events. Users
-%% should ensure this value is unique within the context of a process at a minimum if overriding this key and
-%% that the same value is provided to both `StartMetadata' and `StopMetadata'.
+%% executions of span events within a process to match start, stop, and exception events. Metadata keys, which 
+%% should be available to both `start' and `stop' events need to supplied separately for `StartMetadata' and
+%% `StopMetadata'.
 %%
 %% For `telemetry' events denoting the <strong>start</strong> of a larger event, the following data is provided:
 %%
@@ -198,7 +219,8 @@ execute(EventName, Measurements, Metadata) when is_map(Measurements) and is_map(
 %% #{
 %%   % The current system time in native units from
 %%   % calling: erlang:system_time()
-%%   system_time => integer()
+%%   system_time => integer(),
+%%   monotonic_time => integer(),
 %% }
 %% '''
 %% </li>
@@ -207,7 +229,7 @@ execute(EventName, Measurements, Metadata) when is_map(Measurements) and is_map(
 %% ```
 %% #{
 %%   telemetry_span_context => term(),
-%%   % User defined metadata
+%%   % User defined metadata as provided in StartMetadata
 %%   ...
 %% }
 %% '''
@@ -230,7 +252,8 @@ execute(EventName, Measurements, Metadata) when is_map(Measurements) and is_map(
 %% #{
 %%   % The current monotonic time minus the start monotonic time in native units
 %%   % by calling: erlang:monotonic_time() - start_monotonic_time
-%%   duration => integer()
+%%   duration => integer(),
+%%   monotonic_time => integer()
 %% }
 %% '''
 %% </li>
@@ -239,10 +262,10 @@ execute(EventName, Measurements, Metadata) when is_map(Measurements) and is_map(
 %% ```
 %% #{
 %%   % An optional error field if the stop event is the result of an error
-%%   % but not necessarily an exception. Additional user defined metadata can
-%%   % also be added here.
+%%   % but not necessarily an exception.
 %%   error => term(),
 %%   telemetry_span_context => term(),
+%%   % User defined metadata as provided in StopMetadata
 %%   ...
 %% }
 %% '''
@@ -265,7 +288,8 @@ execute(EventName, Measurements, Metadata) when is_map(Measurements) and is_map(
 %% #{
 %%   % The current monotonic time minus the start monotonic time in native units
 %%   % derived by calling: erlang:monotonic_time() - start_monotonic_time
-%%   duration => integer()
+%%   duration => integer(),
+%%   monotonic_time => integer()
 %% }
 %% '''
 %% </li>
@@ -277,7 +301,7 @@ execute(EventName, Measurements, Metadata) when is_map(Measurements) and is_map(
 %%   reason => term(),
 %%   stacktrace => list(),
 %%   telemetry_span_context => term(),
-%%   % User defined metadata from the start event
+%%   % User defined metadata as provided in StartMetadata
 %%    ...
 %% }
 %% '''
@@ -288,17 +312,27 @@ execute(EventName, Measurements, Metadata) when is_map(Measurements) and is_map(
 span(EventPrefix, StartMetadata, SpanFunction) ->
     StartTime = erlang:monotonic_time(),
     DefaultCtx = erlang:make_ref(),
-    execute(EventPrefix ++ [start], #{system_time => erlang:system_time()}, merge_ctx(StartMetadata, DefaultCtx)),
+    execute(
+        EventPrefix ++ [start],
+        #{monotonic_time => StartTime, system_time => erlang:system_time()},
+        merge_ctx(StartMetadata, DefaultCtx)
+    ),
 
     try {_, #{}} = SpanFunction() of
       {Result, StopMetadata} ->
-          execute(EventPrefix ++ [stop], #{duration => erlang:monotonic_time() - StartTime}, merge_ctx(StopMetadata, DefaultCtx)),
+          StopTime = erlang:monotonic_time(),
+          execute(
+              EventPrefix ++ [stop],
+              #{duration => StopTime - StartTime, monotonic_time => StopTime},
+              merge_ctx(StopMetadata, DefaultCtx)
+          ),
           Result
     catch
         ?WITH_STACKTRACE(Class, Reason, Stacktrace)
+            StopTime = erlang:monotonic_time(),
             execute(
                 EventPrefix ++ [exception],
-                #{duration => erlang:monotonic_time() - StartTime},
+                #{duration => StopTime - StartTime, monotonic_time => StopTime},
                 merge_ctx(StartMetadata#{kind => Class, reason => Reason, stacktrace => Stacktrace}, DefaultCtx)
             ),
             erlang:raise(Class, Reason, Stacktrace)
@@ -361,11 +395,11 @@ assert_event_name(Term) ->
 merge_ctx(#{telemetry_span_context := _} = Metadata, _Ctx) -> Metadata;
 merge_ctx(Metadata, Ctx) -> Metadata#{telemetry_span_context => Ctx}.
 
-%% @hidden
+%% @private
 report_cb(#{handler_id := Id}) ->
-    {"Function passed as a handler with ID ~w is local function.\n"
-     "This mean that it is either anonymous function or capture of function "
-     "without module specified. That may cause performance penalty when calling "
-     "such handler. For more details see note in `telemetry:attach/4` "
+    {"The function passed as a handler with ID ~w is a local function.\n"
+     "This means that it is either an anonymous function or a capture of a function "
+     "without a module specified. That may cause a performance penalty when calling "
+     "that handler. For more details see the note in `telemetry:attach/4` "
      "documentation.\n\n"
-     "https://hexdocs.pm/telemetry/telemetry.html#attach-4", [Id]}.
+     "https://hexdocs.pm/telemetry/telemetry.html#attach/4", [Id]}.
