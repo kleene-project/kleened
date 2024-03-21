@@ -49,7 +49,9 @@ defmodule Kleened.Core.ZFS do
   end
 
   def exists?(dataset) do
-    case OS.cmd(["/bin/sh", "-c", "zfs list -H -o name | grep #{dataset}"]) do
+    options = %{suppress_logging: true, suppress_warning: true}
+
+    case OS.cmd(["/bin/sh", "-c", "zfs list -H -o name | grep #{dataset}"], options) do
       {_output, 0} -> true
       {_output, _nonzero_exit} -> false
     end
@@ -57,7 +59,9 @@ defmodule Kleened.Core.ZFS do
 
   @spec info(String.t()) :: %{:exists? => boolean(), :mountpoint => String.t() | nil}
   def info(filesystem_or_snapshot) do
-    case cmd("list -H -o mountpoint #{filesystem_or_snapshot}", false) do
+    options = %{suppress_logging: true, suppress_warning: true}
+
+    case cmd("list -H -o mountpoint #{filesystem_or_snapshot}", options) do
       {"none\n", 0} ->
         %{:exists? => true, :mountpoint => nil}
 
@@ -71,8 +75,7 @@ defmodule Kleened.Core.ZFS do
   end
 
   @spec cmd([String.t()]) :: {String.t(), integer()}
-  def cmd(cmd, suppress_warning \\ true) do
-    options = %{suppress_warning: suppress_warning}
+  def cmd(cmd, options \\ %{}) do
     OS.cmd(["/sbin/zfs" | String.split(cmd, " ")], options)
   end
 end

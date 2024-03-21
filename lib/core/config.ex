@@ -5,6 +5,28 @@ defmodule Kleened.Core.Config do
 
   @default_config_path "/usr/local/etc/kleened/config.yaml"
 
+  def initialize_host(options) do
+    loader_conf = "/boot/loader.conf"
+    rc_conf = "/etc/rc.conf"
+
+    ensure_kmod_loaded("zfs", options)
+    ensure_kmod_loaded("pf", options)
+    ensure_kmod_loaded("pflog", options)
+
+    ensure_sysrc_enabled("zfs_load", loader_conf, options)
+    ensure_sysrc_enabled("zfs_enable", rc_conf, options)
+
+    ensure_sysrc_enabled("pf_load", loader_conf, options)
+    ensure_sysrc_enabled("pf_enable", rc_conf, options)
+    ensure_sysrc_enabled("pflog_enable", rc_conf, options)
+
+    cfg = open_config_file()
+    error_if_not_defined(cfg, "kleene_root")
+    initialize_kleene_root(cfg)
+
+    ensure_rctl()
+  end
+
   def bootstrap() do
     cfg = open_config_file()
     initialize_logging(cfg)
@@ -14,8 +36,6 @@ defmodule Kleened.Core.Config do
     error_if_not_defined(cfg, "pf_config_template_path")
     error_if_not_defined(cfg, "enable_logging")
     error_if_not_defined(cfg, "log_level")
-    initialize_system()
-    initialize_kleene_root(cfg)
     add_api_listening_options(cfg, [])
   end
 
@@ -58,31 +78,61 @@ defmodule Kleened.Core.Config do
     end
   end
 
-  def initialize_system() do
-    loader_conf = "/boot/loader.conf"
+  defp ensure_kmod_loaded(module, %{dry_run: dry_run}) do
+    IO.write("Verifying kernel module #{module} is loaded...")
 
-    if not kmod_loaded?("zfs") do
-      init_error("zfs module not loaded - kleened cannot function without zfs.")
+    if not kmod_loaded?(module) do
+      IO.write("not loaded, trying to load..")
+
+      if not dry_run do
+        kmod_load_or_error(module)
+      end
     end
 
-    if not kmod_loaded?("pf") do
-      kmod_load_or_error("pf")
+    IO.puts("OK")
+  end
+
+  defp ensure_sysrc_enabled(service, file, %{dry_run: dry_run}) do
+    IO.write("Verifying if '#{service}' is set to \"YES\" in #{file}...")
+
+    if not sysrc_enabled?(service, file) do
+      IO.write("not enabled, enabling...")
+
+      if not dry_run do
+        sysrc_enable_or_error(service, file)
+      end
     end
 
-    if not kmod_loaded?("pflog") do
-      kmod_load_or_error("pflog")
-    end
+    IO.puts("OK")
+  end
 
-    if not sysrc_enabled?("pf_load", loader_conf) do
-      sysrc_enable_or_error("pf_load", loader_conf)
-    end
+  defp ensure_rctl() do
+    IO.write("Verifying rctl is enabled...")
 
-    if not sysrc_enabled?("pf_enable") do
-      sysrc_enable_or_error("pf_enable")
-    end
+    if rctl_loaded?() do
+      IO.puts("OK")
+    else
+      IO.puts("error!")
+      IO.puts("Rctl does not seem to be enabled, so container resource limiting will not work.")
 
-    if not sysrc_enabled?("pflog_enable") do
-      sysrc_enable_or_error("pflog_enable")
+      IO.puts(
+        "Set kern.racct.enable=1 in /boot/loader.conf and reboot the system to enable rctl."
+      )
+    end
+  end
+
+  def rctl_loaded?() do
+    detect_racct_cmd = "/bin/cat /boot/loader.conf | grep kern.racct.enable"
+
+    case System.cmd("/bin/sh", ["-c", detect_racct_cmd]) do
+      {<<"kern.racct.enable=", value::binary>>, 0} ->
+        case String.trim(value) |> String.trim("\"") do
+          "1" -> true
+          _ -> false
+        end
+
+      {_, _nonzero_exit} ->
+        false
     end
   end
 
@@ -95,27 +145,24 @@ defmodule Kleened.Core.Config do
 
   def kmod_load_or_error(module) do
     case System.cmd("/sbin/kldload", [module], stderr_to_stdout: true) do
-      {_, 0} ->
-        Logger.info("Sucessfully loaded kernel module #{module}")
-
-      {reason, _} ->
-        init_error(reason)
+      {_, 0} -> :ok
+      {reason, _} -> init_error(reason)
     end
   end
 
-  defp sysrc_enabled?(service, file \\ "/etc/rc.conf") do
+  defp sysrc_enabled?(service, file) do
     case System.cmd("/usr/sbin/sysrc", ["-n", "-f", file, service], stderr_to_stdout: true) do
       {"YES\n", 0} -> true
       _ -> false
     end
   end
 
-  defp sysrc_enable_or_error(service, file \\ "/etc/rc.conf") do
+  defp sysrc_enable_or_error(service, file) do
     case System.cmd("/usr/sbin/sysrc", ["-n", "-f", file, "#{service}=\"YES\""],
            stderr_to_stdout: true
          ) do
       {_, 0} ->
-        Logger.info("Sucessfully enabled service #{service} in #{file}")
+        :ok
 
       {reason, _} ->
         init_error(reason)
@@ -131,16 +178,16 @@ defmodule Kleened.Core.Config do
 
   defp initialize_kleene_root(cfg) do
     root = Map.get(cfg, "kleene_root")
+    create_dataset_if_not_exist(root)
+
     root_status = ZFS.info(root)
 
     case root_status do
-      %{"exists?" => false} ->
-        config_error("kleened's root zfs filesystem #{root} does not seem to exist. Exiting.")
-
       %{"mountpoint" => nil} ->
-        config_error(
-          "kleened's root zfs filesystem #{root} does not have any mountpoint. Exiting."
-        )
+        msg =
+          "kleened's root zfs filesystem #{root} does not have any mountpoint. Please set it manually."
+
+        init_error(msg)
 
       _ ->
         :ok
@@ -152,9 +199,21 @@ defmodule Kleened.Core.Config do
   end
 
   defp create_dataset_if_not_exist(dataset) do
+    IO.write("Verifying if zfs dataset #{dataset} exists...")
+
     if not ZFS.exists?(dataset) do
-      ZFS.create(dataset)
+      IO.write("does not exist, creating...")
+
+      case ZFS.cmd("create #{dataset}", %{suppress_logging: true}) do
+        {_, 0} ->
+          :ok
+
+        {reason, _nonzero_exit} ->
+          init_error("could not create ZFS dataset #{dataset}: #{reason}")
+      end
     end
+
+    IO.puts("OK")
   end
 
   defp add_api_listening_options(
