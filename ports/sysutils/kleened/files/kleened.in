@@ -15,13 +15,26 @@
 . /etc/rc.subr
 
 name=kleened
-rcvar=kleened_enable 
+rcvar=kleened_enable
+extra_commands="init dryinit"
 
 start_cmd="/usr/bin/env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 /usr/local/lib/kleened/bin/kleened daemon"
 stop_cmd="/usr/bin/env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 /usr/local/lib/kleened/bin/kleened stop"
-stop_status=":"
+#stop_status=":"
+init_cmd="kleened_init"
+dryinit_cmd="kleened_dryinit"
 
-load_rc_config $name 
-: ${kleened_enable:=no} 
+load_rc_config $name
+: ${kleened_enable:=no}
+
+kleened_init()
+{
+    /usr/bin/env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 /usr/local/lib/kleened/bin/kleened eval "Kleened.Core.Config.initialize_host(%{dry_run: false})"
+}
+
+kleened_dryinit()
+{
+    /usr/bin/env LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 /usr/local/lib/kleened/bin/kleened eval "Kleened.Core.Config.initialize_host(%{dry_run: true})"
+}
 
 run_rc_command "$1"
