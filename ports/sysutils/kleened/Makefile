@@ -8,14 +8,15 @@ COMMENT=		Docker-inspired tool for container management in FreeBSD
 
 LICENSE=		BSD2CLAUSE
 
-BUILD_DEPENDS=	mix:lang/elixir rebar3:devel/rebar3 \
-	            ${LOCALBASE}/lib/elixir/lib/hex/ebin:devel/elixir-hex
+BUILD_DEPENDS=	gmake:devel/gmake \
+		mix:lang/elixir rebar3:devel/rebar3 \
+	        ${LOCALBASE}/lib/elixir/lib/hex/ebin:devel/elixir-hex
 
 #RUN_DEPENDS=	erlc:lang/erlang
 
 USES=			ssl
 USE_GITHUB=		yes
-GH_TUPLE=		lgandersen:jocker:bf847fb:DEFAULT
+GH_TUPLE=		lgandersen:jocker:2d43c60:DEFAULT
 USE_RC_SUBR=	kleened
 
 SUB_FILES=			pkg-message
@@ -69,7 +70,7 @@ do-install:
 		&& ${STRIP_CMD} $$CRYPTO_DIR/priv/lib/*.so
 	@ASN1_DIR=$$(${FIND} ${STAGEDIR}${PREFIX}/lib/kleened/lib/asn1-* -depth 0) \
 		&& ${STRIP_CMD} $$ASN1_DIR/priv/lib/asn1rt_nif.so
-	@${STRIP_CMD} ${STAGEDIR}${PREFIX}/lib/kleened/lib/esqlite-0.4.1/priv/esqlite3_nif.so
+	@${STRIP_CMD} ${STAGEDIR}${PREFIX}/lib/kleened/lib/exqlite-0.20.0/priv/sqlite3_nif.so
 .for bin in ${RELEASE_BINARIES}
 	@cd ${STAGEDIR}${PREFIX}/lib/kleened/ && ERTS_DIR=$$(${FIND} erts-* -depth 1 -type d) && \
 		${STRIP_CMD} ${STAGEDIR}${PREFIX}/lib/kleened/$$ERTS_DIR/${bin}
