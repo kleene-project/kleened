@@ -31,7 +31,6 @@ defmodule TestHelper do
   def compare_to_baseline_environment(%{
         addresses: before_addresses,
         mount_devfs: before_mount_devfs,
-        datasets: before_datasets,
         test_image_dataset: before_test_image
       }) do
     %{
@@ -40,14 +39,22 @@ defmodule TestHelper do
       datasets: after_datasets
     } = Kleened.Test.Utils.get_host_state()
 
-    %Schemas.Image{dataset: after_test_image} = MetaData.get_image("FreeBSD:testing")
-    test_images = [before_test_image, after_test_image]
+    %Schemas.Image{dataset: test_dataset} = MetaData.get_image("FreeBSD:testing")
+
+    before_datasets =
+      MapSet.new([
+        test_dataset,
+        "",
+        "zroot/kleene",
+        "zroot/kleene/container",
+        "zroot/kleene/image",
+        "zroot/kleene/volumes"
+      ])
 
     assert before_addresses == after_addresses
     assert before_mount_devfs == after_mount_devfs
 
-    assert ignore_test_images(test_images, before_datasets) ==
-             ignore_test_images(test_images, after_datasets)
+    assert before_datasets == after_datasets
   end
 
   def ignore_test_images(test_images, datasets) do
@@ -75,16 +82,12 @@ defmodule TestHelper do
     MetaData.list_networks()
     |> Enum.map(fn %{id: id} -> Network.remove(id) end)
 
-    # Image.prune(true)
-    MetaData.list_images()
-    |> Enum.filter(fn %Schemas.Image{name: name, tag: tag} ->
-      name != "FreeBSD" or tag != "testing"
-    end)
-    |> Enum.map(fn %Schemas.Image{id: id} -> Image.remove(id) end)
-  end
-
-  def setup() do
-    Kleened.Test.Utils.create_test_base_image()
+    image_list =
+      MetaData.list_images()
+      |> Enum.filter(fn image ->
+        not (image.name == "FreeBSD" and image.tag == "testing")
+      end)
+      |> Enum.map(fn image -> Image.remove(image.id) end)
   end
 
   def container_valid_run(config) do

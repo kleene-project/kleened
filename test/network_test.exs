@@ -401,7 +401,7 @@ defmodule NetworkTest do
     assert MapSet.new(ip_addresses_on_host) == MapSet.new(ip_addresses_in_container)
   end
 
-  test "a container using the 'host' network driver can't connect to networks" do
+  test "a container using the 'host' network driver can't connect to a loopback network" do
     network =
       create_network(%{
         name: "loopback_net",
@@ -411,7 +411,9 @@ defmodule NetworkTest do
 
     assert [@cant_connect_host_with_any] ==
              failing_to_connect_container([network.name], "host")
+  end
 
+  test "a container using the 'host' network driver can't connect to a bridge network" do
     network =
       create_network(%{
         name: "bridge_net",
@@ -421,7 +423,9 @@ defmodule NetworkTest do
 
     assert [@cant_connect_host_with_any] ==
              failing_to_connect_container([network.name], "host")
+  end
 
+  test "a container using the 'host' network driver can't connect to a custom network" do
     network =
       create_network(%{
         name: "custom_net",

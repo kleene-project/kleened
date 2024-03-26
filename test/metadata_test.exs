@@ -8,6 +8,17 @@ defmodule MetaDataTest do
 
   @moduletag :capture_log
 
+  setup do
+    TestHelper.cleanup()
+
+    on_exit(fn ->
+      Logger.info("Cleaning up after test...")
+      TestHelper.cleanup()
+    end)
+
+    :ok
+  end
+
   test "adding, listing and removing networks" do
     assert [] == list_networks()
 

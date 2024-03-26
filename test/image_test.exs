@@ -676,7 +676,7 @@ defmodule ImageTest do
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
 
     {:failed_build, _image_id, build_log} = TestHelper.image_invalid_build(config)
-    assert last_log_entry(build_log) == "error: no such image 'doesnotexist'"
+    assert last_log_entry(build_log) == "error: could not find image doesnotexist"
 
     config = Map.put(config, :buildargs, %{"testvar" => "FreeBSD:testing"})
     {_image, build_log} = TestHelper.image_valid_build(config)
@@ -1314,7 +1314,7 @@ defmodule ImageTest do
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
 
     assert {:failed_build, _image_id,
-            ["Step 1/2 : FROM nonexisting", "error: no such image 'nonexisting'"]} =
+            ["Step 1/2 : FROM nonexisting", "error: could not find image nonexisting"]} =
              TestHelper.image_invalid_build(%{
                context: context,
                dockerfile: @tmp_dockerfile,
@@ -1365,7 +1365,7 @@ defmodule ImageTest do
         dockerfile: @tmp_dockerfile
       })
 
-    assert build_log == ["Step 1/2 : FROM nonexisting", "error: no such image 'nonexisting'"]
+    assert build_log == ["Step 1/2 : FROM nonexisting", "error: could not find image nonexisting"]
   end
 
   test "try building an image from a invalid Dockerfile (illegal comment)" do

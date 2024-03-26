@@ -163,14 +163,14 @@ defmodule ContainerTest do
   end
 
   test "making nullfs-mounts into a container" do
-    File.rm("/host/testing_mounts.txt")
+    File.rm("/mnt/testing_mounts.txt")
     mount_path = "/kleene_nullfs_testing"
 
     # RW mount
     config = %{
       name: "testcont",
       cmd: ["/usr/bin/touch", "#{mount_path}/testing_mounts.txt"],
-      mounts: [%{type: "nullfs", source: "/host", destination: mount_path}],
+      mounts: [%{type: "nullfs", source: "/mnt", destination: mount_path}],
       user: "root"
     }
 
@@ -178,14 +178,14 @@ defmodule ContainerTest do
     assert process_output == []
     file_path = "/zroot/kleene/container/#{container_id}/#{mount_path}/testing_mounts.txt"
     assert File.read(file_path) == {:ok, ""}
-    file_path = "/host/testing_mounts.txt"
+    file_path = "/mnt/testing_mounts.txt"
     assert File.read(file_path) == {:ok, ""}
 
     # Read-only mount
     config = %{
       name: "testcont",
       cmd: ["/usr/bin/touch", "#{mount_path}/testing_mounts.txt"],
-      mounts: [%{type: "nullfs", source: "/host", destination: mount_path, read_only: true}],
+      mounts: [%{type: "nullfs", source: "/mnt/", destination: mount_path, read_only: true}],
       user: "root",
       expected_exit_code: 1
     }
