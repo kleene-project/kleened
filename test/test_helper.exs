@@ -891,7 +891,7 @@ defmodule TestHelper do
         receive_frames_(conn, [{close_code, msg} | frames], timeout)
 
       {:error, reason} ->
-        Logger.warn("receiving frames failed: #{reason}")
+        Logger.warning("receiving frames failed: #{reason}")
         :error
 
       :websocket_closed ->
@@ -915,7 +915,7 @@ defmodule TestHelper do
         {:error, "websocket closed unexpectedly"}
 
         # unknown ->
-        #  Logger.warn("unknown message received: #{inspect(unknown)}")
+        #  Logger.warning("unknown message received: #{inspect(unknown)}")
         #  receive_frame(conn, timeout)
     after
       timeout -> {:error, "timed out while waiting for websocket frames"}

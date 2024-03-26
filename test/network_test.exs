@@ -1576,7 +1576,7 @@ defmodule NetworkTest do
         {true, _} -> endpoint.ip_address
       end
 
-    Logger.warn(ip2check)
+    Logger.warning(ip2check)
     assert String.contains?(msg2, ip2check)
 
     Port.close(port)
@@ -1600,7 +1600,7 @@ defmodule NetworkTest do
         {^port, msg} -> msg
       after
         2_000 ->
-          Logger.warn("tcpdump not responding")
+          Logger.warning("tcpdump not responding")
       end
 
     assert {:data, {:eol, <<"tcpdump: listening on", _::binary>>}} = msg
@@ -1625,7 +1625,7 @@ defmodule NetworkTest do
         {^port, msg} -> msg
       after
         2_000 ->
-          Logger.warn("tcpdump not responding")
+          Logger.warning("tcpdump not responding")
       end
 
     assert {:data, {:eol, <<"tcpdump: listening on", _::binary>>}} = msg
@@ -1641,11 +1641,11 @@ defmodule NetworkTest do
         msg
 
       msg ->
-        Logger.warn("Non-tcpdump message received: #{inspect(msg)}")
+        Logger.warning("Non-tcpdump message received: #{inspect(msg)}")
         read_tcpdump(port)
     after
       1_000 ->
-        Logger.warn("Timed out while reading from tcp-dump")
+        Logger.warning("Timed out while reading from tcp-dump")
         "tcpdump timeout"
     end
   end
