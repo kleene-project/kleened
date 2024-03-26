@@ -57,7 +57,8 @@ do-install:
 	@cd ${RELEASE_PATH}/lib && \
 		${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/lib/kleened/lib
 	@cd ${RELEASE_PATH} && ERTS_DIR=$$(${FIND} erts-* -depth 1 -type d) && \
-		${COPYTREE_SHARE} ./$$ERTS_DIR ${STAGEDIR}${PREFIX}/lib/kleened/
+		${COPYTREE_SHARE} ./$$ERTS_DIR ${STAGEDIR}${PREFIX}/lib/kleened/ && \
+		${CHMOD} +x ${STAGEDIR}${PREFIX}/lib/kleened/$$ERTS_DIR/*
 	@cd ${RELEASE_PATH}/releases && \
 		${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/lib/kleened/releases
 	@cd ${RELEASE_PATH}/releases && \
