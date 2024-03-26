@@ -39,13 +39,8 @@ defmodule Kleened.Core.Volume do
 
   @spec prune() :: {:ok, [String.t()]}
   def prune() do
-    pruned_volumes =
-      MetaData.list_unused_volumes()
-      |> Enum.map(fn keywords ->
-        volume_name = Keyword.get(keywords, :name)
-        remove_(volume_name)
-        volume_name
-      end)
+    pruned_volumes = MetaData.list_unused_volumes()
+    Enum.map(pruned_volumes, &remove_/1)
 
     {:ok, pruned_volumes}
   end

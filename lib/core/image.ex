@@ -200,7 +200,7 @@ defmodule Kleened.Core.Image do
   end
 
   defp trim_images(
-         [[id: image_id, name: name, tag: tag, dataset: dataset] = image | rest],
+         [%{id: image_id, name: name, tag: tag, dataset: dataset} = image | rest],
          dataset2clones,
          all,
          deleted,

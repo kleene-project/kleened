@@ -78,9 +78,9 @@ defmodule Kleened.Core.MetaData do
 
         raise RuntimeError, message: "failed to start kleened"
 
-      {:ok, db} ->
-        create_tables(db)
-        Agent.start_link(fn -> db end, name: __MODULE__)
+      {:ok, conn} ->
+        create_tables(conn)
+        Agent.start_link(fn -> conn end, name: __MODULE__)
     end
   end
 
@@ -267,7 +267,7 @@ defmodule Kleened.Core.MetaData do
 
   @spec container_listing() :: [%{}]
   def container_listing() do
-    Agent.get(__MODULE__, fn db -> container_listing_transaction(db) end)
+    sql("SELECT * FROM api_list_containers ORDER BY created DESC")
   end
 
   @spec add_volume(Volume.t()) :: :ok
@@ -301,7 +301,7 @@ defmodule Kleened.Core.MetaData do
   @spec list_unused_volumes() :: [String.t()]
   def list_unused_volumes() do
     sql("""
-    SELECT volumes.name
+    SELECT volumes.name AS volume_name
     FROM volumes
     LEFT JOIN mounts ON volumes.name = json_extract(mounts.mount, '$.source')
     WHERE ifnull(mounts.mount, 'empty') = 'empty';
@@ -347,8 +347,9 @@ defmodule Kleened.Core.MetaData do
     Agent.get(__MODULE__, fn db -> execute_sql(db, sql, param) end)
   end
 
-  defp execute_sql(db, sql, param) do
-    Basic.exec(db, sql, param) |> Basic.rows() |> from_db
+  defp execute_sql(conn, sql, param) do
+    {:ok, _query, %Exqlite.Result{} = result, ^conn} = Basic.exec(conn, sql, param)
+    from_db(result)
   end
 
   @spec add_image_transaction(db_conn(), Image.t()) :: [term()]
@@ -375,35 +376,27 @@ defmodule Kleened.Core.MetaData do
     :ok
   end
 
-  @spec container_listing_transaction(db_conn()) :: [%{}]
-  defp container_listing_transaction(db) do
-    sql = "SELECT * FROM api_list_containers ORDER BY created DESC"
-    {:ok, [[1]], ["value"]} = Basic.exec(db, sql, []) |> Basic.rows()
-  end
-
   @spec remove_mounts_transaction(
           db_conn(),
           Volume.t() | Container.t()
         ) :: :ok
   def remove_mounts_transaction(db, %Schemas.Container{id: id}) do
-    result =
-      fetch_all(db, "SELECT mount FROM mounts WHERE json_extract(mount, '$.container_id') = ?", [
-        id
-      ])
+    sql = "SELECT mount FROM mounts WHERE json_extract(mount, '$.container_id') = ?"
+    result = execute_sql(db, sql, [id])
 
     [] =
-      fetch_all(db, "DELETE FROM mounts WHERE json_extract(mount, '$.container_id') = ?;", [id])
+      execute_sql(db, "DELETE FROM mounts WHERE json_extract(mount, '$.container_id') = ?;", [id])
 
     result
   end
 
   def remove_mounts_transaction(db, %Schemas.Volume{name: name}) do
     result =
-      fetch_all(db, "SELECT mount FROM mounts WHERE json_extract(mount, '$.source') = ?", [
+      execute_sql(db, "SELECT mount FROM mounts WHERE json_extract(mount, '$.source') = ?", [
         name
       ])
 
-    [] = fetch_all(db, "DELETE FROM mounts WHERE json_extract(mount, '$.source') = ?;", [name])
+    [] = execute_sql(db, "DELETE FROM mounts WHERE json_extract(mount, '$.source') = ?;", [name])
 
     result
   end
@@ -445,61 +438,116 @@ defmodule Kleened.Core.MetaData do
     end
   end
 
-  @spec from_db(keyword() | {:ok, keyword()}) :: [%Schemas.Image{}]
-  defp from_db({:ok, rows}) do
-    from_db(rows)
+  @spec from_db(%Exqlite.Result{}) :: [%Schemas.Image{}]
+  defp from_db(%Exqlite.Result{columns: columns, rows: rows}) do
+    rows |> Enum.map(&transform_row(&1, columns))
   end
 
-  defp from_db(rows) do
-    rows |> Enum.map(&transform_row(&1))
-  end
+  _ = :image_name
 
-  @spec transform_row(List.t()) :: %Schemas.Image{}
-  def transform_row(row) do
+  defp transform_row(row, columns) do
+    row = Map.new(Enum.zip(columns, row))
+    columns = MapSet.new(columns)
+
     cond do
-      Keyword.has_key?(row, :image) ->
-        map = from_json(row, :image)
-        id = Keyword.get(row, :id)
-        struct(Schemas.Image, Map.put(map, :id, id))
-
-      Keyword.has_key?(row, :network) ->
-        map = from_json(row, :network)
-        id = Keyword.get(row, :id)
-        struct(Schemas.Network, Map.put(map, :id, id))
-
-      Keyword.has_key?(row, :container) ->
-        map = from_json(row, :container)
-        id = Keyword.get(row, :id)
-        container = struct(Schemas.Container, Map.put(map, :id, id))
+      columns == MapSet.new(["container", "id"]) ->
+        container = Map.put(from_json(row["container"]), :id, row["id"])
+        container = struct(Schemas.Container, container)
         pub_ports = Enum.map(container.public_ports, &struct(Schemas.PublishedPort, &1))
         %Schemas.Container{container | public_ports: pub_ports}
 
-      Keyword.has_key?(row, :volume) ->
-        map = from_json(row, :volume)
-        name = Keyword.get(row, :name)
-        struct(Schemas.Volume, Map.put(map, :name, name))
+      # view api_list_containers
+      MapSet.subset?(MapSet.new(["id", "image_id", "image_name", "image_tag"]), columns) ->
+        # FIXME: Annoying that to_existing_atom does not work here?!
+        row
+        |> Map.to_list()
+        |> Enum.map(fn {key, val} -> {String.to_atom(key), val} end)
+        |> Map.new()
 
-      Keyword.has_key?(row, :mount) ->
-        struct(Schemas.MountPoint, from_json(row, :mount))
+      columns == MapSet.new(["id", "name", "tag", "dataset"]) ->
+        row
+        |> Map.to_list()
+        |> Enum.map(fn {key, val} -> {String.to_atom(key), val} end)
+        |> Map.new()
 
-      Keyword.has_key?(row, :config) ->
-        struct(Schemas.EndPoint, from_json(row, :config))
+      columns == MapSet.new(["network", "id"]) ->
+        network = Map.put(from_json(row["network"]), :id, row["id"])
+        struct(Schemas.Network, network)
 
-      Keyword.has_key?(row, :container_id) ->
-        Keyword.get(row, :container_id)
+      columns == MapSet.new(["image", "id"]) ->
+        image = Map.put(from_json(row["image"]), :id, row["id"])
+        struct(Schemas.Image, image)
 
-      Keyword.has_key?(row, :network_id) ->
-        Keyword.get(row, :network_id)
+      columns == MapSet.new(["volume", "name"]) ->
+        image = Map.put(from_json(row["volume"]), :name, row["name"])
+        struct(Schemas.Volume, image)
+
+      columns == MapSet.new(["mount"]) ->
+        struct(Schemas.MountPoint, from_json(row["mount"]))
+
+      columns == MapSet.new(["config"]) ->
+        struct(Schemas.EndPoint, from_json(row["config"]))
+
+      columns == MapSet.new(["volume_name"]) ->
+        row["volume_name"]
+
+      columns == MapSet.new(["container_id"]) ->
+        row["container_id"]
+
+      columns == MapSet.new(["endpoint", "network_id"]) ->
+        row["network_id"]
 
       true ->
-        row
+        msg = "could not decode database row #{inspect(row)}"
+        Logger.error(msg)
+        raise RuntimeError, message: msg
     end
   end
 
-  defp from_json(row, element) do
-    obj = Keyword.get(row, element)
-    {:ok, json} = Jason.decode(obj, [{:keys, :atoms}])
-    json
+  # @spec transform_row_old(List.t()) :: %Schemas.Image{}
+  # defp transform_row_old(row) do
+  #  cond do
+  # Keyword.has_key?(row, :image) ->
+  #  map = from_json(row, :image)
+  #  id = Keyword.get(row, :id)
+  #  struct(Schemas.Image, Map.put(map, :id, id))
+
+  # Keyword.has_key?(row, :network) ->
+  #  map = from_json(row, :network)
+  #  id = Keyword.get(row, :id)
+  #  struct(Schemas.Network, Map.put(map, :id, id))
+
+  # Keyword.has_key?(row, :container) ->
+  #  map = from_json(row, :container)
+  #  id = Keyword.get(row, :id)
+  #  container = struct(Schemas.Container, Map.put(map, :id, id))
+  #  pub_ports = Enum.map(container.public_ports, &struct(Schemas.PublishedPort, &1))
+  #  %Schemas.Container{container | public_ports: pub_ports}
+
+  # Keyword.has_key?(row, :volume) ->
+  #  map = from_json(row, :volume)
+  #  name = Keyword.get(row, :name)
+  #  struct(Schemas.Volume, Map.put(map, :name, name))
+
+  # Keyword.has_key?(row, :mount) ->
+  #  struct(Schemas.MountPoint, from_json(row, :mount))
+
+  # Keyword.has_key?(row, :config) ->
+  #  struct(Schemas.EndPoint, from_json(row, :config))
+
+  # Keyword.has_key?(row, :container_id) ->
+  #  Keyword.get(row, :container_id)
+
+  # Keyword.has_key?(row, :network_id) ->
+  #  Keyword.get(row, :network_id)
+
+  #    true ->
+  #      row
+  #  end
+  # end
+
+  defp from_json(obj) do
+    Jason.decode!(obj, [{:keys, :atoms}])
   end
 
   def pid2str(""), do: ""
@@ -507,10 +555,6 @@ defmodule Kleened.Core.MetaData do
 
   def str2pid(""), do: ""
   def str2pid(pidstr), do: :erlang.list_to_pid(String.to_charlist(pidstr))
-
-  def fetch_all(db, sql, values \\ []) do
-    Basic.exec(db, sql, values) |> Basic.rows()
-  end
 
   def drop_tables(db) do
     {:ok, []} = Basic.exec(db, "DROP VIEW api_list_containers")
@@ -522,13 +566,16 @@ defmodule Kleened.Core.MetaData do
     {:ok, []} = Basic.exec(db, "DROP TABLE endpoint_configs")
   end
 
-  def create_tables(db) do
-    {:ok, []} = Basic.exec(db, @table_network)
-    {:ok, []} = Basic.exec(db, @table_endpoint_configs)
-    {:ok, []} = Basic.exec(db, @table_images)
-    {:ok, []} = Basic.exec(db, @table_containers)
-    {:ok, []} = Basic.exec(db, @table_volumes)
-    {:ok, []} = Basic.exec(db, @table_mounts)
-    {:ok, []} = Basic.exec(db, @view_api_list_containers)
+  def create_tables(conn) do
+    # {:ok, %Exqlite.Query{}, %Exqlite.Result{}, %Exqlite.Connection{}}
+    # Med data:
+    # {:ok, %Exqlite.Query{statement: "CREATE TABLE IF NOT EXISTS\nnetworks (\n  id      TEXT PRIMARY KEY,\n  network TEXT\n)\n", name: nil, ref: #Reference<0.3934892043.450494471.56530>, command: nil}, %Exqlite.Result{command: :execute, columns: [], rows: [], num_rows: 0}, %Exqlite.Connection{db: #Reference<0.3934892043.450494471.56526>, directory: "/zroot/kleene", path: "/zroot/kleene/metadata.sqlite", transaction_status: :idle, status: :idle, chunk_size: 50, before_disconnect: nil}}
+    {:ok, _, _, _} = Basic.exec(conn, @table_network)
+    {:ok, _, _, _} = Basic.exec(conn, @table_endpoint_configs)
+    {:ok, _, _, _} = Basic.exec(conn, @table_images)
+    {:ok, _, _, _} = Basic.exec(conn, @table_containers)
+    {:ok, _, _, _} = Basic.exec(conn, @table_volumes)
+    {:ok, _, _, _} = Basic.exec(conn, @table_mounts)
+    {:ok, _, _, _} = Basic.exec(conn, @view_api_list_containers)
   end
 end
