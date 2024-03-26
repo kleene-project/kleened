@@ -11,6 +11,7 @@ lib/kleened/releases/0.0.1/consolidated/Elixir.List.Chars.beam
 lib/kleened/releases/0.0.1/consolidated/Elixir.OpenApiSpex.Extendable.beam
 lib/kleened/releases/0.0.1/consolidated/Elixir.Plug.Exception.beam
 lib/kleened/releases/0.0.1/consolidated/Elixir.String.Chars.beam
+lib/kleened/releases/0.0.1/consolidated/Elixir.DBConnection.Query.beam
 lib/kleened/releases/0.0.1/elixir
 lib/kleened/releases/0.0.1/env.sh
 lib/kleened/releases/0.0.1/iex
