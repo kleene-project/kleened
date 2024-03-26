@@ -4,6 +4,12 @@ package:
 test:
 	mix test --seed 0 --trace --max-failures 1
 
+init:
+	mix run --eval "Kleened.Core.Config.initialize_host(%{dry_run: false})"
+
+dryinit:
+	mix run --eval "Kleened.Core.Config.initialize_host(%{dry_run: true})"
+
 shell:
 	iex -S mix
 
