@@ -1,7 +1,7 @@
 defmodule Kleened.Core.MetaData do
   require Logger
   alias Exqlite.Basic
-  alias Kleened.Core.{Config, Image, Container, Network, Volume}
+  alias Kleened.Core.{Config, Image, Container, Network, Volume, OS}
   alias Kleened.API.Schemas
 
   use Agent
@@ -79,6 +79,7 @@ defmodule Kleened.Core.MetaData do
         raise RuntimeError, message: "failed to start kleened"
 
       {:ok, conn} ->
+        OS.cmd(~w"/bin/chmod 600 #{filepath}")
         create_tables(conn)
         Agent.start_link(fn -> conn end, name: __MODULE__)
     end
