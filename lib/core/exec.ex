@@ -343,6 +343,7 @@ defmodule Kleened.Core.Exec do
 
     jail_param =
       jail_param
+      |> update_jailparam_if_not_exist(["host.hostname"], "host.hostname=#{id}")
       |> update_jailparam_if_not_exist(["exec.jail_user"], "exec.jail_user=#{user}")
       |> update_jailparam_if_not_exist(["exec.clean", "exec.noclean"], "exec.clean=true")
       |> update_jailparam_if_not_exist(["exec.stop", "exec.nostop"], default_exec_stop)
