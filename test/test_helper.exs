@@ -30,8 +30,7 @@ defmodule TestHelper do
 
   def compare_to_baseline_environment(%{
         addresses: before_addresses,
-        mount_devfs: before_mount_devfs,
-        test_image_dataset: before_test_image
+        mount_devfs: before_mount_devfs
       }) do
     %{
       addresses: after_addresses,
@@ -82,12 +81,11 @@ defmodule TestHelper do
     MetaData.list_networks()
     |> Enum.map(fn %{id: id} -> Network.remove(id) end)
 
-    image_list =
-      MetaData.list_images()
-      |> Enum.filter(fn image ->
-        not (image.name == "FreeBSD" and image.tag == "testing")
-      end)
-      |> Enum.map(fn image -> Image.remove(image.id) end)
+    MetaData.list_images()
+    |> Enum.filter(fn image ->
+      not (image.name == "FreeBSD" and image.tag == "testing")
+    end)
+    |> Enum.map(fn image -> Image.remove(image.id) end)
   end
 
   def container_valid_run(config) do

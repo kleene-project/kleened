@@ -432,7 +432,11 @@ defmodule NetworkTest do
         interface: "em0",
         subnet: "172.19.3.0/24",
         gateway: "",
-        type: "custom"
+        type: "custom",
+        # NAT needs to be disabled when using 'em0' as the custom interface
+        # since it is also the GW interface. Otherwise, it will NAT traffic on
+        # 'em0' to itself which breaks connectivity to the vagrant box.
+        nat: ""
       })
 
     assert [@cant_connect_host_with_any] ==
@@ -473,6 +477,7 @@ defmodule NetworkTest do
         interface: "em0",
         subnet: "172.19.3.0/24",
         gateway: "",
+        nat: "",
         type: "custom"
       })
 
@@ -901,6 +906,7 @@ defmodule NetworkTest do
         name: "testnet3",
         subnet: "172.20.1.0/24",
         interface: "em0",
+        nat: "",
         type: "custom"
       },
       server: %{network_driver: "ipnet"},
@@ -1013,32 +1019,31 @@ defmodule NetworkTest do
       expected_result: :timeout
     })
 
-    # FIXME: IPv6 keeps connecting! :(
     # Bridge (using IPv6)
-    # inter_container_connectivity_test(%{
-    #  network_server: %{
-    #    name: "testnet3",
-    #    gateway: "",
-    #    gateway6: "<auto>",
-    #    subnet: "",
-    #    subnet6: "fdef:3333:3333::/64",
-    #    nat: "",
-    #    type: "loopback"
-    #  },
-    #  network_client: %{
-    #    name: "testnet4",
-    #    gateway: "",
-    #    gateway6: "<auto>",
-    #    subnet: "",
-    #    subnet6: "fdef:4444:4444::/64",
-    #    nat: "",
-    #    type: "loopback"
-    #  },
-    #  server: %{network_driver: "ipnet"},
-    #  client: %{network_driver: "ipnet"},
-    #  protocol: "inet6",
-    #  expected_result: :timeout
-    # })
+    inter_container_connectivity_test(%{
+      network_server: %{
+        name: "testnet3",
+        gateway: "",
+        gateway6: "<auto>",
+        subnet: "",
+        subnet6: "fdef:3333:3333::/64",
+        nat: "",
+        type: "loopback"
+      },
+      network_client: %{
+        name: "testnet4",
+        gateway: "",
+        gateway6: "<auto>",
+        subnet: "",
+        subnet6: "fdef:4444:4444::/64",
+        nat: "",
+        type: "loopback"
+      },
+      server: %{network_driver: "ipnet"},
+      client: %{network_driver: "ipnet"},
+      protocol: "inet6",
+      expected_result: :timeout
+    })
   end
 
   test "vnet containers on different networks can't communicate with eachother" do
