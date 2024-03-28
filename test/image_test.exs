@@ -1246,6 +1246,27 @@ defmodule ImageTest do
     assert not container_resolv_conf_exists?(run_config)
   end
 
+  test "that the default CMD, when using a base image as parent, is ['/bin/sh', '/etc/rc']" do
+    dockerfile = """
+    FROM FreeBSD:testing
+    RUN echo "new testing image"
+    """
+
+    context = create_test_context("test_image_default_base_cmd")
+    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
+
+    {%Schemas.Image{id: image_id}, _build_log} =
+      TestHelper.image_valid_build(%{
+        context: context,
+        dockerfile: @tmp_dockerfile
+      })
+
+    response = TestHelper.image_inspect_raw(image_id)
+    assert %{cmd: ["/bin/sh", "/etc/rc"]} = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+
+    remove_test_context(context)
+  end
+
   test "image-build stops prematurely from non-zero exitcode from RUN-instruction" do
     dockerfile = """
     FROM FreeBSD:testing
