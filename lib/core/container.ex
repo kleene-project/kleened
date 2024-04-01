@@ -102,7 +102,8 @@ defmodule Kleened.Core.Container do
        ) do
     {image_name, potential_image_snapshot} = Utils.decode_snapshot(image_ident)
 
-    with {:image, %Schemas.Image{} = image} <- {:image, MetaData.get_image(image_name)},
+    with :ok <- validate_name(config.name),
+         {:image, %Schemas.Image{} = image} <- {:image, MetaData.get_image(image_name)},
          {:ok, pub_ports} <- validate_public_ports(config),
          {:ok, dataset} <- create_dataset(potential_image_snapshot, container_id, image) do
       assemble_container(container_id, image, dataset, pub_ports, config)
@@ -112,6 +113,17 @@ defmodule Kleened.Core.Container do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp validate_name(nil) do
+    :ok
+  end
+
+  defp validate_name(name) do
+    case name =~ ~r"^/?[a-zA-Z0-9][a-zA-Z0-9_.-]+$" do
+      true -> :ok
+      false -> {:error, "#{name} does not match /\?\[a-zA-Z0-9\]\[a-zA-Z0-9\_\.-\]\+\$"}
     end
   end
 
