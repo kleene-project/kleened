@@ -1,6 +1,6 @@
 defmodule MetaDataTest do
   require Logger
-  use ExUnit.Case
+  use Kleened.Test.ConnCase
   alias Kleened.Core.Config
   alias Kleened.API.Schemas
   import Kleened.Core.MetaData
@@ -8,12 +8,13 @@ defmodule MetaDataTest do
 
   @moduletag :capture_log
 
-  setup do
+  setup %{host_state: state} do
     TestHelper.cleanup()
 
     on_exit(fn ->
       Logger.info("Cleaning up after test...")
       TestHelper.cleanup()
+      TestHelper.compare_to_baseline_environment(state)
     end)
 
     :ok
@@ -193,6 +194,7 @@ defmodule MetaDataTest do
   end
 
   test "test db creation" do
+    base_image = get_image("FreeBSD:testing")
     db_file = dbfile()
     assert file_exists?(db_file)
     Application.stop(:kleened)
@@ -200,7 +202,7 @@ defmodule MetaDataTest do
     assert not file_exists?(db_file)
     Application.start(:kleened)
     assert file_exists?(db_file)
-    Kleened.Test.Utils.create_test_base_image()
+    add_image(base_image)
   end
 
   defp dbfile() do
