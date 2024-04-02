@@ -1094,9 +1094,9 @@ defmodule Kleened.Core.Network do
       {:ok, host_gw} ->
         ["kleenet_host_gw_if=\"#{host_gw}\""]
 
-      {:error, _} ->
+      {:error, reason} ->
         Logger.warning(
-          "Could not detect any gateway interface on the host. Connectivity might not work."
+          "Unable to locate gateway interface on the host: #{reason}. Connectivity might not work."
         )
 
         []

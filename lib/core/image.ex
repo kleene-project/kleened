@@ -306,7 +306,7 @@ defmodule Kleened.Core.Image do
          {:ok, container} <-
            Kleened.Core.Container.create(state.image_id, %Schemas.ContainerConfig{
              state.build_config.container_config
-             | image: image.id,
+             | image: image_ident,
                cmd: image.cmd
            }),
          :ok <- create_build_container_connectivity(container, state.build_config.networks) do
