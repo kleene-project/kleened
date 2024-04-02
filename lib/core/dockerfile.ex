@@ -3,91 +3,104 @@ defmodule Kleened.Core.Dockerfile do
   require Logger
 
   def parse(dockerfile) do
-    {:ok, tokens} = decode_file(dockerfile)
+    instructions = decode_file(dockerfile)
 
-    case starts_with_from_instruction(tokens) do
+    case verify_instructions(instructions) do
       :ok ->
-        tokens
+        {:ok, instructions}
 
-      {:error, {:illegal_before_from, line}} ->
-        [{line, {:error, "instruction not permitted before a FROM instruction"}}]
+      # {:error, {:illegal_before_from, line}} ->
+      #  [{line, {:error, "instruction not permitted before a FROM instruction"}}]
+      {:error, error_msg} ->
+        {:error, error_msg}
     end
   end
 
-  defp starts_with_from_instruction([instruction | rest]) do
-    case instruction do
-      {_line, {:arg, _}} ->
-        starts_with_from_instruction(rest)
+  defp verify_instructions([]) do
+    :ok
+  end
 
-      {_line, {:from, _}} ->
-        :ok
+  defp verify_instructions([{line, {:env, {:error, msg}}} | _rest]) do
+    {:error, "#{msg} on line: #{line}"}
+  end
 
-      {_line, {:from, _, _}} ->
-        :ok
+  defp verify_instructions([{line, {:arg, {:error, msg}}} | _rest]) do
+    {:error, "#{msg} on line: #{line}"}
+  end
 
-      {line, _illegal_instruction} ->
-        {:error, {:illegal_before_from, line}}
-    end
+  defp verify_instructions([{line, {:error, reason}} | _rest]) do
+    {:error, "error in '#{line}': #{reason}"}
+  end
+
+  defp verify_instructions([{_line, _instruction} | rest]) do
+    verify_instructions(rest)
   end
 
   def decode_file(dockerfile) do
-    instructions =
-      dockerfile
-      # Remove escaped newlines
-      |> replace("\\\n", "")
-      # Remove empty lines
-      |> split("\n")
-      |> Enum.filter(&remove_blanks_and_comments/1)
-      |> Enum.map(&decode_line/1)
-
-    {:ok, instructions}
+    dockerfile
+    # Remove escaped newlines
+    |> replace("\\\n", "")
+    # Remove empty lines
+    |> split("\n")
+    |> Enum.filter(&remove_blanks_and_comments/1)
+    |> Enum.map(&decode_line/1)
   end
 
   defp remove_blanks_and_comments(<<?#, _rest::binary>>), do: false
-  defp remove_blanks_and_comments(""), do: false
-  defp remove_blanks_and_comments(_), do: true
+
+  defp remove_blanks_and_comments(line) do
+    case String.trim(line) do
+      "" -> false
+      _ -> true
+    end
+  end
 
   defp decode_line(instruction_line) do
-    [instruction, args] = split(instruction_line, " ", parts: 2)
-
     instr =
-      case {instruction, args} do
-        {"FROM", args} ->
-          decode_from_args(args)
+      case split(instruction_line, " ", parts: 2) do
+        [instruction, args] ->
+          case {instruction, args} do
+            {"FROM", args} ->
+              decode_from_args(args)
 
-        {"USER", user} ->
-          {:user, trim(user)}
+            {"USER", user} ->
+              {:user, trim(user)}
 
-        {"ENV", env_var} ->
-          {:env, clean_envvar(env_var)}
+            {"ENV", env_var} ->
+              {:env, clean_envvar(env_var)}
 
-        {"ARG", arg_var} ->
-          {:arg, clean_argvar(arg_var)}
+            {"ARG", arg_var} ->
+              {:arg, clean_argvar(arg_var)}
 
-        {"WORKDIR", workdir} ->
-          {:workdir, workdir}
+            {"WORKDIR", workdir} ->
+              {:workdir, workdir}
 
-        {"RUN", <<"[", _::binary>> = json_cmd} ->
-          {:run, json_decode(json_cmd)}
+            {"RUN", <<"[", _::binary>> = json_cmd} ->
+              {:run, json_decode(json_cmd)}
 
-        {"RUN", shellform} ->
-          {:run, ["/bin/sh", "-c", shellform]}
+            {"RUN", shellform} ->
+              {:run, ["/bin/sh", "-c", shellform]}
 
-        {"CMD", <<"[", _::binary>> = json_cmd} ->
-          {:cmd, json_decode(json_cmd)}
+            {"CMD", <<"[", _::binary>> = json_cmd} ->
+              {:cmd, json_decode(json_cmd)}
 
-        {"CMD", shellform} ->
-          {:cmd, ["/bin/sh", "-c", shellform]}
+            {"CMD", shellform} ->
+              {:cmd, ["/bin/sh", "-c", shellform]}
 
-        {"COPY", <<"[", _::binary>> = json_form} ->
-          {:copy, json_decode(json_form)}
+            {"COPY", <<"[", _::binary>> = json_form} ->
+              {:copy, json_decode(json_form)}
 
-        {"COPY", args} ->
-          {:copy, split(args, " ")}
+            {"COPY", args} ->
+              {:copy, split(args, " ")}
 
-        _unknown_instruction ->
-          Logger.debug("Invalid instruction: #{instruction_line}")
-          {:unparsed, instruction_line}
+            _unknown_instruction ->
+              Logger.debug("Invalid instruction: #{instruction_line}")
+              {:error, "invalid instruction"}
+          end
+
+        _ ->
+          Logger.debug("Could not decode instruction: #{instruction_line}")
+          {:error, "invalid instruction"}
       end
 
     {instruction_line, instr}

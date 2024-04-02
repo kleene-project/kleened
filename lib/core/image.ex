@@ -32,36 +32,40 @@ defmodule Kleened.Core.Image do
 
     case File.read(dockerfile_path) do
       {:ok, dockerfile} ->
-        instructions = Kleened.Core.Dockerfile.parse(dockerfile)
+        case Kleened.Core.Dockerfile.parse(dockerfile) do
+          {:ok, instructions} ->
+            case starts_with_from_instruction(instructions) do
+              :ok ->
+                image_id = Kleened.Core.Utils.uuid()
 
-        case verify_instructions(instructions) do
-          :ok ->
-            image_id = Kleened.Core.Utils.uuid()
-
-            build_config = %Schemas.ImageBuildConfig{
-              build_config
-              | container_config: %Schemas.ContainerConfig{
-                  build_config.container_config
-                  | name: "builder_#{image_id}"
+                build_config = %Schemas.ImageBuildConfig{
+                  build_config
+                  | container_config: %Schemas.ContainerConfig{
+                      build_config.container_config
+                      | name: "builder_#{image_id}"
+                    }
                 }
-            }
 
-            state = %State{
-              build_config: build_config,
-              image_id: image_id,
-              buildargs_collected: [],
-              msg_receiver: self(),
-              current_step: 1,
-              instructions: instructions,
-              processed_instructions: [],
-              snapshots: [],
-              total_steps: length(instructions),
-              container: %Schemas.Container{env: []},
-              workdir: "/"
-            }
+                state = %State{
+                  build_config: build_config,
+                  image_id: image_id,
+                  buildargs_collected: [],
+                  msg_receiver: self(),
+                  current_step: 1,
+                  instructions: instructions,
+                  processed_instructions: [],
+                  snapshots: [],
+                  total_steps: length(instructions),
+                  container: %Schemas.Container{env: []},
+                  workdir: "/"
+                }
 
-            pid = Process.spawn(fn -> process_instructions(state) end, [:link])
-            {:ok, image_id, pid}
+                pid = Process.spawn(fn -> process_instructions(state) end, [:link])
+                {:ok, image_id, pid}
+
+              {:error, error_msg} ->
+                {:error, error_msg}
+            end
 
           {:error, error_msg} ->
             {:error, error_msg}
@@ -70,6 +74,23 @@ defmodule Kleened.Core.Image do
       {:error, reason} ->
         msg = "Could not open Docker file #{dockerfile_path}: #{inspect(reason)}"
         {:error, msg}
+    end
+  end
+
+  defp starts_with_from_instruction([instruction | rest]) do
+    case instruction do
+      {_line, {:arg, _}} ->
+        starts_with_from_instruction(rest)
+
+      {_line, {:from, _}} ->
+        :ok
+
+      {_line, {:from, _, _}} ->
+        :ok
+
+      {line, _illegal_instruction} ->
+        reason = "'#{line}' not permitted before a FROM instruction"
+        {:error, reason}
     end
   end
 
@@ -247,30 +268,6 @@ defmodule Kleened.Core.Image do
       end
 
     Map.put(dataset2clones, dataset, clones)
-  end
-
-  defp verify_instructions([]) do
-    :ok
-  end
-
-  defp verify_instructions([{line, {:env, {:error, msg}}} | _rest]) do
-    {:error, "#{msg} on line: #{line}"}
-  end
-
-  defp verify_instructions([{line, {:arg, {:error, msg}}} | _rest]) do
-    {:error, "#{msg} on line: #{line}"}
-  end
-
-  defp verify_instructions([{_line, {:unparsed, instruction_line}} | _rest]) do
-    {:error, "invalid instruction: #{instruction_line}"}
-  end
-
-  defp verify_instructions([{line, {:error, reason}} | _rest]) do
-    {:error, "error in '#{line}': #{reason}"}
-  end
-
-  defp verify_instructions([{_line, _instruction} | rest]) do
-    verify_instructions(rest)
   end
 
   defp validate_image_reference(image_ident) do
