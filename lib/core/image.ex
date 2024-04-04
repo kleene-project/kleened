@@ -261,13 +261,19 @@ defmodule Kleened.Core.Image do
   def create_dataset2clones_([snapshot, clones_raw], dataset2clones) do
     [dataset, _snapshot_name] = String.split(snapshot, "@")
 
-    clones =
-      case clones_raw do
-        "-" -> []
-        clones_nonempty -> String.split(clones_nonempty, ",")
+    union_clones =
+      case {Map.get(dataset2clones, dataset), clones_raw} do
+        {nil, "-"} ->
+          []
+
+        {old_clones, "-"} ->
+          old_clones
+
+        {old_clones, new_clones_csv} ->
+          String.split(new_clones_csv, ",") ++ old_clones
       end
 
-    Map.put(dataset2clones, dataset, clones)
+    Map.put(dataset2clones, dataset, union_clones)
   end
 
   defp validate_image_reference(image_ident) do
