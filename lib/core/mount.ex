@@ -69,7 +69,7 @@ defmodule Kleened.Core.Mount do
     mountpoint = ZFS.mountpoint(container.dataset)
     absolute_destination = Path.join(mountpoint, destination)
 
-    case create_directory(absolute_destination) do
+    case create_directory_or_file(absolute_destination, source) do
       :ok ->
         case create_nullfs_mount(container, source, destination, read_only) do
           {:ok, mountpoint} ->
@@ -158,6 +158,39 @@ defmodule Kleened.Core.Mount do
       {output, _nonzero_exitcode} ->
         {:error, output}
     end
+  end
+
+  defp create_directory_or_file(destination, source) do
+    source = File.stat(source)
+    create_directory_or_file_(destination, source)
+  end
+
+  defp create_directory_or_file_(destination, {:ok, %File.Stat{type: :directory}}) do
+    create_directory(destination)
+  end
+
+  defp create_directory_or_file_(destination, {:ok, %File.Stat{type: :regular}}) do
+    case create_directory(Path.dirname(destination)) do
+      :ok ->
+        case File.touch(destination) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            {:error, "could not create destination file: #{inspect(reason)}"}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp create_directory_or_file_(_destination, {:ok, _stat}) do
+    {:error, "could not determine source type, must be either directory or regular file"}
+  end
+
+  defp create_directory_or_file_(_destination, {:error, reason}) do
+    {:error, "error ocurred while determining source type: #{inspect(reason)}"}
   end
 
   defp create_directory(destination) do
