@@ -390,25 +390,14 @@ defmodule Kleened.Core.Exec do
     ["ip4=inherit", "ip6=inherit"]
   end
 
-  defp setup_connectivity_configuration(container) do
-    case MetaData.connected_networks(container.id) do
-      [] -> []
-      networks -> setup_connectivity_configuration(container, networks)
-    end
-  end
-
-  defp setup_connectivity_configuration(
-         %Schemas.Container{network_driver: "ipnet"} = container,
-         networks
-       ) do
+  defp setup_connectivity_configuration(%Schemas.Container{network_driver: "ipnet"} = container) do
+    networks = MetaData.connected_networks(container.id)
     Enum.flat_map(networks, &create_alias_network_config(&1, container.id))
   end
 
-  defp setup_connectivity_configuration(
-         %Schemas.Container{network_driver: "vnet"} = container,
-         networks
-       ) do
-    config = Enum.flat_map(networks, &create_vnet_network_config(&1, container.id))
+  defp setup_connectivity_configuration(%Schemas.Container{network_driver: "vnet"} = container) do
+    networks = MetaData.connected_networks(container.id)
+    config = ["vnet" | Enum.flat_map(networks, &create_vnet_network_config(&1, container.id))]
     Kleened.Core.Network.configure_pf()
     config
   end
@@ -453,14 +442,13 @@ defmodule Kleened.Core.Exec do
     # "exec.poststop=\"ifconfig #{bridge} deletem #{epair}a\" " <>
     # "exec.poststop=\"ifconfig #{epair}a destroy\""
     base_config = [
-      "vnet",
       "vnet.interface=#{epair}b",
       "exec.prestart=ifconfig #{bridge} addm #{epair}a",
       "exec.prestart=ifconfig #{epair}a up"
     ]
 
     extended_config =
-      create_extended_config([],
+      create_exec_start_params([],
         subnet: {epair, subnet, ip},
         gateway: gateway,
         subnet6: {epair, subnet6, ip6},
@@ -470,55 +458,55 @@ defmodule Kleened.Core.Exec do
     base_config ++ extended_config
   end
 
-  defp create_extended_config(config, []) do
+  defp create_exec_start_params(config, []) do
     # We need to reverse the order of jail parameters.
     # Otherwise we would add the gateway before the subnet (and then fail)
     # when starting the jail
     Enum.reverse(config)
   end
 
-  defp create_extended_config(config, [{_, ""} | rest]) do
+  defp create_exec_start_params(config, [{_, ""} | rest]) do
     # extended_config = [
     #  "exec.start=ifconfig #{epair}b #{ip}/#{subnet.mask}",
     #  "exec.start=route add -inet default #{gateway}"
     # ]
-    create_extended_config(config, rest)
+    create_exec_start_params(config, rest)
   end
 
-  defp create_extended_config(config, [{:subnet, {_epair, subnet, ip}} | rest])
+  defp create_exec_start_params(config, [{:subnet, {_epair, subnet, ip}} | rest])
        when subnet == "" or ip == "" do
-    create_extended_config(config, rest)
+    create_exec_start_params(config, rest)
   end
 
-  defp create_extended_config(config, [{:subnet, {epair, subnet, ip}} | rest]) do
+  defp create_exec_start_params(config, [{:subnet, {epair, subnet, ip}} | rest]) do
     %CIDR{} = subnet = CIDR.parse(subnet)
 
-    create_extended_config(
+    create_exec_start_params(
       ["exec.start=ifconfig #{epair}b inet #{ip}/#{subnet.mask}" | config],
       rest
     )
   end
 
-  defp create_extended_config(config, [{:subnet6, {_epair, subnet6, ip6}} | rest])
+  defp create_exec_start_params(config, [{:subnet6, {_epair, subnet6, ip6}} | rest])
        when subnet6 == "" or ip6 == "" do
-    create_extended_config(config, rest)
+    create_exec_start_params(config, rest)
   end
 
-  defp create_extended_config(config, [{:subnet6, {epair, subnet6, ip6}} | rest]) do
+  defp create_exec_start_params(config, [{:subnet6, {epair, subnet6, ip6}} | rest]) do
     %CIDR{} = subnet6 = CIDR.parse(subnet6)
 
-    create_extended_config(
+    create_exec_start_params(
       ["exec.start=ifconfig #{epair}b inet6 #{ip6}/#{subnet6.mask}" | config],
       rest
     )
   end
 
-  defp create_extended_config(config, [{:gateway, gateway} | rest]) do
-    create_extended_config(["exec.start=route add -inet default #{gateway}" | config], rest)
+  defp create_exec_start_params(config, [{:gateway, gateway} | rest]) do
+    create_exec_start_params(["exec.start=route add -inet default #{gateway}" | config], rest)
   end
 
-  defp create_extended_config(config, [{:gateway6, gateway6} | rest]) do
-    create_extended_config(["exec.start=route add -inet6 default #{gateway6}" | config], rest)
+  defp create_exec_start_params(config, [{:gateway6, gateway6} | rest]) do
+    create_exec_start_params(["exec.start=route add -inet6 default #{gateway6}" | config], rest)
   end
 
   def extract_ip(container_id, network_id, "inet") do
