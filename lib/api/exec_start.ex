@@ -9,7 +9,7 @@ defmodule Kleened.API.ExecStartWebSocket do
 
   defmodule State do
     defstruct handshaking: nil,
-              exec_id: nil
+              config: nil
   end
 
   def open_api_operation(_) do
@@ -53,13 +53,13 @@ defmodule Kleened.API.ExecStartWebSocket do
     case Jason.decode(message_raw, keys: :atoms!) do
       {:ok, message} ->
         case Cast.cast(Schemas.ExecStartConfig.schema(), message) do
-          {:ok, %{exec_id: exec_id, attach: attach, start_container: start_container}} ->
+          {:ok, %{exec_id: exec_id, attach: attach, start_container: start_container} = config} ->
             result = Exec.start(exec_id, %{attach: attach, start_container: start_container})
 
             case {result, attach} do
               {:ok, true} ->
                 Logger.debug("succesfully started executable #{exec_id}. Await output.")
-                state = %State{state | handshaking: false, exec_id: exec_id}
+                state = %State{state | handshaking: false, config: config}
                 {[{:text, Utils.starting_message()}], state}
 
               {:ok, false} ->
@@ -136,21 +136,20 @@ defmodule Kleened.API.ExecStartWebSocket do
     {:ok, state}
   end
 
-  def terminate(reason, _partial_req, %{exec_id: exec_id, attach: attach}) do
+  def terminate(reason, _partial_req, %{config: nil}) do
+    Logger.debug("stopping container unexpectedly: #{inspect(reason)}")
+  end
+
+  def terminate(reason, _partial_req, %{config: config}) do
     Logger.debug("connection closed #{inspect(reason)}")
 
-    case attach do
+    case config.attach do
       true ->
-        Logger.debug("stopping container since it is an attached websocket")
-        Exec.stop(exec_id, %{force_stop: false, stop_container: false})
+        Logger.debug("stopping execution instance because the attached client has disconnected")
+        Exec.stop(config.exec_id, %{force_stop: false, stop_container: false})
 
       false ->
         :ok
     end
-  end
-
-  def terminate(reason, _partial_req, _state) do
-    Logger.debug("connection closed #{inspect(reason)}")
-    :ok
   end
 end
