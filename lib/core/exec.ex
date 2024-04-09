@@ -171,24 +171,28 @@ defmodule Kleened.Core.Exec do
 
   @spec stop_executable(%State{}, stop_options()) :: {:ok, String.t()} | {:error, String.t()}
   defp stop_executable(state, opts) do
-    port_pid = Utils.get_os_pid_of_port(state.port)
+    case Utils.get_os_pid_of_port(state.port) do
+      nil ->
+        {:error, "the process port has already exited"}
 
-    cmd_args =
-      case opts do
-        %{force_stop: true} -> ["-9", port_pid]
-        %{force_stop: false} -> [port_pid]
-      end
+      port_pid ->
+        cmd_args =
+          case opts do
+            %{force_stop: true} -> ["-9", port_pid]
+            %{force_stop: false} -> [port_pid]
+          end
 
-    case OS.cmd(["/bin/kill" | cmd_args]) do
-      {_, 0} ->
-        {:ok, "succesfully sent termination signal to executable"}
+        case OS.cmd(["/bin/kill" | cmd_args]) do
+          {_, 0} ->
+            {:ok, "succesfully sent termination signal to executable"}
 
-      {output, non_zero} ->
-        Logger.warning(
-          "Could not kill process, kill exited with code #{non_zero} and output: #{output}"
-        )
+          {output, non_zero} ->
+            Logger.warning(
+              "Could not kill process, kill exited with code #{non_zero} and output: #{output}"
+            )
 
-        {:error, "error closing process: #{output}"}
+            {:error, "error closing process: #{output}"}
+        end
     end
   end
 
