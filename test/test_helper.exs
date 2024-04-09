@@ -188,11 +188,12 @@ defmodule TestHelper do
           _ ->
             endpoint_config = %{
               container: container_id,
+              network: network_name,
               ip_address: ip_address,
               ip_address6: ip_address6
             }
 
-            case network_connect(api_spec, network_name, endpoint_config) do
+            case network_connect(endpoint_config) do
               :ok -> resp
               other -> other
             end
@@ -711,16 +712,19 @@ defmodule TestHelper do
     })
   end
 
-  def network_connect(api_spec, network_id, container_id) when is_binary(container_id) do
-    network_connect(api_spec, network_id, %{
+  def network_connect(network_id, container_id) when is_binary(container_id) do
+    network_connect(%{
+      network: network_id,
       container: container_id,
       ip_address: "<auto>"
     })
   end
 
-  def network_connect(api_spec, network_id, config) do
+  def network_connect(config) do
+    api_spec = Kleened.API.Spec.spec()
+
     response =
-      conn(:post, "/networks/#{network_id}/connect", config)
+      conn(:post, "/networks/connect", config)
       |> put_req_header("content-type", "application/json")
       |> Router.call(@opts)
 

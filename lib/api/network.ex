@@ -197,15 +197,6 @@ defmodule Kleened.API.Network do
         summary: "network connect",
         description: "Connect a container to a network",
         operationId: "Network.Connect",
-        parameters: [
-          parameter(
-            :network_id,
-            :path,
-            %Schema{type: :string},
-            "ID or name of the network. An initial segment of the id can be supplied if it uniquely determines the network.",
-            required: true
-          )
-        ],
         requestBody:
           request_body(
             "Connection configuration.",
@@ -230,10 +221,9 @@ defmodule Kleened.API.Network do
 
     def connect(conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
-      network_id = conn.params.network_id
       config = conn.body_params
 
-      case Network.connect(network_id, config) do
+      case Network.connect(config) do
         {:ok, _endpoint_config} ->
           send_resp(conn, 204, "")
 

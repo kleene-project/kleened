@@ -709,13 +709,9 @@ defmodule Kleened.Core.Image do
   end
 
   defp create_build_container_connectivity(container, [endpoint_config | rest]) do
-    network = endpoint_config.network
+    config = %Schemas.EndPointConfig{endpoint_config | container: container.id}
 
-    case Network.connect(network, %Schemas.EndPointConfig{
-           endpoint_config
-           | container: container.id
-             # ip_address: "<auto>"
-         }) do
+    case Network.connect(config) do
       {:ok, _endpoint} -> create_build_container_connectivity(container, rest)
       {:error, reason} -> {:error, reason}
     end

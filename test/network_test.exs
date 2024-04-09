@@ -355,10 +355,10 @@ defmodule NetworkTest do
         network: ""
       })
 
-    assert :ok == TestHelper.network_connect(api_spec, network.name, container_id)
+    assert :ok == TestHelper.network_connect(network.name, container_id)
 
     assert %{message: "container already connected to the network"} ==
-             TestHelper.network_connect(api_spec, network.name, container_id)
+             TestHelper.network_connect(network.name, container_id)
   end
 
   test "try to disconnect twice", %{api_spec: api_spec} do
@@ -1900,7 +1900,7 @@ defmodule NetworkTest do
         network_driver: driver
       })
 
-    Enum.map(networks, &TestHelper.network_connect(api_spec, &1, container_id))
+    Enum.map(networks, &TestHelper.network_connect(&1, container_id))
   end
 
   defp interface_exists?(interface_name) do

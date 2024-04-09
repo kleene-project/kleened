@@ -103,7 +103,7 @@ defmodule Kleened.API.Spec do
           OpenApiSpex.PathItem.from_routes([
             %{verb: :get, plug: API.Network.Inspect, opts: []}
           ]),
-        "/networks/{network_id}/connect" =>
+        "/networks/connect" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :post, plug: API.Network.Connect, opts: []}
           ]),

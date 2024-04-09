@@ -35,7 +35,7 @@ defmodule Kleened.API.Router do
   delete("/networks/:network_id", to: API.Network.Remove)
   post("/networks/prune", to: API.Network.Prune)
   get("/networks/:network_id/inspect", to: API.Network.Inspect)
-  post("/networks/:network_id/connect", to: API.Network.Connect)
+  post("/networks/connect", to: API.Network.Connect)
   post("/networks/:network_id/disconnect/:container_id", to: API.Network.Disconnect)
 
   # Volumes:

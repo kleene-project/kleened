@@ -23,10 +23,10 @@ defmodule Kleened.Core.Network do
     GenServer.call(__MODULE__, {:create, config})
   end
 
-  @spec connect(String.t(), %Schemas.EndPointConfig{}) ::
+  @spec connect(%Schemas.EndPointConfig{}) ::
           {:ok, endpoint()} | {:error, String.t()}
-  def connect(network_idname, config) do
-    GenServer.call(__MODULE__, {:connect, network_idname, config}, 30_000)
+  def connect(config) do
+    GenServer.call(__MODULE__, {:connect, config}, 30_000)
   end
 
   @spec disconnect(String.t(), String.t()) :: :ok | {:error, String.t()}
@@ -135,7 +135,7 @@ defmodule Kleened.Core.Network do
   end
 
   def handle_call(
-        {:connect, net_ident, %Schemas.EndPointConfig{container: con_ident} = config},
+        {:connect, %Schemas.EndPointConfig{network: net_ident, container: con_ident} = config},
         _from,
         state
       ) do
