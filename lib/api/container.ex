@@ -7,6 +7,10 @@ defmodule Kleened.API.Container do
   import OpenApiSpex.Operation,
     only: [parameter: 4, parameter: 5, request_body: 4, response: 3, response: 4]
 
+  def container_identifier() do
+    "Container identifier, i.e., the name, ID, or an initial unique segment of the ID."
+  end
+
   defmodule List do
     use Plug.Builder
 
@@ -19,15 +23,10 @@ defmodule Kleened.API.Container do
 
     def open_api_operation(_) do
       %Operation{
-        # tags: ["users"],
         summary: "container list",
         description: """
-        Returns a list of containers. For details on the format, see
-        [inspect endpoint](#operation/ContainerInspect) for detailed information
-        about a container.
-
-        Note that it uses a different, smaller representation of a container
-        than inspecting a single container.
+        Returns a list of container summaries. For detailed information about a container,
+        use [Container.Inspect](#operation/Container.Inspect).
         """,
         operationId: "Container.List",
         parameters: [
@@ -80,6 +79,12 @@ defmodule Kleened.API.Container do
     def open_api_operation(_) do
       %Operation{
         summary: "container create",
+        description: """
+        Create a container.
+
+        Note that it is not possible to set any of the properties in the request body to `null`.
+        This is only possible when updating containers using the [Container.Update](#operation/Container.Update) endpoint.
+        """,
         operationId: "Container.Create",
         requestBody:
           request_body(
@@ -131,13 +136,24 @@ defmodule Kleened.API.Container do
     def open_api_operation(_) do
       %Operation{
         summary: "container update",
+        description: """
+        Re-configure a container.
+
+        The JSON request body is identical to [Container.Create](#operation/Container.Create),
+        and is being interpreted as follows:
+
+        - The `image` property is ignored.
+        - All other properties will replace the existing ones, if they are not `null`.
+
+        Some of the changes might require a running container to be restarted.
+        """,
         operationId: "Container.Update",
         parameters: [
           parameter(
             :container_id,
             :path,
             %Schema{type: :string},
-            "ID or name of the container. An initial segment of the id can be supplied if it uniquely determines the container.",
+            Kleened.API.Container.container_identifier(),
             required: true
           )
         ],
@@ -193,14 +209,14 @@ defmodule Kleened.API.Container do
     def open_api_operation(_) do
       %Operation{
         summary: "container remove",
-        description: "Delete a container.",
+        description: "Remove a container.",
         operationId: "Container.Remove",
         parameters: [
           parameter(
             :container_id,
             :path,
             %Schema{type: :string},
-            "ID or name of the container. An initial segment of the id can be supplied if it uniquely determines the container.",
+            Kleened.API.Container.container_identifier(),
             required: true
           )
         ],
@@ -284,7 +300,7 @@ defmodule Kleened.API.Container do
             :container_id,
             :path,
             %Schema{type: :string},
-            "ID or name of the container. An initial segment of the id can be supplied if it uniquely determines the container.",
+            Kleened.API.Container.container_identifier(),
             required: true
           )
         ],

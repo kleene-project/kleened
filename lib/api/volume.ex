@@ -20,7 +20,7 @@ defmodule Kleened.API.Volume do
     def open_api_operation(_) do
       %Operation{
         summary: "volume list",
-        description: "Returns a compact listing of existing volumes.",
+        description: "List volumes.",
         operationId: "Volume.List",
         responses: %{
           200 => response("no error", "application/json", Schemas.VolumeList)
@@ -56,12 +56,11 @@ defmodule Kleened.API.Volume do
     def open_api_operation(_) do
       %Operation{
         summary: "volume create",
-        description:
-          "Create a volume. The underlying volume zfs dataset will be located at `{kleened root path}/volumes`.",
+        description: "Create a new volume.",
         operationId: "Volume.Create",
         requestBody:
           request_body(
-            "Volume configuration to use when creating the volume",
+            "Volume configuration",
             "application/json",
             Schemas.VolumeConfig,
             required: true
@@ -98,7 +97,7 @@ defmodule Kleened.API.Volume do
       %Operation{
         summary: "volume remove",
         description: """
-        Remove one or more volumes. You cannot remove a volume that is in use by a container.
+        Remove one or more volumes. A volume that is in use by a container cannot be removed.
         """,
         operationId: "Volume.Remove",
         parameters: [
@@ -106,7 +105,7 @@ defmodule Kleened.API.Volume do
             :volume_name,
             :path,
             %Schema{type: :string},
-            "Name of the volume",
+            "Volume name",
             required: true
           )
         ],
@@ -185,7 +184,7 @@ defmodule Kleened.API.Volume do
             :volume_name,
             :path,
             %Schema{type: :string},
-            "Name of the volume",
+            "Volume name",
             required: true
           )
         ],

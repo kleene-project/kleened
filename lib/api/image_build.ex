@@ -15,8 +15,9 @@ defmodule Kleened.API.ImageBuild do
       description: """
       #{Utils.general_websocket_description()}
 
-      * The `data` field in the starting-message contains the `image_id`.
-      * If the build process is successful, the `data` field in the closing-message contains the `image_id` otherwise it contains the latest snapshot or empty string `""` if the build failed before any snapshots have been created.
+      * The `data` field in the starting-message contains the image ID of the image being built.
+      * If the build process is successful, the `data` field in the closing-message contains the `image_id`.
+      * If the build process fails the closing message's `data` field contains the latest snapshot or is set to `""` if the build failed before any snapshots have been created.
       """,
       operationId: "ImageBuild",
       requestBody:

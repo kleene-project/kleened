@@ -72,7 +72,7 @@ defmodule Kleened.API.Exec do
     def open_api_operation(_) do
       %Operation{
         summary: "exec stop",
-        description: "Stop and/or destroy an execution instance.",
+        description: "Stop and destroy an execution instance.",
         operationId: "Exec.Stop",
         parameters: [
           parameter(

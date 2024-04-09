@@ -34,7 +34,7 @@ defmodule Kleened.API.Schemas do
         },
         cmd: %Schema{
           description:
-            "Command to execute when the container is started. If no command is specified the command from the image is used.",
+            "Command to execute when the container is started. If `[]` is specified the command from the image is used.",
           type: :array,
           items: %Schema{type: :string},
           default: [],
@@ -45,7 +45,7 @@ defmodule Kleened.API.Schemas do
           type: :string,
           description: """
           User that executes the command (cmd).
-          If no user is set, the user from the image will be used, which in turn is 'root' if no user is specified there.
+          If user is set to `""`, the user from the image will be used, which in turn is 'root' if no user is specified there.
 
           This parameter will be overwritten by the jail parameter `exec.jail_user` if it is set.
           """,
@@ -67,19 +67,25 @@ defmodule Kleened.API.Schemas do
           type: :array,
           items: Kleened.API.Schemas.MountPointConfig,
           nullable: true,
-          default: []
+          default: [],
+          example: [
+            %{
+              type: "volume",
+              destination: "/mnt/db",
+              source: "database"
+            },
+            %{
+              type: "nullfs",
+              destination: "/webapp",
+              source: "/home/me/develop/webapp"
+            }
+          ]
         },
         jail_param: %Schema{
           description: """
           List of jail parameters to use for the container.
-          See the [`jails manual page`](https://man.freebsd.org/cgi/man.cgi?query=jail) for details.
-
-          A few parameters have some special behavior in Kleene:
-
-          - `exec.jail_user`: If not explicitly set, the value of the `user` parameter will be used.
-          - `mount.devfs`/`exec.clean`: If not explicitly set, `mount.devfs=true`/`exec.clean=true` will be used.
-
-          So, if you do not want `exec.clean` and `mount.devfs` enabled, you must actively disable them.
+          See the [jails manual page](https://man.freebsd.org/cgi/man.cgi?query=jail) for an explanation of what jail parameters is,
+          and the [Kleene documentation](/run/jail-parameters/) for an explanation of how they are used by Kleene.
           """,
           type: :array,
           items: %Schema{type: :string},
@@ -99,10 +105,19 @@ defmodule Kleened.API.Schemas do
         },
         public_ports: %Schema{
           description:
-            "List of listening ports that should accept traffic from sources external to the container.",
+            "Listening ports on network interfaces that redirect incoming traffic to the container.",
           type: :array,
           items: Kleened.API.Schemas.PublishedPortConfig,
-          default: []
+          nullable: true,
+          default: [],
+          example: [
+            %{
+              interfaces: ["em0"],
+              host_port: "8080",
+              container_port: "8000",
+              properties: "tcp"
+            }
+          ]
         }
       }
     })
@@ -110,29 +125,28 @@ defmodule Kleened.API.Schemas do
 
   defmodule Container do
     OpenApiSpex.schema(%{
-      description: "Summary description of a container",
+      description: "Kleene container",
       type: :object,
       properties: %{
         id: %Schema{description: "The id of the container", type: :string},
         name: %Schema{description: "Name of the container.", type: :string},
         image_id: %Schema{
-          description: "The id of the image that this container was created from",
+          description: "ID of the image that this container was created from",
           type: :string
         },
         cmd: %Schema{
-          description: "Command being used when starting the container",
+          description: "Command used when starting the container",
           type: :array,
           items: %Schema{type: :string},
           default: []
         },
         user: %Schema{
-          description:
-            "The default user used when creating execution instances in the container.",
+          description: "Default user used when creating execution instances in the container.",
           type: :string
         },
         env: %Schema{
           description:
-            "List of environment variables used when the container is used. This list will be merged with environment variables defined by the image. The values in this list takes precedence if the variable is defined in both places.",
+            "List of environment variables. The list will be merged with environment variables defined by the image. The values in this list takes precedence if the variable is defined in both.",
           type: :array,
           items: %Schema{type: :string},
           default: [],
@@ -141,7 +155,7 @@ defmodule Kleened.API.Schemas do
         network_driver: %Schema{
           type: :string,
           description: """
-          What kind of network driver is the container using.
+          What kind of network driver the container uses.
           Possible values are `ipnet`, `host`, `vnet`, `disabled`.
           """,
           example: "ipnet",
@@ -149,13 +163,25 @@ defmodule Kleened.API.Schemas do
         },
         public_ports: %Schema{
           description:
-            "List of listening ports that should accept traffic from sources external to the container.",
+            "Listening ports on network interfaces that redirect incoming traffic to the container.",
           type: :array,
           items: Kleened.API.Schemas.PublishedPort,
-          default: []
+          default: [],
+          example: [
+            %{
+              interfaces: ["em0"],
+              host_port: "8080",
+              container_port: "8000",
+              properties: "tcp"
+            }
+          ]
         },
         jail_param: %Schema{
-          description: "List of jail parameters (see jail(8) for details)",
+          description: """
+          List of jail parameters to use for the container.
+          See the [jails manual page](https://man.freebsd.org/cgi/man.cgi?query=jail) for an explanation of what jail parameters is,
+          and the [Kleene documentation](/run/jail-parameters/) for an explanation of how they are used by Kleene.
+          """,
           type: :array,
           items: %Schema{type: :string},
           default: [],
@@ -168,704 +194,9 @@ defmodule Kleened.API.Schemas do
     })
   end
 
-  defmodule ExecConfig do
-    OpenApiSpex.schema(%{
-      description:
-        "Configuration of an executable to run within a container. Some of the configuration parameters will overwrite the corresponding parameters if they are defined in the container.",
-      type: :object,
-      properties: %{
-        container_id: %Schema{
-          type: :string,
-          description: "Id of the container used for creating the exec instance."
-        },
-        cmd: %Schema{
-          description:
-            "Command to execute whithin the container. If no command is specified the command from the container is used.",
-          type: :array,
-          items: %Schema{type: :string},
-          default: [],
-          example: ["/bin/sh", "-c", "ls /"]
-        },
-        user: %Schema{
-          type: :string,
-          description:
-            "User that executes the command in the container. If no user is set the user from the container will be used.",
-          default: ""
-        },
-        env: %Schema{
-          description: """
-          A list of environment variables in the form `["VAR=value", ...]` that is set when the command is executed.
-          This list will be merged with environment variables defined by the container.
-          The values in this list takes precedence if the variable is defined in both places.",
-          """,
-          type: :array,
-          items: %Schema{type: :string},
-          default: [],
-          example: ["DEBUG=0", "LANG=da_DK.UTF-8"]
-        },
-        tty: %Schema{description: "Allocate a pseudo-TTY", type: :boolean, default: false}
-      }
-    })
-  end
-
-  defmodule ExecStartConfig do
-    OpenApiSpex.schema(%{
-      description: "Options for starting an execution instance.",
-      type: :object,
-      properties: %{
-        exec_id: %Schema{
-          type: :string,
-          description: "id of the execution instance to start"
-        },
-        attach: %Schema{
-          description: "Whether to receive output from `stdin` and `stderr`.",
-          type: :boolean
-        },
-        start_container: %Schema{
-          type: :boolean,
-          description: "Whether to start the container if it is not running."
-        }
-      },
-      required: [:exec_id, :attach, :start_container]
-    })
-  end
-
-  defmodule NetworkConfig do
-    OpenApiSpex.schema(%{
-      description: "Network configuration",
-      type: :object,
-      properties: %{
-        name: %Schema{
-          type: :string,
-          description: "Name of the network.",
-          example: "westnet"
-        },
-        type: %Schema{
-          type: :string,
-          description: """
-          What kind of network should be created. Possible values are 'bridge', 'loopback', and 'custom'.
-          """,
-          example: "bridge",
-          enum: ["bridge", "loopback", "custom"]
-        },
-        interface: %Schema{
-          type: :string,
-          description: """
-          Name of the host interface used for the network.
-          If set to `""` the name is set to `kleened` prefixed with an integer.
-          If `type` is set to `custom` the value of `interface` must refer to an existing interface.
-          The name must not exceed 15 characters.
-          """,
-          example: "kleene0",
-          default: ""
-        },
-        subnet: %Schema{
-          type: :string,
-          description:
-            "The IPv4 subnet (in CIDR-format) that is used for the network. If set to `\"\"` no IPv4 subnet is used.",
-          example: "10.13.37.0/24",
-          default: ""
-        },
-        subnet6: %Schema{
-          type: :string,
-          description:
-            "The IPv6 subnet (in CIDR-format) that is used for the network. If set to `\"\"` no IPv6 subnet is used.",
-          example: "2001:db8:8a2e:370:7334::/64",
-          default: ""
-        },
-        gateway: %Schema{
-          type: :string,
-          description: """
-          Only for bridge networks. The default IPv4 router that is added to 'vnet' containers connecting to bridged networks.
-          If set to `""` no gateway is used. If set to `"<auto>"` the first IP of the subnet is added to `interface` and used as gateway.
-          """,
-          default: "",
-          example: "192.168.1.1"
-        },
-        gateway6: %Schema{
-          type: :string,
-          description: """
-          Only for bridge networks. The default IPv6 router that is added to 'vnet' containers connecting to bridged networks.
-          See `gateway` for details.
-          """,
-          default: "",
-          example: "2001:db8:8a2e:370:7334::1"
-        },
-        nat: %Schema{
-          type: :string,
-          description: """
-          Which interface should be used for NAT'ing outgoing traffic from the network.
-          If set to `"<host-gateway>"` the hosts gateway interface is used, if it exists.
-          If set to `\"\"` no NAT'ing is configured.
-          """,
-          default: "<host-gateway>",
-          example: "igb0"
-        },
-        icc: %Schema{
-          type: :boolean,
-          description:
-            "Whether or not to enable connectivity between containers within the same network.",
-          default: true
-        },
-        internal: %Schema{
-          type: :boolean,
-          description:
-            "Whether or not the network is internal, i.e., not allowing outgoing upstream traffic",
-          default: false
-        }
-      },
-      required: [:name, :type]
-    })
-  end
-
-  defmodule Network do
-    OpenApiSpex.schema(%{
-      description: "summary description of a network",
-      type: :object,
-      properties: %{
-        id: %Schema{description: "The id of the network", type: :string},
-        name: %Schema{
-          type: :string,
-          description: "Name of the network.",
-          example: "westnet"
-        },
-        type: %Schema{
-          type: :string,
-          description: """
-          What kind of network this is.
-          Possible values are `bridge`, `loopback`, `custom`, and `host` networks.
-          """,
-          example: "bridge",
-          enum: ["bridge", "loopback", "custom"]
-        },
-        subnet: %Schema{
-          type: :string,
-          description: "The IPv4 subnet (in CIDR-format) that is used for the network.",
-          example: "10.13.37.0/24"
-        },
-        subnet6: %Schema{
-          type: :string,
-          description: "The IPv6 subnet (in CIDR-format) that is used for the network.",
-          example: "2001:db8:8a2e:370:7334::/64"
-        },
-        interface: %Schema{
-          type: :string,
-          description: """
-          Name for the interface that is being used for the network.
-          If the `type` property is set to `custom` the value of `interface` must be the name of an existing interface.
-          The name must not exceed 15 characters.
-          """,
-          example: "kleene0",
-          default: ""
-        },
-        gateway: %Schema{
-          type: :string,
-          description: """
-          The default IPv4 router that is added to 'vnet' containers connecting to the network.
-          If `""` no gateway is used.
-          """,
-          default: "",
-          example: "192.168.1.1"
-        },
-        gateway6: %Schema{
-          type: :string,
-          description: """
-          The default IPv6 router that is added to 'vnet' containers connecting to the network.
-          If `""` no gateway is used.
-          """,
-          default: "",
-          example: "2001:db8:8a2e:370:7334::1"
-        },
-        nat: %Schema{
-          type: :string,
-          description: """
-          Which interface should be used for NAT'ing outgoing traffic from the network.
-          If set to `\"\"` no NAT'ing is configured.
-          """,
-          default: "",
-          example: "igb0"
-        },
-        icc: %Schema{
-          type: :boolean,
-          description:
-            "Whether or not to enable connectivity between containers within the network.",
-          default: true
-        },
-        internal: %Schema{
-          type: :boolean,
-          description:
-            "Whether or not the network is internal, i.e., not allowing outgoing upstream traffic",
-          default: true
-        }
-      }
-    })
-  end
-
-  defmodule EndPointConfig do
-    OpenApiSpex.schema(%{
-      description: "Configuration of a connection between a network to a container.",
-      type: :object,
-      properties: %{
-        container: %Schema{
-          type: :string,
-          description: "Identifier of the container using this endpoint."
-        },
-        network: %Schema{
-          type: :string,
-          description: "Name of the network that this endpoint belongs to."
-        },
-        ip_address: %Schema{
-          type: :string,
-          description:
-            "The IPv4 address that should be assigned to the container. If set to `\"<auto>\"` an unused ip from the subnet will be used. If set to `\"\"` no address will be set.",
-          default: "",
-          example: "10.13.37.33"
-        },
-        ip_address6: %Schema{
-          type: :string,
-          description:
-            "The IPv6 address that should be assigned to the container. If set to `\"<auto>\"` an unused ip from the subnet will be used. If set to `\"\"` no address will be set.",
-          default: "",
-          example: "2001:db8:8a2e:370:7334::2"
-        }
-      },
-      required: [:container]
-    })
-  end
-
-  defmodule EndPoint do
-    OpenApiSpex.schema(%{
-      description: "Endpoint connecting a container to a network.",
-      type: :object,
-      properties: %{
-        id: %Schema{type: :string, description: "EndPoint ID"},
-        network_id: %Schema{
-          type: :string,
-          description: "Name of the network that this endpoint belongs to."
-        },
-        container_id: %Schema{
-          type: :string,
-          description: "ID of the container that this endpoint belongs to."
-        },
-        epair: %Schema{
-          description: "epair used for endpoint in case of a VNET network",
-          type: :string,
-          nullable: true
-        },
-        ip_address: %Schema{
-          type: :string,
-          description: "The IPv4 address of the container.",
-          default: nil,
-          example: "10.13.37.33"
-        },
-        ip_address6: %Schema{
-          type: :string,
-          description: "The IPv6 address of the container.",
-          default: nil,
-          example: "2610:1c1:1:606c::50:15"
-        }
-      }
-    })
-  end
-
-  defmodule PublishedPortConfig do
-    OpenApiSpex.schema(%{
-      description:
-        "Necessary configurations for publishing a port of a container and opening it up for incoming traffic from external sources.",
-      type: :object,
-      properties: %{
-        interfaces: %Schema{
-          description:
-            "List of host interfaces where the port is published, i.e., where traffic to the designated `host_port` is redirected to the container's ip4/ip6 addresses on the specified network. If the list is empty, the hosts gateway interface is used.",
-          type: :array,
-          items: %Schema{type: :string},
-          default: []
-        },
-        host_port: %Schema{
-          description:
-            "source port or portrange on the host where incoming traffic is redirected",
-          type: :string
-        },
-        container_port: %Schema{
-          description: "port or portrange on the host that accepts traffic from `host_port`.",
-          type: :string
-        },
-        protocol: %Schema{
-          description: "Whether to use TCP or UDP as transport protocol",
-          type: :string,
-          enum: ["tcp", "udp"],
-          default: "tcp"
-        }
-      },
-      required: [:interfaces, :host_port, :container_port]
-    })
-  end
-
-  defmodule PublishedPort do
-    OpenApiSpex.schema(%{
-      description:
-        "A published port of a container, i.e., opening up the port for incoming traffic from external sources.",
-      type: :object,
-      properties: %{
-        interfaces: %Schema{
-          description: """
-          List of host interfaces where incoming traffic to `host_port` is redirected to the container at `ip_address` and/or `ip_address6` on `container_port`.
-          """,
-          type: :array,
-          items: %Schema{type: :string},
-          default: []
-        },
-        host_port: %Schema{
-          description:
-            "source port or portrange on the host where incoming traffic is redirected",
-          type: :string
-        },
-        container_port: %Schema{
-          description: "port or portrange on the host that accepts traffic from `host_port`.",
-          type: :string
-        },
-        protocol: %Schema{description: "tcp or udp", type: :string, enum: ["tcp", "udp"]},
-        ip_address: %Schema{
-          description:
-            "ipv4 address within the container that receives traffic from the public port",
-          type: :string
-        },
-        ip_address6: %Schema{
-          description:
-            "ipv6 address within the container that receives traffic from the public port",
-          type: :string
-        }
-      },
-      required: [:interfaces, :host_port, :container_port, :protocol, :ip_address, :ip_address6]
-    })
-  end
-
-  defmodule NetworkList do
-    OpenApiSpex.schema(%{
-      description: "List of networks.",
-      type: :array,
-      items: Kleened.API.Schemas.Network
-    })
-  end
-
-  defmodule NetworkInspect do
-    OpenApiSpex.schema(%{
-      description: "Detailed information on a volume.",
-      type: :object,
-      properties: %{
-        network: Kleened.API.Schemas.Network,
-        network_endpoints: %Schema{
-          type: :array,
-          description: "Endpoints of the network.",
-          items: Kleened.API.Schemas.EndPoint
-        }
-      }
-    })
-  end
-
-  defmodule ImageBuildConfig do
-    OpenApiSpex.schema(%{
-      description:
-        "Configuration for an image build, including container configuration for the build container.",
-      type: :object,
-      properties: %{
-        context: %Schema{
-          type: :string,
-          description: "Path on the Kleened host of the context that is used for the build."
-        },
-        dockerfile: %Schema{
-          type: :string,
-          description:
-            "Path of the Dockerfile used for the build. The path is relative to the context path.",
-          default: "Dockerfile"
-        },
-        quiet: %Schema{
-          type: :boolean,
-          description: "Whether or not to emit status messages of the build process.",
-          default: false
-        },
-        cleanup: %Schema{
-          type: :boolean,
-          description: "Whether or not to remove the image in case of a build failure.",
-          default: true
-        },
-        tag: %Schema{
-          type: :string,
-          description:
-            "A name and optional tag to apply to the image in the name:tag format. If you omit the tag the default latest value is assumed.",
-          default: ""
-        },
-        buildargs: %Schema{
-          description:
-            "Object of string pairs for build-time ARG-variables. Kleened uses the buildargs as the environment variables for, e.g., the RUN instruction, or for variable expansion in other Dockerfile instructions. This is not meant for passing secret values.",
-          type: :object,
-          default: %{},
-          example: %{"USERNAME" => "Stephen", "JAIL_MGMT_ENGINE" => "kleene"}
-        },
-        container_config: %OpenApiSpex.Reference{"$ref": "#/components/schemas/ContainerConfig"},
-        networks: %Schema{
-          description:
-            "List of endpoint-configs for the networks that the build container will be connected to.",
-          type: :array,
-          items: Kleened.API.Schemas.EndPointConfig,
-          default: []
-        }
-      },
-      required: [:context, :container_config]
-    })
-  end
-
-  defmodule ImageCreateConfig do
-    OpenApiSpex.schema(%{
-      description: "Configuration for the creation of base images.",
-      type: :object,
-      required: [:method],
-      properties: %{
-        method: %Schema{
-          description: """
-          There are four methods for creating a new base image:
-
-          - `\"fetch\"`: Fetch a release/snapshot of the base system and use it for image creation.
-          - `\"fetch-auto\"`: Automatically fetch a release/snapshot from the offical FreeBSD mirrors, based on information from `uname(1)`.
-          - `\"zfs-copy\"`: Create the base image based on a copy of `zfs_dataset`.
-          - `\"zfs-clone\"`: Create the base image based on a clone of `zfs_dataset`.
-          """,
-          type: :string,
-          enum: ["fetch", "fetch-auto", "zfs-copy", "zfs-clone"]
-        },
-        tag: %Schema{
-          description: """
-          Name and optionally a tag in the `name:tag` format.
-          """,
-          type: :string,
-          default: ""
-        },
-        dns: %Schema{
-          description:
-            "Whether or not to copy `/etc/resolv.conf` from the host to the new image.",
-          type: :boolean,
-          default: true
-        },
-        zfs_dataset: %Schema{
-          description: """
-          ZFS dataset that the image should be based on.
-          *Method `\"zfs-*\"` only*.
-          """,
-          type: :string,
-          default: ""
-        },
-        url: %Schema{
-          description: """
-          URL to a remote location where the base system (as a base.txz file) is stored.
-          *Method `\"fetch\"` only*.
-          """,
-          type: :string,
-          default: ""
-        },
-        force: %Schema{
-          description: """
-          Ignore any discrepancies detected when using `uname(1)` to fetch the base system.
-          *Method `\"fetch-auto\"` only*.
-          """,
-          type: :boolean,
-          default: false
-        },
-        autotag: %Schema{
-          description: """
-          Whether or not to auto-genereate a nametag `FreeBSD-<version>:latest` based on `uname(1)`.
-          Overrides `tag` if set to true`. *Method `\"fetch-auto\"` only*.
-          """,
-          type: :boolean,
-          default: false
-        }
-      }
-    })
-  end
-
-  defmodule Image do
-    OpenApiSpex.schema(%{
-      description: "the image metadata",
-      type: :object,
-      properties: %{
-        id: %Schema{description: "The id of the image", type: :string},
-        name: %Schema{description: "Name of the image", type: :string},
-        tag: %Schema{description: "Tag of the image", type: :string},
-        cmd: %Schema{
-          description: "Default command used when creating a container from this image",
-          type: :array,
-          items: %Schema{type: :string},
-          default: [],
-          example: ["/bin/sh", "-c", "/bin/ls"]
-        },
-        env: %Schema{
-          description: "Environment variables and their values to set before running command.",
-          type: :array,
-          items: %Schema{type: :string},
-          default: [],
-          example: ["PWD=/roo/", "JAIL_MGMT_ENGINE=kleene"]
-        },
-        buildargs: %Schema{
-          description:
-            "Object of string pairs for build-time variables. Users pass these values at build-time. Kleened uses the buildargs as the environment context for commands run via the Dockerfile RUN instruction, or for variable expansion in other Dockerfile instructions. This is not meant for passing secret values.",
-          type: :object,
-          default: %{},
-          example: %{"USERNAME" => "Stephen", "JAIL_MGMT_ENGINE" => "kleene"}
-        },
-        user: %Schema{description: "user used when executing the command", type: :string},
-        instructions: %Schema{
-          description: """
-          Instructions and their corresponding snapshots, if any, used for creating the image.
-          Each item in the array is comprised of a 2-element array of the form `["<instruction>","<snapshot>"]`
-          containing a instruction and its snapshot.
-          The latter will only be present if it is a `RUN` or `COPY` instruction that executed succesfully.
-          Otherwise `<snapshot>` will be an empty string.
-          """,
-          type: :array,
-          items: %Schema{type: :array, items: %Schema{type: :string}},
-          default: [],
-          example: []
-        },
-        created: %Schema{description: "When the image was created", type: :string},
-        dataset: %Schema{description: "ZFS dataset of the image", type: :string}
-      }
-    })
-  end
-
-  defmodule ImageList do
-    OpenApiSpex.schema(%{
-      description: "List of images.",
-      type: :array,
-      items: Kleened.API.Schemas.Image
-    })
-  end
-
-  defmodule Volume do
-    OpenApiSpex.schema(%{
-      description: "Volume object used for persistent storage in containers.",
-      type: :object,
-      properties: %{
-        name: %Schema{description: "Name of the volume", type: :string},
-        dataset: %Schema{description: "ZFS dataset used for the volume", type: :string},
-        mountpoint: %Schema{description: "Mountpoint of `dataset`", type: :string},
-        created: %Schema{description: "when the volume was created", type: :string}
-      }
-    })
-  end
-
-  defmodule VolumeConfig do
-    OpenApiSpex.schema(%{
-      description: "Volume configuration",
-      type: :object,
-      properties: %{
-        name: %Schema{type: :string, description: "Name of the volume."}
-      },
-      required: [:name]
-    })
-  end
-
-  defmodule MountPointConfig do
-    OpenApiSpex.schema(%{
-      description: """
-      Create a mount point between sthe host file system and a container.
-
-      There are two `type`'s of mount points:
-
-      - `nullfs`: Mount a user-specified file or directory from the host machine into the container.
-      - `volume`: Mount a Kleene volume into the container.
-      """,
-      type: :object,
-      properties: %{
-        type: %Schema{
-          type: :string,
-          description: "Kind of mount to create: `nullfs` or `volume`.",
-          enum: ["volume", "nullfs"]
-        },
-        destination: %Schema{
-          type: :string,
-          description: "Destination path of the mount within the container."
-        },
-        source: %Schema{
-          type: :string,
-          description: """
-          Source used for the mount. Depends on `method`:
-
-          - If `method="volume"` then `source` should be a volume name
-          - If `method="nullfs"`  then `source` should be a (absolute) path on the host
-          """
-        },
-        read_only: %Schema{
-          type: :boolean,
-          description: "Whether the mountpoint should be read-only.",
-          default: false
-        }
-      }
-    })
-  end
-
-  defmodule MountPoint do
-    OpenApiSpex.schema(%{
-      description: """
-      Mount point between some part of the host file system and a container.
-      There are two types of mountpoints:
-
-      - `nullfs`: Mount from a user-specified file or directory from the host machine into the container.
-      - `volume`: Mount from a Kleene volume into the container.
-      """,
-      type: :object,
-      properties: %{
-        type: %Schema{
-          type: :string,
-          description: "Kind of mount: `nullfs` or `volume`.",
-          enum: ["volume", "nullfs"]
-        },
-        container_id: %Schema{
-          type: :string,
-          description: "ID of the container that the mountpoint belongs to."
-        },
-        destination: %Schema{
-          type: :string,
-          description: "Destination path of the mount within the container."
-        },
-        source: %Schema{
-          type: :string,
-          description: """
-          Source used for the mount. Depends on `method`:
-
-          - If `method="volume"` then `source` should be a volume name
-          - If `method="nullfs"`  then `source` should be a (absolute) path on the host
-          """
-        },
-        read_only: %Schema{type: :boolean, description: "Whether this mountpoint is read-only."}
-      }
-    })
-  end
-
-  defmodule VolumeInspect do
-    OpenApiSpex.schema(%{
-      description: "Detailed information on a volume.",
-      type: :object,
-      properties: %{
-        volume: Kleened.API.Schemas.Volume,
-        mountpoints: %Schema{
-          type: :array,
-          description: "Mountpoints of the volume.",
-          items: Kleened.API.Schemas.MountPoint
-        }
-      }
-    })
-  end
-
-  defmodule VolumeList do
-    OpenApiSpex.schema(%{
-      description: "List of volumes.",
-      type: :array,
-      items: Kleened.API.Schemas.Volume
-    })
-  end
-
   defmodule ContainerSummary do
     OpenApiSpex.schema(%{
-      description: "summary description of a container",
+      description: "Summary description of a container",
       type: :object,
       properties: %{
         id: %Schema{description: "The id of this container", type: :string},
@@ -883,11 +214,11 @@ defmodule Kleened.API.Schemas do
           type: :string
         },
         cmd: %Schema{
-          description: "Command being used when starting the container",
+          description: "Command to run when the container is started",
           type: :string
         },
         created: %Schema{description: "When the container was created", type: :string},
-        running: %Schema{description: "whether or not the container is running", type: :boolean},
+        running: %Schema{description: "Whether or not the container is running", type: :boolean},
         jid: %Schema{
           description: "Jail ID if it is a running container",
           type: :integer,
@@ -925,9 +256,747 @@ defmodule Kleened.API.Schemas do
     })
   end
 
+  defmodule ExecConfig do
+    OpenApiSpex.schema(%{
+      description:
+        "Configuration of an executable to run within a container. Some of the configuration parameters will overwrite the corresponding parameters if they are defined in the container.",
+      type: :object,
+      properties: %{
+        container_id: %Schema{
+          type: :string,
+          description: "Identifier of the container used as environemnt for the exec instance."
+        },
+        cmd: %Schema{
+          description:
+            "Command to execute whithin the container. If `cmd` is set to `[]` the command will be inherited from the container.",
+          type: :array,
+          items: %Schema{type: :string},
+          default: [],
+          example: ["/bin/sh", "-c", "ls /"]
+        },
+        user: %Schema{
+          type: :string,
+          description:
+            "User that executes the command in the container. If the user is set to `\"\"`, the user will be inherited from the container.",
+          default: ""
+        },
+        env: %Schema{
+          description: """
+          A list of environment variables in the form `["VAR=value", ...]` that is set when the command is executed.
+          This list will be merged with environment variables defined in the container.
+          The values in this list takes precedence if the variable is defined in both.
+          """,
+          type: :array,
+          items: %Schema{type: :string},
+          default: [],
+          example: ["DEBUG=0", "LANG=da_DK.UTF-8"]
+        },
+        tty: %Schema{
+          description: "Allocate a pseudo-TTY for the process.",
+          type: :boolean,
+          default: false
+        }
+      }
+    })
+  end
+
+  defmodule ExecStartConfig do
+    OpenApiSpex.schema(%{
+      description: "Options for starting an execution instance.",
+      type: :object,
+      properties: %{
+        exec_id: %Schema{
+          type: :string,
+          description: "ID of the execution instance to start"
+        },
+        attach: %Schema{
+          description: "Whether to receive output from `stdin` and `stderr`.",
+          type: :boolean
+        },
+        start_container: %Schema{
+          type: :boolean,
+          description: "Whether to start the container if it is not already running."
+        }
+      },
+      required: [:exec_id, :attach, :start_container]
+    })
+  end
+
+  defmodule ImageBuildConfig do
+    OpenApiSpex.schema(%{
+      description:
+        "Configuration for an image build, including container configuration for the build container.",
+      type: :object,
+      properties: %{
+        context: %Schema{
+          type: :string,
+          description:
+            "Location path on the Kleened host of the context used for the image build."
+        },
+        dockerfile: %Schema{
+          type: :string,
+          description:
+            "Path of the Dockerfile used for the build. The path is relative to the context path.",
+          default: "Dockerfile"
+        },
+        quiet: %Schema{
+          type: :boolean,
+          description:
+            "Whether or not to send status messages of the build process to the client.",
+          default: false
+        },
+        cleanup: %Schema{
+          type: :boolean,
+          description: "Whether or not to remove the image in case of a build failure.",
+          default: true
+        },
+        tag: %Schema{
+          type: :string,
+          description:
+            "A name and optional tag to apply to the image in the `name:tag` format. If `tag` is omitted, the default value `latest` is used.",
+          default: ""
+        },
+        buildargs: %Schema{
+          description: """
+          Additional `ARG`-variables given as an object of string pairs.
+          See the [`ARG` instruction documentation](/reference/dockerfile/#arg) for details.
+          """,
+          type: :object,
+          default: %{},
+          example: %{"USERNAME" => "Stephen", "JAIL_MGMT_ENGINE" => "kleene"}
+        },
+        container_config: %OpenApiSpex.Reference{"$ref": "#/components/schemas/ContainerConfig"},
+        networks: %Schema{
+          description:
+            "List of endpoint-configs for the networks that the build container will be connected to.",
+          type: :array,
+          items: Kleened.API.Schemas.EndPointConfig,
+          default: []
+        }
+      },
+      required: [:context, :container_config]
+    })
+  end
+
+  defmodule ImageCreateConfig do
+    OpenApiSpex.schema(%{
+      description: "Configuration for the creation of base images.",
+      type: :object,
+      required: [:method],
+      properties: %{
+        method: %Schema{
+          description: """
+          There are four methods for creating a new base image:
+
+          - `fetch`: Fetch a release/snapshot of the base system from `url` and use it for image creation.
+          - `fetch-auto`: Automatically fetch a release/snapshot from the offical FreeBSD mirrors, based on information from `uname(1)`.
+          - `zfs-copy`: Create the base image based on a copy of `zfs_dataset`.
+          - `zfs-clone`: Create the base image based on a clone of `zfs_dataset`.
+          """,
+          type: :string,
+          enum: ["fetch", "fetch-auto", "zfs-copy", "zfs-clone"]
+        },
+        tag: %Schema{
+          description: """
+          Name and optionally a tag in the `name:tag` format. If `tag` is omitted, the default value `latest` is used.
+          """,
+          type: :string,
+          default: ""
+        },
+        dns: %Schema{
+          description:
+            "Whether or not to copy `/etc/resolv.conf` from the host to the new image.",
+          type: :boolean,
+          default: true
+        },
+        zfs_dataset: %Schema{
+          description: """
+          **`zfs-*` methods only**
+
+          ZFS dataset that the image should be based on.
+          """,
+          type: :string,
+          default: ""
+        },
+        url: %Schema{
+          description: """
+          **`fetch` method only**
+
+          URL to the base system (a `base.txz` file) that Kleened should use to create the base image.
+          """,
+          type: :string,
+          default: ""
+        },
+        force: %Schema{
+          description: """
+          **`fetch-auto` method only**
+
+          Ignore any discrepancies in the output of `uname(1)` when determining the FreeBSD version.
+          """,
+          type: :boolean,
+          default: false
+        },
+        autotag: %Schema{
+          description: """
+          **`fetch-auto` method only**
+
+          Whether or not to auto-genereate a nametag `FreeBSD-<version>:latest` based on `uname(1)`.
+          Overrides `tag` if set to `true`.
+          """,
+          type: :boolean,
+          default: false
+        }
+      }
+    })
+  end
+
+  defmodule Image do
+    OpenApiSpex.schema(%{
+      description: "the image metadata",
+      type: :object,
+      properties: %{
+        id: %Schema{description: "The id of the image", type: :string},
+        name: %Schema{description: "Name of the image", type: :string},
+        tag: %Schema{description: "Tag of the image", type: :string},
+        cmd: %Schema{
+          description: "Default command used when creating a container from this image",
+          type: :array,
+          items: %Schema{type: :string},
+          default: [],
+          example: ["/bin/sh", "-c", "/bin/ls"]
+        },
+        env: %Schema{
+          description: "Environment variables and their values to set before running command.",
+          type: :array,
+          items: %Schema{type: :string},
+          default: [],
+          example: ["PWD=/roo/", "JAIL_MGMT_ENGINE=kleene"]
+        },
+        # buildargs: %Schema{
+        #  description: """
+        #  Additional `ARG`-variables given as an object of string pairs.
+        #  See the [`ARG` instruction documentation](/reference/dockerfile/#arg) for details.
+        #  """,
+        #  type: :object,
+        #  default: %{},
+        #  example: %{"USERNAME" => "Stephen", "JAIL_MGMT_ENGINE" => "kleene"}
+        # },
+        user: %Schema{description: "User used for running `cmd`", type: :string},
+        instructions: %Schema{
+          description: """
+          Instructions and their corresponding snapshots (if they exist) that were used to build the image.
+          Each item in the array consists of a 2-element array `["<instruction>","<snapshot>"]`
+          containing one instruction and possibly its snapshot.
+          The latter is only be present with `RUN` or `COPY` instructions that ran succesfully.
+          Otherwise `<snapshot>` is empty.
+          """,
+          type: :array,
+          items: %Schema{type: :array, items: %Schema{type: :string}},
+          default: [],
+          example: []
+        },
+        created: %Schema{description: "When the image was created", type: :string},
+        dataset: %Schema{description: "ZFS dataset of the image", type: :string}
+      }
+    })
+  end
+
+  defmodule ImageList do
+    OpenApiSpex.schema(%{
+      description: "List of images.",
+      type: :array,
+      items: Kleened.API.Schemas.Image
+    })
+  end
+
+  defmodule NetworkConfig do
+    OpenApiSpex.schema(%{
+      description: "Network configuration",
+      type: :object,
+      properties: %{
+        name: %Schema{
+          type: :string,
+          description: "Name of the network.",
+          example: "westnet"
+        },
+        type: %Schema{
+          type: :string,
+          description: "What kind of network should be created.",
+          example: "bridge",
+          enum: ["bridge", "loopback", "custom"]
+        },
+        interface: %Schema{
+          type: :string,
+          description: """
+          Name of the host interface used for the network.
+          If set to `""` the name is set to `kleened` postfixed with an integer.
+          If `type` is set to `custom` the value of `interface` must refer to an existing interface,
+          otherwise it is created by Kleened.
+          """,
+          maxLength: 15,
+          example: "kleene0",
+          default: ""
+        },
+        subnet: %Schema{
+          type: :string,
+          description:
+            "The IPv4 subnet (in CIDR-format) that is used for the network. If set to `\"\"` no IPv4 subnet is used.",
+          example: "10.13.37.0/24",
+          default: ""
+        },
+        subnet6: %Schema{
+          type: :string,
+          description:
+            "The IPv6 subnet (in CIDR-format) that is used for the network. If set to `\"\"` no IPv6 subnet is used.",
+          example: "2001:db8:8a2e:370:7334::/64",
+          default: ""
+        },
+        gateway: %Schema{
+          type: :string,
+          description: """
+          **`bridge` networks only**
+
+          The default (IPv4) router that is added to `vnet` containers connecting to bridged networks.
+          If set to `""` no gateway is used. If set to `"<auto>"` the first IP of the subnet is added to `interface` and used as gateway.
+          """,
+          default: "",
+          example: "192.168.1.1"
+        },
+        gateway6: %Schema{
+          type: :string,
+          description: """
+          **`bridge` networks only**
+
+          The default IPv6 router that is added to `vnet` containers connecting to bridged networks.
+          See `gateway` for details.
+          """,
+          default: "",
+          example: "2001:db8:8a2e:370:7334::1"
+        },
+        nat: %Schema{
+          type: :string,
+          description: """
+          Interface used for NAT'ing outgoing traffic from the network.
+          If set to `"<host-gateway>"` the hosts gateway interface is used, if it exists.
+          If set to `\"\"` no NAT'ing is configured.
+          """,
+          default: "<host-gateway>",
+          example: "igb0"
+        },
+        icc: %Schema{
+          type: :boolean,
+          description:
+            "Inter-container connectvity: Whether or not to enable connectivity between containers within the same network.",
+          default: true
+        },
+        internal: %Schema{
+          type: :boolean,
+          description: "Whether or not outgoing traffic is allowed on the network.",
+          default: false
+        }
+      },
+      required: [:name, :type]
+    })
+  end
+
+  defmodule Network do
+    OpenApiSpex.schema(%{
+      description: "Kleene network",
+      type: :object,
+      properties: %{
+        id: %Schema{description: "ID of the network", type: :string},
+        name: %Schema{
+          type: :string,
+          description: "Name of the network.",
+          example: "westnet"
+        },
+        type: %Schema{
+          type: :string,
+          description: "Network type.",
+          example: "bridge",
+          enum: ["bridge", "loopback", "custom"]
+        },
+        subnet: %Schema{
+          type: :string,
+          description: "The IPv4 subnet (in CIDR-format) that is used for the network.",
+          example: "10.13.37.0/24"
+        },
+        subnet6: %Schema{
+          type: :string,
+          description: "The IPv6 subnet (in CIDR-format) that is used for the network.",
+          example: "2001:db8:8a2e:370:7334::/64"
+        },
+        interface: %Schema{
+          type: :string,
+          description: """
+          Name for the interface that is being used for the network.
+          """,
+          maxLength: 15,
+          example: "kleene0",
+          default: ""
+        },
+        gateway: %Schema{
+          type: :string,
+          description: """
+          The default IPv4 router that is added to `vnet` containers connecting to the network.
+          If `""` no gateway is used.
+          """,
+          default: "",
+          example: "192.168.1.1"
+        },
+        gateway6: %Schema{
+          type: :string,
+          description: """
+          The default IPv6 router that is added to 'vnet' containers connecting to the network.
+          If `""` no gateway is used.
+          """,
+          default: "",
+          example: "2001:db8:8a2e:370:7334::1"
+        },
+        nat: %Schema{
+          type: :string,
+          description: """
+          Which interface should be used for NAT'ing outgoing traffic from the network.
+          If set to `\"\"` no NAT'ing is configured.
+          """,
+          default: "",
+          example: "igb0"
+        },
+        icc: %Schema{
+          type: :boolean,
+          description:
+            "Inter-container connectvity: Whether or not to enable connectivity between containers within the network.",
+          default: true
+        },
+        internal: %Schema{
+          type: :boolean,
+          description: "Whether or not outgoing traffic is allowed on the network.",
+          default: true
+        }
+      }
+    })
+  end
+
+  defmodule NetworkList do
+    OpenApiSpex.schema(%{
+      description: "List of networks.",
+      type: :array,
+      items: Kleened.API.Schemas.Network
+    })
+  end
+
+  defmodule NetworkInspect do
+    OpenApiSpex.schema(%{
+      description: "Detailed information on a network.",
+      type: :object,
+      properties: %{
+        network: Kleened.API.Schemas.Network,
+        network_endpoints: %Schema{
+          type: :array,
+          description: "Endpoints of the network.",
+          items: Kleened.API.Schemas.EndPoint
+        }
+      }
+    })
+  end
+
+  defmodule EndPointConfig do
+    OpenApiSpex.schema(%{
+      description: "Configuration of a connection between a network to a container.",
+      type: :object,
+      properties: %{
+        container: %Schema{
+          type: :string,
+          description:
+            "Container identifier, i.e., the name, ID, or an initial unique segment of the ID."
+        },
+        network: %Schema{
+          type: :string,
+          description:
+            "Network identifier, i.e., the name, ID, or an initial unique segment of the ID."
+        },
+        ip_address: %Schema{
+          type: :string,
+          description:
+            "IPv4 address for the container. If set to `\"<auto>\"` an unused ip from the subnet will be used. If set to `\"\"` no address will be set.",
+          default: "",
+          example: "10.13.37.33"
+        },
+        ip_address6: %Schema{
+          type: :string,
+          description:
+            "IPv6 address for the container. If set to `\"<auto>\"` an unused ip from the subnet will be used. If set to `\"\"` no address will be set.",
+          default: "",
+          example: "2001:db8:8a2e:370:7334::2"
+        }
+      },
+      required: [:container, :network]
+    })
+  end
+
+  defmodule EndPoint do
+    OpenApiSpex.schema(%{
+      description: "Endpoint connecting a container to a network.",
+      type: :object,
+      properties: %{
+        id: %Schema{type: :string, description: "Endpoint ID"},
+        network_id: %Schema{
+          type: :string,
+          description: "Name of the network that this endpoint belongs to."
+        },
+        container_id: %Schema{
+          type: :string,
+          description: "ID of the container that this endpoint belongs to."
+        },
+        epair: %Schema{
+          description: """
+          **`vnet` containers only**
+
+          `epair(4)` interfaces connecting the container to the network.
+          """,
+          type: :string,
+          nullable: true
+        },
+        ip_address: %Schema{
+          type: :string,
+          description: "The IPv4 address of the container.",
+          default: nil,
+          example: "10.13.37.33"
+        },
+        ip_address6: %Schema{
+          type: :string,
+          description: "The IPv6 address of the container.",
+          default: nil,
+          example: "2610:1c1:1:606c::50:15"
+        }
+      }
+    })
+  end
+
+  defmodule PublishedPortConfig do
+    OpenApiSpex.schema(%{
+      description: "Configuration for publishing a port of a container.",
+      type: :object,
+      properties: %{
+        interfaces: %Schema{
+          description: """
+          List of host interfaces where the port is published, i.e.,
+          where traffic to `host_port` is redirected to `container_port` (on a random IP-address).
+          If set to `[]` the host's gateway interface is used.
+          """,
+          type: :array,
+          items: %Schema{type: :string},
+          default: []
+        },
+        host_port: %Schema{
+          description: """
+          Source port (or portrange) on the host where incoming traffic is redirected.
+
+          `host_port` can take one of two forms:
+          - A single portnumber `"PORTNUMBER"`
+          - A portrange `"PORTNUMBER_START:PORTNUMBER_END"`
+          """,
+          type: :string
+        },
+        container_port: %Schema{
+          description: """
+          Destination port (or portrange) of the container that accepts traffic from `host_port`.
+
+          `container_port` can take two forms, depending on `host_port`:
+          - A single portnumber `"PORTNUMBER"` if `host_port` is a single port number
+          - A portrange `"PORTNUMBER_START:*"` if `host_port` is a port range
+          """,
+          type: :string
+        },
+        protocol: %Schema{
+          description: "Whether to use TCP or UDP as transport protocol",
+          type: :string,
+          enum: ["tcp", "udp"],
+          default: "tcp"
+        }
+      },
+      required: [:interfaces, :host_port, :container_port]
+    })
+  end
+
+  defmodule PublishedPort do
+    OpenApiSpex.schema(%{
+      description:
+        "A published port of a container, i.e., opening up the port for incoming traffic from external sources.",
+      type: :object,
+      properties: %{
+        interfaces: %Schema{
+          description: """
+          List of host interfaces where incoming traffic to `host_port` is redirected to the container at `ip_address` and/or `ip_address6` on `container_port`.
+          """,
+          type: :array,
+          items: %Schema{type: :string},
+          default: []
+        },
+        host_port: %Schema{
+          description: """
+          Source port (or portrange) on the host where incoming traffic is redirected.
+
+          `host_port` can take one of two forms:
+          - A single portnumber `"PORTNUMBER"`
+          - A portrange `"PORTNUMBER_START:PORTNUMBER_END"`
+          """,
+          type: :string
+        },
+        container_port: %Schema{
+          description: """
+          Destination port (or portrange) of the container that accepts traffic from `host_port`.
+
+          `container_port` can take two forms, depending on `host_port`:
+          - A single portnumber `"PORTNUMBER"` if `host_port` is a single port number
+          - A portrange `"PORTNUMBER_START:*"` if `host_port` is a port range
+          """,
+          type: :string
+        },
+        protocol: %Schema{description: "tcp or udp", type: :string, enum: ["tcp", "udp"]},
+        ip_address: %Schema{
+          description:
+            "ipv4 address within the container that receives traffic to `container_port`",
+          type: :string
+        },
+        ip_address6: %Schema{
+          description:
+            "ipv6 address within the container that receives traffic to `container_port`",
+          type: :string
+        }
+      },
+      required: [:interfaces, :host_port, :container_port, :protocol, :ip_address, :ip_address6]
+    })
+  end
+
+  defmodule VolumeConfig do
+    OpenApiSpex.schema(%{
+      description: "Volume configuration",
+      type: :object,
+      properties: %{
+        name: %Schema{type: :string, description: "Name of the volume."}
+      },
+      required: [:name]
+    })
+  end
+
+  defmodule Volume do
+    OpenApiSpex.schema(%{
+      description: "Volume object used for persistent storage in containers.",
+      type: :object,
+      properties: %{
+        name: %Schema{description: "Name of the volume", type: :string},
+        dataset: %Schema{description: "ZFS dataset of the volume", type: :string},
+        mountpoint: %Schema{description: "Mountpoint of `dataset`", type: :string},
+        created: %Schema{description: "When the volume was created", type: :string}
+      }
+    })
+  end
+
+  defmodule MountPointConfig do
+    OpenApiSpex.schema(%{
+      description: """
+      Configuration for a mount point between the host file system and a container.
+
+      There are two types of mount points:
+
+      - `nullfs`: Mount a user-specified file or directory from the host machine into the container.
+      - `volume`: Mount a Kleene volume into the container.
+      """,
+      type: :object,
+      properties: %{
+        type: %Schema{
+          type: :string,
+          description: "Type of mountpoint to create.",
+          enum: ["volume", "nullfs"]
+        },
+        destination: %Schema{
+          type: :string,
+          description: "Destination path of the mount within the container."
+        },
+        source: %Schema{
+          type: :string,
+          description: """
+          Source used for the mount. Depends on `method`:
+
+          - If `method` is `"volume"` then `source` should be a volume name
+          - If `method`is `"nullfs"` then `source` should be an absolute path on the host
+          """
+        },
+        read_only: %Schema{
+          type: :boolean,
+          description: "Whether the mountpoint should be read-only.",
+          default: false
+        }
+      }
+    })
+  end
+
+  defmodule MountPoint do
+    OpenApiSpex.schema(%{
+      description: """
+      Mount point between the host file system and a container.
+
+      There are two types of mount points:
+
+      - `nullfs`: Mount a user-specified file or directory from the host machine into the container.
+      - `volume`: Mount a Kleene volume into the container.
+      """,
+      type: :object,
+      properties: %{
+        type: %Schema{
+          type: :string,
+          description: "Mounpoint type.",
+          enum: ["volume", "nullfs"]
+        },
+        container_id: %Schema{
+          type: :string,
+          description: "ID of the container that the mountpoint belongs to."
+        },
+        destination: %Schema{
+          type: :string,
+          description: "Destination path of the mountpoint within the container."
+        },
+        source: %Schema{
+          type: :string,
+          description: """
+          Source used for the mount. Depends on `method`:
+
+          - If `method` is `"volume"` then `source` should be a volume name
+          - If `method`is `"nullfs"` then `source` should be an absolute path on the host
+          """
+        },
+        read_only: %Schema{type: :boolean, description: "Whether this mountpoint is read-only."}
+      }
+    })
+  end
+
+  defmodule VolumeInspect do
+    OpenApiSpex.schema(%{
+      description: "Detailed information on a volume.",
+      type: :object,
+      properties: %{
+        volume: Kleened.API.Schemas.Volume,
+        mountpoints: %Schema{
+          type: :array,
+          description: "Mountpoints of the volume.",
+          items: Kleened.API.Schemas.MountPoint
+        }
+      }
+    })
+  end
+
+  defmodule VolumeList do
+    OpenApiSpex.schema(%{
+      description: "List of volumes.",
+      type: :array,
+      items: Kleened.API.Schemas.Volume
+    })
+  end
+
   defmodule WebSocketMessage do
     OpenApiSpex.schema(%{
-      description: "The request have been validated and the request is being processed.",
+      description: "Protocol messages sent from Kleened's websocket endpoints",
       type: :object,
       properties: %{
         msg_type: %Schema{
@@ -942,7 +1011,7 @@ defmodule Kleened.API.Schemas do
         },
         data: %Schema{
           description:
-            "Any data that might have been created by the process such as an image id.",
+            "Any data that might have been created by the process such as an image ID.",
           type: :string,
           default: ""
         }
@@ -981,7 +1050,7 @@ defmodule Kleened.API.Schemas do
       type: :object,
       properties: %{
         id: %Schema{
-          description: "The id of the created/modified/destroyed object.",
+          description: "ID of the created/modified/removed object.",
           type: :string,
           nullable: false
         }

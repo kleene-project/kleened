@@ -8,6 +8,10 @@ defmodule Kleened.API.Image do
   import OpenApiSpex.Operation,
     only: [parameter: 5, response: 3]
 
+  def image_identifier() do
+    "Image identifier, i.e., the name, ID, or an initial unique segment of the ID."
+  end
+
   defmodule List do
     use Plug.Builder
 
@@ -20,10 +24,9 @@ defmodule Kleened.API.Image do
 
     def open_api_operation(_) do
       %Operation{
-        # tags: ["users"],
         summary: "image list",
-        description:
-          "Returns a list of images on the server. Note that it uses a different, smaller representation of an image than inspecting a single image.",
+        description: "List the images. Use the [image inspect](#operation/Image.Inspect) endpoint
+        to get detailed information about an image.",
         operationId: "Image.List",
         responses: %{
           200 => response("no error", "application/json", Schemas.ImageList)
@@ -66,7 +69,7 @@ defmodule Kleened.API.Image do
             :image_id,
             :path,
             %Schema{type: :string},
-            "ID or name of the image. An initial segment of the id can be supplied if it uniquely determines the image.",
+            Kleened.API.Image.image_identifier(),
             required: true
           )
         ],
@@ -209,7 +212,7 @@ defmodule Kleened.API.Image do
     def open_api_operation(_) do
       %Operation{
         summary: "image inspect",
-        description: "Inspect a image and its endpoints.",
+        description: "Inspect an image.",
         operationId: "Image.Inspect",
         parameters: [
           parameter(

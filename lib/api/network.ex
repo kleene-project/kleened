@@ -8,39 +8,8 @@ defmodule Kleened.API.Network do
   import OpenApiSpex.Operation,
     only: [parameter: 5, response: 3, request_body: 4]
 
-  defmodule List do
-    use Plug.Builder
-
-    plug(OpenApiSpex.Plug.CastAndValidate,
-      json_render_error_v2: true,
-      operation_id: "Network.List"
-    )
-
-    plug(:list)
-
-    def open_api_operation(_) do
-      %Operation{
-        summary: "network list",
-        description: """
-        Returns a list of networks. Use [network inspect endpoint](#operation/Network.Inspect)
-        for detailed information about a specific network.
-
-        Note that it uses a different, smaller representation of a network than
-        inspecting a single network.
-        """,
-        operationId: "Network.List",
-        responses: %{
-          200 => response("no error", "application/json", Schemas.NetworkList),
-          500 => response("server error", "application/json", Schemas.ErrorResponse)
-        }
-      }
-    end
-
-    def list(conn, _opts) do
-      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
-      networks_json = Network.list() |> Jason.encode!()
-      send_resp(conn, 200, networks_json)
-    end
+  def network_identifier() do
+    "Network identifier, i.e., the name, ID, or an initial unique segment of the ID."
   end
 
   defmodule Create do
@@ -94,6 +63,39 @@ defmodule Kleened.API.Network do
     end
   end
 
+  defmodule List do
+    use Plug.Builder
+
+    plug(OpenApiSpex.Plug.CastAndValidate,
+      json_render_error_v2: true,
+      operation_id: "Network.List"
+    )
+
+    plug(:list)
+
+    def open_api_operation(_) do
+      %Operation{
+        summary: "network list",
+        description: """
+        Returns a list of networks.
+        Use the [network inspect](#operation/Network.Inspect) endpoint
+        to get detailed information about a network.
+        """,
+        operationId: "Network.List",
+        responses: %{
+          200 => response("no error", "application/json", Schemas.NetworkList),
+          500 => response("server error", "application/json", Schemas.ErrorResponse)
+        }
+      }
+    end
+
+    def list(conn, _opts) do
+      conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+      networks_json = Network.list() |> Jason.encode!()
+      send_resp(conn, 200, networks_json)
+    end
+  end
+
   defmodule Remove do
     use Plug.Builder
     alias Kleened.API.Utils
@@ -117,7 +119,7 @@ defmodule Kleened.API.Network do
             :network_id,
             :path,
             %Schema{type: :string},
-            "ID or name of the network. An initial segment of the id can be supplied if it uniquely determines the network.",
+            Kleened.API.Network.network_identifier(),
             required: true
           )
         ],
@@ -158,7 +160,7 @@ defmodule Kleened.API.Network do
       %Operation{
         summary: "network prune",
         description: """
-        Remove all networks that are not being used by any containers.
+        Remove all networks that are not used by any containers.
         """,
         operationId: "Network.Prune",
         responses: %{
@@ -268,14 +270,14 @@ defmodule Kleened.API.Network do
             :network_id,
             :path,
             %Schema{type: :string},
-            "ID or name of the network. An initial segment of the id can be supplied if it uniquely determines the network.",
+            Kleened.API.Network.network_identifier(),
             required: true
           ),
           parameter(
             :container_id,
             :path,
             %Schema{type: :string},
-            "ID or name of the container. An initial segment of the id can be supplied if it uniquely determines the network.",
+            Kleened.API.Container.container_identifier(),
             required: true
           )
         ],
@@ -325,7 +327,7 @@ defmodule Kleened.API.Network do
             :network_id,
             :path,
             %Schema{type: :string},
-            "Identifier of the network",
+            Kleened.API.Network.network_identifier(),
             required: true
           )
         ],
