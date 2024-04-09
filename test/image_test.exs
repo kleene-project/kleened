@@ -702,7 +702,7 @@ defmodule ImageTest do
     {:invalid_dockerfile, _build_id, build_log} = TestHelper.image_invalid_build(config)
 
     assert last_log_entry(build_log) ==
-             "error in 'ENV testvar=lol': instruction not permitted before a FROM instruction"
+             "'ENV testvar=lol' not permitted before a FROM instruction"
   end
 
   test "create image with ARG-variable without an explicit default value, thus empty string" do
@@ -1367,7 +1367,7 @@ defmodule ImageTest do
       })
 
     assert last_log_entry(build_log) ==
-             "invalid instruction:   \"this should faile because we omitted the '\\' above\""
+             "error in '  \"this should faile because we omitted the '\\' above\"': invalid instruction"
 
     remove_test_context(context)
   end
