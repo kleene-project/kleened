@@ -1,5 +1,6 @@
 defmodule ImageTest do
   use Kleened.Test.ConnCase
+  alias ExUnit.CaptureLog
   alias Kleened.Core.{Config, MetaData, ZFS, OS, Container, FreeBSD}
   alias Kleened.API.Schemas
   alias Schemas.WebSocketMessage, as: Message
@@ -11,9 +12,11 @@ defmodule ImageTest do
     TestHelper.cleanup()
 
     on_exit(fn ->
-      Logger.info("Cleaning up after test...")
-      TestHelper.cleanup()
-      TestHelper.compare_to_baseline_environment(state)
+      CaptureLog.capture_log(fn ->
+        Logger.info("Cleaning up after test...")
+        TestHelper.cleanup()
+        TestHelper.compare_to_baseline_environment(state)
+      end)
     end)
 
     :ok

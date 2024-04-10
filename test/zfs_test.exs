@@ -1,5 +1,6 @@
 defmodule ZFSTest do
   use ExUnit.Case
+  alias ExUnit.CaptureLog
   require Logger
 
   alias Kleened.Core.{Const, Config, MetaData}
@@ -8,7 +9,12 @@ defmodule ZFSTest do
   @moduletag :capture_log
 
   setup_all do
-    start_supervised(Config)
+    on_exit(fn ->
+      CaptureLog.capture_log(fn ->
+        TestHelper.cleanup()
+      end)
+    end)
+
     :ok
   end
 

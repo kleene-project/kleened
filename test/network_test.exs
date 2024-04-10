@@ -1,5 +1,6 @@
 defmodule NetworkTest do
   use Kleened.Test.ConnCase
+  alias ExUnit.CaptureLog
   require Logger
   alias Kleened.Core.{Network, MetaData, OS}
   alias Kleened.API.Schemas
@@ -27,7 +28,9 @@ defmodule NetworkTest do
     TestHelper.cleanup()
 
     on_exit(fn ->
-      TestHelper.cleanup()
+      CaptureLog.capture_log(fn ->
+        TestHelper.cleanup()
+      end)
     end)
 
     :ok
@@ -344,7 +347,7 @@ defmodule NetworkTest do
              )
   end
 
-  test "try to connect twice", %{api_spec: api_spec} do
+  test "try to connect twice" do
     network = create_network(%{})
 
     %{id: container_id} =
@@ -1891,8 +1894,6 @@ defmodule NetworkTest do
   end
 
   defp failing_to_connect_container(networks, driver) do
-    api_spec = Kleened.API.Spec.spec()
-
     %{id: container_id} =
       TestHelper.container_create(%{
         name: "nettest",

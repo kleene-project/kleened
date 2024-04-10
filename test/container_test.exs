@@ -1,6 +1,7 @@
 defmodule ContainerTest do
   require Logger
   use Kleened.Test.ConnCase
+  alias ExUnit.CaptureLog
   alias Kleened.Core.{Container, Exec, Utils, MetaData, OS}
   alias Kleened.API.Schemas
 
@@ -10,9 +11,11 @@ defmodule ContainerTest do
     TestHelper.cleanup()
 
     on_exit(fn ->
-      Logger.info("Cleaning up after test...")
-      TestHelper.cleanup()
-      TestHelper.compare_to_baseline_environment(state)
+      CaptureLog.capture_log(fn ->
+        Logger.info("Cleaning up after test...")
+        TestHelper.cleanup()
+        TestHelper.compare_to_baseline_environment(state)
+      end)
     end)
 
     :ok
@@ -58,7 +61,7 @@ defmodule ContainerTest do
       container_succesfully_create(%{name: "testprune2", cmd: ["/bin/sleep", "10"]})
 
     %Schemas.Container{id: container_id3} =
-      container_succesfully_create(%{name: "testprune2", cmd: ["/bin/sleep", "10"]})
+      container_succesfully_create(%{name: "testprune3", cmd: ["/bin/sleep", "10"]})
 
     {:ok, exec_id} = Exec.create(%Schemas.ExecConfig{container_id: container_id2})
     TestHelper.exec_valid_start(%{exec_id: exec_id, start_container: true, attach: false})
