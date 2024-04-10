@@ -294,54 +294,48 @@ defmodule Kleened.Core.Container do
 
   defp assemble_container(
          container_id,
-         %Schemas.Image{
-           id: image_id,
-           user: image_user,
-           cmd: image_command,
-           env: img_env
-         },
+         image,
          dataset,
          pub_ports,
          %Schemas.ContainerConfig{
-           name: name,
            user: user,
            env: env,
            mounts: mounts,
-           cmd: command,
-           jail_param: jail_param,
-           network_driver: network_driver
+           cmd: command
          } = config
        ) do
     Logger.debug("creating container on #{dataset} with config: #{inspect(config)}")
 
-    env = Utils.merge_environment_variable_lists(img_env, env)
+    env = Utils.merge_environment_variable_lists(image.env, env)
+    container_map = Map.from_struct(config) |> Map.drop([:image, :mounts])
 
     command =
       case command do
-        [] -> image_command
+        [] -> image.cmd
         _ -> command
       end
 
     user =
       case user do
-        "" -> image_user
+        "" -> image.user
         _ -> user
       end
 
-    container = %Schemas.Container{
-      id: container_id,
-      name: name,
-      cmd: command,
-      dataset: dataset,
-      image_id: image_id,
-      user: user,
-      jail_param: jail_param,
-      network_driver: network_driver,
-      public_ports: pub_ports,
-      env: env,
-      created: DateTime.to_iso8601(DateTime.utc_now()),
-      running: false
-    }
+    container =
+      struct(
+        Schemas.Container,
+        Map.merge(container_map, %{
+          id: container_id,
+          cmd: command,
+          dataset: dataset,
+          image_id: image.id,
+          user: user,
+          public_ports: pub_ports,
+          env: env,
+          created: DateTime.to_iso8601(DateTime.utc_now()),
+          running: false
+        })
+      )
 
     case create_mounts(container, mounts) do
       :ok ->
