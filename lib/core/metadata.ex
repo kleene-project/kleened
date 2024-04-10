@@ -54,13 +54,11 @@ defmodule Kleened.Core.MetaData do
   CREATE VIEW IF NOT EXISTS api_list_containers
   AS
   SELECT
-    containers.id,
-    json_extract(containers.container, '$.name') AS name,
-    json_extract(containers.container, '$.cmd') AS cmd,
-    json_extract(containers.container, '$.image_id') AS image_id,
-    json_extract(containers.container, '$.created') AS created,
-    json_extract(images.image, '$.name') AS image_name,
-    json_extract(images.image, '$.tag') AS image_tag
+    json_insert(containers.container,
+      '$.id', containers.id,
+      '$.image_name', json_extract(images.image, '$.name'),
+      '$.image_tag', json_extract(images.image, '$.tag')
+      ) AS container_ext
   FROM
     containers
   INNER JOIN images ON json_extract(containers.container, '$.image_id') = images.id;
@@ -263,12 +261,12 @@ defmodule Kleened.Core.MetaData do
 
   @spec list_containers() :: [%{}]
   def list_containers() do
-    sql("SELECT id, container FROM containers ORDER BY json_extract(container, '$.created')")
+    sql("SELECT id, container FROM containers ORDER BY container -> '$.created'")
   end
 
   @spec container_listing() :: [%{}]
   def container_listing() do
-    sql("SELECT * FROM api_list_containers ORDER BY created DESC")
+    sql("SELECT * FROM api_list_containers ORDER BY container_ext -> '$.created' DESC")
   end
 
   @spec add_volume(Volume.t()) :: :ok
@@ -457,13 +455,9 @@ defmodule Kleened.Core.MetaData do
         pub_ports = Enum.map(container.public_ports, &struct(Schemas.PublishedPort, &1))
         %Schemas.Container{container | public_ports: pub_ports}
 
-      # view api_list_containers
-      MapSet.subset?(MapSet.new(["id", "image_id", "image_name", "image_tag"]), columns) ->
-        # FIXME: Annoying that to_existing_atom does not work here?!
-        row
-        |> Map.to_list()
-        |> Enum.map(fn {key, val} -> {String.to_atom(key), val} end)
-        |> Map.new()
+      # view api_list_containers for container_listing
+      columns == MapSet.new(["container_ext"]) ->
+        from_json(row["container_ext"])
 
       columns == MapSet.new(["id", "name", "tag", "dataset"]) ->
         row
@@ -504,48 +498,6 @@ defmodule Kleened.Core.MetaData do
         raise RuntimeError, message: msg
     end
   end
-
-  # @spec transform_row_old(List.t()) :: %Schemas.Image{}
-  # defp transform_row_old(row) do
-  #  cond do
-  # Keyword.has_key?(row, :image) ->
-  #  map = from_json(row, :image)
-  #  id = Keyword.get(row, :id)
-  #  struct(Schemas.Image, Map.put(map, :id, id))
-
-  # Keyword.has_key?(row, :network) ->
-  #  map = from_json(row, :network)
-  #  id = Keyword.get(row, :id)
-  #  struct(Schemas.Network, Map.put(map, :id, id))
-
-  # Keyword.has_key?(row, :container) ->
-  #  map = from_json(row, :container)
-  #  id = Keyword.get(row, :id)
-  #  container = struct(Schemas.Container, Map.put(map, :id, id))
-  #  pub_ports = Enum.map(container.public_ports, &struct(Schemas.PublishedPort, &1))
-  #  %Schemas.Container{container | public_ports: pub_ports}
-
-  # Keyword.has_key?(row, :volume) ->
-  #  map = from_json(row, :volume)
-  #  name = Keyword.get(row, :name)
-  #  struct(Schemas.Volume, Map.put(map, :name, name))
-
-  # Keyword.has_key?(row, :mount) ->
-  #  struct(Schemas.MountPoint, from_json(row, :mount))
-
-  # Keyword.has_key?(row, :config) ->
-  #  struct(Schemas.EndPoint, from_json(row, :config))
-
-  # Keyword.has_key?(row, :container_id) ->
-  #  Keyword.get(row, :container_id)
-
-  # Keyword.has_key?(row, :network_id) ->
-  #  Keyword.get(row, :network_id)
-
-  #    true ->
-  #      row
-  #  end
-  # end
 
   defp from_json(obj) do
     Jason.decode!(obj, [{:keys, :atoms}])

@@ -78,8 +78,7 @@ defmodule TestHelper do
 
     MetaData.list_volumes() |> Enum.map(&Volume.remove(&1.name))
 
-    MetaData.list_networks()
-    |> Enum.map(fn %{id: id} -> Network.remove(id) end)
+    MetaData.list_networks() |> Enum.map(fn %{id: id} -> Network.remove(id) end)
 
     MetaData.list_images()
     |> Enum.filter(fn image ->

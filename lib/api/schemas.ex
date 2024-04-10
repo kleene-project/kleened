@@ -198,33 +198,31 @@ defmodule Kleened.API.Schemas do
     OpenApiSpex.schema(%{
       description: "Summary description of a container",
       type: :object,
-      properties: %{
-        id: %Schema{description: "The id of this container", type: :string},
-        name: %Schema{description: "Name of the container", type: :string},
-        image_id: %Schema{
-          description: "The id of the image that this container was created from",
-          type: :string
-        },
-        image_name: %Schema{
-          description: "Name of the image that this container was created from",
-          type: :string
-        },
-        image_tag: %Schema{
-          description: "Tag of the image that this container was created from",
-          type: :string
-        },
-        cmd: %Schema{
-          description: "Command to run when the container is started",
-          type: :string
-        },
-        created: %Schema{description: "When the container was created", type: :string},
-        running: %Schema{description: "Whether or not the container is running", type: :boolean},
-        jid: %Schema{
-          description: "Jail ID if it is a running container",
-          type: :integer,
-          nullable: true
+      allOf: [
+        Kleened.API.Schemas.Container,
+        %Schema{
+          type: :object,
+          properties: %{
+            image_name: %Schema{
+              description: "Name of the image that this container was created from",
+              type: :string
+            },
+            image_tag: %Schema{
+              description: "Tag of the image that this container was created from",
+              type: :string
+            },
+            running: %Schema{
+              description: "Whether or not the container is running",
+              type: :boolean
+            },
+            jid: %Schema{
+              description: "Jail ID if it is a running container",
+              type: :integer,
+              nullable: true
+            }
+          }
         }
-      }
+      ]
     })
   end
 
@@ -472,15 +470,6 @@ defmodule Kleened.API.Schemas do
           default: [],
           example: ["PWD=/roo/", "JAIL_MGMT_ENGINE=kleene"]
         },
-        # buildargs: %Schema{
-        #  description: """
-        #  Additional `ARG`-variables given as an object of string pairs.
-        #  See the [`ARG` instruction documentation](/reference/dockerfile/#arg) for details.
-        #  """,
-        #  type: :object,
-        #  default: %{},
-        #  example: %{"USERNAME" => "Stephen", "JAIL_MGMT_ENGINE" => "kleene"}
-        # },
         user: %Schema{description: "User used for running `cmd`", type: :string},
         instructions: %Schema{
           description: """
