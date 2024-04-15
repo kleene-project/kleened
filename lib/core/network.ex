@@ -262,37 +262,11 @@ defmodule Kleened.Core.Network do
   end
 
   defp create_(
-         %Schemas.NetworkConfig{
-           interface: ""
-         } = config,
-         state
-       ) do
-    interface = generate_interface_name()
-    create_(%Schemas.NetworkConfig{config | interface: interface}, state)
-  end
-
-  defp create_(
-         %Schemas.NetworkConfig{
-           nat: "<host-gateway>"
-         } = config,
-         state
-       ) do
-    case host_gateway_interface() do
-      {:ok, nat_if} ->
-        create_(%Schemas.NetworkConfig{config | nat: nat_if}, state)
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp create_(
          %Schemas.NetworkConfig{type: "loopback"} = config,
          state
        ) do
-    create_interface("lo", config.interface)
-    {:ok, config} = configure_gateways(config)
     network = create_network_metadata(config, state)
+    create_interface("lo", network.interface)
     configure_pf()
     {:ok, network}
   end
@@ -301,9 +275,9 @@ defmodule Kleened.Core.Network do
          %Schemas.NetworkConfig{type: "bridge"} = config,
          state
        ) do
-    create_interface("bridge", config.interface)
-    {:ok, config} = configure_gateways(config)
     network = create_network_metadata(config, state)
+    create_interface("bridge", network.interface)
+    configure_gateways(network)
     configure_pf()
     {:ok, network}
   end
@@ -312,7 +286,6 @@ defmodule Kleened.Core.Network do
          %Schemas.NetworkConfig{type: "custom"} = config,
          state
        ) do
-    {:ok, config} = configure_gateways(config)
     network = create_network_metadata(config, state)
     configure_pf()
     {:ok, network}
@@ -337,59 +310,25 @@ defmodule Kleened.Core.Network do
   end
 
   defp configure_gateways(
-         %Schemas.NetworkConfig{
+         %Schemas.Network{
            type: "bridge",
-           gateway: "<auto>",
-           subnet: ""
-         } = config
+           gateway6: gateway6,
+           gateway: gateway
+         } = network
        ) do
-    configure_gateways(%Schemas.NetworkConfig{config | gateway: ""})
-  end
+    if gateway6 == "<auto>" and network.subnet6 != "" do
+      auto_gateway6 = first_ip_address(network.subnet6, "inet6")
+      ifconfig_cidr_alias(auto_gateway6, network.subnet6, network.interface, "inet6")
+    end
 
-  defp configure_gateways(
-         %Schemas.NetworkConfig{
-           type: "bridge",
-           gateway: "<auto>",
-           subnet: subnet
-         } = config
-       )
-       when subnet != "" do
-    gateway = first_ip_address(config.subnet, "inet")
-
-    case ifconfig_cidr_alias(gateway, config.subnet, config.interface, "inet") do
-      :ok -> configure_gateways(%Schemas.NetworkConfig{config | gateway: gateway})
-      {:error, output} -> {:error, output}
+    if gateway == "<auto>" and network.subnet != "" do
+      auto_gateway = first_ip_address(network.subnet, "inet")
+      ifconfig_cidr_alias(auto_gateway, network.subnet, network.interface, "inet")
     end
   end
 
-  defp configure_gateways(
-         %Schemas.NetworkConfig{
-           type: "bridge",
-           gateway6: "<auto>",
-           subnet6: ""
-         } = config
-       ) do
-    configure_gateways(%Schemas.NetworkConfig{config | gateway6: ""})
-  end
-
-  defp configure_gateways(
-         %Schemas.NetworkConfig{
-           type: "bridge",
-           gateway6: "<auto>",
-           subnet6: subnet6
-         } = config
-       )
-       when subnet6 != "" do
-    gateway6 = first_ip_address(config.subnet6, "inet6")
-
-    case ifconfig_cidr_alias(gateway6, config.subnet6, config.interface, "inet6") do
-      :ok -> configure_gateways(%Schemas.NetworkConfig{config | gateway6: gateway6})
-      {:error, output} -> {:error, output}
-    end
-  end
-
-  defp configure_gateways(config) do
-    {:ok, config}
+  defp configure_gateways(_config) do
+    :ok
   end
 
   def create_interface(if_type, interface) do
@@ -402,32 +341,49 @@ defmodule Kleened.Core.Network do
 
   defp create_network_metadata(
          %Schemas.NetworkConfig{
-           name: name,
-           type: type,
-           subnet: subnet,
-           subnet6: subnet6,
            interface: interface,
            gateway: gateway,
            gateway6: gateway6,
-           nat: nat,
-           icc: icc,
-           internal: internal
-         },
+           nat: nat
+         } = config,
          _state
        ) do
-    network = %Schemas.Network{
-      id: Utils.uuid(),
-      name: name,
-      type: type,
-      subnet: subnet,
-      subnet6: subnet6,
-      interface: interface,
-      gateway: gateway,
-      gateway6: gateway6,
-      nat: nat,
-      icc: icc,
-      internal: internal
-    }
+    network_map = Map.from_struct(config)
+
+    interface =
+      case interface do
+        "" -> generate_interface_name()
+        _ -> interface
+      end
+
+    nat =
+      case nat do
+        "<host-gateway>" ->
+          case Config.get("host_gateway") do
+            nil ->
+              msg = "No host gateway detected. No gateway added for network #{config.name}"
+              Logger.info(msg)
+              ""
+
+            host_gateway ->
+              host_gateway
+          end
+
+        nat ->
+          nat
+      end
+
+    network =
+      struct(
+        Schemas.Network,
+        Map.merge(network_map, %{
+          id: Utils.uuid(),
+          interface: interface,
+          gateway: gateway,
+          gateway6: gateway6,
+          nat: nat
+        })
+      )
 
     MetaData.add_network(network)
     network
@@ -487,11 +443,10 @@ defmodule Kleened.Core.Network do
        ) do
     with {:ok, ip_address} <- create_ip_address(ipv4_addr, network, "inet"),
          {:ok, ip_address6} <- create_ip_address(ipv6_addr, network, "inet6"),
-         :ok <- add_container_ip_alias(ip_address, container, network, "inet"),
-         :ok <- add_container_ip_alias(ip_address6, container, network, "inet6") do
+         :ok <- handle_running_ipnet_container(ip_address, ip_address6, container, network) do
       endpoint = %Schemas.EndPoint{
         id: Utils.uuid(),
-        network_id: network.name,
+        network_id: network.id,
         container_id: container.id,
         ip_address: ip_address,
         ip_address6: ip_address6
@@ -514,7 +469,7 @@ defmodule Kleened.Core.Network do
          {:ok, ip_address6} <- create_ip_address(ipv6_addr, network, "inet6") do
       endpoint = %Schemas.EndPoint{
         id: Utils.uuid(),
-        network_id: network.name,
+        network_id: network.id,
         container_id: container.id,
         ip_address: ip_address,
         ip_address6: ip_address6
@@ -615,29 +570,31 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  @spec add_container_ip_alias(String.t(), %Schemas.Container{}, %Schemas.Network{}, protocol) ::
+  defp handle_running_ipnet_container(ip_address, ip_address6, container, network) do
+    with {:running, true} <- {:running, Container.is_running?(container.id)},
+         :ok <- add_container_ipnet_alias(ip_address, container, network, "inet"),
+         :ok <- add_container_ipnet_alias(ip_address6, container, network, "inet6") do
+      :ok
+    else
+      {:running, false} -> :ok
+      {:error, msg} -> {:error, msg}
+    end
+  end
+
+  @spec add_container_ipnet_alias(String.t(), %Schemas.Container{}, %Schemas.Network{}, protocol) ::
           :ok | {:error, String.t()}
-  defp add_container_ip_alias("", _container, _network, _protocol) do
+  defp add_container_ipnet_alias("", _container, _network, _protocol) do
     :ok
   end
 
-  defp add_container_ip_alias(ip_address, container, network, protocol) do
-    netmask =
-      case protocol do
-        "inet" -> "32"
-        "inet6" -> "128"
-      end
-
-    case OS.cmd(~w"ifconfig #{network.interface} #{protocol} #{ip_address}/#{netmask} alias") do
-      {_, 0} ->
-        if Container.is_running?(container.id) do
-          add_jail_ip(container.id, ip_address)
-        end
-
+  defp add_container_ipnet_alias(ip_address, container, network, protocol) do
+    case FreeBSD.ifconfig_alias(ip_address, network.interface, protocol) do
+      :ok ->
+        add_jail_ip(container.id, ip_address)
         :ok
 
-      {error_output, _nonzero_exitcode} ->
-        {:error, "could not add ip #{ip_address} to #{network.interface}: #{error_output}"}
+      {:errro, reason} ->
+        {:error, reason}
     end
   end
 
@@ -928,15 +885,16 @@ defmodule Kleened.Core.Network do
     ipv4_internal_nat_rule = "block out quick log on #{host_gateway_interface} from #{subnet}"
     ipv6_internal_nat_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
 
-    use_necessary_ip_protocols(
-      network,
-      [icc_allow(network, "inet"), outgoing_deny(subnet), ipv4_internal_nat_rule],
-      [
-        icc_allow(network, "inet6"),
-        outgoing_deny(subnet6),
-        ipv6_internal_nat_rule
-      ]
-    )
+    ip4_rules = [icc_allow(network, "inet"), outgoing_deny(subnet), ipv4_internal_nat_rule]
+    ip6_rules = [icc_allow(network, "inet6"), outgoing_deny(subnet6), ipv6_internal_nat_rule]
+
+    ip6_rules =
+      case Config.get("host_gw") do
+        nil -> List.delete_at(ip6_rules, -1)
+        _ -> ip6_rules
+      end
+
+    use_necessary_ip_protocols(network, ip4_rules, ip6_rules)
   end
 
   defp network_filtering(%Schemas.Network{internal: true, icc: true, nat: _nat_if} = network) do
@@ -946,15 +904,16 @@ defmodule Kleened.Core.Network do
     ipv4_internal_nat_rule = "block out quick log on #{nat_interface} from #{subnet}"
     ipv6_internal_nat_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
 
-    use_necessary_ip_protocols(
-      network,
-      [icc_allow(network, "inet"), outgoing_deny(subnet), ipv4_internal_nat_rule],
-      [
-        icc_allow(network, "inet6"),
-        outgoing_deny(subnet6),
-        ipv6_internal_nat_rule
-      ]
-    )
+    ip4_rules = [icc_allow(network, "inet"), outgoing_deny(subnet), ipv4_internal_nat_rule]
+    ip6_rules = [icc_allow(network, "inet6"), outgoing_deny(subnet6), ipv6_internal_nat_rule]
+
+    ip6_rules =
+      case Config.get("host_gw") do
+        nil -> List.delete_at(ip6_rules, -1)
+        _ -> ip6_rules
+      end
+
+    use_necessary_ip_protocols(network, ip4_rules, ip6_rules)
   end
 
   defp network_filtering(%Schemas.Network{internal: true, icc: false, nat: ""} = network) do
@@ -973,10 +932,16 @@ defmodule Kleened.Core.Network do
     ipv4_internal_nat_rule = "block out quick log on #{nat_interface} from #{subnet}"
     ipv6_internal_nat_rule = "block out quick log on #{host_gateway_interface} from #{subnet6}"
 
-    use_necessary_ip_protocols(network, [outgoing_deny(subnet), ipv4_internal_nat_rule], [
-      outgoing_deny(subnet6),
-      ipv6_internal_nat_rule
-    ])
+    ip4_rules = [outgoing_deny(subnet), ipv4_internal_nat_rule]
+    ip6_rules = [outgoing_deny(subnet6), ipv6_internal_nat_rule]
+
+    ip6_rules =
+      case Config.get("host_gw") do
+        nil -> List.delete_at(ip6_rules, -1)
+        _ -> ip6_rules
+      end
+
+    use_necessary_ip_protocols(network, ip4_rules, ip6_rules)
   end
 
   defp outgoing_deny(subnet) do
@@ -1090,16 +1055,9 @@ defmodule Kleened.Core.Network do
   end
 
   defp host_gw_macro() do
-    case host_gateway_interface() do
-      {:ok, host_gw} ->
-        ["kleenet_host_gw_if=\"#{host_gw}\""]
-
-      {:error, reason} ->
-        Logger.warning(
-          "Unable to locate gateway interface on the host: #{reason}. Connectivity might not work."
-        )
-
-        []
+    case Config.get("host_gateway") do
+      nil -> []
+      host_gateway -> ["kleenet_host_gw_if=\"#{host_gateway}\""]
     end
   end
 
@@ -1160,46 +1118,6 @@ defmodule Kleened.Core.Network do
     case FreeBSD.get_interface_addresses(kleene_if) do
       [] -> false
       _if_stats -> true
-    end
-  end
-
-  def host_gateway_interface() do
-    case get_routing_table(:ipv4) do
-      {:ok, routing_table} ->
-        case Enum.find(routing_table, "", fn %{"destination" => dest} -> dest == "default" end) do
-          # Extract the interface name of the default gateway
-          %{"interface-name" => interface} -> {:ok, interface}
-          _ -> {:error, "Could not find a default gateway."}
-        end
-
-      _ ->
-        {:error, "could not find routing table"}
-    end
-  end
-
-  def get_routing_table(protocol) do
-    address_family =
-      case protocol do
-        :ipv4 -> "Internet"
-        :ipv6 -> "Internet6"
-      end
-
-    {output_json, 0} = OS.cmd(["netstat", "--libxo", "json", "-rn"], %{suppress_logging: true})
-    {:ok, output} = Jason.decode(output_json)
-    routing_table = output["statistics"]["route-information"]["route-table"]["rt-family"]
-
-    case Enum.filter(
-           routing_table,
-           fn
-             %{"address-family" => ^address_family} -> true
-             %{"address-family" => _} -> false
-           end
-         ) do
-      [%{"rt-entry" => routes}] ->
-        {:ok, routes}
-
-      _ ->
-        {:error, "could not find an #{address_family} routing table"}
     end
   end
 
@@ -1266,34 +1184,15 @@ defmodule Kleened.Core.Network do
         :ok
 
       {error, _} ->
-        Logger.error("Some error occured while assigning IPs #{ips} to #{jail_name}: #{error}")
-        :error
+        msg = "Some error occured while assigning IPs #{ips} to #{jail_name}: #{error}"
+        Logger.warning(msg)
+        {:error, error}
     end
-  end
-
-  defp ifconfig_cidr_alias("", _subnet, _interface, _protocol) do
-    :ok
   end
 
   defp ifconfig_cidr_alias(ip, subnet, interface, protocol) do
     %CIDR{mask: mask} = CIDR.parse(subnet)
-    ifconfig_alias_add("#{ip}/#{mask}", interface, protocol)
-  end
-
-  defp ifconfig_alias_add("", _interface, _proto) do
-    :ok
-  end
-
-  defp ifconfig_alias_add(ip, interface, protocol) do
-    Logger.debug("Adding #{protocol} #{ip} to #{interface}")
-
-    case OS.cmd(~w"ifconfig #{interface} #{protocol} #{ip} alias") do
-      {_output, 0} ->
-        :ok
-
-      {output, _nonzero_exitcode} ->
-        {:error, "error adding #{protocol} alias to interface: #{output}"}
-    end
+    FreeBSD.ifconfig_subnet_alias(ip, mask, interface, protocol)
   end
 
   defp ifconfig_alias_remove("", _interface, _protocol) do
@@ -1326,7 +1225,7 @@ defmodule Kleened.Core.Network do
     generate_ip(first_ip, last_ip, ips_in_use, protocol)
   end
 
-  defp first_ip_address(subnet, protocol) do
+  def first_ip_address(subnet, protocol) do
     %CIDR{:first => first_ip} = CIDR.parse(subnet)
     first_ip |> ip2int(protocol) |> (&(&1 + 1)).() |> int2ip(protocol)
   end

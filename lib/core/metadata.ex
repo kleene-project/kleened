@@ -307,6 +307,11 @@ defmodule Kleened.Core.MetaData do
     """)
   end
 
+  @spec get_mounts_from_container(Container.container_id()) :: [%Schemas.MountPoint{}]
+  def get_mounts_from_container(container_id) do
+    sql("SELECT mount FROM mounts WHERE json_extract(mount,'$.container_id') = ?", [container_id])
+  end
+
   @spec add_mount(%Schemas.MountPoint{}) :: :ok
   def add_mount(mount) do
     sql("INSERT OR REPLACE INTO mounts VALUES (?)", [to_db(mount)])
@@ -520,9 +525,6 @@ defmodule Kleened.Core.MetaData do
   end
 
   def create_tables(conn) do
-    # {:ok, %Exqlite.Query{}, %Exqlite.Result{}, %Exqlite.Connection{}}
-    # Med data:
-    # {:ok, %Exqlite.Query{statement: "CREATE TABLE IF NOT EXISTS\nnetworks (\n  id      TEXT PRIMARY KEY,\n  network TEXT\n)\n", name: nil, ref: #Reference<0.3934892043.450494471.56530>, command: nil}, %Exqlite.Result{command: :execute, columns: [], rows: [], num_rows: 0}, %Exqlite.Connection{db: #Reference<0.3934892043.450494471.56526>, directory: "/zroot/kleene", path: "/zroot/kleene/metadata.sqlite", transaction_status: :idle, status: :idle, chunk_size: 50, before_disconnect: nil}}
     {:ok, _, _, _} = Basic.exec(conn, @table_network)
     {:ok, _, _, _} = Basic.exec(conn, @table_endpoint_configs)
     {:ok, _, _, _} = Basic.exec(conn, @table_images)

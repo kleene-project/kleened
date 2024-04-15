@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Config do
-  alias Kleened.Core.ZFS
+  alias Kleened.Core.{ZFS, FreeBSD}
   require Logger
   use Agent
 
@@ -61,6 +61,19 @@ defmodule Kleened.Core.Config do
     cfg = Map.put(cfg, "container_root", Path.join([root, "container"]))
     cfg = Map.put(cfg, "image_root", Path.join([root, "image"]))
     cfg = Map.put(cfg, "volume_root", Path.join([root, "volumes"]))
+
+    host_gateway =
+      case FreeBSD.host_gateway_interface() do
+        {:ok, host_gw} ->
+          host_gw
+
+        {:error, reason} ->
+          msg = "Unable to detect host gateway interface: #{reason}. Connectivity might not work."
+          Logger.warning(msg)
+          nil
+      end
+
+    cfg = Map.put(cfg, "host_gateway", host_gateway)
     Map.put(cfg, "metadata_db", Path.join(["/", cfg["kleene_root"], "metadata.sqlite"]))
   end
 

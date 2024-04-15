@@ -144,16 +144,13 @@ defmodule Kleened.Core.Container do
          public_ports: public_ports_config
        }) do
     host_gw =
-      case Network.host_gateway_interface() do
-        {:ok, host_gw} ->
-          host_gw
-
-        {:error, _reason} ->
-          Logger.warning(
-            "Could not detect any gateway interface on the host so connectivity might not work."
-          )
-
+      case Config.get("host_gateway") do
+        nil ->
+          Logger.warning("No host gateway detected. Connectivity might not work.")
           ""
+
+        host_gateway ->
+          host_gateway
       end
 
     public_ports =
@@ -211,7 +208,7 @@ defmodule Kleened.Core.Container do
   defp prune_containers() do
     pruned_containers =
       Enum.reduce(list(all: true), [], fn
-        %{running: false, id: container_id}, removed_containers ->
+        %{running: false, persist: false, id: container_id}, removed_containers ->
           Logger.debug("pruning container #{container_id}")
           remove(container_id)
           [container_id | removed_containers]
@@ -231,6 +228,8 @@ defmodule Kleened.Core.Container do
            env: env,
            mounts: _mounts,
            cmd: cmd,
+           persist: persist,
+           restart_policy: restart,
            jail_param: jail_param
          }
        ) do
@@ -241,6 +240,8 @@ defmodule Kleened.Core.Container do
                user: user,
                env: env,
                cmd: cmd,
+               persist: persist,
+               restart_policy: restart,
                jail_param: jail_param
              ) do
           {:ok, container} -> modify_container_if_running(container, jail_param)
@@ -428,8 +429,12 @@ defmodule Kleened.Core.Container do
 
   defp create_mounts(container, [mount_config | rest]) do
     case Mount.create(container, mount_config) do
-      {:ok, _} -> create_mounts(container, rest)
-      {:error, reason} -> {:error, reason}
+      {:ok, _} ->
+        create_mounts(container, rest)
+
+      {:error, reason} ->
+        Logger.warning("Could not mount #{inspect(mount_config)}: #{reason}")
+        {:error, reason}
     end
   end
 

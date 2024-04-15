@@ -118,6 +118,26 @@ defmodule Kleened.API.Schemas do
               properties: "tcp"
             }
           ]
+        },
+        restart_policy: %Schema{
+          description: """
+          Restarting behavior of the container:
+
+          - `"no"`: There is no automatic restart of the container
+          - `"on-startup"`: The container is started each time Kleened is.
+          """,
+          type: :string,
+          default: "no",
+          example: "on-startup",
+          nullable: true,
+          enum: ["no", "on-startup"]
+        },
+        persist: %Schema{
+          description: "Whether or not this container will be removed by pruning.",
+          type: :boolean,
+          default: false,
+          example: true,
+          nullable: true
         }
       }
     })
@@ -186,6 +206,26 @@ defmodule Kleened.API.Schemas do
           items: %Schema{type: :string},
           default: [],
           example: ["allow.raw_sockets=true", "osrelease=kleenejail"]
+        },
+        restart_policy: %Schema{
+          description: """
+          Restarting behavior of the container:
+
+          - `"no"`: There is no automatic restart of the container
+          - `"on-startup"`: The container is started each time Kleened is.
+          """,
+          type: :string,
+          default: "no",
+          example: "on-startup",
+          nullable: true,
+          enum: ["no", "on-startup"]
+        },
+        persist: %Schema{
+          description: "Whether or not this container will be removed by pruning.",
+          type: :boolean,
+          default: false,
+          example: true,
+          nullable: true
         },
         created: %Schema{description: "When the container was created", type: :string},
         dataset: %Schema{description: "ZFS dataset of the container", type: :string},

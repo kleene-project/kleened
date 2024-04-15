@@ -4,45 +4,34 @@ defmodule Kleened.Core.Mount do
   require Config
   require Logger
 
-  @type bind_opts() :: [
-          rw: boolean()
-        ]
-
   @spec create(
           %Schemas.Container{},
           %Schemas.MountPointConfig{}
         ) :: {:ok, %Schemas.MountPoint{}}
-  def create(
-        %Schemas.Container{dataset: dataset} = container,
-        %Schemas.MountPointConfig{
-          type: "volume",
-          source: volume_name,
-          destination: destination,
-          read_only: read_only
-        }
-      ) do
+  def create(container, %Schemas.MountPointConfig{type: "volume"} = config) do
     volume =
-      case MetaData.get_volume(volume_name) do
+      case MetaData.get_volume(config.source) do
         %Schemas.Volume{} = volume -> volume
-        :not_found -> Volume.create(volume_name)
+        :not_found -> Volume.create(config.source)
       end
 
-    mountpoint = ZFS.mountpoint(dataset)
-    absolute_destination = Path.join(mountpoint, destination)
+    mountpoint = ZFS.mountpoint(container.dataset)
+    absolute_destination = Path.join(mountpoint, config.destination)
 
     case create_directory(absolute_destination) do
       :ok ->
         case populate_volume_if_empty(absolute_destination, volume) do
           :ok ->
-            case create_nullfs_mount(container, volume.mountpoint, destination, read_only) do
-              {:ok, mountpoint} ->
-                mountpoint = %Schemas.MountPoint{mountpoint | type: "volume", source: volume.name}
-                MetaData.add_mount(mountpoint)
-                {:ok, mountpoint}
+            mountpoint = %Schemas.MountPoint{
+              type: "volume",
+              container_id: container.id,
+              source: volume.name,
+              destination: config.destination,
+              read_only: config.read_only
+            }
 
-              {:error, reason} ->
-                {:error, reason}
-            end
+            MetaData.add_mount(mountpoint)
+            {:ok, mountpoint}
 
           {:error, reason} ->
             {:error, reason}
@@ -57,33 +46,48 @@ defmodule Kleened.Core.Mount do
           %Schemas.Container{},
           %Schemas.MountPointConfig{}
         ) :: {:ok, %Schemas.MountPoint{}}
-  def create(
-        container,
-        %Schemas.MountPointConfig{
-          type: "nullfs",
-          source: source,
-          destination: destination,
-          read_only: read_only
-        }
-      ) do
+  def create(container, %Schemas.MountPointConfig{type: "nullfs"} = config) do
     mountpoint = ZFS.mountpoint(container.dataset)
-    absolute_destination = Path.join(mountpoint, destination)
+    absolute_destination = Path.join(mountpoint, config.destination)
 
-    case create_directory_or_file(absolute_destination, source) do
+    case create_directory_or_file(absolute_destination, config.source) do
       :ok ->
-        case create_nullfs_mount(container, source, destination, read_only) do
-          {:ok, mountpoint} ->
-            mountpoint = %Schemas.MountPoint{mountpoint | type: "nullfs", source: source}
-            MetaData.add_mount(mountpoint)
-            {:ok, mountpoint}
+        mountpoint = %Schemas.MountPoint{
+          type: "nullfs",
+          container_id: container.id,
+          source: config.source,
+          destination: config.destination,
+          read_only: config.read_only
+        }
 
-          {:error, reason} ->
-            {:error, reason}
-        end
+        MetaData.add_mount(mountpoint)
+        {:ok, mountpoint}
 
       {:error, reason} ->
         {:error, reason}
     end
+  end
+
+  @spec mount(
+          %Schemas.Container{},
+          %Schemas.MountPoint{}
+        ) :: :ok | {:error, String.t()}
+  def mount(container, %Schemas.MountPoint{type: "volume"} = mountpoint) do
+    case MetaData.get_volume(mountpoint.source) do
+      :not_found ->
+        msg = "could not mount volume #{mountpoint.source} into container #{container.id}"
+        Logger.warning(msg)
+        {:error, msg}
+
+      volume ->
+        Logger.debug("mounting #{inspect(mountpoint)} into container #{container.id}")
+        create_nullfs_mount(container, volume.mountpoint, mountpoint)
+    end
+  end
+
+  def mount(container, %Schemas.MountPoint{type: "nullfs"} = mountpoint) do
+    Logger.debug("mounting #{inspect(mountpoint)} into container #{container.id}")
+    create_nullfs_mount(container, mountpoint.source, mountpoint)
   end
 
   defp populate_volume_if_empty(absolute_destination, volume) do
@@ -130,30 +134,19 @@ defmodule Kleened.Core.Mount do
     :ok
   end
 
-  defp create_nullfs_mount(
-         %Schemas.Container{id: container_id, dataset: dataset},
-         source,
-         destination,
-         read_only
-       ) do
-    mountpoint = ZFS.mountpoint(dataset)
-    absolute_destination = Path.join(mountpoint, destination)
+  defp create_nullfs_mount(container, source, mountpoint) do
+    zfs_mountpoint = ZFS.mountpoint(container.dataset)
+    absolute_destination = Path.join(zfs_mountpoint, mountpoint.destination)
 
     mount_cmd =
-      case read_only do
+      case mountpoint.read_only do
         false -> ["/sbin/mount_nullfs", source, absolute_destination]
         true -> ["/sbin/mount_nullfs", "-o", "ro", source, absolute_destination]
       end
 
     case OS.cmd(mount_cmd) do
       {"", 0} ->
-        mountpoint = %Schemas.MountPoint{
-          container_id: container_id,
-          destination: destination,
-          read_only: read_only
-        }
-
-        {:ok, mountpoint}
+        :ok
 
       {output, _nonzero_exitcode} ->
         {:error, output}

@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Exec do
-  alias Kleened.Core.{Container, MetaData, OS, FreeBSD, ZFS, Utils, ExecInstances}
+  alias Kleened.Core.{Container, Network, MetaData, OS, FreeBSD, ZFS, Utils, ExecInstances, Mount}
   alias Kleened.API.Schemas
 
   defmodule State do
@@ -131,7 +131,7 @@ defmodule Kleened.Core.Exec do
   end
 
   def handle_call({:start, %{start_container: start_container}}, _from, %State{port: nil} = state) do
-    case start_(state.config, start_container) do
+    case start_(state.config, start_container, state) do
       {:error, _reason} = msg ->
         {:reply, msg, state}
 
@@ -237,7 +237,7 @@ defmodule Kleened.Core.Exec do
     end
   end
 
-  defp start_(config, start_container) do
+  defp start_(config, start_container, state) do
     case MetaData.get_container(config.container_id) do
       %Schemas.Container{} = cont ->
         cont = merge_configurations(cont, config)
@@ -248,7 +248,7 @@ defmodule Kleened.Core.Exec do
             {:ok, port, cont}
 
           {false, true} ->
-            port = jail_start_container(cont, config.tty)
+            port = jail_start_container(cont, config.tty, state)
             {:ok, port, cont}
 
           {false, false} ->
@@ -333,10 +333,13 @@ defmodule Kleened.Core.Exec do
            jail_param: jail_param,
            env: env
          } = container,
-         use_tty
+         use_tty,
+         state
        ) do
     Logger.info("Starting container #{id}")
-    network_config = setup_connectivity_configuration(container)
+    setup_mounts(container, state)
+    setup_networking(container, state)
+    network_config = create_networking_jail_params(container)
     path = ZFS.mountpoint(dataset)
 
     # Since booleans can have two different forms:
@@ -363,6 +366,68 @@ defmodule Kleened.Core.Exec do
     port
   end
 
+  defp setup_mounts(container, state) do
+    MetaData.get_mounts_from_container(container.id)
+    |> Enum.map(fn
+      mountpoint ->
+        case(Mount.mount(container, mountpoint)) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            msg = "could not mount #{inspect(mountpoint)}: #{reason}"
+            Logger.warning(msg)
+            relay_msg(msg, state)
+        end
+    end)
+  end
+
+  def setup_networking(container, state) do
+    endpoints = MetaData.get_endpoints_from_container(container.id)
+
+    case container.network_driver do
+      "vnet" -> Enum.map(endpoints, &setup_vnet_network(&1, state))
+      "ipnet" -> Enum.map(endpoints, &setup_ipnet_network(&1, state))
+      _ -> []
+    end
+  end
+
+  defp setup_vnet_network(endpoint, state) do
+    case FreeBSD.create_epair() do
+      {:ok, epair} ->
+        endpoint = %Schemas.EndPoint{endpoint | epair: epair}
+        MetaData.add_endpoint(endpoint.container_id, endpoint.network_id, endpoint)
+
+      {:error, reason} ->
+        msg = "could not create new epair, ifconfig failed with: #{reason}"
+        Logger.warning(msg)
+        relay_msg(msg, state)
+    end
+  end
+
+  defp setup_ipnet_network(endpoint, state) do
+    Enum.map(
+      [{endpoint.ip_address, "inet"}, {endpoint.ip_address6, "inet6"}],
+      fn
+        {"", _} ->
+          :ok
+
+        {ip, protocol} ->
+          network = MetaData.get_network(endpoint.network_id)
+
+          case FreeBSD.ifconfig_alias(ip, network.interface, protocol) do
+            :ok ->
+              :ok
+
+            {:error, reason} ->
+              msg = "could not add ip to #{network.interface}: #{reason}"
+              Logger.warning(msg)
+              relay_msg(msg, state)
+          end
+      end
+    )
+  end
+
   defp update_jailparam_if_not_exist(jail_params, paramtype, default_value) do
     case if_paramtype_exist?(jail_params, paramtype) do
       true ->
@@ -386,49 +451,67 @@ defmodule Kleened.Core.Exec do
     false
   end
 
-  defp setup_connectivity_configuration(%Schemas.Container{network_driver: "disabled"}) do
+  defp create_networking_jail_params(%Schemas.Container{network_driver: "disabled"}) do
     ["ip4=disable", "ip6=disable"]
   end
 
-  defp setup_connectivity_configuration(%Schemas.Container{network_driver: "host"}) do
+  defp create_networking_jail_params(%Schemas.Container{network_driver: "host"}) do
     ["ip4=inherit", "ip6=inherit"]
   end
 
-  defp setup_connectivity_configuration(%Schemas.Container{network_driver: "ipnet"} = container) do
+  defp create_networking_jail_params(%Schemas.Container{network_driver: "ipnet"} = container) do
     networks = MetaData.connected_networks(container.id)
-    Enum.flat_map(networks, &create_alias_network_config(&1, container.id))
+    Enum.flat_map(networks, &create_ipnet_network_config(&1, container.id))
   end
 
-  defp setup_connectivity_configuration(%Schemas.Container{network_driver: "vnet"} = container) do
+  defp create_networking_jail_params(%Schemas.Container{network_driver: "vnet"} = container) do
     networks = MetaData.connected_networks(container.id)
     config = ["vnet" | Enum.flat_map(networks, &create_vnet_network_config(&1, container.id))]
     Kleened.Core.Network.configure_pf()
     config
   end
 
-  defp create_alias_network_config(network, container_id) do
-    endpoint = MetaData.get_endpoint(container_id, network.id)
+  defp create_ipnet_network_config(
+         %Schemas.Network{id: network_id, interface: interface},
+         container_id
+       ) do
+    %Schemas.EndPoint{ip_address: ip_address, ip_address6: ip_address6} =
+      MetaData.get_endpoint(container_id, network_id)
 
     ip_jailparam =
-      case endpoint.ip_address do
-        "" -> []
-        ip -> ["ip4.addr=#{ip}"]
+      case ip_address do
+        "" ->
+          []
+
+        ip ->
+          [
+            "exec.prestart=ifconfig #{interface} inet #{ip}/32 alias",
+            "ip4.addr=#{ip}",
+            "exec.poststop=ifconfig #{interface} inet #{ip} -alias"
+          ]
       end
 
     ip6_jailparam =
-      case endpoint.ip_address6 do
-        "" -> []
-        ip6 -> ["ip6.addr=#{ip6}"]
+      case ip_address6 do
+        "" ->
+          []
+
+        ip6 ->
+          [
+            "exec.prestart=ifconfig #{interface} inet6 #{ip6}/128 alias",
+            "ip6.addr=#{ip6}",
+            "exec.poststop=ifconfig #{interface} inet6 #{ip6} -alias"
+          ]
       end
 
-    # NOTE This was previously done by having one ip4.addr param
+    # This was previously done by having one ip4.addr param
     # containing all ips in a comma-seperated list.
     ip_jailparam ++ ip6_jailparam
   end
 
   defp create_vnet_network_config(
          %Schemas.Network{
-           id: id,
+           id: network_id,
            interface: bridge,
            subnet: subnet,
            subnet6: subnet6,
@@ -437,43 +520,30 @@ defmodule Kleened.Core.Exec do
          },
          container_id
        ) do
-    %Schemas.EndPoint{ip_address: ip, ip_address6: ip6} =
-      endpoint = MetaData.get_endpoint(container_id, id)
+    %Schemas.EndPoint{epair: epair, ip_address: ip, ip_address6: ip6} =
+      MetaData.get_endpoint(container_id, network_id)
 
-    epair = FreeBSD.create_epair()
-    MetaData.add_endpoint(container_id, id, %Schemas.EndPoint{endpoint | epair: epair})
-    # "exec.start=\"ifconfig #{epair}b name jail0\" " <>
-    # "exec.poststop=\"ifconfig #{bridge} deletem #{epair}a\" " <>
-    # "exec.poststop=\"ifconfig #{epair}a destroy\""
     base_config = [
       "vnet.interface=#{epair}b",
       "exec.prestart=ifconfig #{bridge} addm #{epair}a",
-      "exec.prestart=ifconfig #{epair}a up"
+      "exec.prestart=ifconfig #{epair}a up",
+      # "exec.start=\"ifconfig #{epair}b name jail0\" ",
+      "exec.poststop=\"ifconfig #{bridge} deletem #{epair}a\" ",
+      "exec.poststop=\"ifconfig #{epair}a destroy\""
     ]
 
     extended_config =
       create_exec_start_params([],
         subnet: {epair, subnet, ip},
-        gateway: gateway,
+        gateway: {gateway, subnet},
         subnet6: {epair, subnet6, ip6},
-        gateway6: gateway6
+        gateway6: {gateway6, subnet6}
       )
 
     base_config ++ extended_config
   end
 
-  defp create_exec_start_params(config, []) do
-    # We need to reverse the order of jail parameters.
-    # Otherwise we would add the gateway before the subnet (and then fail)
-    # when starting the jail
-    Enum.reverse(config)
-  end
-
   defp create_exec_start_params(config, [{_, ""} | rest]) do
-    # extended_config = [
-    #  "exec.start=ifconfig #{epair}b #{ip}/#{subnet.mask}",
-    #  "exec.start=route add -inet default #{gateway}"
-    # ]
     create_exec_start_params(config, rest)
   end
 
@@ -505,12 +575,44 @@ defmodule Kleened.Core.Exec do
     )
   end
 
-  defp create_exec_start_params(config, [{:gateway, gateway} | rest]) do
+  defp create_exec_start_params(config, [{:gateway, {"", _}} | rest]) do
+    create_exec_start_params(config, rest)
+  end
+
+  defp create_exec_start_params(config, [{:gateway, {_gateway, ""}} | rest]) do
+    create_exec_start_params(config, rest)
+  end
+
+  defp create_exec_start_params(config, [{:gateway, {"<auto>", subnet}} | rest]) do
+    auto_gateway = Network.first_ip_address(subnet, "inet")
+    create_exec_start_params(config, [{:gateway, {auto_gateway, subnet}} | rest])
+  end
+
+  defp create_exec_start_params(config, [{:gateway, {gateway, _subnet}} | rest]) do
     create_exec_start_params(["exec.start=route add -inet default #{gateway}" | config], rest)
   end
 
-  defp create_exec_start_params(config, [{:gateway6, gateway6} | rest]) do
+  defp create_exec_start_params(config, [{:gateway6, {"", _}} | rest]) do
+    create_exec_start_params(config, rest)
+  end
+
+  defp create_exec_start_params(config, [{:gateway6, {_gateway6, ""}} | rest]) do
+    create_exec_start_params(config, rest)
+  end
+
+  defp create_exec_start_params(config, [{:gateway6, {"<auto>", subnet6}} | rest]) do
+    auto_gateway6 = Network.first_ip_address(subnet6, "inet6")
+    create_exec_start_params(config, [{:gateway6, {auto_gateway6, subnet6}} | rest])
+  end
+
+  defp create_exec_start_params(config, [{:gateway6, {gateway6, _subnet6}} | rest]) do
     create_exec_start_params(["exec.start=route add -inet6 default #{gateway6}" | config], rest)
+  end
+
+  defp create_exec_start_params(config, []) do
+    # Reversing the order of jail parameters otherwise we would add the
+    # gateway before the subnet and then fail to start the jail properly
+    Enum.reverse(config)
   end
 
   def extract_ip(container_id, network_id, "inet") do

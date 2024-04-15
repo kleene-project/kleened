@@ -798,7 +798,10 @@ defmodule Kleened.Core.Image do
 
     case Mount.create(state.container, mount_config) do
       {:ok, mountpoint} ->
-        {:ok, mountpoint}
+        case Mount.mount(state.container, mountpoint) do
+          :ok -> {:ok, mountpoint}
+          {:error, output} -> {:error, output}
+        end
 
       {:error, output} ->
         send_msg(pid, "could not create context mountpoint in container: #{output}")
