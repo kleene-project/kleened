@@ -115,7 +115,9 @@ defmodule Kleened.Core.Network do
   def init([]) do
     FreeBSD.enable_ip_forwarding()
 
-    create_network_interfaces()
+    MetaData.list_networks() |> Enum.map(&setup_network/1)
+    configure_pf()
+
     state = %{}
 
     enable_pf()
@@ -125,13 +127,16 @@ defmodule Kleened.Core.Network do
 
   @impl true
   def handle_call({:create, config}, _from, state) do
-    reply =
-      case validate_create_config(config) do
-        :ok -> create_(config, state)
-        {:error, reason} -> {:error, reason}
-      end
+    case validate_create_config(config) do
+      :ok ->
+        network = create_network_metadata(config, state)
+        setup_network(network)
+        configure_pf()
+        {:reply, {:ok, network}, state}
 
-    {:reply, reply, state}
+      {:error, reason} ->
+        {:reply, {:error, reason}, state}
+    end
   end
 
   def handle_call(
@@ -261,52 +266,18 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  defp create_(
-         %Schemas.NetworkConfig{type: "loopback"} = config,
-         state
-       ) do
-    network = create_network_metadata(config, state)
-    create_interface("lo", network.interface)
-    configure_pf()
-    {:ok, network}
-  end
+  def setup_network(network) do
+    case network.type do
+      "loopback" ->
+        create_interface("lo", network.interface)
 
-  defp create_(
-         %Schemas.NetworkConfig{type: "bridge"} = config,
-         state
-       ) do
-    network = create_network_metadata(config, state)
-    create_interface("bridge", network.interface)
-    configure_gateways(network)
-    configure_pf()
-    {:ok, network}
-  end
+      "bridge" ->
+        create_interface("bridge", network.interface)
+        configure_gateways(network)
 
-  defp create_(
-         %Schemas.NetworkConfig{type: "custom"} = config,
-         state
-       ) do
-    network = create_network_metadata(config, state)
-    configure_pf()
-    {:ok, network}
-  end
-
-  defp create_(%Schemas.NetworkConfig{type: driver}, _state) do
-    {:error, "Unknown driver #{inspect(driver)}"}
-  end
-
-  defp create_network_interfaces() do
-    MetaData.list_networks()
-    |> Enum.map(fn
-      %Schemas.Network{type: "bridge", interface: interface} ->
-        create_interface("bridge", interface)
-
-      %Schemas.Network{type: "loopback", interface: interface} ->
-        create_interface("lo", interface)
-
-      _ ->
+      "custom" ->
         :ok
-    end)
+    end
   end
 
   defp configure_gateways(
@@ -316,19 +287,15 @@ defmodule Kleened.Core.Network do
            gateway: gateway
          } = network
        ) do
-    if gateway6 == "<auto>" and network.subnet6 != "" do
-      auto_gateway6 = first_ip_address(network.subnet6, "inet6")
-      ifconfig_cidr_alias(auto_gateway6, network.subnet6, network.interface, "inet6")
-    end
-
     if gateway == "<auto>" and network.subnet != "" do
       auto_gateway = first_ip_address(network.subnet, "inet")
       ifconfig_cidr_alias(auto_gateway, network.subnet, network.interface, "inet")
     end
-  end
 
-  defp configure_gateways(_config) do
-    :ok
+    if gateway6 == "<auto>" and network.subnet6 != "" do
+      auto_gateway6 = first_ip_address(network.subnet6, "inet6")
+      ifconfig_cidr_alias(auto_gateway6, network.subnet6, network.interface, "inet6")
+    end
   end
 
   def create_interface(if_type, interface) do
@@ -389,6 +356,16 @@ defmodule Kleened.Core.Network do
     network
   end
 
+  defp create_endpoint_metadata(ip, ip6, container, network) do
+    %Schemas.EndPoint{
+      id: Utils.uuid(),
+      network_id: network.id,
+      container_id: container.id,
+      ip_address: ip,
+      ip_address6: ip6
+    }
+  end
+
   defp remove_(idname) do
     case MetaData.get_network(idname) do
       %Schemas.Network{type: "custom"} = network ->
@@ -441,17 +418,10 @@ defmodule Kleened.Core.Network do
          network,
          %Schemas.EndPointConfig{ip_address: ipv4_addr, ip_address6: ipv6_addr}
        ) do
-    with {:ok, ip_address} <- create_ip_address(ipv4_addr, network, "inet"),
-         {:ok, ip_address6} <- create_ip_address(ipv6_addr, network, "inet6"),
+    with {:ok, ip_address} <- allocate_ip_address(ipv4_addr, network, "inet"),
+         {:ok, ip_address6} <- allocate_ip_address(ipv6_addr, network, "inet6"),
          :ok <- handle_running_ipnet_container(ip_address, ip_address6, container, network) do
-      endpoint = %Schemas.EndPoint{
-        id: Utils.uuid(),
-        network_id: network.id,
-        container_id: container.id,
-        ip_address: ip_address,
-        ip_address6: ip_address6
-      }
-
+      endpoint = create_endpoint_metadata(ip_address, ip_address6, container, network)
       MetaData.add_endpoint(container.id, network.id, endpoint)
       {:ok, endpoint}
     else
@@ -465,21 +435,13 @@ defmodule Kleened.Core.Network do
          %Schemas.EndPointConfig{ip_address: ipv4_addr, ip_address6: ipv6_addr}
        ) do
     with {:running, false} <- {:running, Container.is_running?(container.id)},
-         {:ok, ip_address} <- create_ip_address(ipv4_addr, network, "inet"),
-         {:ok, ip_address6} <- create_ip_address(ipv6_addr, network, "inet6") do
-      endpoint = %Schemas.EndPoint{
-        id: Utils.uuid(),
-        network_id: network.id,
-        container_id: container.id,
-        ip_address: ip_address,
-        ip_address6: ip_address6
-      }
-
+         {:ok, ip_address} <- allocate_ip_address(ipv4_addr, network, "inet"),
+         {:ok, ip_address6} <- allocate_ip_address(ipv6_addr, network, "inet6") do
+      endpoint = create_endpoint_metadata(ip_address, ip_address6, container, network)
       MetaData.add_endpoint(container.id, network.id, endpoint)
       {:ok, endpoint}
     else
       {:error, msg} -> {:error, msg}
-      # NOTE: Does even matter? We can still set meta-data and then it should work on a restart.
       {:running, true} -> {:error, "cannot connect a running vnet container to a network"}
     end
   end
@@ -528,45 +490,39 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  @spec create_ip_address(String.t(), %Schemas.Network{}, protocol()) ::
+  @spec allocate_ip_address(String.t(), %Schemas.Network{}, protocol()) ::
           {:ok, String.t()} | {:error, String.t()}
-  defp create_ip_address("", _network, _protocol) do
+  defp allocate_ip_address("", _network, _protocol) do
     {:ok, ""}
   end
 
-  defp create_ip_address("<auto>", %Schemas.Network{subnet: ""}, "inet") do
+  defp allocate_ip_address("<auto>", %Schemas.Network{subnet: ""}, "inet") do
     {:ok, ""}
   end
 
-  defp create_ip_address("<auto>", %Schemas.Network{subnet6: ""}, "inet6") do
+  defp allocate_ip_address("<auto>", %Schemas.Network{subnet6: ""}, "inet6") do
     {:ok, ""}
   end
 
-  defp create_ip_address(_ip_address, %Schemas.Network{subnet: ""}, "inet") do
+  defp allocate_ip_address(_ip_address, %Schemas.Network{subnet: ""}, "inet") do
     {:error, "cannot set ip address because there is no IPv4 subnet defined for this network"}
   end
 
-  defp create_ip_address(_ip_address, %Schemas.Network{subnet6: ""}, "inet6") do
+  defp allocate_ip_address(_ip_address, %Schemas.Network{subnet6: ""}, "inet6") do
     {:error, "cannot set ip address because there is no IPv6 subnet defined for this network"}
   end
 
-  defp create_ip_address("<auto>", network, protocol) do
+  defp allocate_ip_address("<auto>", network, protocol) do
     case new_ip(network, protocol) do
-      :out_of_ips ->
-        {:error, "no more #{protocol} IP's left in the network"}
-
-      ip_address ->
-        create_ip_address(ip_address, network, protocol)
+      :out_of_ips -> {:error, "no more #{protocol} IP's left in the network"}
+      ip_address -> allocate_ip_address(ip_address, network, protocol)
     end
   end
 
-  defp create_ip_address(ip_address, _network, protocol) do
+  defp allocate_ip_address(ip_address, _network, protocol) do
     case decode_ip(ip_address, protocol) do
-      {:error, msg} ->
-        {:error, "could not parse #{protocol} address #{ip_address}: #{msg}"}
-
-      {:ok, _ip_tuple} ->
-        {:ok, ip_address}
+      {:error, msg} -> {:error, "could not parse #{protocol} address #{ip_address}: #{msg}"}
+      {:ok, _ip_tuple} -> {:ok, ip_address}
     end
   end
 

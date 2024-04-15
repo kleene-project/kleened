@@ -1,6 +1,6 @@
 defmodule Kleened.Core.Application do
-  # See https://hexdocs.pm/elixir/Application.html
-  # for more information on OTP Applications
+  alias Kleened.Core.{MetaData, Exec}
+
   @moduledoc false
   require Logger
 
@@ -28,6 +28,7 @@ defmodule Kleened.Core.Application do
 
     case Supervisor.start_link(children, opts) do
       {:ok, pid} ->
+        initialize_containers()
         {:ok, pid}
 
       {:error,
@@ -51,4 +52,21 @@ defmodule Kleened.Core.Application do
       )
     end)
   end
+
+  def initialize_containers() do
+    Logger.info("Initializing containers...")
+
+    MetaData.list_containers()
+    |> Enum.filter(&(&1.restart_policy == "on-startup"))
+    |> Enum.map(fn container ->
+      with {:ok, exec_id} <- Exec.create(container.id),
+           :ok <- Exec.start(exec_id, %{attach: true, start_container: true}) do
+        Logger.debug("Succesfully starting container #{container.id}")
+      else
+        {:error, reason} -> Logger.warning("Could not start container #{container.id}: #{reason}")
+      end
+    end)
+  end
+
+  Logger.info("Done initializing containers!")
 end

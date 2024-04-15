@@ -251,10 +251,6 @@ defmodule Kleened.API.Schemas do
               description: "Tag of the image that this container was created from",
               type: :string
             },
-            running: %Schema{
-              description: "Whether or not the container is running",
-              type: :boolean
-            },
             jid: %Schema{
               description: "Jail ID if it is a running container",
               type: :integer,

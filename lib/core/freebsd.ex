@@ -61,7 +61,7 @@ defmodule Kleened.Core.FreeBSD do
   end
 
   def get_interface_addresses(interface_name) do
-    {output_json, 0} = OS.cmd(~w"/usr/bin/netstat --libxo json -I #{interface_name}")
+    {output_json, 0} = OS.cmd(~w"/usr/bin/netstat --libxo json -I #{interface_name} -n")
     %{"statistics" => %{"interface" => addresses}} = Jason.decode!(output_json)
     addresses
   end

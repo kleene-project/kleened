@@ -42,7 +42,8 @@ defmodule NetworkTest do
     interface = "testnet"
     Network.destroy_interface(interface)
 
-    network =
+    %Schemas.Network{id: network_id} =
+      network =
       create_network(%{
         name: "loopback_net",
         interface: interface,
@@ -66,7 +67,7 @@ defmodule NetworkTest do
                %Schemas.EndPoint{
                  epair: nil,
                  ip_address: "172.19.1.1",
-                 network_id: "loopback_net",
+                 network_id: ^network_id,
                  ip_address6: ""
                }
              ]
@@ -91,7 +92,8 @@ defmodule NetworkTest do
     interface = "kleene0"
     Network.destroy_interface(interface)
 
-    network =
+    %Schemas.Network{id: network_id} =
+      network =
       create_network(%{
         name: "bridge_net",
         subnet: "172.19.2.0/24",
@@ -114,7 +116,7 @@ defmodule NetworkTest do
                  epair: nil,
                  ip_address: "172.19.2.1",
                  ip_address6: "",
-                 network_id: "bridge_net"
+                 network_id: ^network_id
                }
              ]
            } = TestHelper.container_inspect(container_id_ipnet)
@@ -135,7 +137,7 @@ defmodule NetworkTest do
                  epair: nil,
                  ip_address: "172.19.2.2",
                  ip_address6: "",
-                 network_id: "bridge_net"
+                 network_id: ^network_id
                }
              ]
            } = TestHelper.container_inspect(container_id_vnet)
@@ -156,7 +158,8 @@ defmodule NetworkTest do
     Network.destroy_interface(interface)
     Network.create_interface("lo", interface)
 
-    network =
+    %Schemas.Network{id: network_id} =
+      network =
       create_network(%{
         name: "custom_net",
         subnet: "172.19.3.0/24",
@@ -180,7 +183,7 @@ defmodule NetworkTest do
                  epair: nil,
                  ip_address: "172.19.3.1",
                  ip_address6: "",
-                 network_id: "custom_net"
+                 network_id: ^network_id
                }
              ]
            } = TestHelper.container_inspect(container_id)
@@ -540,6 +543,7 @@ defmodule NetworkTest do
 
     Network.remove(network.id)
     Network.destroy_interface("kleene0")
+    Network.destroy_interface(interface)
   end
 
   test "Manually set gateways for (IPv4 + 6) for 'vnet' containers on 'bridge' networks" do
@@ -564,15 +568,15 @@ defmodule NetworkTest do
         ip_address6: "<auto>"
       })
 
-    assert [
-             %{"address" => "172.19.1.1", "network" => "172.19.1.1/32"},
-             %{"address" => "fdef:1234:5678::1", "network" => "fdef:1234:5678::1/128"}
-           ] = filter_by_interface(addresses, "kleene0")
+    assert MapSet.new([
+             %{address: "fdef:1234:5678::1", network: "fdef:1234:5678::1/128"},
+             %{address: "172.19.1.1", network: "172.19.1.1/32"}
+           ]) == filter_by_interface(addresses, "kleene0") |> address_mapset()
 
-    assert [
-             %{"address" => "172.19.1.1", "network" => "172.19.1.1/32"},
-             %{"address" => "fdef:1234:5678::1", "network" => "fdef:1234:5678::1/128"}
-           ] = filter_by_interface(host_addresses(), "kleene0")
+    assert MapSet.new([
+             %{address: "fdef:1234:5678::1", network: "fdef:1234:5678::1/128"},
+             %{address: "172.19.1.1", network: "172.19.1.1/32"}
+           ]) == filter_by_interface(host_addresses(), "kleene0") |> address_mapset()
 
     # Unsure why it ends up being "lo0" and not "kleene0"
     assert [%{"destination" => "172.19.1.1", "interface-name" => "lo0"}] = routes(routing_info)
@@ -649,10 +653,10 @@ defmodule NetworkTest do
         type: "bridge"
       })
 
-    assert [
-             %{"address" => "172.19.1.1", "network" => "172.19.1.0/24"},
-             %{"address" => "fdef:1234:5678::1", "network" => "fdef:1234:5678::/48"}
-           ] = filter_by_interface(host_addresses(), "kleene0")
+    assert MapSet.new([
+             %{address: "172.19.1.1", network: "172.19.1.0/24"},
+             %{address: "fdef:1234:5678::1", network: "fdef:1234:5678::/48"}
+           ]) == filter_by_interface(host_addresses(), "kleene0") |> address_mapset()
 
     ## ipnet
     {_container_id, routing_info, addresses} =
@@ -663,19 +667,17 @@ defmodule NetworkTest do
         ip_address6: "<auto>"
       })
 
-    assert [
-             %{"address" => "172.19.1.2", "network" => "172.19.1.2/32"},
-             %{"address" => "fdef:1234:5678::2", "network" => "fdef:1234:5678::2/128"}
-           ] = filter_by_interface(addresses, "kleene0")
+    assert MapSet.new([
+             %{address: "172.19.1.2", network: "172.19.1.2/32"},
+             %{address: "fdef:1234:5678::2", network: "fdef:1234:5678::2/128"}
+           ]) == filter_by_interface(addresses, "kleene0") |> address_mapset()
 
-    testing = filter_by_interface(host_addresses(), "kleene0")
-
-    assert [
-             %{"address" => "172.19.1.1", "network" => "172.19.1.0/24"},
-             %{"address" => "fdef:1234:5678::1", "network" => "fdef:1234:5678::/48"},
-             %{"address" => "172.19.1.2", "network" => "172.19.1.2/32"},
-             %{"address" => "fdef:1234:5678::2", "network" => "fdef:1234:5678::2/128"}
-           ] = testing
+    assert MapSet.new([
+             %{address: "172.19.1.1", network: "172.19.1.0/24"},
+             %{address: "fdef:1234:5678::1", network: "fdef:1234:5678::/48"},
+             %{address: "172.19.1.2", network: "172.19.1.2/32"},
+             %{address: "fdef:1234:5678::2", network: "fdef:1234:5678::2/128"}
+           ]) == filter_by_interface(host_addresses(), "kleene0") |> address_mapset()
 
     assert [%{"destination" => "172.19.1.2", "interface-name" => "lo0"}] = routes(routing_info)
 
@@ -1458,6 +1460,8 @@ defmodule NetworkTest do
       %{container_id: container_id, cmd: shell("nc -l #{port}"), attach: false}
     end
 
+    :timer.sleep(500)
+
     %{id: exec_id} = TestHelper.exec_create(listener_config.(4500))
 
     {:ok, _stream_ref, listen4500_conn} =
@@ -1955,8 +1959,15 @@ defmodule NetworkTest do
   defp filter_by_interface(addresses, interface) do
     Enum.filter(addresses, fn %{"network" => network, "name" => name} ->
       # != "<link#" to avoid entries related to '<Link#n>' networks
-
       String.slice(network, 0, 6) != "<Link#" and name == interface
     end)
+  end
+
+  defp address_mapset(addresses) do
+    addresses
+    |> Enum.map(fn %{"address" => address, "network" => network} ->
+      %{address: address, network: network}
+    end)
+    |> MapSet.new()
   end
 end
