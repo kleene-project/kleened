@@ -68,5 +68,5 @@ defmodule Kleened.Core.Application do
     end)
   end
 
-  Logger.info("Done initializing containers!")
+  Logger.info("Finished initializing containers.")
 end

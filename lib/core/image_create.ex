@@ -47,6 +47,8 @@ defmodule Kleened.Core.ImageCreate do
     # Wrap up
     image_mountpoint = ZFS.mountpoint(image_dataset)
     copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
+    copy_localtime_if_enabled(receiver, image_mountpoint, config)
+    freebsd_update(receiver, image_mountpoint, config)
     create_snapshot(image_dataset <> Const.image_snapshot(), receiver)
     send_msg(receiver, {:ok, image})
     ZFS.destroy(snapshot_parent)
@@ -70,6 +72,8 @@ defmodule Kleened.Core.ImageCreate do
     # Wrap up
     image_mountpoint = ZFS.mountpoint(image_dataset)
     copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
+    copy_localtime_if_enabled(receiver, image_mountpoint, config)
+    freebsd_update(receiver, image_mountpoint, config)
     create_snapshot(image_dataset <> Const.image_snapshot(), receiver)
     send_msg(receiver, {:ok, image})
   end
@@ -110,6 +114,8 @@ defmodule Kleened.Core.ImageCreate do
     image_mountpoint = ZFS.mountpoint(image_dataset)
     untar_file(tar_archive, image_mountpoint, receiver)
     copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
+    copy_localtime_if_enabled(receiver, image_mountpoint, config)
+    freebsd_update(receiver, image_mountpoint, config)
     create_snapshot(image_dataset <> Const.image_snapshot(), receiver)
 
     image = create_image_metadata(image_id, image_dataset, tag)
@@ -170,7 +176,11 @@ defmodule Kleened.Core.ImageCreate do
   end
 
   defp untar_file(tar_archive, image_mountpoint, receiver) do
-    port = OS.cmd_async(["/usr/bin/tar", "-vxf", tar_archive, "-C", image_mountpoint], true)
+    port =
+      OS.cmd_async(
+        ["/usr/bin/tar", "-vxf", tar_archive, "-C", image_mountpoint, "--unlink"],
+        true
+      )
 
     case process_tar_messages(port, receiver, 0, 0) do
       :ok ->
@@ -277,17 +287,52 @@ defmodule Kleened.Core.ImageCreate do
   end
 
   defp copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, %{dns: true}) do
+    source = "/etc/resolv.conf"
     dest = Path.join(image_mountpoint, ["etc/resolv.conf"])
+    copy_host_file(receiver, source, dest)
+  end
 
-    case OS.cmd(["/bin/cp", "/etc/resolv.conf", dest]) do
+  defp copy_localtime_if_enabled(_receiver, _image_mountpoint, %{localtime: false}) do
+    :ok
+  end
+
+  defp copy_localtime_if_enabled(receiver, image_mountpoint, %{localtime: true}) do
+    source = "/etc/localtime"
+
+    case File.stat(source) do
+      {:ok, _} ->
+        dest = Path.join(image_mountpoint, ["etc/localtime"])
+        copy_host_file(receiver, source, dest)
+
+      {:error, :enoent} ->
+        send_msg(receiver, {:info, "/etc/localtime not found on host, skipping..."})
+    end
+  end
+
+  defp copy_host_file(receiver, source, dest) do
+    case OS.cmd(["/bin/cp", source, dest]) do
       {_output, 0} ->
         :ok
 
       {output, nonzero_exit} ->
         exit(
           receiver,
-          "exit code #{nonzero_exit} when copying host '/etc/resolv.conf' to #{dest}: #{output}"
+          "exit code #{nonzero_exit} when copying host '#{source}' to #{dest}: #{output}"
         )
+    end
+  end
+
+  defp freebsd_update(_receiver, _image_mountpoint, %{update: false}) do
+    :ok
+  end
+
+  defp freebsd_update(receiver, image_root, %{update: true}) do
+    cmd = ~w"/usr/sbin/freebsd-update -b #{image_root} --not-running-from-cron fetch install"
+    port = OS.cmd_async(cmd, true)
+
+    case process_messages(port, receiver) do
+      :ok -> :ok
+      :error -> exit(receiver, "could update base image with 'freebsd-update'")
     end
   end
 

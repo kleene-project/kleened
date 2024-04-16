@@ -121,7 +121,7 @@ defmodule Kleened.API.Schemas do
         },
         restart_policy: %Schema{
           description: """
-          Restarting behavior of the container:
+          Restarting policy of the container:
 
           - `"no"`: There is no automatic restart of the container
           - `"on-startup"`: The container is started each time Kleened is.
@@ -442,6 +442,20 @@ defmodule Kleened.API.Schemas do
             "Whether or not to copy `/etc/resolv.conf` from the host to the new image.",
           type: :boolean,
           default: true
+        },
+        localtime: %Schema{
+          description:
+            "Whether or not to copy `/etc/localtime` from the host to the new image, if it exists.",
+          type: :boolean,
+          default: true
+        },
+        update: %Schema{
+          description: """
+          Update the base image to the lastest patch-level using `freebsd-update(8)`.
+          See the [man-pages](https://man.freebsd.org/cgi/man.cgi?query=freebsd-update) for details about which FreeBSD versions can be updated.",
+          """,
+          type: :boolean,
+          default: false
         },
         zfs_dataset: %Schema{
           description: """
