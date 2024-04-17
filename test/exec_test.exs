@@ -58,6 +58,7 @@ defmodule ExecTest do
 
     :timer.sleep(100)
     :ok = Exec.start(exec_id, %{attach: true, start_container: false})
+    :timer.sleep(1000)
     assert_receive {:container, ^exec_id, {:jail_output, "test test\n"}}
     assert_receive {:container, ^exec_id, {:shutdown, {:jailed_process_exited, 0}}}
 
@@ -254,7 +255,7 @@ defmodule ExecTest do
     %{id: root_exec_id} = TestHelper.exec_create(%{container_id: container_id})
 
     assert [
-             "error: could not find a execution instance matching 'wrongid'",
+             "error: could not find execution instance matching 'wrongid'",
              {1011, %Message{message: "error starting exec instance", msg_type: "error"}}
            ] = TestHelper.exec_start(%{exec_id: "wrongid", attach: false, start_container: true})
 
@@ -296,7 +297,7 @@ defmodule ExecTest do
         cmd: ["/bin/sleep", "99"]
       })
 
-    assert %{id: exec_id} ==
+    assert %{message: "execution instance have not been started"} ==
              TestHelper.exec_stop(api_spec, exec_id, %{stop_container: true, force_stop: false})
 
     assert Utils.is_container_running?(container_id)
@@ -307,7 +308,9 @@ defmodule ExecTest do
                force_stop: false
              })
 
-    assert %{message: "no such container"} ==
+    message = "could not find execution instance matching '#{root_exec_id}'"
+
+    assert %{message: message} ==
              TestHelper.exec_stop(api_spec, root_exec_id, %{
                stop_container: true,
                force_stop: false

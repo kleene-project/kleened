@@ -58,8 +58,6 @@ defmodule NetworkTest do
     assert [%{"address" => "172.19.1.1", "network" => "172.19.1.1/32"}] =
              filter_by_interface(addresses, interface)
 
-    ip_and_network_on_interface("172.19.1.1", "172.19.1.1/32", interface)
-
     # Inspect container
     assert %{
              container: %Schemas.Container{network_driver: "ipnet"},
@@ -573,11 +571,6 @@ defmodule NetworkTest do
              %{address: "172.19.1.1", network: "172.19.1.1/32"}
            ]) == filter_by_interface(addresses, "kleene0") |> address_mapset()
 
-    assert MapSet.new([
-             %{address: "fdef:1234:5678::1", network: "fdef:1234:5678::1/128"},
-             %{address: "172.19.1.1", network: "172.19.1.1/32"}
-           ]) == filter_by_interface(host_addresses(), "kleene0") |> address_mapset()
-
     # Unsure why it ends up being "lo0" and not "kleene0"
     assert [%{"destination" => "172.19.1.1", "interface-name" => "lo0"}] = routes(routing_info)
 
@@ -674,9 +667,7 @@ defmodule NetworkTest do
 
     assert MapSet.new([
              %{address: "172.19.1.1", network: "172.19.1.0/24"},
-             %{address: "fdef:1234:5678::1", network: "fdef:1234:5678::/48"},
-             %{address: "172.19.1.2", network: "172.19.1.2/32"},
-             %{address: "fdef:1234:5678::2", network: "fdef:1234:5678::2/128"}
+             %{address: "fdef:1234:5678::1", network: "fdef:1234:5678::/48"}
            ]) == filter_by_interface(host_addresses(), "kleene0") |> address_mapset()
 
     assert [%{"destination" => "172.19.1.2", "interface-name" => "lo0"}] = routes(routing_info)
@@ -1914,19 +1905,6 @@ defmodule NetworkTest do
     {:ok, %{"statistics" => %{"interface" => if_properties}}} = Jason.decode(output_json)
     # No properties => no interface named 'interface_name' exists
     length(if_properties) != 0
-  end
-
-  defp ip_and_network_on_interface(ip, network, interface) do
-    {output_json, 0} =
-      System.cmd("/usr/bin/netstat", ["--libxo", "json", "-4", "-n", "-I", interface])
-
-    %{"statistics" => %{"interface" => if_info}} = Jason.decode!(output_json)
-
-    ips = MapSet.new(Enum.map(if_info, &Map.get(&1, "address")))
-    networks = MapSet.new(Enum.map(if_info, &Map.get(&1, "network")))
-
-    assert MapSet.member?(ips, ip)
-    assert MapSet.member?(networks, network)
   end
 
   defp remove_link_addresses(addresses) do

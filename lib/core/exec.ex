@@ -71,7 +71,7 @@ defmodule Kleened.Core.Exec do
         Process.send(pid, {self(), {:input_data, data}}, [])
 
       [] ->
-        {:error, "could not find a execution instance matching '#{exec_id}'"}
+        {:error, "could not find execution instance matching '#{exec_id}'"}
     end
   end
 
@@ -85,11 +85,11 @@ defmodule Kleened.Core.Exec do
       [{pid, _container_id}] ->
         case Process.alive?(pid) do
           true -> GenServer.call(pid, command)
-          false -> {:error, "could not find a execution instance matching '#{exec_id}'"}
+          false -> {:error, "could not find execution instance matching '#{exec_id}'"}
         end
 
       [] ->
-        {:error, "could not find a execution instance matching '#{exec_id}'"}
+        {:error, "could not find execution instance matching '#{exec_id}'"}
     end
   end
 
@@ -103,21 +103,50 @@ defmodule Kleened.Core.Exec do
   end
 
   @impl true
-  def handle_call({:stop, _}, _from, %State{port: nil} = state) do
-    reply = {:ok, "execution instance not running, removing it anyway"}
-    {:stop, :normal, reply, state}
-  end
-
   def handle_call({:stop, %{stop_container: true}}, _from, state) do
     Logger.debug("#{state.exec_id}: stopping container")
-    reply = Container.stop(state.container.id)
-    await_exit_and_shutdown(reply, state)
+
+    reply =
+      case state.container do
+        %Schemas.Container{} ->
+          Container.stop(state.container.id)
+
+          case await_process_exit(state) do
+            {:exited, exit_code, _state} ->
+              relay_msg({:shutdown, {:jail_stopped, exit_code}}, state)
+              {:ok, state.container.id}
+
+            {:error, reason} ->
+              {:error, reason}
+          end
+
+        :not_started ->
+          {:error, "execution instance have not been started"}
+      end
+
+    {:stop, :normal, reply, state}
   end
 
   def handle_call({:stop, %{stop_container: false} = opts}, _from, state) do
     Logger.debug("#{state.exec_id}: stopping executable")
-    result = stop_executable(state, opts)
-    await_exit_and_shutdown(result, state)
+
+    reply =
+      case stop_executable(state, opts) do
+        :ok ->
+          case await_process_exit(state) do
+            {:exited, exit_code, state} ->
+              shutdown_process(exit_code, state)
+              {:ok, state.container.id}
+
+            {:error, reason} ->
+              {:error, reason}
+          end
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+
+    {:stop, :normal, reply, state}
   end
 
   def handle_call({:attach, pid}, _from, %State{subscribers: subscribers} = state) do
@@ -184,7 +213,7 @@ defmodule Kleened.Core.Exec do
 
         case OS.cmd(["/bin/kill" | cmd_args]) do
           {_, 0} ->
-            {:ok, "succesfully sent termination signal to executable"}
+            :ok
 
           {output, non_zero} ->
             Logger.warning(
@@ -196,43 +225,29 @@ defmodule Kleened.Core.Exec do
     end
   end
 
-  defp await_exit_and_shutdown({:error, _msg} = reply, state) do
-    {:reply, reply, state}
-  end
-
-  defp await_exit_and_shutdown({:ok, _msg} = reply, %State{port: port} = state) do
+  defp await_process_exit(%State{port: port} = state) do
     receive do
       {^port, {:exit_status, exit_code}} ->
-        shutdown_process(exit_code, state)
-        {:stop, :normal, reply, %State{state | port: nil}}
+        {:exited, exit_code, %State{state | port: nil}}
     after
       5_000 ->
-        {:reply, {:error, "timed out while waiting for jail to exit"}, state}
+        {:error, "timed out while waiting for jail to stop"}
     end
   end
 
   defp shutdown_process(exit_code, %State{config: config, container: container} = state) do
     case Utils.is_container_running?(config.container_id) do
       false ->
-        msg = "#{state.exec_id} stopped with exit code #{exit_code}: {:shutdown, :jail_stopped}"
+        msg = "#{state.exec_id} and container #{container.id} exited with code #{exit_code}."
+
         Logger.debug(msg)
-        jail_cleanup(container)
+        Container.cleanup_container(container)
         relay_msg({:shutdown, {:jail_stopped, exit_code}}, state)
 
       true ->
-        msg =
-          "#{state.exec_id} stopped with exit code #{exit_code}: {:shutdown, :jailed_process_exited}"
+        msg = "exec #{state.exec_id} exited with code #{exit_code}"
 
         Logger.debug(msg)
-
-        case Utils.is_zombie_jail?(container.id) do
-          true ->
-            Container.stop(container.id)
-
-          false ->
-            :ok
-        end
-
         relay_msg({:shutdown, {:jailed_process_exited, exit_code}}, state)
     end
   end
@@ -244,7 +259,7 @@ defmodule Kleened.Core.Exec do
 
         case {Utils.is_container_running?(cont.id), start_container} do
           {true, _} ->
-            port = jexec_container(cont, config.tty)
+            port = jexec_start_container(cont, config.tty)
             {:ok, port, cont}
 
           {false, true} ->
@@ -289,26 +304,7 @@ defmodule Kleened.Core.Exec do
     %Schemas.Container{cont | user: user, cmd: cmd, env: env}
   end
 
-  defp jail_cleanup(%Schemas.Container{id: container_id, network_driver: driver, dataset: dataset}) do
-    if driver == "vnet" do
-      destoy_jail_epairs = fn network ->
-        config = MetaData.get_endpoint(container_id, network.id)
-        FreeBSD.destroy_bridged_epair(config.epair, network.interface)
-        config = %Schemas.EndPoint{config | epair: nil}
-        MetaData.add_endpoint(container_id, network.id, config)
-      end
-
-      MetaData.connected_networks(container_id) |> Enum.map(destoy_jail_epairs)
-    end
-
-    # remove any devfs mounts of the jail. If it was closed with 'jail -r <jailname>' devfs should be removed automatically.
-    # If the jail stops because there jailed process stops (i.e. 'jail -c <etc> /bin/sleep 10') then devfs is NOT removed.
-    # A race condition can also occur such that "jail -r" does not unmount before this call to mount.
-    mountpoint = ZFS.mountpoint(dataset)
-    FreeBSD.clear_devfs(mountpoint)
-  end
-
-  defp jexec_container(
+  defp jexec_start_container(
          %Schemas.Container{
            id: container_id,
            cmd: cmd,
@@ -486,8 +482,7 @@ defmodule Kleened.Core.Exec do
         ip ->
           [
             "exec.prestart=ifconfig #{interface} inet #{ip}/32 alias",
-            "ip4.addr=#{ip}",
-            "exec.poststop=ifconfig #{interface} inet #{ip} -alias"
+            "ip4.addr=#{ip}"
           ]
       end
 
@@ -499,8 +494,7 @@ defmodule Kleened.Core.Exec do
         ip6 ->
           [
             "exec.prestart=ifconfig #{interface} inet6 #{ip6}/128 alias",
-            "ip6.addr=#{ip6}",
-            "exec.poststop=ifconfig #{interface} inet6 #{ip6} -alias"
+            "ip6.addr=#{ip6}"
           ]
       end
 
@@ -526,10 +520,7 @@ defmodule Kleened.Core.Exec do
     base_config = [
       "vnet.interface=#{epair}b",
       "exec.prestart=ifconfig #{bridge} addm #{epair}a",
-      "exec.prestart=ifconfig #{epair}a up",
-      # "exec.start=\"ifconfig #{epair}b name jail0\" ",
-      "exec.poststop=\"ifconfig #{bridge} deletem #{epair}a\" ",
-      "exec.poststop=\"ifconfig #{epair}a destroy\""
+      "exec.prestart=ifconfig #{epair}a up"
     ]
 
     extended_config =

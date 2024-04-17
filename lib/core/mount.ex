@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Mount do
-  alias Kleened.Core.{OS, Config, Volume, ZFS, MetaData}
+  alias Kleened.Core.{OS, FreeBSD, Config, Volume, ZFS, MetaData}
   alias Kleened.API.Schemas
   require Config
   require Logger
@@ -90,34 +90,27 @@ defmodule Kleened.Core.Mount do
     create_nullfs_mount(container, mountpoint.source, mountpoint)
   end
 
-  defp populate_volume_if_empty(absolute_destination, volume) do
-    case OS.cmd(~w"/bin/ls -AB #{absolute_destination}") do
-      {"", 0} ->
-        :ok
-
-      {_nonempty, 0} ->
-        case OS.shell("/bin/cp -a #{absolute_destination}/* #{volume.mountpoint}") do
-          {_, 0} -> :ok
-          {output, _non_zero_exit} -> {:error, output}
-        end
-
-      {output, _non_zero_exit} ->
-        {:error, output}
-    end
-  end
-
-  @spec unmount(%Schemas.MountPoint{}) :: {:error, String.t()} | :ok
+  @spec unmount(%Schemas.MountPoint{} | String.t()) :: {:error, String.t()} | :ok
   def unmount(%Schemas.MountPoint{container_id: container_id, destination: destination}) do
     %Schemas.Container{dataset: dataset} = MetaData.get_container(container_id)
     container_mountpoint = ZFS.mountpoint(dataset)
     dest = Path.join(container_mountpoint, destination)
+    unmount(dest)
+  end
 
-    case OS.cmd(["/sbin/umount", dest]) do
-      {_output, 0} ->
+  def unmount(dest) when is_binary(dest) do
+    case is_nullfs_mounted?(dest) do
+      true ->
+        case OS.cmd(["/sbin/umount", dest]) do
+          {_output, 0} ->
+            :ok
+
+          {output, _nonzero_exitcode} ->
+            {:error, output}
+        end
+
+      false ->
         :ok
-
-      {output, _nonzero_exitcode} ->
-        {:error, output}
     end
   end
 
@@ -134,23 +127,62 @@ defmodule Kleened.Core.Mount do
     :ok
   end
 
-  defp create_nullfs_mount(container, source, mountpoint) do
-    zfs_mountpoint = ZFS.mountpoint(container.dataset)
-    absolute_destination = Path.join(zfs_mountpoint, mountpoint.destination)
-
-    mount_cmd =
-      case mountpoint.read_only do
-        false -> ["/sbin/mount_nullfs", source, absolute_destination]
-        true -> ["/sbin/mount_nullfs", "-o", "ro", source, absolute_destination]
-      end
-
-    case OS.cmd(mount_cmd) do
+  defp populate_volume_if_empty(absolute_destination, volume) do
+    case OS.cmd(~w"/bin/ls -AB #{absolute_destination}") do
       {"", 0} ->
         :ok
 
-      {output, _nonzero_exitcode} ->
+      {_nonempty, 0} ->
+        case OS.shell("/bin/cp -a #{absolute_destination}/* #{volume.mountpoint}") do
+          {_, 0} -> :ok
+          {output, _non_zero_exit} -> {:error, output}
+        end
+
+      {output, _non_zero_exit} ->
         {:error, output}
     end
+  end
+
+  defp create_nullfs_mount(container, source, mountpoint) do
+    zfs_mountpoint = ZFS.mountpoint(container.dataset)
+    destination_on_host = Path.join(zfs_mountpoint, mountpoint.destination)
+
+    mount_cmd =
+      case mountpoint.read_only do
+        false -> ["/sbin/mount_nullfs", source, destination_on_host]
+        true -> ["/sbin/mount_nullfs", "-o", "ro", source, destination_on_host]
+      end
+
+    remove_conflicting_mount_if_exists(source, destination_on_host)
+
+    case OS.cmd(mount_cmd) do
+      {"", 0} -> :ok
+      {output, _nonzero_exitcode} -> {:error, output}
+    end
+  end
+
+  defp remove_conflicting_mount_if_exists(src, dest) do
+    FreeBSD.mounts()
+    |> Enum.drop_while(fn
+      %{"fstype" => "nullfs", "special" => ^src, "node" => ^dest} ->
+        Logger.info("Removing conflicting nullfs-mount on #{dest}")
+        unmount(dest)
+        false
+
+      _ ->
+        true
+    end)
+  end
+
+  defp is_nullfs_mounted?(dest) do
+    FreeBSD.mounts()
+    |> Enum.any?(fn
+      %{"fstype" => "nullfs", "node" => ^dest} ->
+        true
+
+      _ ->
+        false
+    end)
   end
 
   defp create_directory_or_file(destination, source) do

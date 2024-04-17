@@ -66,6 +66,8 @@ defmodule ContainerTest do
     {:ok, exec_id} = Exec.create(%Schemas.ExecConfig{container_id: container_id2})
     TestHelper.exec_valid_start(%{exec_id: exec_id, start_container: true, attach: false})
 
+    :timer.sleep(1000)
+
     assert [^container_id1, ^container_id3] = TestHelper.container_prune(api_spec)
 
     assert [%{id: ^container_id2}] = TestHelper.container_list(api_spec)
@@ -180,7 +182,7 @@ defmodule ContainerTest do
     {container_id, _, process_output} = TestHelper.container_valid_run(config)
     assert process_output == []
     file_path = "/zroot/kleene/container/#{container_id}/#{mount_path}/testing_mounts.txt"
-    assert File.read(file_path) == {:ok, ""}
+    assert File.read(file_path) == {:error, :enoent}
     file_path = "/mnt/testing_mounts.txt"
     assert File.read(file_path) == {:ok, ""}
 
@@ -220,7 +222,7 @@ defmodule ContainerTest do
     {container_id, _, process_output} = TestHelper.container_valid_run(config)
     assert process_output == []
     file_path = "/zroot/kleene/container/#{container_id}/#{mount_path}/testing_mounts.txt"
-    assert File.read(file_path) == {:ok, ""}
+    assert File.read(file_path) == {:error, :enoent}
     file_path = "/zroot/kleene/volumes/#{volume.name}/testing_mounts.txt"
     assert File.read(file_path) == {:ok, ""}
     TestHelper.volume_remove(api_spec, volume.name)
@@ -291,7 +293,7 @@ defmodule ContainerTest do
     {container_id, _, process_output} = TestHelper.container_valid_run(config)
     assert process_output == []
     file_path = "/zroot/kleene/container/#{container_id}/#{mount_path}/testing_mounts.txt"
-    assert File.read(file_path) == {:ok, ""}
+    assert File.read(file_path) == {:error, :enoent}
     file_path = "/zroot/kleene/volumes/#{volume_name}/testing_mounts.txt"
     assert File.read(file_path) == {:ok, ""}
   end

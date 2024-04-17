@@ -1,5 +1,4 @@
 defmodule Kleened.Core.Utils do
-  alias Kleened.Core.OS
   require Logger
 
   @spec get_os_pid_of_port(port()) :: String.t()
@@ -16,23 +15,6 @@ defmodule Kleened.Core.Utils do
     end
   end
 
-  def is_zombie_jail?(container_id) do
-    {msg, _exit_code} =
-      OS.cmd(["/bin/ps" | ~w"--libxo json -ax -J #{container_id}"], %{suppress_warning: true})
-
-    case Jason.decode(msg) do
-      {:ok, %{} = processes} ->
-        case Map.keys(processes) do
-          # No processes are running in the jail => zombie jail
-          [] -> true
-          _ -> false
-        end
-
-      _ ->
-        false
-    end
-  end
-
   def touch(path) do
     case System.cmd("/usr/bin/touch", [path], stderr_to_stdout: true) do
       {"", 0} -> true
@@ -42,12 +24,6 @@ defmodule Kleened.Core.Utils do
 
   def timestamp_now() do
     DateTime.to_iso8601(DateTime.utc_now())
-  end
-
-  @spec unmount(String.t()) :: integer()
-  def unmount(path) do
-    {"", return_code} = System.cmd("/sbin/umount", [path])
-    return_code
   end
 
   def decode_tagname(nametag) do

@@ -350,46 +350,85 @@ defmodule Kleened.Core.Container do
 
   defp remove_(:not_found), do: {:error, :not_found}
 
-  defp remove_(%Schemas.Container{id: container_id, dataset: dataset} = cont) do
-    case Utils.is_container_running?(container_id) do
+  defp remove_(%Schemas.Container{} = container) do
+    case Utils.is_container_running?(container.id) do
       false ->
-        :ok = Network.disconnect_all(container_id)
-        :ok = Mount.remove_mounts(cont)
-        :ok = MetaData.delete_container(container_id)
-        {_, 0} = Kleened.Core.ZFS.destroy_force(dataset)
-        {:ok, container_id}
+        :ok = Network.disconnect_all(container.id)
+        :ok = Mount.remove_mounts(container)
+        mountpoint = ZFS.mountpoint(container.dataset)
+        FreeBSD.clear_devfs(mountpoint)
+        :ok = MetaData.delete_container(container.id)
+        {_, 0} = Kleened.Core.ZFS.destroy_force(container.dataset)
+        {:ok, container.id}
 
       true ->
         {:error, :is_running}
     end
   end
 
-  @spec stop_container(%State{}) :: {:ok, String.t()} | {:error, String.t()}
-  defp stop_container(%Schemas.Container{id: container_id, dataset: dataset}) do
-    case Utils.is_container_running?(container_id) do
+  @spec stop_container(%Schemas.Container{}) :: {:ok, String.t()} | {:error, String.t()}
+  defp stop_container(container) do
+    case Utils.is_container_running?(container.id) do
       true ->
-        Logger.debug("Shutting down jail #{container_id}")
+        Logger.debug("Shutting down container #{container.id}")
 
         {output, exit_code} =
-          System.cmd("/usr/sbin/jail", ["-r", container_id], stderr_to_stdout: true)
+          System.cmd("/usr/sbin/jail", ["-r", container.id], stderr_to_stdout: true)
 
-        mountpoint = ZFS.mountpoint(dataset)
-        FreeBSD.clear_devfs(mountpoint)
+        cleanup_container(container)
 
         case {output, exit_code} do
           {output, 0} ->
-            Logger.info("Stopped jail #{container_id} with exit code #{exit_code}: #{output}")
-            {:ok, container_id}
+            Logger.info("Stopped jail #{container.id} with exit code #{exit_code}: #{output}")
+            {:ok, container}
 
           {output, _} ->
-            Logger.warning("Stopped jail #{container_id} with exit code #{exit_code}: #{output}")
+            Logger.warning("Stopped jail #{container.id} with exit code #{exit_code}: #{output}")
             msg = "/usr/sbin/jail exited abnormally with exit code #{exit_code}: '#{output}'"
             {:error, msg}
         end
 
       false ->
+        cleanup_container(container)
         {:error, "container not running"}
     end
+  end
+
+  def cleanup_container(container) do
+    # Remove all system componenents that are not required when the container is stopped:
+    # - 'ipnet': All ip-addresses of the container
+    # - 'vnet': All epair interfaces of the container
+    # - all nullfs/volume-mounts of the container
+    # - 'devfs'-mount, if it exists
+    case container.network_driver do
+      "vnet" ->
+        MetaData.connected_networks(container.id)
+        |> Enum.map(fn network ->
+          config = MetaData.get_endpoint(container.id, network.id)
+          FreeBSD.destroy_bridged_epair(config.epair, network.interface)
+          config = %Schemas.EndPoint{config | epair: nil}
+          MetaData.add_endpoint(container.id, network.id, config)
+        end)
+
+      "ipnet" ->
+        MetaData.connected_networks(container.id)
+        |> Enum.map(fn network ->
+          config = MetaData.get_endpoint(container.id, network.id)
+          Network.ifconfig_alias_remove(config.ip_address, network.interface, "inet")
+          Network.ifconfig_alias_remove(config.ip_address6, network.interface, "inet6")
+        end)
+
+      _ ->
+        :ok
+    end
+
+    # Regarding devfs-mounts:
+    # - If it was closed with 'jail -r <jailname>' devfs should be removed automatically.
+    # - If the jail stops because there jailed process stops (i.e. 'jail -c <etc> /bin/sleep 10') then devfs is NOT removed.
+    # A race condition can also occur such that "jail -r" does not unmount before this call to mount.
+    Mount.remove_mounts(container)
+    mountpoint = ZFS.mountpoint(container.dataset)
+    FreeBSD.clear_devfs(mountpoint)
   end
 
   @spec list_([list_containers_opts()]) :: [%{}]

@@ -327,7 +327,20 @@ defmodule Kleened.Core.ImageCreate do
   end
 
   defp freebsd_update(receiver, image_root, %{update: true}) do
-    cmd = ~w"/usr/sbin/freebsd-update -b #{image_root} --not-running-from-cron fetch install"
+    cmd = [
+      "/bin/sh",
+      "-c",
+      "/usr/sbin/freebsd-update -b #{image_root} fetch --not-running-from-cron > /dev/null"
+    ]
+
+    port = OS.cmd_async(cmd, true)
+
+    case process_messages(port, receiver) do
+      :ok -> :ok
+      :error -> exit(receiver, "could update base image with 'freebsd-update'")
+    end
+
+    cmd = ~w"/usr/sbin/freebsd-update -b #{image_root} install"
     port = OS.cmd_async(cmd, true)
 
     case process_messages(port, receiver) do

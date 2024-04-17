@@ -319,8 +319,8 @@ defmodule Kleened.API.Container do
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
       case Container.stop(conn.params.container_id) do
-        {:ok, id} ->
-          send_resp(conn, 200, Utils.id_response(id))
+        {:ok, container} ->
+          send_resp(conn, 200, Utils.id_response(container.id))
 
         {:error, msg} ->
           send_resp(conn, 404, Utils.error_response(msg))

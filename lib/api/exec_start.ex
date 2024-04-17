@@ -90,13 +90,13 @@ defmodule Kleened.API.ExecStartWebSocket do
     end
   end
 
-  def websocket_handle({:text, message}, %{exec_id: exec_id, handshaking: false} = state) do
-    :ok = Exec.send(exec_id, message)
+  def websocket_handle({:text, message}, %{config: config, handshaking: false} = state) do
+    :ok = Exec.send(config.exec_id, message)
     {:ok, state}
   end
 
-  def websocket_handle({:binary, message}, %{exec_id: exec_id, handshaking: false} = state) do
-    :ok = Exec.send(exec_id, message)
+  def websocket_handle({:binary, message}, %{config: config, handshaking: false} = state) do
+    :ok = Exec.send(config.exec_id, message)
     {:ok, state}
   end
 
@@ -106,7 +106,7 @@ defmodule Kleened.API.ExecStartWebSocket do
 
   def websocket_handle(msg, state) do
     # Ignore unknown messages
-    Logger.warning("unknown message received: #{inspect(msg)}")
+    Logger.warning("#{inspect(state)}: unknown message received: #{inspect(msg)}")
     {:ok, state}
   end
 

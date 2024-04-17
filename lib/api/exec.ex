@@ -130,8 +130,8 @@ defmodule Kleened.API.Exec do
         {:ok, _msg} ->
           send_resp(conn, 200, Utils.id_response(exec_id))
 
-        {:error, _msg} ->
-          send_resp(conn, 404, Utils.error_response("no such container"))
+        {:error, msg} ->
+          send_resp(conn, 404, Utils.error_response(msg))
       end
     end
   end

@@ -1151,19 +1151,26 @@ defmodule Kleened.Core.Network do
     FreeBSD.ifconfig_subnet_alias(ip, mask, interface, protocol)
   end
 
-  defp ifconfig_alias_remove("", _interface, _protocol) do
+  def ifconfig_alias_remove("", _interface, _protocol) do
     :ok
   end
 
-  defp ifconfig_alias_remove(ip, interface, protocol) do
+  def ifconfig_alias_remove(ip, interface, protocol) do
     Logger.debug("Removing #{protocol} #{ip} from #{interface}")
+    ips = MapSet.new(ips_on_interface(interface, protocol))
 
-    case OS.cmd(~w"ifconfig #{interface} #{protocol} #{ip} -alias") do
-      {_, 0} ->
+    case MapSet.member?(ips, ip) do
+      true ->
+        case OS.cmd(~w"ifconfig #{interface} #{protocol} #{ip} -alias") do
+          {_, 0} ->
+            :ok
+
+          {output, _nonzero_exit} ->
+            {:error, "error adding #{protocol} alias to interface: #{output}"}
+        end
+
+      false ->
         :ok
-
-      {output, _nonzero_exit} ->
-        {:error, "error adding #{protocol} alias to interface: #{output}"}
     end
   end
 

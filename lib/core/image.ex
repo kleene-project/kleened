@@ -452,8 +452,8 @@ defmodule Kleened.Core.Image do
 
     with {:ok, src_and_dest} <- environment_replacement_list(src_dest, [], state),
          {config_mkdir, config_cp} = copy_instruction_exec_configs(src_and_dest, state),
-         {:ok, mountpoint} <- mount_context(state),
          :ok <- succesfully_run_execution(config_mkdir, state),
+         {:ok, mountpoint} <- create_context_nullfs_mount(state),
          :ok <- succesfully_run_execution(config_cp, state),
          :ok <- Mount.unmount(mountpoint) do
       snapshot = snapshot_image(state.container, state.msg_receiver)
@@ -789,7 +789,7 @@ defmodule Kleened.Core.Image do
     Enum.reverse([dest | absolute_sources])
   end
 
-  defp mount_context(%State{msg_receiver: pid} = state) do
+  defp create_context_nullfs_mount(%State{msg_receiver: pid} = state) do
     mount_config = %Schemas.MountPointConfig{
       type: "nullfs",
       source: state.build_config.context,
@@ -798,10 +798,7 @@ defmodule Kleened.Core.Image do
 
     case Mount.create(state.container, mount_config) do
       {:ok, mountpoint} ->
-        case Mount.mount(state.container, mountpoint) do
-          :ok -> {:ok, mountpoint}
-          {:error, output} -> {:error, output}
-        end
+        {:ok, mountpoint}
 
       {:error, output} ->
         send_msg(pid, "could not create context mountpoint in container: #{output}")

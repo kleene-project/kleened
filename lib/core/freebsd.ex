@@ -154,6 +154,12 @@ defmodule Kleened.Core.FreeBSD do
     |> Enum.map(&OS.cmd(["/sbin/umount", &1]))
   end
 
+  def mounts() do
+    {output_json, 0} = OS.cmd(~w"mount --libxo json")
+    %{"mount" => %{"mounted" => mounts}} = Jason.decode!(output_json)
+    mounts
+  end
+
   def running_jails() do
     {jails_json, 0} = System.cmd("jls", ["-v", "--libxo=json"], stderr_to_stdout: true)
     {:ok, jails} = Jason.decode(jails_json)
