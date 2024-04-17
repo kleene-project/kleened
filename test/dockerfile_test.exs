@@ -1,5 +1,5 @@
 defmodule DockerfileTest do
-  import Kleened.Core.Dockerfile
+  alias Kleened.Core.Dockerfile
   use ExUnit.Case
 
   @moduletag :capture_log
@@ -71,5 +71,10 @@ defmodule DockerfileTest do
     {:ok, file} = File.read("./test/data/test_dockerfile/Dockerfile")
     instructions = parse(file)
     assert [{_, {:from, _}} | _] = instructions
+  end
+
+  defp parse(msg) do
+    {:ok, result} = Dockerfile.parse(msg)
+    result
   end
 end
