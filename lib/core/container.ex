@@ -426,7 +426,8 @@ defmodule Kleened.Core.Container do
     # - If it was closed with 'jail -r <jailname>' devfs should be removed automatically.
     # - If the jail stops because there jailed process stops (i.e. 'jail -c <etc> /bin/sleep 10') then devfs is NOT removed.
     # A race condition can also occur such that "jail -r" does not unmount before this call to mount.
-    Mount.remove_mounts(container)
+    mounts = MetaData.get_mounts_from_container(container.id)
+    Enum.map(mounts, fn mountpoint -> Mount.unmount(mountpoint) end)
     mountpoint = ZFS.mountpoint(container.dataset)
     FreeBSD.clear_devfs(mountpoint)
   end
