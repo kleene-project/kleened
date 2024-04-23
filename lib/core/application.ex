@@ -11,6 +11,7 @@ defmodule Kleened.Core.Application do
   end
 
   def start(_type, _args) do
+    write_pidfile()
     socket_configurations = Kleened.Core.Config.bootstrap()
 
     children = [
@@ -41,6 +42,10 @@ defmodule Kleened.Core.Application do
     end
   end
 
+  def stop(_) do
+    remove_pidfile()
+  end
+
   def api_socket_listeners(listeners) do
     indexed_listeners = Enum.zip(Enum.to_list(1..length(listeners)), listeners)
 
@@ -66,7 +71,29 @@ defmodule Kleened.Core.Application do
         {:error, reason} -> Logger.warning("Could not start container #{container.id}: #{reason}")
       end
     end)
+
+    Logger.info("Finished initializing containers.")
   end
 
-  Logger.info("Finished initializing containers.")
+  @pidfile "/var/run/kleened.pid"
+
+  defp write_pidfile() do
+    case File.write(@pidfile, System.pid()) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("Could not write pid to #{@pidfile}: #{reason}")
+    end
+  end
+
+  defp remove_pidfile() do
+    case File.rm(@pidfile) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning("Could not remove #{@pidfile}: #{reason}")
+    end
+  end
 end
