@@ -16,7 +16,7 @@ BUILD_DEPENDS=	gmake:devel/gmake \
 
 USES=			ssl
 USE_GITHUB=		yes
-GH_TUPLE=		lgandersen:jocker:2d43c60:DEFAULT
+GH_TUPLE=		lgandersen:jocker:f45d0f4:DEFAULT
 USE_RC_SUBR=	kleened
 
 SUB_FILES=			pkg-message
