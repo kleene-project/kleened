@@ -1,21 +1,22 @@
 defmodule ExDoc.Mixfile do
   use Mix.Project
 
-  @version "0.22.0"
+  @source_url "https://github.com/elixir-lang/ex_doc"
+  @version "0.32.1"
 
   def project do
     [
       app: :ex_doc,
       version: @version,
-      elixir: "~> 1.7",
+      elixir: "~> 1.12",
       deps: deps(),
       aliases: aliases(),
       package: package(),
       escript: escript(),
       elixirc_paths: elixirc_paths(Mix.env()),
-      source_url: "https://github.com/elixir-lang/ex_doc/",
-      test_coverage: [tool: ExCoveralls],
-      preferred_cli_env: [coveralls: :test],
+      source_url: @source_url,
+      test_elixirc_options: [docs: true, debug_info: true],
+      name: "ExDoc",
       description: "ExDoc is a documentation generation tool for Elixir",
       docs: docs()
     ]
@@ -23,41 +24,46 @@ defmodule ExDoc.Mixfile do
 
   def application do
     [
-      extra_applications: [:eex, :crypto],
+      extra_applications: [:eex] ++ extra_applications(Mix.env()),
       mod: {ExDoc.Application, []}
     ]
   end
 
+  defp extra_applications(:test), do: [:edoc, :xmerl]
+  defp extra_applications(_), do: []
+
   defp deps do
     [
-      {:earmark, "~> 1.4"},
+      {:earmark_parser, "~> 1.4.39"},
       {:makeup_elixir, "~> 0.14"},
-      {:excoveralls, "~> 0.3", only: :test},
-      {:jason, "~> 1.2", only: :test}
+      {:makeup_erlang, "~> 0.1"},
+      # Add other makeup lexers as optional for the executable
+      {:makeup_c, ">= 0.1.1", optional: true},
+      {:makeup_html, ">= 0.0.0", only: :dev},
+      {:jason, "~> 1.2", only: :test},
+      {:floki, "~> 0.0", only: :test},
+      {:easyhtml, "~> 0.0", only: :test}
     ]
   end
 
   defp aliases do
     [
+      build: ["cmd --cd assets npm run build", "compile --force", "docs"],
       clean: [&clean_test_fixtures/1, "clean"],
-      setup: ["deps.get", "cmd npm install --prefix assets"],
-      build: ["cmd npm run --prefix assets build", "compile --force", "docs"]
+      fix: ["format", "cmd --cd assets npm run lint:fix"],
+      lint: ["format --check-formatted", "cmd --cd assets npm run lint"],
+      setup: ["deps.get", "cmd mkdir -p tmp/handlebars", "cmd --cd assets npm install"]
     ]
   end
 
   defp package do
     [
       licenses: ["Apache-2.0"],
-      maintainers: [
-        "José Valim",
-        "Eksperimental",
-        "Milton Mazzarri",
-        "Friedel Ziegelmayer",
-        "Dmitry"
-      ],
-      files: ["formatters", "lib", "mix.exs", "LICENSE", "CHANGELOG.md", "README.md"],
+      maintainers: ["José Valim", "Milton Mazzarri", "Wojtek Mach"],
+      files: ~w(CHANGELOG.md Cheatsheet.cheatmd formatters lib LICENSE mix.exs README.md),
       links: %{
-        "GitHub" => "https://github.com/elixir-lang/ex_doc",
+        "GitHub" => @source_url,
+        "Changelog" => "https://hexdocs.pm/ex_doc/changelog.html",
         "Writing documentation" => "https://hexdocs.pm/elixir/writing-documentation.html"
       }
     ]
@@ -75,30 +81,31 @@ defmodule ExDoc.Mixfile do
   defp docs do
     [
       main: "readme",
-      extras: [
-        "README.md",
-        "CHANGELOG.md"
-      ],
+      extras:
+        [
+          "README.md",
+          "Cheatsheet.cheatmd",
+          "CHANGELOG.md"
+        ] ++ test_dev_examples(Mix.env()),
       source_ref: "v#{@version}",
-      source_url: "https://github.com/elixir-lang/ex_doc",
+      source_url: @source_url,
       groups_for_modules: [
         Markdown: [
           ExDoc.Markdown,
           ExDoc.Markdown.Earmark
-        ],
-        "Formatter API": [
-          ExDoc.Config,
-          ExDoc.Formatter.EPUB,
-          ExDoc.Formatter.HTML,
-          ExDoc.Formatter.HTML.Autolink,
-          ExDoc.FunctionNode,
-          ExDoc.ModuleNode,
-          ExDoc.TypeNode
         ]
       ],
-      skip_undefined_reference_warnings_on: ["CHANGELOG.md"]
+      groups_for_extras: [
+        Examples: ~r"test/examples"
+      ],
+      skip_undefined_reference_warnings_on: [
+        "CHANGELOG.md"
+      ]
     ]
   end
+
+  defp test_dev_examples(:dev), do: Path.wildcard("test/examples/*")
+  defp test_dev_examples(_), do: []
 
   defp clean_test_fixtures(_args) do
     File.rm_rf("test/tmp")

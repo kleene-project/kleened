@@ -1,4 +1,4 @@
-%% Copyright (c) 2011-2017, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) 2011-2024, Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -17,6 +17,8 @@
 -export([start_clear/3]).
 -export([start_tls/3]).
 -export([stop_listener/1]).
+-export([get_env/2]).
+-export([get_env/3]).
 -export([set_env/3]).
 
 %% Internal.
@@ -54,7 +56,6 @@ start_tls(Ref, TransOpts0, ProtoOpts0) ->
 	TransOpts1 = ranch:normalize_opts(TransOpts0),
 	SocketOpts = maps:get(socket_opts, TransOpts1, []),
 	TransOpts2 = TransOpts1#{socket_opts => [
-		{next_protocols_advertised, [<<"h2">>, <<"http/1.1">>]},
 		{alpn_preferred_protocols, [<<"h2">>, <<"http/1.1">>]}
 	|SocketOpts]},
 	{TransOpts, ConnectionType} = ensure_connection_type(TransOpts2),
@@ -69,6 +70,18 @@ ensure_connection_type(TransOpts) ->
 -spec stop_listener(ranch:ref()) -> ok | {error, not_found}.
 stop_listener(Ref) ->
 	ranch:stop_listener(Ref).
+
+-spec get_env(ranch:ref(), atom()) -> ok.
+get_env(Ref, Name) ->
+	Opts = ranch:get_protocol_options(Ref),
+	Env = maps:get(env, Opts, #{}),
+	maps:get(Name, Env).
+
+-spec get_env(ranch:ref(), atom(), any()) -> ok.
+get_env(Ref, Name, Default) ->
+	Opts = ranch:get_protocol_options(Ref),
+	Env = maps:get(env, Opts, #{}),
+	maps:get(Name, Env, Default).
 
 -spec set_env(ranch:ref(), atom(), any()) -> ok.
 set_env(Ref, Name, Value) ->

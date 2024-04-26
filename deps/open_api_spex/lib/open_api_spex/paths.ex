@@ -2,7 +2,7 @@ defmodule OpenApiSpex.Paths do
   @moduledoc """
   Defines the `OpenApiSpex.Paths.t` type.
   """
-  alias OpenApiSpex.{PathItem, Operation}
+  alias OpenApiSpex.{Operation, PathItem}
 
   @typedoc """
   [Paths Object](https://swagger.io/specification/#pathsObject)
@@ -21,9 +21,21 @@ defmodule OpenApiSpex.Paths do
   Create a Paths map from the routes in the given router module.
   """
   @spec from_router(module) :: t
-  def from_router(router) do
+  def from_router(router), do: from_routes(router.__routes__())
+
+  @doc """
+  Create a Paths map from a list of routes.
+
+  ## Example
+
+      Paths.from_routes([
+        %{path: "/v1/contacts", verb: :post, plug: MyAppWeb.V1.ContactController, plug_opts: :create}
+      ])
+  """
+  @spec from_routes([PathItem.route()]) :: t
+  def from_routes(routes) do
     paths =
-      router.__routes__()
+      routes
       |> Enum.group_by(fn route -> route.path end)
       |> Enum.map(fn {k, v} -> {open_api_path(k), PathItem.from_routes(v)} end)
       |> Enum.filter(fn {_k, v} -> !is_nil(v) end)
@@ -43,11 +55,10 @@ defmodule OpenApiSpex.Paths do
   defp open_api_path(path) do
     path
     |> String.split("/")
-    |> Enum.map(fn
+    |> Enum.map_join("/", fn
       ":" <> segment -> "{#{segment}}"
       segment -> segment
     end)
-    |> Enum.join("/")
   end
 
   @spec find_duplicate_operations(paths :: t) :: [{operation_id, [{path, verb, Operation.t()}]}]
@@ -60,7 +71,7 @@ defmodule OpenApiSpex.Paths do
     all_operations
     |> Enum.group_by(fn {_path, _verb, operation} -> operation.operationId end)
     |> Enum.filter(fn
-      {_operationId, [_item]} -> false
+      {_operation_id, [_item]} -> false
       _ -> true
     end)
   end

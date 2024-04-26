@@ -1,4 +1,6 @@
 defmodule OpenApiSpex.Cast do
+  @moduledoc "Cast and validate a value against an OpenApiSpex schema"
+
   alias OpenApiSpex.{Reference, Schema}
   alias OpenApiSpex.Reference
 
@@ -16,15 +18,22 @@ defmodule OpenApiSpex.Cast do
     String
   }
 
+  @type read_write_scope :: nil | :read | :write
+
   @type schema_or_reference :: Schema.t() | Reference.t()
+
+  @type cast_opt :: {:apply_defaults, boolean()}
+
   @type t :: %__MODULE__{
           value: term(),
           schema: schema_or_reference | nil,
           schemas: map(),
-          path: [atom() | String.t() | integer()],
+          path: [atom | Elixir.String.t() | integer],
           key: atom() | nil,
           index: integer,
-          errors: [Error.t()]
+          errors: [Error.t()],
+          read_write_scope: read_write_scope,
+          opts: [cast_opt()]
         }
 
   defstruct value: nil,
@@ -33,7 +42,9 @@ defmodule OpenApiSpex.Cast do
             path: [],
             key: nil,
             index: 0,
-            errors: []
+            errors: [],
+            read_write_scope: nil,
+            opts: []
 
   @doc ~S"""
   Cast and validate a value against the given schema.
@@ -54,14 +65,14 @@ defmodule OpenApiSpex.Cast do
       iex> schema = %Schema{type: :string}
       iex> Cast.cast(schema, "a string")
       {:ok, "a string"}
-      iex> Cast.cast(schema, :not_a_string)
+      iex> Cast.cast(schema, 1..100)
       {
         :error,
         [
           %OpenApiSpex.Cast.Error{
             reason: :invalid_type,
             type: :string,
-            value: :not_a_string
+            value: 1..100
           }
         ]
       }
@@ -89,9 +100,10 @@ defmodule OpenApiSpex.Cast do
 
   """
 
-  @spec cast(schema_or_reference | nil, term(), map()) :: {:ok, term()} | {:error, [Error.t()]}
-  def cast(schema, value, schemas \\ %{}) do
-    ctx = %__MODULE__{schema: schema, value: value, schemas: schemas}
+  @spec cast(schema_or_reference | nil, term(), map(), [cast_opt()]) ::
+          {:ok, term()} | {:error, [Error.t()]}
+  def cast(schema, value, schemas \\ %{}, opts \\ []) do
+    ctx = %__MODULE__{schema: schema, value: value, schemas: schemas, opts: opts}
     cast(ctx)
   end
 
@@ -115,10 +127,21 @@ defmodule OpenApiSpex.Cast do
     {:ok, nil}
   end
 
-  # nullable: false
-  def cast(%__MODULE__{value: nil} = ctx) do
-    error(ctx, {:null_value})
-  end
+  # nullable not present in root schema or equal to false
+  # dispatch to xxxOf modules if corresponding key is present
+  # or return error
+  def cast(%__MODULE__{value: nil, schema: %{nullable: false}} = ctx), do: error(ctx, {:null_value})
+
+  def cast(%__MODULE__{value: nil, schema: %{oneOf: list}} = ctx) when is_list(list),
+    do: OneOf.cast(ctx)
+
+  def cast(%__MODULE__{value: nil, schema: %{anyOf: list}} = ctx) when is_list(list),
+    do: AnyOf.cast(ctx)
+
+  def cast(%__MODULE__{value: nil, schema: %{allOf: list}} = ctx) when is_list(list),
+    do: AllOf.cast(ctx)
+
+  def cast(%__MODULE__{value: nil} = ctx), do: error(ctx, {:null_value})
 
   # Enum
   def cast(%__MODULE__{schema: %{enum: []}} = ctx) do
@@ -164,6 +187,13 @@ defmodule OpenApiSpex.Cast do
 
   def cast(%__MODULE__{schema: %{type: :array}} = ctx),
     do: Array.cast(ctx)
+
+  # Explicit nil types are considered as wildcards, as in
+  # properties
+  #   value: {}
+  # See  https://json-schema.org/understanding-json-schema/basics.html#id1
+  def cast(%__MODULE__{schema: %{type: nil}, value: value} = _ctx),
+    do: {:ok, value}
 
   def cast(%__MODULE__{schema: %{type: _other}} = ctx),
     do: error(ctx, {:invalid_schema_type})

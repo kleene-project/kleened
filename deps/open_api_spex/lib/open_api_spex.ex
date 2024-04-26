@@ -10,12 +10,12 @@ defmodule OpenApiSpex do
     Operation2,
     Reference,
     Schema,
+    SchemaConsistency,
     SchemaException,
-    SchemaResolver,
-    SchemaConsistency
+    SchemaResolver
   }
 
-  alias OpenApiSpex.Cast.Error
+  alias OpenApiSpex.Cast.{Error, Utils}
 
   @doc """
   Adds schemas to the api spec from the modules specified in the Operations.
@@ -77,13 +77,24 @@ defmodule OpenApiSpex do
     OpenApiSpex.Cast.cast(schema, value, spec.components.schemas)
   end
 
+  @type cast_opt :: {:replace_params, boolean()} | {:apply_defaults, boolean()}
+
+  @spec cast_and_validate(
+          OpenApi.t(),
+          Operation.t(),
+          Plug.Conn.t(),
+          content_type :: nil | String.t(),
+          opts :: [cast_opt()]
+        ) :: {:error, [Error.t()]} | {:ok, Plug.Conn.t()}
   def cast_and_validate(
         spec = %OpenApi{},
         operation = %Operation{},
         conn = %Plug.Conn{},
-        content_type \\ nil
+        content_type \\ nil,
+        opts \\ []
       ) do
-    Operation2.cast(operation, conn, content_type, spec.components)
+    content_type = content_type || Utils.content_type_from_header(conn)
+    Operation2.cast(spec, operation, conn, content_type, opts)
   end
 
   @doc """
@@ -236,6 +247,12 @@ defmodule OpenApiSpex do
                 Keyword.merge([module: __MODULE__], unquote(opts))
               )
 
+      unless Module.get_attribute(__MODULE__, :moduledoc) do
+        @moduledoc [@schema.title, @schema.description]
+                   |> Enum.reject(&is_nil/1)
+                   |> Enum.join("\n\n")
+      end
+
       def schema, do: @schema
 
       if Map.get(@schema, :"x-struct") == __MODULE__ do
@@ -376,7 +393,53 @@ defmodule OpenApiSpex do
   @doc """
   Resolve a schema or reference to a schema.
   """
-  @spec resolve_schema(Schema.t() | Reference.t(), Components.schemas_map()) :: Schema.t()
+  @spec resolve_schema(Schema.t() | Reference.t() | module, Components.schemas_map()) ::
+          Schema.t() | nil
   def resolve_schema(%Schema{} = schema, _), do: schema
   def resolve_schema(%Reference{} = ref, schemas), do: Reference.resolve_schema(ref, schemas)
+
+  def resolve_schema(mod, _) when is_atom(mod) do
+    IO.warn("""
+    Unresolved schema module: #{inspect(mod)}.
+    Use OpenApiSpex.resolve_schema_modules/1 to resolve modules ahead of time.
+    """)
+
+    mod.schema()
+  end
+
+  @doc """
+  Get casted body params from a `Plug.Conn`.
+  If the conn has not been yet casted `nil` is returned.
+  """
+  @spec body_params(Plug.Conn.t()) :: nil | map()
+  def body_params(%Plug.Conn{} = conn), do: get_in(conn.private, [:open_api_spex, :body_params])
+
+  @doc """
+  Get casted params from a `Plug.Conn`.
+  If the conn has not been yet casted `nil` is returned.
+  """
+  @spec params(Plug.Conn.t()) :: nil | map()
+  def params(%Plug.Conn{} = conn), do: get_in(conn.private, [:open_api_spex, :params])
+
+  @doc """
+
+  """
+  @spec add_parameter_content_parser(
+          OpenApi.t(),
+          content_type | [content_type],
+          parser :: module()
+        ) :: OpenApi.t()
+        when content_type: String.t() | Regex.t()
+  def add_parameter_content_parser(%OpenApi{extensions: ext} = spec, content_type, parser) do
+    extensions = ext || %{}
+
+    param_parsers = Map.get(extensions, "x-parameter-content-parsers", %{})
+
+    param_parsers =
+      content_type
+      |> List.wrap()
+      |> Enum.reduce(param_parsers, fn ct, acc -> Map.put(acc, ct, parser) end)
+
+    %OpenApi{spec | extensions: Map.put(extensions, "x-parameter-content-parsers", param_parsers)}
+  end
 end

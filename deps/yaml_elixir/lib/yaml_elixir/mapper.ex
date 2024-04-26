@@ -6,10 +6,8 @@ defmodule YamlElixir.Mapper do
     yaml
     |> _to_map(options)
     |> extract_map(options)
+    |> maybe_merge_anchors(options)
   end
-
-  defp extract_map(nil, options), do: empty_container(options)
-  defp extract_map(map, _), do: map
 
   defp _to_map({:yamerl_doc, document}, options), do: _to_map(document, options)
 
@@ -32,6 +30,7 @@ defmodule YamlElixir.Mapper do
        do: key_for(element, options)
 
   defp _to_map({:yamerl_null, :yamerl_node_null, _tag, _loc}, _options), do: nil
+  defp _to_map({:yamerl_null, :yamerl_node_null_json, _tag, _loc}, _options), do: nil
   defp _to_map({_yamler_element, _yamler_node_element, _tag, _loc, elem}, _options), do: elem
 
   defp to_keyword_list(map) when is_map(map) do
@@ -69,6 +68,7 @@ defmodule YamlElixir.Mapper do
     |> maybe_atom(name, original_name)
   end
 
+  defp key_for("<<", _options), do: "<<#{System.unique_integer([:positive, :monotonic])}"
   defp key_for(name, _options), do: name
 
   defp maybe_atom(true, name, _original_name), do: String.to_atom(name)
@@ -82,14 +82,34 @@ defmodule YamlElixir.Mapper do
     end
   end
 
-  defp append_kv(list, key, value),
-    do: [{key, value} | list]
+  defp extract_map(nil, options), do: empty_container(options)
+  defp extract_map(map, _), do: map
 
   defp maps_aggregator(options) do
     with true <- Keyword.get(options, :maps_as_keywords) do
-      &append_kv/3
+      &[{&2, &3} | &1]
     else
       _ -> &Map.put_new/3
     end
   end
+
+  defp maybe_merge_anchors(value, options) do
+    with true <- Keyword.get(options, :merge_anchors) do
+      merge_anchors(value)
+    else
+      _ -> value
+    end
+  end
+
+  defp merge_anchors(value) when is_list(value), do: Enum.map(value, &merge_anchors/1)
+
+  defp merge_anchors(map) when is_map(map) do
+    map
+    |> Enum.reduce(%{}, fn
+      {<<"<<", _::binary>>, v}, acc -> acc |> Map.merge(v)
+      {k, v}, acc -> acc |> Map.put(k, merge_anchors(v))
+    end)
+  end
+
+  defp merge_anchors(val), do: val
 end

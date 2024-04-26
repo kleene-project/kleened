@@ -1,8 +1,8 @@
 defmodule ExDoc.Formatter.HTML do
   @moduledoc false
 
-  alias __MODULE__.{Assets, Templates, SearchItems}
-  alias ExDoc.{Autolink, Markdown, GroupMatcher}
+  alias __MODULE__.{Assets, Templates, SearchData}
+  alias ExDoc.{Markdown, GroupMatcher, Utils}
 
   @main "api-reference"
   @assets_dir "assets"
@@ -10,21 +10,22 @@ defmodule ExDoc.Formatter.HTML do
   @doc """
   Generate HTML documentation for the given modules.
   """
-  @spec run(list, ExDoc.Config.t()) :: String.t()
-  def run(project_nodes, config) when is_map(config) do
+  @spec run([ExDoc.ModuleNode.t()], [ExDoc.ModuleNode.t()], ExDoc.Config.t()) :: String.t()
+  def run(project_nodes, filtered_modules, config) when is_map(config) do
     config = normalize_config(config)
     config = %{config | output: Path.expand(config.output)}
 
     build = Path.join(config.output, ".build")
     output_setup(build, config)
 
-    project_nodes = render_all(project_nodes, ".html", config, [])
+    project_nodes = render_all(project_nodes, filtered_modules, ".html", config, [])
     extras = build_extras(config, ".html")
 
     # Generate search early on without api reference in extras
     static_files = generate_assets(config, @assets_dir, default_assets(config))
-    search_items = generate_search_items(project_nodes, extras, config)
+    search_data = generate_search_data(project_nodes, extras, config)
 
+    # TODO: Move this categorization to the language
     nodes_map = %{
       modules: filter_list(:module, project_nodes),
       tasks: filter_list(:task, project_nodes)
@@ -38,7 +39,7 @@ defmodule ExDoc.Formatter.HTML do
       end
 
     all_files =
-      search_items ++
+      search_data ++
         static_files ++
         generate_sidebar_items(nodes_map, extras, config) ++
         generate_extras(nodes_map, extras, config) ++
@@ -48,7 +49,7 @@ defmodule ExDoc.Formatter.HTML do
         generate_list(nodes_map.modules, nodes_map, config) ++
         generate_list(nodes_map.tasks, nodes_map, config) ++ generate_index(config)
 
-    generate_build(all_files, build)
+    generate_build(Enum.sort(all_files), build)
     config.output |> Path.join("index.html") |> Path.relative_to_cwd()
   end
 
@@ -64,70 +65,106 @@ defmodule ExDoc.Formatter.HTML do
   @doc """
   Autolinks and renders all docs.
   """
-  def render_all(project_nodes, ext, config, opts) do
+  def render_all(project_nodes, filtered_modules, ext, config, opts) do
+    base = [
+      apps: config.apps,
+      deps: config.deps,
+      ext: ext,
+      extras: extra_paths(config),
+      skip_undefined_reference_warnings_on: config.skip_undefined_reference_warnings_on,
+      skip_code_autolink_to: config.skip_code_autolink_to,
+      filtered_modules: filtered_modules
+    ]
+
     project_nodes
-    |> Enum.map(fn node ->
-      autolink_opts = [
-        app: config.app,
-        current_module: node.module,
-        ext: ext,
-        extras: extra_paths(config),
-        skip_undefined_reference_warnings_on: config.skip_undefined_reference_warnings_on,
-        module_id: node.id,
-        file: node.source_path,
-        line: node.doc_line
-      ]
+    |> Task.async_stream(
+      fn node ->
+        language = node.language
 
-      docs =
-        for child_node <- node.docs do
-          id = id(node, child_node)
-          autolink_opts = autolink_opts ++ [id: id, line: child_node.doc_line]
-          specs = Enum.map(child_node.specs, &Autolink.typespec(&1, autolink_opts))
-          child_node = %{child_node | specs: specs}
-          render_doc(child_node, autolink_opts, opts)
-        end
+        autolink_opts =
+          [
+            current_module: node.module,
+            file: node.moduledoc_file,
+            line: node.moduledoc_line,
+            module_id: node.id,
+            language: language
+          ] ++ base
 
-      typespecs =
-        for child_node <- node.typespecs do
-          id = id(node, child_node)
-          autolink_opts = autolink_opts ++ [id: id, line: child_node.doc_line]
-          child_node = %{child_node | spec: Autolink.typespec(child_node.spec, autolink_opts)}
-          render_doc(child_node, autolink_opts, opts)
-        end
+        docs =
+          for child_node <- node.docs do
+            id = id(node, child_node)
 
-      id = id(node, nil)
-      %{render_doc(node, [{:id, id} | autolink_opts], opts) | docs: docs, typespecs: typespecs}
-    end)
+            autolink_opts =
+              autolink_opts ++
+                [
+                  id: id,
+                  line: child_node.doc_line,
+                  file: child_node.doc_file,
+                  current_kfa: {:function, child_node.name, child_node.arity}
+                ]
+
+            specs = Enum.map(child_node.specs, &language.autolink_spec(&1, autolink_opts))
+            child_node = %{child_node | specs: specs}
+            render_doc(child_node, language, autolink_opts, opts)
+          end
+
+        typespecs =
+          for child_node <- node.typespecs do
+            id = id(node, child_node)
+
+            autolink_opts =
+              autolink_opts ++
+                [
+                  id: id,
+                  line: child_node.doc_line,
+                  file: child_node.doc_file,
+                  current_kfa: {child_node.type, child_node.name, child_node.arity}
+                ]
+
+            child_node = %{
+              child_node
+              | spec: language.autolink_spec(child_node.spec, autolink_opts)
+            }
+
+            render_doc(child_node, language, autolink_opts, opts)
+          end
+
+        %{
+          render_doc(node, language, [{:id, node.id} | autolink_opts], opts)
+          | docs: docs,
+            typespecs: typespecs
+        }
+      end,
+      timeout: :infinity
+    )
+    |> Enum.map(&elem(&1, 1))
   end
 
-  defp render_doc(%{doc: nil} = node, _autolink_opts, _opts),
+  defp render_doc(%{doc: nil} = node, _language, _autolink_opts, _opts),
     do: node
 
-  defp render_doc(%{doc: doc} = node, autolink_opts, opts) do
-    rendered = autolink_and_render(doc, autolink_opts, opts)
+  defp render_doc(%{doc: doc} = node, language, autolink_opts, opts) do
+    rendered = autolink_and_render(doc, language, autolink_opts, opts)
     %{node | rendered_doc: rendered}
   end
 
-  defp id(%{id: id}, nil), do: id
-  defp id(%{id: mod_id}, %ExDoc.FunctionNode{id: id, type: :callback}), do: "c:#{mod_id}.#{id}"
-  defp id(%{id: mod_id}, %ExDoc.FunctionNode{id: id}), do: "#{mod_id}.#{id}"
-  defp id(%{id: mod_id}, %ExDoc.TypeNode{id: id}), do: "t:#{mod_id}.#{id}"
-
-  defp autolink_and_render(doc, autolink_opts, opts) do
-    doc
-    |> Autolink.doc(autolink_opts)
-    |> ast_to_html()
-    |> IO.iodata_to_binary()
-    |> ExDoc.Highlighter.highlight_code_blocks(opts)
+  defp id(%{id: mod_id}, %{id: "c:" <> id}) do
+    "c:" <> mod_id <> "." <> id
   end
 
-  defp ast_to_html(list) when is_list(list), do: Enum.map(list, &ast_to_html/1)
-  defp ast_to_html(binary) when is_binary(binary), do: Templates.h(binary)
+  defp id(%{id: mod_id}, %{id: "t:" <> id}) do
+    "t:" <> mod_id <> "." <> id
+  end
 
-  defp ast_to_html({tag, attrs, ast}) do
-    attrs = Enum.map(attrs, fn {key, val} -> " #{key}=\"#{val}\"" end)
-    ["<#{tag}", attrs, ">", ast_to_html(ast), "</#{tag}>"]
-    ["<#{tag}#{attrs}>", ast_to_html(ast), "</#{tag}>"]
+  defp id(%{id: mod_id}, %{id: id}) do
+    mod_id <> "." <> id
+  end
+
+  defp autolink_and_render(doc, language, autolink_opts, opts) do
+    doc
+    |> language.autolink_doc(autolink_opts)
+    |> ExDoc.DocAST.to_string()
+    |> ExDoc.DocAST.highlight(language, opts)
   end
 
   defp output_setup(build, config) do
@@ -175,39 +212,73 @@ defmodule ExDoc.Formatter.HTML do
 
   defp generate_sidebar_items(nodes_map, extras, config) do
     content = Templates.create_sidebar_items(nodes_map, extras)
-    sidebar_items = "dist/sidebar_items-#{digest(content)}.js"
-    File.write!(Path.join(config.output, sidebar_items), content)
-    [sidebar_items]
+    path = "dist/sidebar_items-#{digest(content)}.js"
+    File.write!(Path.join(config.output, path), content)
+    [path]
   end
 
-  defp generate_search_items(linked, extras, config) do
-    content = SearchItems.create(linked, extras)
-    search_items = "dist/search_items-#{digest(content)}.js"
-    File.write!(Path.join(config.output, search_items), content)
-    [search_items]
+  defp generate_search_data(linked, extras, config) do
+    content = SearchData.create(linked, extras, config.proglang)
+    path = "dist/search_data-#{digest(content)}.js"
+    File.write!(Path.join(config.output, path), content)
+    [path]
   end
 
   defp digest(content) do
     content
     |> :erlang.md5()
-    |> Base.encode16(case: :lower)
-    |> binary_part(0, 10)
+    |> Base.encode16(case: :upper)
+    |> binary_part(0, 8)
   end
 
   defp generate_extras(nodes_map, extras, config) do
-    Enum.map(extras, fn %{id: id, title: title, content: content} ->
-      filename = "#{id}.html"
-      output = "#{config.output}/#{filename}"
-      config = set_canonical_url(config, filename)
-      html = Templates.extra_template(config, title, nodes_map, content)
+    generated_extras =
+      extras
+      |> with_prev_next()
+      |> Enum.map(fn {node, prev, next} ->
+        filename = "#{node.id}.html"
+        output = "#{config.output}/#{filename}"
+        config = set_canonical_url(config, filename)
 
-      if File.regular?(output) do
-        IO.puts(:stderr, "warning: file #{Path.relative_to_cwd(output)} already exists")
-      end
+        refs = %{
+          prev: prev && %{path: "#{prev.id}.html", title: prev.title},
+          next: next && %{path: "#{next.id}.html", title: next.title}
+        }
 
-      File.write!(output, html)
-      filename
-    end)
+        extension = node.source_path && Path.extname(node.source_path)
+        html = Templates.extra_template(config, node, extra_type(extension), nodes_map, refs)
+
+        if File.regular?(output) do
+          Utils.warn("file #{Path.relative_to_cwd(output)} already exists", [])
+        end
+
+        File.write!(output, html)
+        filename
+      end)
+
+    generated_extras ++ copy_extras(config, extras)
+  end
+
+  defp extra_type(".cheatmd"), do: :cheatmd
+  defp extra_type(".livemd"), do: :livemd
+  defp extra_type(_), do: :extra
+
+  defp copy_extras(config, extras) do
+    for %{source_path: source_path, id: id} when source_path != nil <- extras,
+        ext = extension_name(source_path),
+        ext == ".livemd" do
+      output = "#{config.output}/#{id}#{ext}"
+
+      File.copy!(source_path, output)
+
+      output
+    end
+  end
+
+  defp with_prev_next([]), do: []
+
+  defp with_prev_next([head | tail]) do
+    Enum.zip([[head | tail], [nil, head | tail], tail ++ [nil]])
   end
 
   @doc """
@@ -247,16 +318,28 @@ defmodule ExDoc.Formatter.HTML do
     end)
   end
 
-  defp default_assets(_config) do
+  defp default_assets(config) do
     [
-      {Assets.dist(), "dist"},
-      {Assets.fonts(), "dist/html/fonts"}
+      {Assets.dist(config.proglang), "dist"},
+      {Assets.fonts(), "dist"}
     ]
   end
 
   defp build_api_reference(nodes_map, config) do
-    api_reference = Templates.api_reference_template(config, nodes_map)
-    %{id: "api-reference", title: "API Reference", group: "", content: api_reference}
+    api_reference = Templates.api_reference_template(nodes_map)
+
+    title_content =
+      ~s{API Reference <small class="app-vsn">#{config.project} v#{config.version}</small>}
+
+    %{
+      content: api_reference,
+      group: nil,
+      id: "api-reference",
+      source_path: nil,
+      source_url: config.source_url,
+      title: "API Reference",
+      title_content: title_content
+    }
   end
 
   @doc """
@@ -265,126 +348,124 @@ defmodule ExDoc.Formatter.HTML do
   def build_extras(config, ext) do
     groups = config.groups_for_extras
 
-    config.extras
-    |> Task.async_stream(&build_extra(&1, groups, config, ext), timeout: :infinity)
-    |> Enum.map(&elem(&1, 1))
+    language =
+      case config.proglang do
+        :erlang -> ExDoc.Language.Erlang
+        _ -> ExDoc.Language.Elixir
+      end
+
+    source_url_pattern = config.source_url_pattern
+
+    autolink_opts = [
+      apps: config.apps,
+      deps: config.deps,
+      ext: ext,
+      extras: extra_paths(config),
+      language: language,
+      skip_undefined_reference_warnings_on: config.skip_undefined_reference_warnings_on,
+      skip_code_autolink_to: config.skip_code_autolink_to
+    ]
+
+    extras =
+      config.extras
+      |> Task.async_stream(
+        &build_extra(&1, groups, language, autolink_opts, source_url_pattern),
+        timeout: :infinity
+      )
+      |> Enum.map(&elem(&1, 1))
+
+    ids_count = Enum.reduce(extras, %{}, &Map.update(&2, &1.id, 1, fn c -> c + 1 end))
+
+    extras
+    |> Enum.map_reduce(1, fn extra, idx ->
+      if ids_count[extra.id] > 1, do: {disambiguate_id(extra, idx), idx + 1}, else: {extra, idx}
+    end)
+    |> elem(0)
     |> Enum.sort_by(fn extra -> GroupMatcher.group_index(groups, extra.group) end)
   end
 
-  defp build_extra({input, options}, groups, config, ext) do
+  defp disambiguate_id(extra, discriminator) do
+    Map.put(extra, :id, "#{extra.id}-#{discriminator}")
+  end
+
+  defp build_extra({input, input_options}, groups, language, autolink_opts, source_url_pattern) do
     input = to_string(input)
-    id = options[:filename] || input |> filename_to_title() |> text_to_id()
-    build_extra(input, id, options[:title], groups, config, ext)
+    id = input_options[:filename] || input |> filename_to_title() |> Utils.text_to_id()
+    source_file = input_options[:source] || input
+    opts = [file: source_file, line: 1]
+
+    {source, ast} =
+      case extension_name(input) do
+        extension when extension in ["", ".txt"] ->
+          source = File.read!(input)
+          ast = [{:pre, [], "\n" <> source, %{}}]
+          {source, ast}
+
+        extension when extension in [".md", ".livemd", ".cheatmd"] ->
+          source = File.read!(input)
+
+          ast =
+            source
+            |> Markdown.to_ast(opts)
+            |> sectionize(extension)
+
+          {source, ast}
+
+        _ ->
+          raise ArgumentError,
+                "file extension not recognized, allowed extension is either .cheatmd, .livemd, .md, .txt or no extension"
+      end
+
+    {title_ast, ast} =
+      case ExDoc.DocAST.extract_title(ast) do
+        {:ok, title_ast, ast} -> {title_ast, ast}
+        :error -> {nil, ast}
+      end
+
+    title_text = title_ast && ExDoc.DocAST.text_from_ast(title_ast)
+    title_html = title_ast && ExDoc.DocAST.to_string(title_ast)
+    content_html = autolink_and_render(ast, language, [file: input] ++ autolink_opts, opts)
+
+    group = GroupMatcher.match_extra(groups, input)
+    title = input_options[:title] || title_text || filename_to_title(input)
+
+    source_path = source_file |> Path.relative_to(File.cwd!()) |> String.replace_leading("./", "")
+    source_url = Utils.source_url_pattern(source_url_pattern, source_path, 1)
+
+    %{
+      source: source,
+      content: content_html,
+      group: group,
+      id: id,
+      source_path: source_path,
+      source_url: source_url,
+      title: title,
+      title_content: title_html || title
+    }
   end
 
-  defp build_extra(input, groups, config, ext) do
-    id = input |> filename_to_title() |> text_to_id()
-    build_extra(input, id, nil, groups, config, ext)
+  defp build_extra(input, groups, language, autolink_opts, source_url_pattern) do
+    build_extra({input, []}, groups, language, autolink_opts, source_url_pattern)
   end
 
-  defp build_extra(input, id, title, groups, config, ext) do
-    autolink_opts = [
-      app: config.app,
-      file: input,
-      ext: ext,
-      extras: extra_paths(config),
-      skip_undefined_reference_warnings_on: config.skip_undefined_reference_warnings_on
-    ]
-
-    if valid_extension_name?(input) do
-      opts = [file: input, line: 1]
-
-      html_content =
-        input
-        |> File.read!()
-        |> Markdown.to_ast(opts)
-        |> autolink_and_render(autolink_opts, opts)
-
-      group = GroupMatcher.match_extra(groups, input)
-
-      title = title || extract_title(html_content) || filename_to_title(input)
-      %{id: id, title: title, group: group, content: html_content}
-    else
-      raise ArgumentError, "file format not recognized, allowed format is: .md"
-    end
-  end
-
-  def valid_extension_name?(input) do
-    file_ext =
-      input
-      |> Path.extname()
-      |> String.downcase()
-
-    if file_ext in [".md"] do
-      true
-    else
-      false
-    end
-  end
-
-  @tag_regex ~r/<[^>]*>/m
-  defp strip_html(header) do
-    Regex.replace(@tag_regex, header, "")
-  end
-
-  @h1_regex ~r/<h1.*?>(.+?)<\/h1>/m
-  defp extract_title(content) do
-    title = Regex.run(@h1_regex, content, capture: :all_but_first)
-
-    if title do
-      title |> List.first() |> strip_html() |> String.trim()
-    end
-  end
-
-  @doc """
-  Convert the input file name into a title
-  """
-  def filename_to_title(input) do
-    input |> Path.basename() |> Path.rootname()
-  end
-
-  @clean_html_regex ~r/<(?:[^>=]|='[^']*'|="[^"]*"|=[^'"][^\s>]*)*>/
-
-  @doc """
-  Strips html tags from text leaving their text content
-  """
-  def strip_tags(text) when is_binary(text) do
-    String.replace(text, @clean_html_regex, "")
-  end
-
-  @doc """
-  Generates an ID from some text
-
-  Used primarily with titles, headings and functions group names.
-  """
-  def text_to_id(atom) when is_atom(atom), do: text_to_id(Atom.to_string(atom))
-
-  def text_to_id(text) when is_binary(text) do
-    text
-    |> strip_tags()
-    |> String.replace(~r/&#\d+;/, "")
-    |> String.replace(~r/&[A-Za-z0-9]+;/, "")
-    |> String.replace(~r/\W+/u, "-")
-    |> String.trim("-")
+  defp extension_name(input) do
+    input
+    |> Path.extname()
     |> String.downcase()
   end
 
-  @doc """
-  Generate a link id for the given node.
-  """
-  def link_id(node), do: link_id(node.id, node.type)
+  defp sectionize(ast, ".cheatmd") do
+    ExDoc.DocAST.sectionize(ast, fn
+      {:h2, _, _, _} -> true
+      {:h3, _, _, _} -> true
+      _ -> false
+    end)
+  end
 
-  @doc """
-  Generate a link id for the given id and type.
-  """
-  def link_id(id, type) do
-    case type do
-      :macrocallback -> "c:#{id}"
-      :callback -> "c:#{id}"
-      :type -> "t:#{id}"
-      :opaque -> "t:#{id}"
-      _ -> "#{id}"
-    end
+  defp sectionize(ast, _), do: ast
+
+  defp filename_to_title(input) do
+    input |> Path.basename() |> Path.rootname()
   end
 
   @doc """
@@ -415,20 +496,20 @@ defmodule ExDoc.Formatter.HTML do
       |> Path.extname()
       |> String.downcase()
 
-    if extname in ~w(.png .jpg .svg) do
+    if extname in ~w(.png .jpg .jpeg .svg) do
       filename = Path.join(dir, "#{name}#{extname}")
       target = Path.join(output, filename)
       File.mkdir_p!(Path.dirname(target))
       File.copy!(image, target)
       [filename]
     else
-      raise ArgumentError, "image format not recognized, allowed formats are: .jpg, .png"
+      raise ArgumentError, "image format not recognized, allowed formats are: .png, .jpg, .svg"
     end
   end
 
   defp generate_redirect(filename, config, redirect_to) do
     unless case_sensitive_file_regular?("#{config.output}/#{redirect_to}") do
-      IO.puts(:stderr, "warning: #{filename} redirects to #{redirect_to}, which does not exist")
+      ExDoc.Utils.warn("#{filename} redirects to #{redirect_to}, which does not exist", [])
     end
 
     content = Templates.redirect_template(config, redirect_to)
@@ -471,7 +552,7 @@ defmodule ExDoc.Formatter.HTML do
       canonical_url =
         config.canonical
         |> String.trim_trailing("/")
-        |> Path.join(filename)
+        |> Kernel.<>("/" <> filename)
 
       Map.put(config, :canonical, canonical_url)
     else
@@ -480,12 +561,14 @@ defmodule ExDoc.Formatter.HTML do
   end
 
   defp extra_paths(config) do
-    Enum.map(config.extras, fn
+    Map.new(config.extras, fn
       path when is_binary(path) ->
-        Path.basename(path)
+        base = Path.basename(path)
+        {base, Utils.text_to_id(Path.rootname(base))}
 
-      {path, _} ->
-        path |> Atom.to_string() |> Path.basename()
+      {path, opts} ->
+        base = path |> to_string() |> Path.basename()
+        {base, opts[:filename] || Utils.text_to_id(Path.rootname(base))}
     end)
   end
 end

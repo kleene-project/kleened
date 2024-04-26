@@ -3,7 +3,9 @@ defmodule ExDoc.Formatter.EPUB.Templates do
 
   require EEx
 
-  alias ExDoc.Formatter.HTML
+  import ExDoc.Utils,
+    only: [before_closing_body_tag: 2, before_closing_head_tag: 2, h: 1, text_to_id: 1]
+
   alias ExDoc.Formatter.HTML.Templates, as: H
 
   @doc """
@@ -18,10 +20,7 @@ defmodule ExDoc.Formatter.EPUB.Templates do
   Generated ID for static file
   """
   def static_file_to_id(static_file) do
-    prefix = static_file |> HTML.filename_to_title() |> HTML.text_to_id()
-    extension = static_file |> Path.extname() |> String.replace_prefix(".", "-")
-
-    "#{prefix}#{extension}"
+    static_file |> Path.basename() |> text_to_id()
   end
 
   @doc """
@@ -76,7 +75,7 @@ defmodule ExDoc.Formatter.EPUB.Templates do
     :def,
     :extra_template,
     Path.expand("templates/extra_template.eex", __DIR__),
-    [:config, :title, :content],
+    [:config, :title, :title_content, :content],
     trim: true
   )
 
@@ -104,6 +103,14 @@ defmodule ExDoc.Formatter.EPUB.Templates do
     :nav_item_template,
     Path.expand("templates/nav_item_template.eex", __DIR__),
     [:name, :nodes],
+    trim: true
+  )
+
+  EEx.function_from_file(
+    :defp,
+    :nav_grouped_item_template,
+    Path.expand("templates/nav_grouped_item_template.eex", __DIR__),
+    [:nodes],
     trim: true
   )
 

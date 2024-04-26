@@ -1,4 +1,4 @@
-%% Copyright (c) 2011-2017, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) 2011-2024, Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -97,7 +97,7 @@
 -optional_callbacks([forbidden/2]).
 
 -callback generate_etag(Req, State)
-	-> {binary() | {weak | strong, binary()}, Req, State}
+	-> {binary() | {weak | strong, binary()} | undefined, Req, State}
 	when Req::cowboy_req:req(), State::any().
 -optional_callbacks([generate_etag/2]).
 
@@ -1196,6 +1196,7 @@ if_range(Req=#{headers := #{<<"if-range">> := _, <<"range">> := _}},
 if_range(Req, State) ->
 	range(Req, State).
 
+%% @todo This can probably be moved to if_range directly.
 range(Req, State=#state{ranges_a=[]}) ->
 	set_resp_body(Req, State);
 range(Req, State) ->
@@ -1527,6 +1528,12 @@ generate_etag(Req, State=#state{etag=undefined}) ->
 	case unsafe_call(Req, State, generate_etag) of
 		no_call ->
 			{undefined, Req, State#state{etag=no_call}};
+		%% We allow the callback to return 'undefined'
+		%% to allow conditionally generating etags. We
+		%% handle 'undefined' the same as if the function
+		%% was not exported.
+		{undefined, Req2, State2} ->
+			{undefined, Req2, State2#state{etag=no_call}};
 		{Etag, Req2, State2} when is_binary(Etag) ->
 			Etag2 = cow_http_hd:parse_etag(Etag),
 			{Etag2, Req2, State2#state{etag=Etag2}};

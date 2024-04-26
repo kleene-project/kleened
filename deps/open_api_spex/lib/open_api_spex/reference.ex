@@ -3,7 +3,7 @@ defmodule OpenApiSpex.Reference do
   Defines the `OpenApiSpex.Reference.t` type.
   """
 
-  alias OpenApiSpex.{Components, Reference, RequestBody}
+  alias OpenApiSpex.{Components, Parameter, Reference, RequestBody, Response, Schema}
 
   @enforce_keys :"$ref"
   defstruct [
@@ -30,7 +30,7 @@ defmodule OpenApiSpex.Reference do
       ...> Reference.resolve_schema(%Reference{"$ref": "#/components/schemas/user"}, schemas)
       %OpenApiSpex.Schema{type: :object, title: "user"}
   """
-  @spec resolve_schema(Reference.t(), Components.schema_map()) :: Schema.t() | nil
+  @spec resolve_schema(Reference.t(), Components.schemas_map()) :: Schema.t() | nil
   def resolve_schema(%Reference{"$ref": "#/components/schemas/" <> name}, schemas),
     do: schemas[name]
 
@@ -45,4 +45,9 @@ defmodule OpenApiSpex.Reference do
         request_bodies
       ),
       do: request_bodies[name]
+
+  @spec resolve_response(Reference.t(), %{String.t() => Response.t()}) ::
+          Response.t() | nil
+  def resolve_response(%Reference{"$ref": "#/components/responses/" <> name}, responses),
+    do: responses[name]
 end

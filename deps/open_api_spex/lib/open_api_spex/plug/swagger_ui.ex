@@ -40,7 +40,7 @@ defmodule OpenApiSpex.Plug.SwaggerUI do
     <head>
       <meta charset="UTF-8">
       <title>Swagger UI</title>
-      <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.32.4/swagger-ui.css" >
+      <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.14.0/swagger-ui.css" >
       <link rel="icon" type="image/png" href="./favicon-32x32.png" sizes="32x32" />
       <link rel="icon" type="image/png" href="./favicon-16x16.png" sizes="16x16" />
       <style>
@@ -66,8 +66,8 @@ defmodule OpenApiSpex.Plug.SwaggerUI do
     <body>
     <div id="swagger-ui"></div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.32.4/swagger-ui-bundle.js" charset="UTF-8"> </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/3.32.4/swagger-ui-standalone-preset.js" charset="UTF-8"> </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.14.0/swagger-ui-bundle.js" charset="UTF-8"> </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.14.0/swagger-ui-standalone-preset.js" charset="UTF-8"> </script>
     <script>
     window.onload = function() {
       // Begin Swagger UI call region
@@ -96,7 +96,7 @@ defmodule OpenApiSpex.Plug.SwaggerUI do
           return request;
         }
         <%= for {k, v} <- Map.drop(config, [:path, :oauth]) do %>
-        , <%= camelize(k) %>: <%= OpenApiSpex.OpenApi.json_encoder().encode!(v) %>
+        , <%= camelize(k) %>: <%= encode_config(camelize(k), v) %>
         <% end %>
       })
       // End Swagger UI call region
@@ -114,6 +114,19 @@ defmodule OpenApiSpex.Plug.SwaggerUI do
     </body>
     </html>
   """
+
+  @ui_config_methods [
+    "operationsSorter",
+    "tagsSorter",
+    "onComplete",
+    "requestInterceptor",
+    "responseInterceptor",
+    "modelPropertyMacro",
+    "parameterMacro",
+    "initOAuth",
+    "preauthorizeBasic",
+    "preauthorizeApiKey"
+  ]
 
   @doc """
   Initializes the plug.
@@ -164,10 +177,27 @@ defmodule OpenApiSpex.Plug.SwaggerUI do
     end
   end
 
-  defp supplement_config(%{oauth2_redirect_url: {:endpoint_url, path}} = config, conn) do
-    endpoint_module = apply(Phoenix.Controller, :endpoint_module, [conn])
-    url = Path.join(endpoint_module.url(), path)
-    Map.put(config, :oauth2_redirect_url, url)
+  defp encode_config("tagsSorter", "alpha" = value) do
+    OpenApiSpex.OpenApi.json_encoder().encode!(value)
+  end
+
+  defp encode_config("operationsSorter", value) when value == "alpha" or value == "method" do
+    OpenApiSpex.OpenApi.json_encoder().encode!(value)
+  end
+
+  defp encode_config(key, value) do
+    case Enum.member?(@ui_config_methods, key) do
+      true -> value
+      false -> OpenApiSpex.OpenApi.json_encoder().encode!(value)
+    end
+  end
+
+  if Code.ensure_loaded?(Phoenix.Controller) do
+    defp supplement_config(%{oauth2_redirect_url: {:endpoint_url, path}} = config, conn) do
+      endpoint_module = Phoenix.Controller.endpoint_module(conn)
+      url = Path.join(endpoint_module.url(), path)
+      Map.put(config, :oauth2_redirect_url, url)
+    end
   end
 
   defp supplement_config(config, _conn) do

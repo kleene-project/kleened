@@ -45,6 +45,107 @@ defmodule OpenApiSpex.ControllerSpecs do
   If you use Elixir Formatter, `:open_api_spex` can be added to the `:import_deps`
   list in the `.formatter.exs` file of your project to make parentheses of the
   macros optional.
+
+  `.formatter.exs`:
+
+  ```elixir
+  [
+    import_deps: [:open_api_spex]
+  ]
+  ```
+
+  ## `parameters`
+
+  `parameters` is a keyword list (or map) of request parameters (not body parameters). They each represent the
+  OpenAPI [Parameter Object](https://spec.openapis.org/oas/v3.1.0#parameter-object).
+
+  There is a convenient shortcut `:type` for base data types supported by open api
+
+  ```elixir
+  parameters: [
+    id: [in: :query, type: :integer, required: true, description: "User ID", example: 1001]
+  ]
+  ```
+
+  This is equivalent to:
+
+  ```elixir
+  parameters: [
+    id: [in: :query, schema: %OpenApiSpex.Schema{type: :integer}, required: true, description: "User ID", example: 1001]
+  ]
+  ```
+
+  The keyword value is the parameter name. Each value in the keyword list correlates to a field in the OpenAPI ParameterObject.
+
+  ## `request_body`
+
+  The `request_body` defines the OpenAPI [RequestBodyObject](https://spec.openapis.org/oas/v3.1.0#request-body-object).
+
+  The `request_body` takes a tuple that is 2-4 elements in length. The elements of the tuple are:
+
+  1. The RequestBody `description` field.
+  2. The RequestBody `content` field, consisting of a mapping of content types to their `MediaType` objects,
+     or a simple content type string (e.g., "application/json").
+     ```elixir
+     content: "application/json"
+     ```
+     Or:
+     ```elixir
+     content: %{"application/text" => [example: "some text!"]}
+     ```
+     Or:
+     ```elixir
+     content: %{"application/text" => [%OpenApiSpex.MediaType{example: "some text!"}]}
+     ```
+  3. The default schema of the RequestBody.
+  4. A keyword list of options.
+
+  ## `responses`
+
+  The `responses` key defines the OpenAPI [Responses Object](https://spec.openapis.org/oas/v3.1.0#fixed-fields-7)
+
+  The `responses` value is a keyword list or map that maps the HTTP status to a
+  [ResponseObject](https://spec.openapis.org/oas/v3.1.0#response-object).
+
+  If the the responses is defined using keyword list syntax,
+  the HTTP status codes can be replaced with their text equivalents:
+
+  ```elixir
+  responses: [
+    ok: {"User response", "application/json", MyAppWeb.Schemas.UserResponse},
+    unprocessable_entity: {"Bad request parameters", "application/json", MyAppWeb.Schemas.BadRequestParameters},
+    not_found: {"Not found", "application/json", MyAppWeb.Schemas.NotFound}
+  ]
+  ```
+
+  The full set of atom keys are defined in `Plug.Conn.Status.code/1`.
+
+  Alternately, the HTTP status codes can be specified directly:
+
+  ```elixir
+  responses: %{
+    200 => {"User response", "application/json", MyAppWeb.Schemas.UserResponse},
+    422 => {"Bad request parameters", "application/json", MyAppWeb.Schemas.BadRequestParameters},
+    404 => {"Not found", "application/json", MyAppWeb.Schemas.NotFound}
+  }
+  ```
+
+  The ResponseObject is represented as a tuple that is 2-4 elements in length. The elements of the tuple are:
+
+  1. The ResponseObject `description` field.
+  2. The ResponseObject `content` field, consisting of a mapping of content types to their `MediaType` objects,
+     or a simple content type string (e.g., "application/json").
+     ```elixir
+     content: %{"application/json" => [example: "{[]}"]}
+     ```
+     Or:
+     ```elixir
+     content: "application/json"
+     ```
+  3. The default schema of the response body.
+  4. A keyword list of options to add to the `OpenApiSpex.Response` or `OpenApiSpex.MediaType` structs
+     that are generated.
+
   """
   alias OpenApiSpex.{Operation, OperationBuilder}
 
@@ -69,7 +170,7 @@ defmodule OpenApiSpex.ControllerSpecs do
 
       operation :update,
         summary: "Update user",
-        description: "Updates a user record from the given ID path paramter and request body parameters.",
+        description: "Updates a user record from the given ID path parameter and request body parameters.",
         parameters: [
           id: [
             in: :path,
@@ -119,7 +220,7 @@ defmodule OpenApiSpex.ControllerSpecs do
         %OpenApiSpex.Reference{"$ref": "#/components/parameters/user_id"}
       ]
       ```
-  - `request_body` The endpoint's request body. There are multiple ways to specifiy a request body:
+  - `request_body` The endpoint's request body. There are multiple ways to specify a request body:
     - A three or four-element tuple:
 
         ```elixir
@@ -181,6 +282,11 @@ defmodule OpenApiSpex.ControllerSpecs do
       3. An Open API schema. This can be a schema module that implements the
          `OpenApiSpex.Schema` [behaviour](https://hexdocs.pm/elixir/Module.html#module-behaviour),
          or an `OpenApiSpex.Schema` struct.
+      4. An optional `Keyword` list with the following optional key/values:
+        a. example: an example string
+        b. examples: a list of example strings
+        c. headers: a `Map` with string keys defining the header name and
+           an `OpenApiSpex.Header` struct as a value.
 
     - If the response represents an empty response, the definition value can
       be a single string representing the response description. For example:
@@ -197,17 +303,23 @@ defmodule OpenApiSpex.ControllerSpecs do
   - Additional fields: There are other Operation fields that can be specified that are not
     described here. See `OpenApiSpex.Operation` for all the fields.
   """
-  @spec operation(action :: atom, spec :: map) :: any
+  @spec operation(action :: atom, spec :: Keyword.t()) :: any
   defmacro operation(action, spec) do
+    spec = Macro.postwalk(spec, &expand_alias(&1, __CALLER__))
+
     quote do
-      @spec_attributes {unquote(action),
-                        operation_spec(__MODULE__, unquote(action), unquote(spec))}
+      @spec_attributes {unquote(action), operation_spec(__MODULE__, unquote(action), unquote(spec))}
 
       def open_api_operation(unquote(action)) do
         @spec_attributes[unquote(action)]
       end
     end
   end
+
+  defp expand_alias({:__aliases__, _, _} = alias, env),
+    do: Macro.expand(alias, %{env | function: {:__attr__, 3}})
+
+  defp expand_alias(other, _env), do: other
 
   @doc """
   Defines a list of tags that all operations in a controller will share.
@@ -260,22 +372,36 @@ defmodule OpenApiSpex.ControllerSpecs do
   See `OpenApiSpex.ControllerSpecs` for usage and examples.
   """
   def operation_spec(_module, _action, nil = _spec), do: nil
+  def operation_spec(_module, _action, false = _spec), do: nil
 
   def operation_spec(module, action, spec) do
     spec = Map.new(spec)
     shared_tags = Module.get_attribute(module, :shared_tags, []) |> List.flatten()
-    security = Module.get_attribute(module, :shared_security, []) |> List.flatten()
+
+    security =
+      case Module.get_attribute(module, :shared_security) do
+        [] -> nil
+        shared_security -> List.flatten(shared_security)
+      end
+
+    extensions =
+      spec
+      |> Enum.filter(fn {key, _val} -> is_atom(key) && String.starts_with?(to_string(key), "x-") end)
+      |> Map.new(fn {key, value} -> {to_string(key), value} end)
 
     %Operation{
+      callbacks: Map.get(spec, :callbacks, %{}),
       description: Map.get(spec, :description),
       deprecated: Map.get(spec, :deprecated),
+      externalDocs: OperationBuilder.build_external_docs(spec),
       operationId: OperationBuilder.build_operation_id(spec, module, action),
       parameters: OperationBuilder.build_parameters(spec),
       requestBody: OperationBuilder.build_request_body(spec),
       responses: OperationBuilder.build_responses(spec),
       security: OperationBuilder.build_security(spec, %{security: security}),
       summary: Map.get(spec, :summary),
-      tags: OperationBuilder.build_tags(spec, %{tags: shared_tags})
+      tags: OperationBuilder.build_tags(spec, %{tags: shared_tags}),
+      extensions: extensions
     }
   end
 end

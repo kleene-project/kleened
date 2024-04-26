@@ -127,9 +127,7 @@
         }
     }
 
-    .exception-info > .struct,
-    .exception-info > .title,
-    .exception-info > .detail {
+    .exception-info > .struct {
         margin: 0;
         padding: 0;
     }
@@ -146,28 +144,8 @@
         font-weight: 400;
     }
 
-    .exception-info > .title {
-        font-size: <%= :math.pow(1.2, 4) %>em;
-        line-height: 1.4;
-        font-weight: 300;
-        color: <%= @style.primary %>;
-    }
-
-    @media (max-width: 768px) {
-        .exception-info > .title {
-            font-size: <%= :math.pow(1.15, 4) %>em;
-        }
-    }
-
-    @media (max-width: 480px) {
-        .exception-info > .title {
-            font-size: <%= :math.pow(1.1, 4) %>em;
-        }
-    }
-
-    .exception-info > .detail {
-        margin-top: 1.3em;
-        white-space: pre-wrap;
+    .exception-info > code {
+        line-height: 1.5;
     }
 
     /*
@@ -202,6 +180,11 @@
         padding-left: 32px;
     }
 
+    .code-explorer .hidden-contents {
+        position: absolute;
+        left: -999em;
+    }
+
     /* Collapse to single-column */
     @media (max-width: 960px) {
         .code-explorer > .code-snippets {
@@ -224,6 +207,7 @@
 
     .frame-info {
         background: white;
+        border-radius: 4px;
         box-shadow:
             0 1px 3px rgba(80, 100, 140, .1),
             0 8px 15px rgba(80, 100, 140, .05);
@@ -232,7 +216,9 @@
     .frame-info > .meta,
     .frame-info > .file {
         padding: 12px 16px;
-        white-space: no-wrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
         font-size: <%= :math.pow(1.2, -1) %>em;
     }
 
@@ -399,17 +385,10 @@
      */
 
     .stack-trace-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
         padding-top: 8px;
-    }
-
-    .stack-trace-heading:after {
-        content: '';
-        display: block;
-        clear: both;
-        zoom: 1;
-        border-bottom: solid 1px <%= @style.line_color %>;
-        padding-top: 12px;
-        margin-bottom: 16px;
     }
 
     .stack-trace-heading > h3 {
@@ -417,8 +396,8 @@
     }
 
     .stack-trace-heading > label {
-        display: block;
-        padding-left: 8px;
+        display: inline-block;
+        padding-left: 5px;
         line-height: 1.9;
         font-size: <%= :math.pow(1.2, -1) %>em;
         -webkit-user-select: none;
@@ -428,7 +407,32 @@
     }
 
     .stack-trace-heading > label > input {
-        margin-right: .3em;
+        margin: -0.2em 0.5em 0 0;
+        vertical-align: middle;
+    }
+
+    .stack-trace-heading .copy-markdown {
+        color: <%= @style.text_color %>;
+        background-color: transparent;
+        display: inline-flex;
+        align-items: center;
+        font-size: <%= :math.pow(1.2, -1) %>em;
+        line-height: 1.9;
+        border-width: 0;
+    }
+
+    .stack-trace-heading .copy-markdown:active {
+        cursor: pointer;
+    }
+
+    .stack-trace-heading .copy-markdown:hover {
+        cursor: pointer;
+    }
+
+    .stack-trace-heading .copy-markdown-icon {
+        height: 1rem;
+        width: 1rem;
+        margin: 0.1em 0.3rem 0;
     }
 
     @media (max-width: 480px) {
@@ -478,6 +482,7 @@
     .stack-trace-item:hover,
     .stack-trace-item:focus {
         background-color: rgba(80, 100, 140, 0.05);
+        border-radius: 4px;
     }
 
     .stack-trace-item,
@@ -490,7 +495,8 @@
     }
 
     .stack-trace-item.-active {
-        background-color: white;
+        background-color: rgba(80, 100, 140, 0.1);
+        border-radius: 4px;
     }
 
     /* Circle */
@@ -502,11 +508,15 @@
         background: #a0b0c0;
         border-radius: 50%;
         margin-right: 8px;
+        opacity: 0.5;
+    }
+
+    .stack-trace-item.-active > .left:before {
+        opacity: 1;
     }
 
     .stack-trace-item.-app > .left:before {
         background: <%= @style.primary %>;
-        opacity: 1;
     }
 
     .stack-trace-item.-app > .left > .app {
@@ -558,6 +568,10 @@
         max-width: 100%;
         word-wrap: break-word;
         white-space: normal;
+    }
+
+    .code-quote > pre {
+        margin: 0;
     }
 
     .code.-padded {
@@ -644,22 +658,9 @@
         margin: 20px 10px 5px 0;
     }
 
-    .action-button:hover {
-        background-color: #f9f9fa;
-        cursor: pointer;
-    }
-
     .action-button {
-        background-color: white;
-        border: 1px solid <%= @style.primary %>;
-        border-radius: 3px;
-        color: <%= @style.primary %>;
-        padding: 0 20px;
-    }
-
-    .action-button:active {
-        background-color: inherit;
-        background-color: #f2f2f4;
+        padding: 0 10px;
+        cursor: pointer;
     }
     </style>
 </head>
@@ -670,16 +671,12 @@
         <% end %>
 
         <header class="exception-info">
-            <% [headline | details] = String.split(@message, "\n\n") %>
             <h5 class="struct">
                 <%= h @title %>
                 <small>at <%= h method(@conn) %></small>
                 <small class="path"><%= h @conn.request_path %></small>
             </h5>
-            <h1 class="title"><%= h headline %></h1>
-            <%= for detail <- details do %>
-            <p class="detail"><%= h detail %></p>
-            <% end %>
+            <code><pre><%= h @message %></pre></code>
         </header>
 
         <%= for %{label: label, encoded_handler: encoded_handler} <- @actions do %>
@@ -697,11 +694,12 @@
     <% end %>
 
         <div class="code-explorer">
+            <textarea class="hidden-contents" role="copy-contents"><%= @markdown %></textarea>
             <div class="code-snippets">
                 <%= for frame <- @frames do %>
                   <div class="frame-info" data-index="<%= frame.index %>" role="stack-trace-details">
                     <div class="file">
-                        <a href="<%= frame.link %>"><%= h frame.file %></a>
+                      <a href="<%= frame.link %>"><%= h frame.file %></a>
                     </div>
 
                     <%= if (snippet = frame.snippet) && snippet != [] do %>
@@ -715,7 +713,7 @@
                         <div class="frame-mfa">
                             <%= h frame.info %>
                             <%= if doc = frame.doc do %>
-                                <a class="docs right" href="<%= h doc %>">docs</a>
+                                <a class="docs right" href="<%= h doc %>">Docs</a>
                             <% end %>
                             <%= if app = frame.app do %>
                                 <span class="app right"><%= h app %></span>
@@ -752,6 +750,10 @@
             <div class="stack-trace">
                 <div class="stack-trace-heading">
                     <label><input type="checkbox" role="show-all-toggle">Show only app frames</label>
+                    <button class="copy-markdown" role="copy-to-markdown" type="button">
+                      <span role="copy-to-markdown-text">Copy markdown</span>
+                      <svg xmlns="http://www.w3.org/2000/svg" class="copy-markdown-icon" viewBox="0 0 115.77 122.88"><g><path d="M89.62,13.96v7.73h12.19h0.01v0.02c3.85,0.01,7.34,1.57,9.86,4.1c2.5,2.51,4.06,5.98,4.07,9.82h0.02v0.02 v73.27v0.01h-0.02c-0.01,3.84-1.57,7.33-4.1,9.86c-2.51,2.5-5.98,4.06-9.82,4.07v0.02h-0.02h-61.7H40.1v-0.02 c-3.84-0.01-7.34-1.57-9.86-4.1c-2.5-2.51-4.06-5.98-4.07-9.82h-0.02v-0.02V92.51H13.96h-0.01v-0.02c-3.84-0.01-7.34-1.57-9.86-4.1 c-2.5-2.51-4.06-5.98-4.07-9.82H0v-0.02V13.96v-0.01h0.02c0.01-3.85,1.58-7.34,4.1-9.86c2.51-2.5,5.98-4.06,9.82-4.07V0h0.02h61.7 h0.01v0.02c3.85,0.01,7.34,1.57,9.86,4.1c2.5,2.51,4.06,5.98,4.07,9.82h0.02V13.96L89.62,13.96z M79.04,21.69v-7.73v-0.02h0.02 c0-0.91-0.39-1.75-1.01-2.37c-0.61-0.61-1.46-1-2.37-1v0.02h-0.01h-61.7h-0.02v-0.02c-0.91,0-1.75,0.39-2.37,1.01 c-0.61,0.61-1,1.46-1,2.37h0.02v0.01v64.59v0.02h-0.02c0,0.91,0.39,1.75,1.01,2.37c0.61,0.61,1.46,1,2.37,1v-0.02h0.01h12.19V35.65 v-0.01h0.02c0.01-3.85,1.58-7.34,4.1-9.86c2.51-2.5,5.98-4.06,9.82-4.07v-0.02h0.02H79.04L79.04,21.69z M105.18,108.92V35.65v-0.02 h0.02c0-0.91-0.39-1.75-1.01-2.37c-0.61-0.61-1.46-1-2.37-1v0.02h-0.01h-61.7h-0.02v-0.02c-0.91,0-1.75,0.39-2.37,1.01 c-0.61,0.61-1,1.46-1,2.37h0.02v0.01v73.27v0.02h-0.02c0,0.91,0.39,1.75,1.01,2.37c0.61,0.61,1.46,1,2.37,1v-0.02h0.01h61.7h0.02 v0.02c0.91,0,1.75-0.39,2.37-1.01c0.61-0.61,1-1.46,1-2.37h-0.02V108.92L105.18,108.92z"/></g></svg>
+                    </button>
                 </div>
 
                 <ul class="stack-trace-list -show-all" role="stack-trace-list">
@@ -820,7 +822,7 @@
             <%= for {key, value} <- @session do %>
             <dl>
                 <dt><%= h key %></dt>
-                <dd><pre><%= h inspect(value) %></pre></dd>
+                <dd class="code-quote"><pre><%= h inspect(value) %></pre></dd>
             </dl>
             <% end %>
         </details>
@@ -831,12 +833,34 @@
         var $items = document.querySelectorAll('[role~="stack-trace-item"]')
         var $toggle = document.querySelector('[role~="show-all-toggle"]')
         var $list = document.querySelector('[role~="stack-trace-list"]')
+        var $copyBtn = document.querySelector('[role~="copy-to-markdown"]')
+        var $copyBtnText = document.querySelector('[role~="copy-to-markdown-text"]')
+        var $copy = document.querySelector('[role~="copy-contents"]')
 
         each($items, function ($item) {
             on($item, 'click', itemOnclick)
         })
 
         on($toggle, 'click', toggleOnclick)
+        on($copyBtn, 'click', copyToClipboard)
+
+        function copyToClipboard () {
+          if(navigator.clipboard) {
+            // For those working on localhost or HTTPS
+            navigator.clipboard.writeText($copy.innerHTML).then(copiedClipboard).catch(() => {})
+          } else {
+            // For those working on HTTP
+            $copy.select()
+            if (document.execCommand("copy")) copiedClipboard()
+          }
+        }
+
+        function copiedClipboard () {
+          $copyBtnText.innerText = "Copied!"
+          setTimeout(function () {
+            $copyBtnText.innerText = "Copy markdown"
+          }, 5000)
+        }
 
         function toggleOnclick () {
             if (this.checked) {

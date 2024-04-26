@@ -1,5 +1,80 @@
 # Changelog for NimbleParsec
 
+## v1.4.0 (2023-11-08)
+
+### Enhancements
+
+  * Remove warnings and require Elixir v1.12
+
+## v1.3.1 (2023-04-30)
+
+### Bug fixes
+
+  * Make error messages consistent across Elixir versions
+  * Ensure `integer(max: ...)` also sets a minimum of 1
+  * Do not lose context on `repeat_while`
+
+## v1.3.0 (2023-03-27)
+
+### Deprecations
+
+  * Deprecate returning a `{acc, context}` from `quoted_post_traverse` and `quoted_pre_traverse`. Return `{rest, acc, context}` instead.
+
+### Bug fixes
+
+  * Avoid compile warnings with negative lookahead
+  * Fix clause warning for integer combinator
+
+## v1.2.3 (2022-02-28)
+
+### Enhancements
+
+  * Allow `:export_combinator` in `defparsec`
+
+## v1.2.2 (2022-02-12)
+
+### Enhancements
+
+  * Allow `rest` to be returned from post_traverse/pre_traverse
+
+## v1.2.1 (2022-01-26)
+
+### Bug fixes
+
+  * Improve typespecs
+
+## v1.2.0 (2021-11-07)
+
+### Enhancements
+
+  * Add generator support to `NimbleParsec`: it now generates code that matches a combinator
+
+### Bug fixes
+
+  * Fix using `eventually` with constructs that can accumulate
+  * Fix lookahead combinators running in reverse order
+  * Raise on invalid `min` for integer
+
+## v1.1.0 (2020-10-02)
+
+### Enhancements
+
+  * Add `defcombinator` and support for remote `parsec`. This allows larger parsers to be broken over multiple modules to speed up compilation by leveraging parallelism.
+
+## v1.0.0 (2020-09-25)
+
+### Enhancements
+
+  * Allow `byte_offset` to be given to `:line`
+
+## v0.6.0 (2020-05-25)
+
+NimbleParsec v0.6.0 requires Elixir v1.6+.
+
+### Bug fixes
+
+  * Avoid unused variable warnings
+
 ## v0.5.3 (2019-12-11)
 
 ### Enhancements
@@ -10,7 +85,7 @@
 
 ### Enhancements
 
-  * Optmize `repeat` with initial `lookahead`
+  * Optimize `repeat` with initial `lookahead`
   * Add `@spec` to `parsec/2`
 
 ## v0.5.1 (2019-08-04)

@@ -2,17 +2,19 @@ defmodule OpenApiSpex.SchemaResolver do
   @moduledoc """
   Internal module used to resolve `OpenApiSpex.Schema` structs from atoms.
   """
+  alias OpenApiSpex.Discriminator
+
   alias OpenApiSpex.{
-    OpenApi,
     Components,
-    PathItem,
+    MediaType,
+    OpenApi,
     Operation,
     Parameter,
+    PathItem,
     Reference,
-    MediaType,
-    Schema,
     RequestBody,
-    Response
+    Response,
+    Schema
   }
 
   @doc """
@@ -71,11 +73,14 @@ defmodule OpenApiSpex.SchemaResolver do
 
     {responses, schemas} = resolve_schema_modules_from_responses(operation.responses, schemas)
 
+    {callbacks, schemas} = resolve_schema_modules_from_callbacks(operation.callbacks, schemas)
+
     new_operation = %{
       operation
       | parameters: parameters,
         requestBody: request_body,
-        responses: responses
+        responses: responses,
+        callbacks: callbacks
     }
 
     {new_operation, schemas}
@@ -149,6 +154,13 @@ defmodule OpenApiSpex.SchemaResolver do
     {request_body, schemas}
   end
 
+  defp resolve_schema_modules_from_callbacks(callbacks = %{}, schemas) do
+    Enum.reduce(callbacks, {callbacks, schemas}, fn {callback, paths}, {callbacks, schemas} ->
+      {new_paths, schemas} = resolve_schema_modules_from_paths(paths, schemas)
+      {Map.put(callbacks, callback, new_paths), schemas}
+    end)
+  end
+
   defp resolve_schema_modules_from_responses(responses, schemas = %{}) when is_list(responses) do
     resolve_schema_modules_from_responses(Map.new(responses), schemas)
   end
@@ -199,18 +211,27 @@ defmodule OpenApiSpex.SchemaResolver do
     {%Reference{"$ref": "#/components/schemas/#{title}"}, new_schemas}
   end
 
-  defp resolve_schema_modules_from_schema(schema = %Schema{}, schemas) do
+  defp resolve_schema_modules_from_schema(schema = %Schema{title: title}, schemas) do
+    schemas =
+      if is_nil(title) do
+        schemas
+      else
+        Map.put(schemas, title, schema)
+      end
+
     {all_of, schemas} = resolve_schema_modules_from_schema(schema.allOf, schemas)
     {one_of, schemas} = resolve_schema_modules_from_schema(schema.oneOf, schemas)
     {any_of, schemas} = resolve_schema_modules_from_schema(schema.anyOf, schemas)
     {not_schema, schemas} = resolve_schema_modules_from_schema(schema.not, schemas)
     {items, schemas} = resolve_schema_modules_from_schema(schema.items, schemas)
 
-    {additional, schemas} =
-      resolve_schema_modules_from_schema(schema.additionalProperties, schemas)
+    {additional, schemas} = resolve_schema_modules_from_schema(schema.additionalProperties, schemas)
 
     {properties, schemas} =
       resolve_schema_modules_from_schema_properties(schema.properties, schemas)
+
+    {discriminator, schemas} =
+      resolve_schema_modules_from_discriminator(schema.discriminator, schemas)
 
     schema = %{
       schema
@@ -220,13 +241,30 @@ defmodule OpenApiSpex.SchemaResolver do
         not: not_schema,
         items: items,
         additionalProperties: additional,
-        properties: properties
+        properties: properties,
+        discriminator: discriminator
     }
 
     {schema, schemas}
   end
 
   defp resolve_schema_modules_from_schema(ref = %Reference{}, schemas), do: {ref, schemas}
+
+  defp resolve_schema_modules_from_schema(schema, _schemas) do
+    error_message = """
+    Cannot resolve schema #{inspect(schema)}.
+
+    Must be one of:
+
+    - schema module, or schema struct
+    - list of schema modules, or schema structs
+    - boolean
+    - nil
+    - reference
+    """
+
+    raise error_message
+  end
 
   defp resolve_schema_modules_from_schema_properties(nil, schemas), do: {nil, schemas}
 
@@ -241,4 +279,25 @@ defmodule OpenApiSpex.SchemaResolver do
   defp resolve_schema_modules_from_schema_properties(properties, _schemas) do
     raise "Expected :properties to be a map. Got: #{inspect(properties)}"
   end
+
+  defp resolve_schema_modules_from_discriminator(
+         discriminator = %Discriminator{mapping: mapping = %{}},
+         schemas
+       ) do
+    {mapping, schemas} =
+      Enum.map_reduce(mapping, schemas, fn
+        {key, module}, schemas when is_atom(module) ->
+          {%Reference{"$ref": path}, schemas} = resolve_schema_modules_from_schema(module, schemas)
+
+          {{key, path}, schemas}
+
+        {key, path}, schemas ->
+          {{key, path}, schemas}
+      end)
+
+    {%{discriminator | mapping: Map.new(mapping)}, schemas}
+  end
+
+  defp resolve_schema_modules_from_discriminator(disciminator, schemas),
+    do: {disciminator, schemas}
 end

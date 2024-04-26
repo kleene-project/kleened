@@ -3,11 +3,11 @@ defmodule OpenApiSpex.Parameter do
   Defines the `OpenApiSpex.Parameter.t` type.
   """
   alias OpenApiSpex.{
-    Schema,
-    Reference,
     Example,
     MediaType,
-    Parameter
+    Parameter,
+    Reference,
+    Schema
   }
 
   @enforce_keys [:name, :in]
@@ -24,7 +24,8 @@ defmodule OpenApiSpex.Parameter do
     :schema,
     :example,
     :examples,
-    :content
+    :content,
+    :extensions
   ]
 
   @typedoc """
@@ -67,15 +68,17 @@ defmodule OpenApiSpex.Parameter do
           schema: Schema.t() | Reference.t() | atom | nil,
           example: any,
           examples: %{String.t() => Example.t() | Reference.t()} | nil,
-          content: %{String.t() => MediaType.t()} | nil
+          content: %{String.t() => MediaType.t()} | nil,
+          extensions: %{String.t() => any()} | nil
         }
 
   @type parameters :: %{String.t() => t | Reference.t()} | nil
+  @type type :: :boolean | :integer | :number | :string | :array | :object
 
   @doc """
   Sets the schema for a parameter from a simple type, reference or Schema
   """
-  @spec put_schema(t, Reference.t() | Schema.t() | atom) :: t
+  @spec put_schema(t, Reference.t() | Schema.t() | type) :: t
   def put_schema(parameter = %Parameter{}, type = %Reference{}) do
     %{parameter | schema: type}
   end
@@ -105,4 +108,15 @@ defmodule OpenApiSpex.Parameter do
     {_type, %MediaType{schema: schema}} = Enum.at(content, 0)
     schema
   end
+
+  @doc """
+  Gets the media type for a parameter, if not present `nil` is returned.
+  """
+  @spec media_type(Parameter.t()) :: String.t() | nil
+  def media_type(%Parameter{content: content}) when is_map(content) and map_size(content) == 1 do
+    {type, _} = Enum.at(content, 0)
+    type
+  end
+
+  def media_type(_), do: nil
 end

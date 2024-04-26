@@ -30,9 +30,9 @@ defmodule Plug.Cowboy.Conn do
 
   @impl true
   def send_resp(req, status, headers, body) do
-    headers = to_headers_map(headers)
+    req = to_headers_map(req, headers)
     status = Integer.to_string(status) <> " " <> Plug.Conn.Status.reason_phrase(status)
-    req = :cowboy_req.reply(status, headers, body, req)
+    req = :cowboy_req.reply(status, %{}, body, req)
     {:ok, nil, req}
   end
 
@@ -47,15 +47,15 @@ defmodule Plug.Cowboy.Conn do
       end
 
     body = {:sendfile, offset, length, path}
-    headers = to_headers_map(headers)
-    req = :cowboy_req.reply(status, headers, body, req)
+    req = to_headers_map(req, headers)
+    req = :cowboy_req.reply(status, %{}, body, req)
     {:ok, nil, req}
   end
 
   @impl true
   def send_chunked(req, status, headers) do
-    headers = to_headers_map(headers)
-    req = :cowboy_req.stream_reply(status, headers, req)
+    req = to_headers_map(req, headers)
+    req = :cowboy_req.stream_reply(status, %{}, req)
     {:ok, nil, req}
   end
 
@@ -87,8 +87,26 @@ defmodule Plug.Cowboy.Conn do
 
   @impl true
   def inform(req, status, headers) do
-    :cowboy_req.inform(status, to_headers_map(headers), req)
+    req = to_headers_map(req, headers)
+    :cowboy_req.inform(status, %{}, req)
   end
+
+  @impl true
+  def upgrade(req, :websocket, args) do
+    case args do
+      {handler, _state, cowboy_opts} when is_atom(handler) and is_map(cowboy_opts) ->
+        :ok
+
+      _ ->
+        raise ArgumentError,
+              "expected websocket upgrade on Cowboy to be on the format {handler :: atom(), arg :: term(), opts :: map()}, got: " <>
+                inspect(args)
+    end
+
+    {:ok, Map.put(req, :upgrade, {:websocket, args})}
+  end
+
+  def upgrade(_req, _protocol, _args), do: {:error, :not_supported}
 
   @impl true
   def push(req, path, headers) do
@@ -99,7 +117,8 @@ defmodule Plug.Cowboy.Conn do
         {port, _} -> %{port: port}
       end
 
-    :cowboy_req.push(path, to_headers_map(headers), req, opts)
+    req = to_headers_map(req, headers)
+    :cowboy_req.push(path, %{}, req, opts)
   end
 
   @impl true
@@ -124,6 +143,11 @@ defmodule Plug.Cowboy.Conn do
 
   defp to_headers_list(headers) when is_map(headers) do
     :maps.to_list(headers)
+  end
+
+  defp to_headers_map(req, headers) do
+    headers = to_headers_map(headers)
+    Map.update(req, :resp_headers, headers, &Map.merge(&1, headers))
   end
 
   defp to_headers_map(headers) when is_list(headers) do

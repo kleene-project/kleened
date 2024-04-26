@@ -2,8 +2,7 @@ defmodule Plug.Builder do
   @moduledoc """
   Conveniences for building plugs.
 
-  This module can be `use`-d into a module in order to build
-  a plug pipeline:
+  You can use this module to build a plug pipeline:
 
       defmodule MyApp do
         use Plug.Builder
@@ -22,30 +21,57 @@ defmodule Plug.Builder do
         end
       end
 
-  Multiple plugs can be defined with the `plug/2` macro, forming a pipeline.
-  The plugs in the pipeline will be executed in the order they've been added
-  through the `plug/2` macro. In the example above, `Plug.Logger` will be
-  called first and then the `:hello` function plug will be called on the
-  resulting connection.
+  The `plug/2` macro forms a pipeline by defining multiple plugs. Each plug
+  in the pipeline is executed from top to bottom. In the example above, the
+  `Plug.Logger` module plug is called before the `:hello` function plug, so
+  the function plug will be called on the module plug's resulting connection.
 
-  `Plug.Builder` also imports the `Plug.Conn` module, making functions like
-  `send_resp/3` available.
+  `Plug.Builder` imports the `Plug.Conn` module so functions like `send_resp/3`
+  are available.
 
   ## Options
 
   When used, the following options are accepted by `Plug.Builder`:
 
-    * `:log_on_halt` - accepts the level to log whenever the request is halted
     * `:init_mode` - the environment to initialize the plug's options, one of
-      `:compile` or `:runtime`. Defaults `:compile`.
+      `:compile` or `:runtime`. The default value is `:compile`.
+
+    * `:log_on_halt` - accepts the level to log whenever the request is halted
+
+    * `:copy_opts_to_assign` - an `atom` representing an assign. When supplied,
+      it will copy the options given to the Plug initialization to the given
+      connection assign
 
   ## Plug behaviour
 
-  Internally, `Plug.Builder` implements the `Plug` behaviour, which means both
-  the `init/1` and `call/2` functions are defined.
+  `Plug.Builder` defines the `init/1` and `call/2` functions by implementing
+  the `Plug` behaviour.
 
   By implementing the Plug API, `Plug.Builder` guarantees this module is a plug
   and can be handed to a web server or used as part of another pipeline.
+
+  ## Conditional plugs
+
+  Sometimes you may want to conditionally invoke a Plug in a pipeline. For example,
+  you may want to invoke `Plug.Parsers` only under certain routes. This can be done
+  by wrapping the module plug in a function plug. Instead of:
+
+      plug Plug.Parsers, parsers: [:urlencoded, :multipart], pass: ["text/*"]
+
+  You can write:
+
+      plug :conditional_parser
+
+      defp conditional_parser(%Plug.Conn{path_info: ["noparser" | _]} = conn, _opts) do
+        conn
+      end
+
+      @parser Plug.Parsers.init(parsers: [:urlencoded, :multipart], pass: ["text/*"])
+      defp conditional_parser(conn, _opts) do
+        Plug.Parsers.call(conn, @parser)
+      end
+
+  The above will invoke `Plug.Parsers` on all routes, except the ones under `/noparser`
 
   ## Overriding the default Plug API functions
 
@@ -82,9 +108,9 @@ defmodule Plug.Builder do
 
   ## Halting a plug pipeline
 
-  A plug pipeline can be halted with `Plug.Conn.halt/1`. The builder will
-  prevent further plugs downstream from being invoked and return the current
-  connection. In the following example, the `Plug.Logger` plug never gets
+  `Plug.Conn.halt/1` halts a plug pipeline. `Plug.Builder` prevents plugs
+  downstream from being invoked and returns the current connection.
+  In the following example, the `Plug.Logger` plug never gets
   called:
 
       defmodule PlugUsingHalt do
@@ -145,14 +171,28 @@ defmodule Plug.Builder do
       else
         for triplet <- plugs,
             {plug, _, _} = triplet,
-            match?(~c"Elixir." ++ _, Atom.to_charlist(plug)) do
+            module_plug?(plug) do
           quote(do: unquote(plug).__info__(:module))
+        end
+      end
+
+    plug_builder_call =
+      if assign = builder_opts[:copy_opts_to_assign] do
+        quote do
+          defp plug_builder_call(conn, opts) do
+            unquote(conn) = Plug.Conn.assign(conn, unquote(assign), opts)
+            unquote(body)
+          end
+        end
+      else
+        quote do
+          defp plug_builder_call(unquote(conn), opts), do: unquote(body)
         end
       end
 
     quote do
       unquote_splicing(compile_time)
-      defp plug_builder_call(unquote(conn), opts), do: unquote(body)
+      unquote(plug_builder_call)
     end
   end
 
@@ -192,53 +232,33 @@ defmodule Plug.Builder do
   defmacro plug(plug, opts \\ []) do
     # We always expand it but the @before_compile callback adds compile
     # time dependencies back depending on the builder's init mode.
-    plug = Macro.expand(plug, %{__CALLER__ | function: {:init, 1}})
+    plug = expand_alias(plug, __CALLER__)
+
+    # If we are sure we don't have a module plug, the options are all
+    # runtime options too.
+    opts =
+      if is_atom(plug) and not module_plug?(plug) and Macro.quoted_literal?(opts) do
+        Macro.prewalk(opts, &expand_alias(&1, __CALLER__))
+      else
+        opts
+      end
 
     quote do
       @plugs {unquote(plug), unquote(opts), true}
     end
   end
 
+  defp expand_alias({:__aliases__, _, _} = alias, env),
+    do: Macro.expand(alias, %{env | function: {:init, 1}})
+
+  defp expand_alias(other, _env), do: other
+
   @doc """
-  Annotates a plug will receive the options given
-  to the current module itself as arguments.
+  Using `builder_opts/0` is deprecated.
 
-  Imagine the following plug:
-
-      defmodule MyPlug do
-        use Plug.Builder
-
-        plug :inspect_opts, builder_opts()
-
-        defp inspect_opts(conn, opts) do
-          IO.inspect(opts)
-          conn
-        end
-      end
-
-  When plugged as:
-
-      plug MyPlug, custom: :options
-
-  It will print `[custom: :options]` as the builder options
-  were passed to the inner plug.
-
-  Note you only pass `builder_opts()` to **function plugs**.
-  You cannot use `builder_opts()` with module plugs because
-  their options are evaluated at compile time. If you need
-  to pass `builder_opts()` to a module plug, you can wrap
-  the module plug in function. To be precise, do not do this:
-
-      plug Plug.Parsers, builder_opts()
-
-  Instead do this:
-
-      plug :custom_plug_parsers, builder_opts()
-
-      defp custom_plug_parsers(conn, opts) do
-        Plug.Parsers.call(conn, Plug.Parsers.init(opts))
-      end
+  Instead use `:copy_opts_to_assign` on `use Plug.Builder`.
   """
+  @deprecated "Pass :copy_opts_to_assign on \"use Plug.Builder\""
   defmacro builder_opts() do
     quote do
       Plug.Builder.__builder_opts__(__MODULE__)
@@ -306,11 +326,14 @@ defmodule Plug.Builder do
     {conn, ast}
   end
 
+  defp module_plug?(plug), do: match?(~c"Elixir." ++ _, Atom.to_charlist(plug))
+
   # Initializes the options of a plug in the configured init_mode.
   defp init_plug({plug, opts, guards}, init_mode) do
-    case Atom.to_charlist(plug) do
-      ~c"Elixir." ++ _ -> init_module_plug(plug, opts, guards, init_mode)
-      _ -> init_fun_plug(plug, opts, guards)
+    if module_plug?(plug) do
+      init_module_plug(plug, opts, guards, init_mode)
+    else
+      init_fun_plug(plug, opts, guards)
     end
   end
 
@@ -337,12 +360,13 @@ defmodule Plug.Builder do
   end
 
   defp quote_plug({:module, plug, opts, guards}, :compile, acc, env, builder_opts) do
-    call = quote_plug(:module, plug, opts, guards, acc, env, builder_opts)
+    # Elixir v1.13/1.14 do not add a compile time dependency on require,
+    # so we build the alias and expand it to simulate the behaviour.
+    parts = [:"Elixir" | Enum.map(Module.split(plug), &String.to_atom/1)]
+    alias = {:__aliases__, [line: env.line], parts}
+    _ = Macro.expand(alias, env)
 
-    quote do
-      require unquote(plug)
-      unquote(call)
-    end
+    quote_plug(:module, plug, opts, guards, acc, env, builder_opts)
   end
 
   defp quote_plug({plug_type, plug, opts, guards}, _init_mode, acc, env, builder_opts) do

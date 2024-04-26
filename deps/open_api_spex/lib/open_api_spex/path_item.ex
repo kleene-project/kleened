@@ -3,7 +3,7 @@ defmodule OpenApiSpex.PathItem do
   Defines the `OpenApiSpex.PathItem.t` type.
   """
 
-  alias OpenApiSpex.{Operation, Server, Parameter, PathItem, Reference}
+  alias OpenApiSpex.{Operation, Parameter, PathItem, Reference, Server}
 
   defstruct [
     :"$ref",
@@ -18,7 +18,8 @@ defmodule OpenApiSpex.PathItem do
     :patch,
     :trace,
     :servers,
-    :parameters
+    :parameters,
+    :extensions
   ]
 
   @typedoc """
@@ -42,7 +43,8 @@ defmodule OpenApiSpex.PathItem do
           patch: Operation.t() | nil,
           trace: Operation.t() | nil,
           servers: [Server.t()] | nil,
-          parameters: [Parameter.t() | Reference.t()] | nil
+          parameters: [Parameter.t() | Reference.t()] | nil,
+          extensions: %{String.t() => any()} | nil
         }
 
   @typedoc """
@@ -50,8 +52,8 @@ defmodule OpenApiSpex.PathItem do
   Eg from the generated `__routes__` function in a Phoenix.Router module.
   """
   @type route ::
-          %{verb: atom, plug: atom, opts: any}
-          | %{verb: atom, plug: atom, plug_opts: any}
+          %{optional(:path) => String.t(), verb: atom, plug: atom, opts: any}
+          | %{optional(:path) => String.t(), verb: atom, plug: atom, plug_opts: any}
 
   @doc """
   Builds a PathItem struct from a list of routes that share a path.
@@ -71,16 +73,17 @@ defmodule OpenApiSpex.PathItem do
   defp from_valid_routes([]), do: nil
 
   defp from_valid_routes(routes) do
-    attrs =
-      routes
-      |> Enum.map(fn route ->
-        case Operation.from_route(route) do
-          nil -> nil
-          op -> {route.verb, op}
-        end
-      end)
-      |> Enum.filter(& &1)
-
-    struct(PathItem, attrs)
+    routes
+    |> Enum.map(fn route ->
+      case Operation.from_route(route) do
+        nil -> nil
+        op -> {route.verb, op}
+      end
+    end)
+    |> Enum.filter(& &1)
+    |> case do
+      [] -> nil
+      attrs -> struct(PathItem, attrs)
+    end
   end
 end

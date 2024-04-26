@@ -1,29 +1,18 @@
 defmodule Makeup.Mixfile do
   use Mix.Project
 
-  @version "1.0.1"
-  @url "https://github.com/tmbb/makeup"
+  @version "1.1.1"
+  @url "https://github.com/elixir-makeup/makeup"
 
   def project do
     [
       app: :makeup,
       version: @version,
-      elixir: "~> 1.4",
+      elixir: "~> 1.6",
       elixirc_paths: compiler_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      # Docs
-      name: "Makeup",
-      source_url: @url,
-      homepage_url: @url,
       aliases: aliases(),
-      docs: [
-        # The main page in the docs
-        main: "readme",
-        extras: [
-          "README.md"
-        ]
-      ],
       # Package
       package: package(),
       description: description()
@@ -42,21 +31,23 @@ defmodule Makeup.Mixfile do
 
   defp aliases do
     [
-      docs: &build_docs/1,
-      release: "run scripts/release.exs"
+      docs: &build_docs/1
     ]
   end
 
   defp package do
     [
       name: :makeup,
-      licenses: ["BSD"],
+      licenses: ["BSD-2-Clause"],
       maintainers: ["Tiago Barroso <tmbb@campus.ul.pt>"],
-      links: %{"GitHub" => @url}
+      links: %{
+        "Changelog" => "https://hexdocs.pm/makeup/changelog.html",
+        "Contributing" => "https://hexdocs.pm/makeup/contributing.html",
+        "GitHub" => @url
+      }
     ]
   end
 
-  # Run "mix help compile.app" to learn about applications.
   def application do
     [
       extra_applications: [:eex],
@@ -64,10 +55,9 @@ defmodule Makeup.Mixfile do
     ]
   end
 
-  # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:nimble_parsec, "~> 0.5.0"},
+      {:nimble_parsec, "~> 1.2.2 or ~> 1.3"},
       {:stream_data, "~> 0.4.2", only: [:dev, :test]}
     ]
   end
@@ -81,7 +71,7 @@ defmodule Makeup.Mixfile do
     end
 
     args = ["Makeup", @version, Mix.Project.compile_path()]
-    opts = ~w[--main Makeup --source-ref v#{@version} --source-url #{@url}]
+    opts = ~w[--main Makeup --source-ref v#{@version} --source-url #{@url} --config .ex_doc.exs]
     System.cmd(ex_doc, args ++ opts)
     Mix.shell().info("Docs built successfully")
   end

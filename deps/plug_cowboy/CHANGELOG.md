@@ -1,5 +1,43 @@
 # Changelog
 
+## v2.7.1
+
+### Enhancements
+
+ * Support Cowboy 2.11
+
+## v2.7.0
+
+### Enhancements
+
+ * Do not allow Cowboy 2.11 due to backwards incompatible changes
+
+## v2.6.2
+
+### Enhancements
+
+ * Fix warnings on Elixir v1.15+
+
+## v2.6.1
+
+### Enhancements
+
+ * Allow for opt-out of conn metadata on exception logs
+ * Support `:check_interval` in drainer (in addition to `:drain_check_interval`)
+
+## v2.6.0
+
+### Enhancements
+
+  * Support websocket upgrades
+  * Require Plug v1.14+ and Elixir v1.10+
+
+## v2.5.2
+
+### Enhancements
+
+  * Fix warnings when running on telemetry 1.x
+
 ## v2.5.1
 
 ### Enhancements

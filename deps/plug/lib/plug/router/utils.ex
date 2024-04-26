@@ -80,26 +80,184 @@ defmodule Plug.Router.Utils do
       {[:id], ["foo", {:id, [], nil}]}
 
   """
-  def build_path_match(spec, context \\ nil) when is_binary(spec) do
-    build_path_match(split(spec), context, [], [])
+  def build_path_match(path, context \\ nil) when is_binary(path) do
+    case build_path_clause(path, true, context) do
+      {params, match, true, _post_match} ->
+        {Enum.map(params, &String.to_atom(&1)), match}
+
+      {_, _, _, _} ->
+        raise Plug.Router.InvalidSpecError,
+              "invalid dynamic path. Only letters, numbers, and underscore are allowed after : in " <>
+                inspect(path)
+    end
   end
 
   @doc """
-  Builds a list of path param names and var match pairs that can bind
-  to dynamic path segment values. Excludes params with underscores;
-  otherwise, the compiler will warn about used underscored variables
-  when they are unquoted in the macro.
+  Builds a list of path param names and var match pairs.
+
+  This is used to build parameter maps from existing variables.
+  Excludes variables with underscore.
 
   ## Examples
 
+      iex> Plug.Router.Utils.build_path_params_match(["id"])
+      [{"id", {:id, [], nil}}]
+      iex> Plug.Router.Utils.build_path_params_match(["_id"])
+      []
+
       iex> Plug.Router.Utils.build_path_params_match([:id])
       [{"id", {:id, [], nil}}]
+      iex> Plug.Router.Utils.build_path_params_match([:_id])
+      []
+
   """
-  def build_path_params_match(vars) do
-    vars
-    |> Enum.map(&{Atom.to_string(&1), Macro.var(&1, nil)})
+  def build_path_params_match(params, context \\ nil)
+
+  def build_path_params_match([param | _] = params, context) when is_binary(param) do
+    params
+    |> Enum.reject(&match?("_" <> _, &1))
+    |> Enum.map(&{&1, Macro.var(String.to_atom(&1), context)})
+  end
+
+  def build_path_params_match([param | _] = params, context) when is_atom(param) do
+    params
+    |> Enum.map(&{Atom.to_string(&1), Macro.var(&1, context)})
     |> Enum.reject(&match?({"_" <> _var, _macro}, &1))
   end
+
+  def build_path_params_match([], _context) do
+    []
+  end
+
+  @doc """
+  Builds a clause with match, guards, and post matches,
+  including the known parameters.
+  """
+  def build_path_clause(path, guard, context \\ nil) when is_binary(path) do
+    compiled = :binary.compile_pattern([":", "*"])
+
+    {params, match, guards, post_match} =
+      path
+      |> split()
+      |> build_path_clause([], [], [], [], context, compiled)
+
+    if guard != true and guards != [] do
+      raise ArgumentError, "cannot use \"when\" guards in route when using suffix matches"
+    end
+
+    params = params |> Enum.uniq() |> Enum.reverse()
+    guards = Enum.reduce(guards, guard, &quote(do: unquote(&1) and unquote(&2)))
+    {params, match, guards, post_match}
+  end
+
+  defp build_path_clause([segment | rest], params, match, guards, post_match, context, compiled) do
+    case :binary.matches(segment, compiled) do
+      [] ->
+        build_path_clause(rest, params, [segment | match], guards, post_match, context, compiled)
+
+      [{prefix_size, _}] ->
+        suffix_size = byte_size(segment) - prefix_size - 1
+        <<prefix::binary-size(prefix_size), char, suffix::binary-size(suffix_size)>> = segment
+        {param, suffix} = parse_suffix(suffix)
+        params = [param | params]
+        var = Macro.var(String.to_atom(param), context)
+
+        case char do
+          ?* when suffix != "" ->
+            raise Plug.Router.InvalidSpecError,
+                  "globs (*var) cannot be followed by suffixes, got: #{inspect(segment)}"
+
+          ?* when rest != [] ->
+            raise Plug.Router.InvalidSpecError,
+                  "globs (*var) must always be in the last path, got glob in: #{inspect(segment)}"
+
+          ?* ->
+            submatch =
+              if prefix != "" do
+                IO.warn("""
+                doing a prefix match with globs is deprecated, invalid segment #{inspect(segment)}.
+
+                You can either replace by a single segment match:
+
+                    /foo/bar-:var
+
+                Or by mixing single segment match with globs:
+
+                    /foo/bar-:var/*rest
+                """)
+
+                quote do: [unquote(prefix) <> _ | _] = unquote(var)
+              else
+                var
+              end
+
+            match =
+              case match do
+                [] ->
+                  submatch
+
+                [last | match] ->
+                  Enum.reverse([quote(do: unquote(last) | unquote(submatch)) | match])
+              end
+
+            {params, match, guards, post_match}
+
+          ?: ->
+            match =
+              if prefix == "",
+                do: [var | match],
+                else: [quote(do: unquote(prefix) <> unquote(var)) | match]
+
+            {post_match, guards} =
+              if suffix == "" do
+                {post_match, guards}
+              else
+                guard =
+                  quote do
+                    binary_part(
+                      unquote(var),
+                      byte_size(unquote(var)) - unquote(byte_size(suffix)),
+                      unquote(byte_size(suffix))
+                    ) == unquote(suffix)
+                  end
+
+                trim =
+                  quote do
+                    unquote(var) = String.trim_trailing(unquote(var), unquote(suffix))
+                  end
+
+                {[trim | post_match], [guard | guards]}
+              end
+
+            build_path_clause(rest, params, match, guards, post_match, context, compiled)
+        end
+
+      [_ | _] ->
+        raise Plug.Router.InvalidSpecError,
+              "only one dynamic entry (:var or *glob) per path segment is allowed, got: " <>
+                inspect(segment)
+    end
+  end
+
+  defp build_path_clause([], params, match, guards, post_match, _context, _compiled) do
+    {params, Enum.reverse(match), guards, post_match}
+  end
+
+  defp parse_suffix(<<h, t::binary>>) when h in ?a..?z or h == ?_,
+    do: parse_suffix(t, <<h>>)
+
+  defp parse_suffix(suffix) do
+    raise Plug.Router.InvalidSpecError,
+          "invalid dynamic path. The characters : and * must be immediately followed by " <>
+            "lowercase letters or underscore, got: :#{suffix}"
+  end
+
+  defp parse_suffix(<<h, t::binary>>, acc)
+       when h in ?a..?z or h in ?A..?Z or h in ?0..?9 or h == ?_,
+       do: parse_suffix(t, <<acc::binary, h>>)
+
+  defp parse_suffix(rest, acc),
+    do: {acc, rest}
 
   @doc """
   Splits the given path into several segments.
@@ -123,97 +281,4 @@ defmodule Plug.Router.Utils do
 
   @deprecated "Use Plug.forward/4 instead"
   defdelegate forward(conn, new_path, target, opts), to: Plug
-
-  ## Helpers
-
-  # Loops each segment checking for matches.
-
-  defp build_path_match([h | t], context, vars, acc) do
-    handle_segment_match(segment_match(h, "", context), t, context, vars, acc)
-  end
-
-  defp build_path_match([], _context, vars, acc) do
-    {vars |> Enum.uniq() |> Enum.reverse(), Enum.reverse(acc)}
-  end
-
-  # Handle each segment match. They can either be a
-  # :literal ("foo"), an :identifier (":bar") or a :glob ("*path")
-
-  defp handle_segment_match({:literal, literal}, t, context, vars, acc) do
-    build_path_match(t, context, vars, [literal | acc])
-  end
-
-  defp handle_segment_match({:identifier, identifier, expr}, t, context, vars, acc) do
-    build_path_match(t, context, [identifier | vars], [expr | acc])
-  end
-
-  defp handle_segment_match({:glob, _identifier, _expr}, t, _context, _vars, _acc) when t != [] do
-    raise Plug.Router.InvalidSpecError, message: "cannot have a *glob followed by other segments"
-  end
-
-  defp handle_segment_match({:glob, identifier, expr}, _t, context, vars, [hs | ts]) do
-    acc = [{:|, [], [hs, expr]} | ts]
-    build_path_match([], context, [identifier | vars], acc)
-  end
-
-  defp handle_segment_match({:glob, identifier, expr}, _t, context, vars, _) do
-    {vars, expr} = build_path_match([], context, [identifier | vars], [expr])
-    {vars, hd(expr)}
-  end
-
-  # In a given segment, checks if there is a match.
-
-  defp segment_match(":" <> argument, buffer, context) do
-    identifier = binary_to_identifier(":", argument)
-
-    expr =
-      quote_if_buffer(identifier, buffer, context, fn var ->
-        quote do: unquote(buffer) <> unquote(var)
-      end)
-
-    {:identifier, identifier, expr}
-  end
-
-  defp segment_match("*" <> argument, buffer, context) do
-    underscore = {:_, [], context}
-    identifier = binary_to_identifier("*", argument)
-
-    expr =
-      quote_if_buffer(identifier, buffer, context, fn var ->
-        quote do: [unquote(buffer) <> unquote(underscore) | unquote(underscore)] = unquote(var)
-      end)
-
-    {:glob, identifier, expr}
-  end
-
-  defp segment_match(<<h, t::binary>>, buffer, context) do
-    segment_match(t, buffer <> <<h>>, context)
-  end
-
-  defp segment_match(<<>>, buffer, _context) do
-    {:literal, buffer}
-  end
-
-  defp quote_if_buffer(identifier, "", context, _fun) do
-    {identifier, [], context}
-  end
-
-  defp quote_if_buffer(identifier, _buffer, context, fun) do
-    fun.({identifier, [], context})
-  end
-
-  defp binary_to_identifier(prefix, <<letter, _::binary>> = binary)
-       when letter in ?a..?z or letter == ?_ do
-    if binary =~ ~r/^\w+$/ do
-      String.to_atom(binary)
-    else
-      raise Plug.Router.InvalidSpecError,
-        message: "#{prefix}identifier in routes must be made of letters, numbers and underscores"
-    end
-  end
-
-  defp binary_to_identifier(prefix, _) do
-    raise Plug.Router.InvalidSpecError,
-      message: "#{prefix} in routes must be followed by lowercase letters or underscore"
-  end
 end

@@ -1,27 +1,27 @@
 defmodule OpenApiSpex.Mixfile do
   use Mix.Project
 
-  @version "3.10.0"
+  @source_url "https://github.com/open-api-spex/open_api_spex"
+  @version "3.18.3"
 
   def project do
     [
       app: :open_api_spex,
       version: @version,
-      elixir: "~> 1.7",
+      elixir: "~> 1.11",
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
-      description: description(),
+      consolidate_protocols: Mix.env() != :test,
       package: package(),
       deps: deps(),
-      consolidate_protocols: Mix.env() != :test,
-      source_url: "https://github.com/open-api-spex/open_api_spex",
-      homepage_url: "https://github.com/open-api-spex/open_api_spex",
-      docs: [extras: ["README.md"], main: "readme", source_ref: "v#{@version}"],
-      dialyzer: [
-        plt_add_apps: [:mix, :jason, :poison],
-        plt_add_deps: :apps_direct,
-        flags: ["-Werror_handling", "-Wno_unused", "-Wunmatched_returns", "-Wunderspecs"],
-        remove_defaults: [:unknown]
+      docs: docs(),
+      dialyzer: dialyzer(),
+      test_coverage: [
+        ignore_modules: [
+          ~r/OpenApiSpexTest\./,
+          ~r/OpenApiSpex.Extendable\./,
+          ~r/Poison.Encoder\./
+        ]
       ]
     ]
   end
@@ -29,36 +29,78 @@ defmodule OpenApiSpex.Mixfile do
   defp elixirc_paths(:test), do: ["lib", "test/support"]
   defp elixirc_paths(_), do: ["lib"]
 
-  # Run "mix help compile.app" to learn about applications.
   def application, do: [extra_applications: []]
-
-  defp description() do
-    "Leverage Open Api Specification 3 (swagger) to document, test, validate and explore your Plug and Phoenix APIs."
-  end
 
   defp package() do
     [
       name: "open_api_spex",
-      files: ["lib", "mix.exs", "README.md", "LICENSE", "CHANGELOG.md", ".formatter.exs"],
+      description:
+        "Leverage Open Api Specification 3 (swagger) to document, " <>
+          "test, validate and explore your Plug and Phoenix APIs.",
+      files: [
+        "lib",
+        "mix.exs",
+        "README.md",
+        "LICENSE",
+        "CHANGELOG.md",
+        "CONTRIBUTING.md",
+        "ROADMAP.md",
+        ".formatter.exs"
+      ],
       maintainers: [
         "Mike Buhot (m.buhot@gmail.com)",
         "Moxley Stratton (moxley.stratton@gmail.com)",
-        "Pierre Fenoll (pierrefenoll@gmail.com)"
+        "Pierre Fenoll (pierrefenoll@gmail.com)",
+        "Dimitris Zorbas (dimitrisplusplus@gmail.com)"
       ],
-      licenses: ["Mozilla Public License, version 2.0"],
-      links: %{"GitHub" => "https://github.com/open-api-spex/open_api_spex"}
+      licenses: ["MPL-2.0"],
+      links: %{
+        "Changelog" => "https://hexdocs.pm/open_api_spex/changelog.html",
+        "GitHub" => @source_url
+      }
     ]
   end
 
-  # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:dialyxir, "~> 0.5", only: [:dev, :test], runtime: false},
-      {:ex_doc, "~> 0.23", only: :dev, runtime: false},
+      {:credo, "~> 1.0", only: [:dev], runtime: false},
+      {:dialyxir, "~> 1.0", only: [:dev], runtime: false},
+      {:ex_doc, ">= 0.0.0", only: :dev, runtime: false},
       {:jason, "~> 1.0", optional: true},
       {:phoenix, "~> 1.3", only: [:dev, :test]},
       {:plug, "~> 1.7"},
-      {:poison, "~> 3.1", optional: true}
+      {:poison, "~> 3.0 or ~> 4.0 or ~> 5.0", optional: true},
+      {:ymlr, "~> 2.0 or ~> 3.0 or ~> 4.0 or ~> 5.0", optional: true}
+    ]
+  end
+
+  defp docs do
+    [
+      extras: [
+        "CHANGELOG.md",
+        "CONTRIBUTING.md",
+        "ROADMAP.md",
+        {:LICENSE, [title: "License"]},
+        "README.md"
+      ],
+      main: "readme",
+      homepage_url: @source_url,
+      source_url: @source_url,
+      source_ref: "v#{@version}",
+      formatters: ["html"]
+    ]
+  end
+
+  defp dialyzer do
+    [
+      plt_file: {:no_warn, "priv/plts/dialyzer.plt"},
+      plt_add_apps: ~w(
+        ex_unit
+        jason
+        mix
+        poison
+        ymlr
+      )a
     ]
   end
 end

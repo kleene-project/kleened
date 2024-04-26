@@ -2,7 +2,7 @@
 
 PROJECT = cowlib
 PROJECT_DESCRIPTION = Support library for manipulating Web protocols.
-PROJECT_VERSION = 2.12.0
+PROJECT_VERSION = 2.13.0
 
 # Options.
 
@@ -26,7 +26,7 @@ dep_base32 = git https://github.com/dnsimple/base32_erlang main
 dep_horse = git https://github.com/ninenines/horse.git master
 dep_jsx = git https://github.com/talentdeficit/jsx v2.10.0
 dep_decimal = git https://github.com/egobrain/decimal 0.6.2
-dep_structured-header-tests = git https://github.com/httpwg/structured-header-tests main
+dep_structured-header-tests = git https://github.com/httpwg/structured-header-tests faed1f92942abd4fb5d61b1f9f0dc359f499f1d7
 dep_uritemplate-tests = git https://github.com/uri-templates/uritemplate-test master
 
 # CI configuration.
@@ -45,7 +45,7 @@ define HEX_TARBALL_EXTRA_METADATA
 #{
 	licenses => [<<"ISC">>],
 	links => #{
-		<<"Function reference">> => <<"https://ninenines.eu/docs/en/cowlib/2.12/manual/">>,
+		<<"Function reference">> => <<"https://ninenines.eu/docs/en/cowlib/2.13/manual/">>,
 		<<"GitHub">> => <<"https://github.com/ninenines/cowlib">>,
 		<<"Sponsor">> => <<"https://github.com/sponsors/essen">>
 	}

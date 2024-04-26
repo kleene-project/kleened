@@ -86,15 +86,25 @@ defmodule NimbleParsec do
   ## Options
 
     * `:inline` - when true, inlines clauses that work as redirection for
-      other clauses. It is disabled by default because of a bug in Elixir
-      v1.5 and v1.6 where unused functions that are inlined cause a
-      compilation error
+      other clauses. Settings this may improve runtime performance at the
+      cost of increased compilation time and bytecode size
 
     * `:debug` - when true, writes generated clauses to `:stderr` for debugging
 
+    * `:export_combinator` - make the underlying combinator function public
+      so it can be used as part of `parsec/1` from other modules
+
+    * `:export_metadata` - export metadata necessary to use this parser
+      combinator to generate inputs
+
   """
   defmacro defparsec(name, combinator, opts \\ []) do
-    compile(:def, name, combinator, opts)
+    visibility =
+      quote do
+        if opts[:export_combinator], do: :def, else: :defp
+      end
+
+    compile(:def, visibility, name, combinator, opts)
   end
 
   @doc """
@@ -103,7 +113,7 @@ defmodule NimbleParsec do
   The same as `defparsec/3` but the parsing function is private.
   """
   defmacro defparsecp(name, combinator, opts \\ []) do
-    compile(:defp, name, combinator, opts)
+    compile(:defp, :defp, name, combinator, opts)
   end
 
   @doc """
@@ -113,28 +123,70 @@ defmodule NimbleParsec do
   an entry-point parsing function, just the combinator function
   to be used with `parsec/2`.
   """
-  defmacro defcombinatorp(name, combinator, opts \\ []) do
-    compile(nil, name, combinator, opts)
+  defmacro defcombinator(name, combinator, opts \\ []) do
+    compile(nil, :def, name, combinator, opts)
   end
 
-  defp compile(kind, name, combinator, opts) do
+  @doc """
+  Defines a combinator with the given `name` and `opts`.
+
+  It is similar to `defparsecp/3` except it does not define
+  an entry-point parsing function, just the combinator function
+  to be used with `parsec/2`.
+  """
+  defmacro defcombinatorp(name, combinator, opts \\ []) do
+    compile(nil, :defp, name, combinator, opts)
+  end
+
+  defp compile(parser_kind, combinator_kind, name, combinator, opts) do
+    prelude =
+      quote do
+        opts = unquote(opts)
+        combinator_kind = unquote(combinator_kind)
+      end
+
     combinator =
-      quote bind_quoted: [kind: kind, name: name, combinator: combinator, opts: opts] do
+      quote bind_quoted: [
+              parser_kind: parser_kind,
+              name: name,
+              combinator: combinator
+            ] do
         {defs, inline} = NimbleParsec.Compiler.compile(name, combinator, opts)
-        NimbleParsec.Recorder.record(__MODULE__, kind, name, defs, inline, opts)
+
+        NimbleParsec.Recorder.record(
+          __MODULE__,
+          parser_kind,
+          combinator_kind,
+          name,
+          defs,
+          inline,
+          opts
+        )
+
+        if opts[:export_metadata] do
+          def __nimble_parsec__(unquote(name)),
+            do: unquote(combinator |> Enum.reverse() |> Macro.escape())
+        end
 
         if inline != [] do
           @compile {:inline, inline}
         end
 
-        for {name, args, guards, body} <- defs do
-          defp unquote(name)(unquote_splicing(args)) when unquote(guards), do: unquote(body)
+        if combinator_kind == :def do
+          for {name, args, guards, body} <- defs do
+            def unquote(name)(unquote_splicing(args)) when unquote(guards), do: unquote(body)
+          end
+        else
+          for {name, args, guards, body} <- defs do
+            defp unquote(name)(unquote_splicing(args)) when unquote(guards), do: unquote(body)
+          end
         end
       end
 
-    parser = compile_parser(name, kind)
+    parser = compile_parser(name, parser_kind)
 
     quote do
+      unquote(prelude)
       unquote(parser)
       unquote(combinator)
     end
@@ -162,14 +214,17 @@ defmodule NimbleParsec do
   end
 
   @opaque t :: [combinator]
-  @type bin_modifiers :: :integer | :utf8 | :utf16 | :utf32
+  @type bin_modifier :: :integer | :utf8 | :utf16 | :utf32
   @type range :: inclusive_range | exclusive_range
-  @type inclusive_range :: Range.t() | char()
-  @type exclusive_range :: {:not, Range.t()} | {:not, char()}
-  @type min_and_max :: {:min, non_neg_integer()} | {:max, pos_integer()}
+  @type inclusive_range :: Range.t() | char
+  @type exclusive_range :: {:not, Range.t()} | {:not, char}
+  @type min_and_max :: {:min, non_neg_integer} | {:max, pos_integer}
   @type call :: mfargs | fargs | atom
   @type mfargs :: {module, atom, args :: [term]}
   @type fargs :: {atom, args :: [term]}
+  @type gen_times :: Range.t() | non_neg_integer | nil
+  @type gen_weights :: [pos_integer] | nil
+  @type opts :: Keyword.t()
 
   # Steps to add a new combinator:
   #
@@ -180,7 +235,7 @@ defmodule NimbleParsec do
   @typep combinator :: bound_combinator | maybe_bound_combinator | unbound_combinator
 
   @typep bound_combinator ::
-           {:bin_segment, [inclusive_range], [exclusive_range], [bin_modifiers]}
+           {:bin_segment, [inclusive_range], [exclusive_range], bin_modifier}
            | {:string, binary}
            | :eos
 
@@ -189,19 +244,205 @@ defmodule NimbleParsec do
            | {:traverse, t, :pre | :post | :constant, [mfargs]}
 
   @typep unbound_combinator ::
-           {:choice, [t]}
+           {:choice, [t], gen_weights}
            | {:eventually, t}
            | {:lookahead, t, :positive | :negative}
-           | {:parsec, atom}
-           | {:repeat, t, mfargs}
-           | {:times, t, min :: non_neg_integer, pos_integer}
+           | {:parsec, atom | {module, atom}}
+           | {:repeat, t, mfargs, gen_times}
+           | {:times, t, pos_integer}
+
+  @doc ~S"""
+  Generate a random binary from the given parsec.
+
+  Let's see an example:
+
+      import NimbleParsec
+      generate(choice([string("foo"), string("bar")]))
+
+  The command above will return either "foo" or "bar". `generate/1`
+  is often used with pre-defined parsecs. In this case, the
+  `:export_metadata` flag must be set:
+
+      defmodule SomeModule do
+        import NimbleParsec
+        defparsec :parse,
+                  choice([string("foo"), string("bar")]),
+                  export_metadata: true
+      end
+
+      # Reference the parsec and generate from it
+      NimbleParsec.parsec({SomeModule, :parse})
+      |> NimbleParsec.generate()
+      |> IO.puts()
+
+  `generate/1` can often run forever for recursive algorithms.
+  Read the notes below and make use of the `gen_weight` and `gen_times`
+  option to certain parsecs to control the recursion depth.
+
+  ## Notes
+
+  Overall, there is no guarantee over the generated output, except
+  that it will generate a binary that is parseable by the parsec
+  itself, but even this guarantee may be broken by parsers that have
+  custom validations. Keep in mind the following:
+
+    * `generate/1` is not compatible with NimbleParsec's dumped via
+      `mix nimble_parsec.compile`;
+
+    * `parsec/2` requires the referenced parsec to set `export_metadata: true`
+      on its definition;
+
+    * `choice/2` will be generated evenly. You can pass `:gen_weights`
+      as a list of positive integer weights to balance your choices.
+      This is particularly important for recursive algorithms;
+
+    * `repeat/2` and `repeat_while/3` will repeat between 0 and 3 times unless
+      a `:gen_times` option is given to these operations. `times/3` without a `:max`
+      will also additionally repeat between 0 and 3 times unless `:gen_times` is given.
+      The `:gen_times` option can either be an integer as the number of times to
+      repeat or a range where a random value in the range will be picked;
+
+    * `eventually/2` always generates the eventually parsec immediately;
+
+    * `lookahead/2` and `lookahead_not/2` are simply discarded;
+
+    * Validations done in any of the traverse definitions are not taken into account
+      by the generator. Therefore, if a parsec does validations, the generator may
+      generate binaries invalid to said parsec;
+
+  """
+  def generate(parsecs) do
+    parsecs
+    |> Enum.reverse()
+    |> generate(nil, [])
+    |> IO.iodata_to_binary()
+  end
+
+  defp generate([{:parsec, fun} | _parsecs], nil, _acc) when is_atom(fun) do
+    raise "cannot generate parsec(#{inspect(fun)}), use a remote parsec instead"
+  end
+
+  defp generate([{:parsec, fun} | parsecs], mod, acc) when is_atom(fun) do
+    generate([{:parsec, {mod, fun}} | parsecs], mod, acc)
+  end
+
+  defp generate([{:parsec, {mod, fun}} | outer_parsecs], outer_mod, acc) do
+    gen = generate(gen_export(mod, fun), mod, [])
+    generate(outer_parsecs, outer_mod, [gen | acc])
+  end
+
+  defp generate([{:string, string} | parsecs], mod, acc) do
+    generate(parsecs, mod, [string | acc])
+  end
+
+  defp generate([{:bin_segment, inclusive, exclusive, modifier} | parsecs], mod, acc) do
+    gen = gen_bin_segment(inclusive, exclusive)
+
+    gen =
+      if modifier == :integer,
+        do: gen,
+        else: :unicode.characters_to_binary([gen], :unicode, modifier)
+
+    generate(parsecs, mod, [gen | acc])
+  end
+
+  defp generate([:eos | parsecs], mod, acc) do
+    if parsecs == [] do
+      generate([], mod, acc)
+    else
+      raise ArgumentError, "found :eos not at the end of parsecs"
+    end
+  end
+
+  defp generate([{:traverse, t, _, _} | parsecs], mod, acc) do
+    generate(t ++ parsecs, mod, acc)
+  end
+
+  defp generate([{:label, t, _} | parsecs], mod, acc) do
+    generate(t ++ parsecs, mod, acc)
+  end
+
+  defp generate([{:choice, choices, weights} | parsecs], mod, acc) do
+    pick = if weights, do: weighted_random(choices, weights), else: list_random(choices)
+    gen = generate(pick, mod, [])
+    generate(parsecs, mod, [gen | acc])
+  end
+
+  defp generate([{:lookahead, _, _} | parsecs], mod, acc) do
+    generate(parsecs, mod, acc)
+  end
+
+  defp generate([{:repeat, t, _, gen} | parsecs], mod, acc) do
+    generate(parsecs, mod, gen_times(t, int_random(gen), mod, acc))
+  end
+
+  defp generate([{:times, t, max} | parsecs], mod, acc) do
+    generate(parsecs, mod, gen_times(t, Enum.random(0..max), mod, acc))
+  end
+
+  defp generate([], _mod, acc), do: Enum.reverse(acc)
+
+  defp gen_export(mod, fun) do
+    unless Code.ensure_loaded?(mod) do
+      raise "cannot handle parsec(#{inspect({mod, fun})}) because #{inspect(mod)} is not available"
+    end
+
+    try do
+      mod.__nimble_parsec__(fun)
+    rescue
+      _ ->
+        raise "cannot handle parsec(#{inspect({mod, fun})}) because #{inspect(mod)} " <>
+                "did not set :export_metadata when defining #{fun}"
+    end
+  end
+
+  defp gen_times(_t, 0, _mod, acc), do: acc
+
+  defp gen_times(t, n, mod, acc) do
+    gen = generate(t, mod, [])
+    gen_times(t, n - 1, mod, [gen | acc])
+  end
+
+  defp gen_bin_segment(inclusive, exclusive) do
+    gen =
+      if(inclusive == [], do: [0..255], else: inclusive)
+      |> list_random()
+      |> int_random()
+
+    if Enum.any?(exclusive, &exclude_bin_segment?(&1, gen)) do
+      gen_bin_segment(inclusive, exclusive)
+    else
+      gen
+    end
+  end
+
+  defp exclude_bin_segment?({:not, _.._//_ = range}, gen), do: gen in range
+  defp exclude_bin_segment?({:not, char}, gen) when is_integer(char), do: char == gen
+
+  defp int_random(nil), do: Enum.random(0..3)
+  defp int_random(_.._//_ = range), do: Enum.random(range)
+  defp int_random(int) when is_integer(int), do: int
+
+  # Enum.random uses reservoir sampling but our lists are short, so we use length + fetch!
+  defp list_random(list) when is_list(list),
+    do: Enum.fetch!(list, :rand.uniform(length(list)) - 1)
+
+  defp weighted_random(list, weights) do
+    weighted_random(list, weights, :rand.uniform(Enum.sum(weights)))
+  end
+
+  defp weighted_random([elem | _], [weight | _], chosen) when chosen <= weight,
+    do: elem
+
+  defp weighted_random([_ | list], [weight | weights], chosen),
+    do: weighted_random(list, weights, chosen - weight)
 
   @doc ~S"""
   Returns an empty combinator.
 
   An empty combinator cannot be compiled on its own.
   """
-  @spec empty() :: t()
+  @spec empty() :: t
   def empty() do
     []
   end
@@ -221,7 +462,7 @@ defmodule NimbleParsec do
   `parsec/2` is useful to implement recursive definitions.
 
   Note while `parsec/2` can be used to compose smaller combinators,
-  the favorite mechanism for doing composition is via regular functions
+  the preferred mechanism for doing composition is via regular functions
   and not via `parsec/2`. Let's see a practical example. Imagine
   that you have this module:
 
@@ -316,12 +557,34 @@ defmodule NimbleParsec do
   compilation times are high. In this sense, you can use `parsec/2`
   to improve compilation time at the cost of runtime performance.
   By using `parsec/2`, the tree size built at compile time will be
-  reduced although runtime performance is degraded as every time
-  this function is invoked it introduces a stacktrace entry.
+  reduced although runtime performance is degraded as `parsec`
+  introduces a stacktrace entry.
+
+  ## Remote combinators
+
+  You can also reference combinators in other modules by passing
+  a tuple with the module name and a function to `parsec/2` as follows:
+
+      defmodule RemoteCombinatorModule do
+        defcombinator :upcase_unicode, utf8_char([...long, list, of, unicode, chars...])
+      end
+
+      defmodule LocalModule do
+        # Parsec that depends on `:upcase_A`
+        defparsec :parsec_name,
+                  ...
+                  |> ascii_char([?a..?Z])
+                  |> parsec({RemoteCombinatorModule, :upcase_unicode})
+      end
+
+  Remote combinators are useful when breaking the compilation of
+  large modules apart in order to use Elixir's ability to compile
+  modules in parallel.
 
   ## Examples
 
-  A very limited but recursive XML parser could be written as follows:
+  A good example of using `parsec` is with recursive parsers.
+  A limited but recursive XML parser could be written as follows:
 
       defmodule SimpleXML do
         import NimbleParsec
@@ -363,15 +626,23 @@ defmodule NimbleParsec do
                      |> concat(closing_tag)
                      |> wrap()
 
-  Note that now you can no longer invoke `SimpleXML.xml(xml)` as
-  there is no associating parsing function. Eventually you will
-  have to define a `defparsec/3` or `defparsecp/3`, that invokes
-  the combinator above via `parsec/3`.
-
+  When using `defcombinatorp`, you can no longer invoke
+  `SimpleXML.xml(xml)` as there is no associated parsing function.
+  You can only access the combinator above via `parsec/2`.
   """
-  @spec parsec(t(), atom()) :: t()
-  def parsec(combinator \\ empty(), name) when is_combinator(combinator) and is_atom(name) do
+  @spec parsec(name :: atom) :: t
+  @spec parsec(t, name :: atom) :: t
+  @spec parsec({module, function_name :: atom}) :: t
+  @spec parsec(t, {module, function_name :: atom}) :: t
+  def parsec(combinator \\ empty(), name)
+
+  def parsec(combinator, name) when is_combinator(combinator) and is_atom(name) do
     [{:parsec, name} | combinator]
+  end
+
+  def parsec(combinator, {module, function})
+      when is_combinator(combinator) and is_atom(module) and is_atom(function) do
+    [{:parsec, {module, function}} | combinator]
   end
 
   @doc ~S"""
@@ -399,14 +670,15 @@ defmodule NimbleParsec do
       #=> {:ok, [?1, ?a], "", %{}, {1, 0}, 2}
 
       MyParser.digit_and_lowercase("a1")
-      #=> {:error, "expected a byte in the range ?0..?9, followed by a byte in the range ?a..?z", "a1", %{}, 1, 1}
+      #=> {:error, "expected ASCII character in the range '0' to '9', followed by ASCII character in the range 'a' to 'z'", "a1", %{}, {1, 0}, 0}
 
   """
+  @spec ascii_char([range]) :: t
   @spec ascii_char(t, [range]) :: t
   def ascii_char(combinator \\ empty(), ranges)
       when is_combinator(combinator) and is_list(ranges) do
     {inclusive, exclusive} = split_ranges!(ranges, "ascii_char")
-    bin_segment(combinator, inclusive, exclusive, [:integer])
+    bin_segment(combinator, inclusive, exclusive, :integer)
   end
 
   @doc ~S"""
@@ -434,14 +706,15 @@ defmodule NimbleParsec do
       #=> {:ok, [?1, ?é], "", %{}, {1, 0}, 2}
 
       MyParser.digit_and_utf8("a1")
-      #=> {:error, "expected a utf8 codepoint in the range ?0..?9, followed by a utf8 codepoint", "a1", %{}, {1, 0}, 0}
+      #=> {:error, "expected utf8 codepoint in the range '0' to '9', followed by utf8 codepoint", "a1", %{}, {1, 0}, 0}
 
   """
+  @spec utf8_char([range]) :: t
   @spec utf8_char(t, [range]) :: t
   def utf8_char(combinator \\ empty(), ranges)
       when is_combinator(combinator) and is_list(ranges) do
     {inclusive, exclusive} = split_ranges!(ranges, "utf8_char")
-    bin_segment(combinator, inclusive, exclusive, [:utf8])
+    bin_segment(combinator, inclusive, exclusive, :utf8)
   end
 
   @doc ~S"""
@@ -466,6 +739,7 @@ defmodule NimbleParsec do
       #=> {:error, "expected a digit followed by lowercase letter", "a1", %{}, {1, 0}, 0}
 
   """
+  @spec label(t, String.t()) :: t
   @spec label(t, t, String.t()) :: t
   def label(combinator \\ empty(), to_label, label)
       when is_combinator(combinator) and is_combinator(to_label) and is_binary(label) do
@@ -495,7 +769,7 @@ defmodule NimbleParsec do
       #=> {:ok, [12], "3", %{}, {1, 0}, 2}
 
       MyParser.two_digits_integer("1a3")
-      #=> {:error, "expected a two digits integer", "1a3", %{}, {1, 0}, 0}
+      #=> {:error, "expected ASCII character in the range '0' to '9', followed by ASCII character in the range '0' to '9'", "1a3", %{}, {1, 0}, 0}
 
   With min and max:
 
@@ -509,7 +783,7 @@ defmodule NimbleParsec do
       #=> {:ok, [123], "", %{}, {1, 0}, 2}
 
       MyParser.two_digits_integer("1a3")
-      #=> {:error, "expected a two digits integer", "1a3", %{}, {1, 0}, 0}
+      #=> {:error, "expected ASCII character in the range '0' to '9', followed by ASCII character in the range '0' to '9'", "1a3", %{}, {1, 0}, 0}
 
   If the size of the integer has a min and max close to each other, such as
   from 2 to 4 or from 1 to 2, using choice may emit more efficient code:
@@ -518,13 +792,34 @@ defmodule NimbleParsec do
 
   Note you should start from bigger to smaller.
   """
+  @spec integer(pos_integer | [min_and_max]) :: t
   @spec integer(t, pos_integer | [min_and_max]) :: t
   def integer(combinator \\ empty(), count_or_opts)
-      when is_combinator(combinator) and (is_integer(count_or_opts) or is_list(count_or_opts)) do
+
+  def integer(combinator, count)
+      when is_combinator(combinator) and is_integer(count) do
+    validate_min_and_max!(count, 1)
+
     min_max_compile_runtime_chars(
       combinator,
       ascii_char([?0..?9]),
-      count_or_opts,
+      count,
+      :__compile_integer__,
+      :__runtime_integer__,
+      []
+    )
+  end
+
+  def integer(combinator, opts)
+      when is_combinator(combinator) and is_list(opts) do
+    # Read the minimum and maximum value to ensure the presence of at least one character
+    {min_val, max_val} = validate_min_and_max!(opts, 1)
+    opts = opts |> Keyword.put(:min, min_val) |> Keyword.put(:max, max_val)
+
+    min_max_compile_runtime_chars(
+      combinator,
+      ascii_char([?0..?9]),
+      opts,
       :__compile_integer__,
       :__runtime_integer__,
       []
@@ -553,6 +848,7 @@ defmodule NimbleParsec do
       #=> {:ok, ["ab"], "c", %{}, {1, 0}, 2}
 
   """
+  @spec ascii_string([range], pos_integer | [min_and_max]) :: t
   @spec ascii_string(t, [range], pos_integer | [min_and_max]) :: t
   def ascii_string(combinator \\ empty(), range, count_or_opts)
       when is_combinator(combinator) and is_list(range) and
@@ -568,14 +864,18 @@ defmodule NimbleParsec do
   end
 
   @doc ~S"""
-  Defines an ASCII string combinator with of exact length or `min` and `max`
+  Defines an UTF8 string combinator with of exact length or `min` and `max`
   codepoint length.
 
-  The `ranges` specify the allowed characters in the ASCII string.
-  See `ascii_char/2` for more information.
+  The `ranges` specify the allowed characters in the UTF8 string.
+  See `utf8_char/2` for more information.
 
   If you want a string of unknown size, use `utf8_string(ranges, min: 1)`.
   If you want a literal string, use `string/2`.
+
+  Note that the combinator matches on codepoints, not graphemes. Therefore
+  results may vary depending on whether the input is in `nfc` or `nfd`
+  normalized form.
 
   ## Examples
 
@@ -589,6 +889,7 @@ defmodule NimbleParsec do
       #=> {:ok, ["áé"], "", %{}, {1, 0}, 3}
 
   """
+  @spec utf8_string([range], pos_integer | [min_and_max]) :: t
   @spec utf8_string(t, [range], pos_integer | [min_and_max]) :: t
   def utf8_string(combinator \\ empty(), range, count_or_opts)
       when is_combinator(combinator) and is_list(range) and
@@ -624,6 +925,7 @@ defmodule NimbleParsec do
       MyParser.letter_pairs("hello")
       #=> {:error, "expected end of string", "o", %{}, {1, 0}, 4}
   """
+  @spec eos :: t
   @spec eos(t) :: t
   def eos(combinator \\ empty()) do
     [:eos | combinator]
@@ -656,6 +958,7 @@ defmodule NimbleParsec do
   @doc """
   Duplicates the combinator `to_duplicate` `n` times.
   """
+  @spec duplicate(t, non_neg_integer) :: t
   @spec duplicate(t, t, non_neg_integer) :: t
   def duplicate(combinator \\ empty(), to_duplicate, n)
 
@@ -675,6 +978,7 @@ defmodule NimbleParsec do
 
   `byte_offset` is a non-negative integer.
   """
+  @spec byte_offset(t) :: t
   @spec byte_offset(t, t) :: t
   def byte_offset(combinator \\ empty(), to_wrap)
       when is_combinator(combinator) and is_combinator(to_wrap) do
@@ -689,6 +993,7 @@ defmodule NimbleParsec do
   and the second element is the byte offset immediately after
   the newline.
   """
+  @spec line(t) :: t
   @spec line(t, t) :: t
   def line(combinator \\ empty(), to_wrap)
       when is_combinator(combinator) and is_combinator(to_wrap) do
@@ -711,9 +1016,9 @@ defmodule NimbleParsec do
   The line and offset will represent the location after the combinators.
   To retrieve the position before the combinators, use `pre_traverse/3`.
 
-  The `call` must return a tuple `{acc, context}` with list of results
-  to be added to the accumulator as first argument and a context as
-  second argument. It may also return `{:error, reason}` to stop
+  The `call` must return a tuple `{rest, acc, context}` with list of
+  results to be added to the accumulator as first argument and a context
+  as second argument. It may also return `{:error, reason}` to stop
   processing. Notice the received results are in reverse order and
   must be returned in reverse order too.
 
@@ -725,7 +1030,7 @@ defmodule NimbleParsec do
   `map/3` if you want to map over each individual element and
   not worry about ordering, `reduce/3` to reduce all elements
   into a single one, `replace/3` if you want to replace the
-  parsed result by a single value and `ignore/3` if you want to
+  parsed result by a single value and `ignore/2` if you want to
   ignore the parsed result.
 
   ## Examples
@@ -739,8 +1044,8 @@ defmodule NimbleParsec do
                   |> ascii_char([?a..?z])
                   |> post_traverse({:join_and_wrap, ["-"]})
 
-        defp join_and_wrap(_rest, args, context, _line, _offset, joiner) do
-          {args |> Enum.join(joiner) |> List.wrap(), context}
+        defp join_and_wrap(rest, args, context, _line, _offset, joiner) do
+          {rest, args |> Enum.join(joiner) |> List.wrap(), context}
         end
       end
 
@@ -748,6 +1053,7 @@ defmodule NimbleParsec do
       #=> {:ok, ["99-98-97"], "", %{}, {1, 0}, 3}
 
   """
+  @spec post_traverse(t, call) :: t
   @spec post_traverse(t, t, call) :: t
   def post_traverse(combinator \\ empty(), to_post_traverse, call)
       when is_combinator(combinator) and is_combinator(to_post_traverse) do
@@ -763,17 +1069,12 @@ defmodule NimbleParsec do
   information. Use `pre_traverse/3` only if you have to access
   the line and offset from before the given combinators.
   """
+  @spec pre_traverse(t, call) :: t
   @spec pre_traverse(t, t, call) :: t
   def pre_traverse(combinator \\ empty(), to_pre_traverse, call)
       when is_combinator(combinator) and is_combinator(to_pre_traverse) do
     compile_call!([], call, "pre_traverse")
     quoted_pre_traverse(combinator, to_pre_traverse, {__MODULE__, :__pre_traverse__, [call]})
-  end
-
-  @deprecated "Use post_traverse/3 instead"
-  @doc false
-  def traverse(combinator \\ empty(), to_traverse, call) do
-    post_traverse(combinator, to_traverse, call)
   end
 
   @doc ~S"""
@@ -783,7 +1084,7 @@ defmodule NimbleParsec do
   closest `choice/2`, `repeat/2`, etc. If there is no closest
   operation to abort, then it errors.
 
-  Note a lookahead nevers changes the accumulated output nor the
+  Note a lookahead never changes the accumulated output nor the
   context.
 
   ## Examples
@@ -849,10 +1150,11 @@ defmodule NimbleParsec do
       #=> {:ok, [:if, " ", "fy"], "", %{}, {1, 0}, 5}
 
   """
+  @spec lookahead(t) :: t
   @spec lookahead(t, t) :: t
   def lookahead(combinator \\ empty(), to_lookahead)
       when is_combinator(combinator) and is_combinator(to_lookahead) do
-    [{:lookahead, to_lookahead, :positive} | combinator]
+    [{:lookahead, Enum.reverse(to_lookahead), :positive} | combinator]
   end
 
   @doc ~S"""
@@ -862,20 +1164,26 @@ defmodule NimbleParsec do
   Otherwise it continues as usual. If there is no closest operation
   to abort, then it errors.
 
-  Note a lookahead nevers changes the accumulated output nor the
+  Note a lookahead never changes the accumulated output nor the
   context.
 
   For an example, see `lookahead/2`.
   """
+  @spec lookahead_not(t) :: t
   @spec lookahead_not(t, t) :: t
   def lookahead_not(combinator \\ empty(), to_lookahead)
       when is_combinator(combinator) and is_combinator(to_lookahead) do
-    [{:lookahead, to_lookahead, :negative} | combinator]
+    [{:lookahead, Enum.reverse(to_lookahead), :negative} | combinator]
   end
 
   @doc """
-  Invokes `call` to emit the AST that post_traverses the `to_post_traverse`
+  Invokes `call` to emit the AST that post traverses the `to_post_traverse`
   combinator results.
+
+  This is similar to `post_traverse/3`. In `post_traverse/3`, `call` is
+  invoked to process the combinator results. In here, it is invoked to
+  emit AST that in its turn will process the combinator results.
+  The invoked function must return the same types as `post_traverse/3`.
 
   `call` is a `{module, function, args}` and it will receive 5
   additional arguments. The AST representation of the rest of the
@@ -886,18 +1194,12 @@ defmodule NimbleParsec do
   The line and offset will represent the location after the combinators.
   To retrieve the position before the combinators, use `quoted_pre_traverse/3`.
 
-  The `call` must return a list of results to be added to
-  the accumulator. Notice the received results are in reverse
-  order and must be returned in reverse order too.
-
-  The number of elements returned does not need to be
-  the same as the number of elements given.
-
   This function must be used only when you want to emit code that
   has no runtime dependencies in other modules. In most cases,
   using `post_traverse/3` is better, since it doesn't work on ASTs
   and instead works at runtime.
   """
+  @spec quoted_post_traverse(t, mfargs) :: t
   @spec quoted_post_traverse(t, t, mfargs) :: t
   def quoted_post_traverse(combinator \\ empty(), to_post_traverse, {_, _, _} = call)
       when is_combinator(combinator) and is_combinator(to_post_traverse) do
@@ -912,16 +1214,11 @@ defmodule NimbleParsec do
   information. Use `quoted_pre_traverse/3` only if you have to access
   the line and offset from before the given combinators.
   """
+  @spec quoted_pre_traverse(t, mfargs) :: t
   @spec quoted_pre_traverse(t, t, mfargs) :: t
   def quoted_pre_traverse(combinator \\ empty(), to_pre_traverse, {_, _, _} = call)
       when is_combinator(combinator) and is_combinator(to_pre_traverse) do
     quoted_traverse(combinator, to_pre_traverse, :pre, call)
-  end
-
-  @deprecated "Use quoted_post_traverse/3 instead"
-  @doc false
-  def quoted_traverse(combinator \\ empty(), to_traverse, call) do
-    quoted_post_traverse(combinator, to_traverse, call)
   end
 
   @doc ~S"""
@@ -953,6 +1250,7 @@ defmodule NimbleParsec do
       MyParser.letters_to_string_chars("abc")
       #=> {:ok, ["97", "98", "99"], "", %{}, {1, 0}, 3}
   """
+  @spec map(t, call) :: t
   @spec map(t, t, call) :: t
   def map(combinator \\ empty(), to_map, call)
       when is_combinator(combinator) and is_combinator(to_map) do
@@ -989,6 +1287,7 @@ defmodule NimbleParsec do
       MyParser.letters_to_reduced_chars("abc")
       #=> {:ok, ["97-98-99"], "", %{}, {1, 0}, 3}
   """
+  @spec reduce(t, call) :: t
   @spec reduce(t, t, call) :: t
   def reduce(combinator \\ empty(), to_reduce, call)
       when is_combinator(combinator) and is_combinator(to_reduce) do
@@ -999,6 +1298,7 @@ defmodule NimbleParsec do
   @doc """
   Wraps the results of the given combinator in `to_wrap` in a list.
   """
+  @spec wrap(t) :: t
   @spec wrap(t, t) :: t
   def wrap(combinator \\ empty(), to_wrap)
       when is_combinator(combinator) and is_combinator(to_wrap) do
@@ -1024,6 +1324,7 @@ defmodule NimbleParsec do
   the parser is expected to emit multiple tokens. When you are sure that
   only a single token is emitted, you should use `unwrap_and_tag/3`.
   """
+  @spec tag(t, term) :: t
   @spec tag(t, t, term) :: t
   def tag(combinator \\ empty(), to_tag, tag)
       when is_combinator(combinator) and is_combinator(to_tag) do
@@ -1046,9 +1347,10 @@ defmodule NimbleParsec do
       #=> {:ok, [integer: 1234], "", %{}, {1, 0}, 4}
 
 
-  In case the combinator emits more than one token, an error will be raised.
+  In case the combinator emits greater than one token, an error will be raised.
   See `tag/3` for more information.
   """
+  @spec unwrap_and_tag(t, term) :: t
   @spec unwrap_and_tag(t, t, term) :: t
   def unwrap_and_tag(combinator \\ empty(), to_tag, tag)
       when is_combinator(combinator) and is_combinator(to_tag) do
@@ -1062,6 +1364,7 @@ defmodule NimbleParsec do
   @doc """
   Inspects the combinator state given to `to_debug` with the given `opts`.
   """
+  @spec debug(t) :: t
   @spec debug(t, t) :: t
   def debug(combinator \\ empty(), to_debug)
       when is_combinator(combinator) and is_combinator(to_debug) do
@@ -1086,6 +1389,7 @@ defmodule NimbleParsec do
       #=> {:error, "expected a string \"T\"", "not T", %{}, {1, 0}, 0}
 
   """
+  @spec string(binary) :: t
   @spec string(t, binary) :: t
   def string(combinator \\ empty(), binary)
       when is_combinator(combinator) and is_binary(binary) do
@@ -1100,13 +1404,14 @@ defmodule NimbleParsec do
       defmodule MyParser do
         import NimbleParsec
 
-        defparsec :ignorable, string("T") |> ignore() |> integer(2, 2)
+        defparsec :ignorable, string("T") |> ignore() |> integer(2)
       end
 
       MyParser.ignorable("T12")
       #=> {:ok, [12], "", %{}, {1, 0}, 2}
 
   """
+  @spec ignore(t) :: t
   @spec ignore(t, t) :: t
   def ignore(combinator \\ empty(), to_ignore)
       when is_combinator(combinator) and is_combinator(to_ignore) do
@@ -1135,6 +1440,7 @@ defmodule NimbleParsec do
       #=> {:ok, ["OTHER", 12], "", %{}, {1, 0}, 2}
 
   """
+  @spec replace(t, term) :: t
   @spec replace(t, t, term) :: t
   def replace(combinator \\ empty(), to_replace, value)
       when is_combinator(combinator) and is_combinator(to_replace) do
@@ -1185,11 +1491,14 @@ defmodule NimbleParsec do
       #=> {:ok, [], "1234", %{}, {1, 0}, 0}
 
   """
+  @spec repeat(t) :: t
   @spec repeat(t, t) :: t
-  def repeat(combinator \\ empty(), to_repeat)
-      when is_combinator(combinator) and is_combinator(to_repeat) do
+  @spec repeat(t, opts) :: t
+  @spec repeat(t, t, opts) :: t
+  def repeat(combinator \\ empty(), to_repeat, opts \\ [])
+      when is_combinator(combinator) and is_combinator(to_repeat) and is_list(opts) do
     non_empty!(to_repeat, "repeat")
-    quoted_repeat_while(combinator, to_repeat, {__MODULE__, :__cont_context__, []})
+    quoted_repeat_while(combinator, to_repeat, {__MODULE__, :__cont_context__, []}, opts)
   end
 
   @doc """
@@ -1197,6 +1506,18 @@ defmodule NimbleParsec do
 
   Any other data before the combinator appears is discarded.
   If the combinator never appears, then it is an error.
+
+  **Note:** this can be potentially a very expensive operation
+  as it executes the given combinator byte by byte until finding
+  an eventual match or ultimately failing. For example, if you
+  are looking for an integer, it is preferrable to discard
+  everything that is not an integer
+
+      ignore(ascii_string([not: ?0..?9]))
+
+  rather than eventually look for an integer
+
+      eventually(ascii_string([?0..?9]))
 
   ## Examples
 
@@ -1211,6 +1532,7 @@ defmodule NimbleParsec do
       #=> {:ok, [12], "?", %{}, {1, 0}, 16}
 
   """
+  @spec eventually(t) :: t
   @spec eventually(t, t) :: t
   def eventually(combinator \\ empty(), eventually)
       when is_combinator(combinator) and is_combinator(eventually) do
@@ -1279,6 +1601,7 @@ defmodule NimbleParsec do
                       utf8_char([])
                     ])
                   )
+                  |> ascii_char([?"])
                   |> reduce({List, :to_string, []})
       end
 
@@ -1288,12 +1611,14 @@ defmodule NimbleParsec do
   However, `repeat_while` is still useful when the condition to
   repeat comes from the context passed around.
   """
+  @spec repeat_while(t, call) :: t
   @spec repeat_while(t, t, call) :: t
-  def repeat_while(combinator \\ empty(), to_repeat, while)
-      when is_combinator(combinator) and is_combinator(to_repeat) do
+  @spec repeat_while(t, t, call, opts) :: t
+  def repeat_while(combinator \\ empty(), to_repeat, while, opts \\ [])
+      when is_combinator(combinator) and is_combinator(to_repeat) and is_list(opts) do
     non_empty!(to_repeat, "repeat_while")
     compile_call!([], while, "repeat_while")
-    quoted_repeat_while(combinator, to_repeat, {__MODULE__, :__repeat_while__, [while]})
+    quoted_repeat_while(combinator, to_repeat, {__MODULE__, :__repeat_while__, [while]}, opts)
   end
 
   @doc """
@@ -1308,16 +1633,18 @@ defmodule NimbleParsec do
   is invoked at compile time and is useful in combinators that avoid
   injecting runtime dependencies.
   """
+  @spec quoted_repeat_while(t, mfargs) :: t
   @spec quoted_repeat_while(t, t, mfargs) :: t
-  def quoted_repeat_while(combinator \\ empty(), to_repeat, {_, _, _} = while)
-      when is_combinator(combinator) and is_combinator(to_repeat) do
+  @spec quoted_repeat_while(t, t, mfargs, opts) :: t
+  def quoted_repeat_while(combinator \\ empty(), to_repeat, {_, _, _} = while, opts \\ [])
+      when is_combinator(combinator) and is_combinator(to_repeat) and is_list(opts) do
     non_empty!(to_repeat, "quoted_repeat_while")
-    [{:repeat, Enum.reverse(to_repeat), while} | combinator]
+    [{:repeat, Enum.reverse(to_repeat), while, opts[:gen_times]} | combinator]
   end
 
   @doc """
   Allow the combinator given on `to_repeat` to appear at least, at most
-  or exactly a given amout of times.
+  or exactly a given amount of times.
 
   ## Examples
 
@@ -1337,6 +1664,7 @@ defmodule NimbleParsec do
       #=> {:ok, [], "a123", %{}, {1, 0}, 0}
 
   """
+  @spec times(t, pos_integer | [min_and_max]) :: t
   @spec times(t, t, pos_integer | [min_and_max]) :: t
   def times(combinator \\ empty(), to_repeat, count_or_min_max)
 
@@ -1362,9 +1690,9 @@ defmodule NimbleParsec do
 
     combinator =
       if max do
-        [{:times, to_repeat, 0, max - min} | combinator]
+        [{:times, to_repeat, max - min} | combinator]
       else
-        [{:repeat, to_repeat, {__MODULE__, :__cont_context__, []}} | combinator]
+        [{:repeat, to_repeat, {__MODULE__, :__cont_context__, []}, opts[:gen_times]} | combinator]
       end
 
     combinator
@@ -1373,7 +1701,7 @@ defmodule NimbleParsec do
   @doc """
   Chooses one of the given combinators.
 
-  Expects at leasts two choices.
+  Expects at least two choices.
 
   ## Beware! Char combinators
 
@@ -1405,11 +1733,34 @@ defmodule NimbleParsec do
 
   Instead of `repeat/2`, you may want to use `times/3` with the flags `:min`
   and `:max`.
+
+  ## Beware! Overlapping choices
+
+  In case choices overlap, there is no guarantee which error will be the one
+  effectively returned. For example, imagine this choice:
+
+      choice([
+        string("<abc>foo</abc>"),
+        string("<abc>")
+      ]
+  ß
+  Since both choices can be activated for an input starting with "abc",
+  NimbleParsec guarantees it will return the error from one of them, but
+  not which.
   """
+  @spec choice(nonempty_list(t)) :: t
   @spec choice(t, nonempty_list(t)) :: t
-  def choice(combinator \\ empty(), [_, _ | _] = choices) when is_combinator(combinator) do
+  @spec choice(t, nonempty_list(t), opts) :: t
+  def choice(combinator \\ empty(), [_, _ | _] = choices, opts \\ [])
+      when is_combinator(combinator) do
     choices = Enum.map(choices, &Enum.reverse/1)
-    [{:choice, choices} | combinator]
+    weights = opts[:gen_weights]
+
+    if weights && length(weights) != length(choices) do
+      raise ArgumentError, ":gen_weights must be a list of the same size as choices"
+    end
+
+    [{:choice, choices, weights} | combinator]
   end
 
   @doc """
@@ -1417,6 +1768,7 @@ defmodule NimbleParsec do
 
   It is equivalent to `choice([optional, empty()])`.
   """
+  @spec optional(t) :: t
   @spec optional(t, t) :: t
   def optional(combinator \\ empty(), optional) do
     choice(combinator, [optional, empty()])
@@ -1424,21 +1776,28 @@ defmodule NimbleParsec do
 
   ## Helpers
 
-  defp validate_min_and_max!(opts) do
+  defp validate_min_and_max!(count_or_opts, required_min \\ 0)
+
+  defp validate_min_and_max!(count, required_min)
+       when is_integer(count) do
+    validate_min_and_max!([min: count], required_min)
+  end
+
+  defp validate_min_and_max!(opts, required_min) do
     min = opts[:min]
     max = opts[:max]
 
     cond do
       min && max ->
-        validate_min_or_max!(:min, min, 0)
+        validate_min_or_max!(:min, min, required_min)
         validate_min_or_max!(:max, max, 1)
 
         max <= min and
           raise ArgumentError,
-                "expected :max to be strictly more than :min, got: #{min} and #{max}"
+                "expected :max to be strictly greater than :min, got: #{min} and #{max}"
 
       min ->
-        validate_min_or_max!(:min, min, 0)
+        validate_min_or_max!(:min, min, required_min)
 
       max ->
         validate_min_or_max!(:max, max, 1)
@@ -1447,13 +1806,13 @@ defmodule NimbleParsec do
         raise ArgumentError, "expected :min or :max to be given"
     end
 
-    {min || 0, max}
+    {min || required_min, max}
   end
 
   defp validate_min_or_max!(kind, value, min) do
     unless is_integer(value) and value >= min do
       raise ArgumentError,
-            "expected #{kind} to be an integer more than or equal to #{min}, " <>
+            "expected #{kind} to be an integer greater than or equal to #{min}, " <>
               "got: #{inspect(value)}"
     end
   end
@@ -1463,9 +1822,9 @@ defmodule NimbleParsec do
   end
 
   defp split_range!(x, _context) when is_integer(x), do: true
-  defp split_range!(_.._, _context), do: true
+  defp split_range!(_.._//step, _context) when abs(step) == 1, do: true
   defp split_range!({:not, x}, _context) when is_integer(x), do: false
-  defp split_range!({:not, _.._}, _context), do: false
+  defp split_range!({:not, _.._//step}, _context) when abs(step) == 1, do: false
 
   defp split_range!(range, context) do
     raise ArgumentError, "unknown range #{inspect(range)} given to #{context}"
@@ -1525,8 +1884,8 @@ defmodule NimbleParsec do
     [{:traverse, Enum.reverse(to_traverse), pre_or_pos, [call]} | combinator]
   end
 
-  defp bin_segment(combinator, inclusive, exclusive, [_ | _] = modifiers) do
-    [{:bin_segment, inclusive, exclusive, modifiers} | combinator]
+  defp bin_segment(combinator, inclusive, exclusive, modifier) do
+    [{:bin_segment, inclusive, exclusive, modifier} | combinator]
   end
 
   ## Traverse callbacks
@@ -1547,24 +1906,24 @@ defmodule NimbleParsec do
   end
 
   @doc false
-  def __wrap__(_rest, acc, context, _line, _offset) do
-    {[reverse_now_or_later(acc)], context}
+  def __wrap__(rest, acc, context, _line, _offset) do
+    {:{}, [], [rest, [reverse_now_or_later(acc)], context]}
   end
 
   @doc false
-  def __tag__(_rest, acc, context, _line, _offset, tag) do
-    {[{tag, reverse_now_or_later(acc)}], context}
+  def __tag__(rest, acc, context, _line, _offset, tag) do
+    {:{}, [], [rest, [{tag, reverse_now_or_later(acc)}], context]}
   end
 
   @doc false
-  def __unwrap_and_tag__(_rest, acc, context, _line, _offset, tag) when is_list(acc) do
+  def __unwrap_and_tag__(rest, acc, context, _line, _offset, tag) when is_list(acc) do
     case acc do
-      [one] -> {[{tag, one}], context}
+      [one] -> {:{}, [], [rest, [{tag, one}], context]}
       many -> raise "unwrap_and_tag/3 expected a single token, got: #{inspect(many)}"
     end
   end
 
-  def __unwrap_and_tag__(_rest, acc, context, _line, _offset, tag) do
+  def __unwrap_and_tag__(rest, acc, context, _line, _offset, tag) do
     quoted =
       quote do
         case :lists.reverse(unquote(acc)) do
@@ -1573,7 +1932,7 @@ defmodule NimbleParsec do
         end
       end
 
-    {[{tag, quoted}], context}
+    {:{}, [], [rest, [{tag, quoted}], context]}
   end
 
   @doc false
@@ -1588,38 +1947,38 @@ defmodule NimbleParsec do
       Off: #{inspect(offset)}
       """)
 
-      {acc, context}
+      {rest, acc, context}
     end
   end
 
   @doc false
-  def __constant__(_rest, _acc, context, _line, _offset, constant) do
-    {constant, context}
+  def __constant__(rest, _acc, context, _line, _offset, constant) do
+    {:{}, [], [rest, constant, context]}
   end
 
   @doc false
-  def __line__(_rest, acc, context, line, _offset) do
-    {[{reverse_now_or_later(acc), line}], context}
+  def __line__(rest, acc, context, line, _offset) do
+    {:{}, [], [rest, [{reverse_now_or_later(acc), line}], context]}
   end
 
   @doc false
-  def __byte_offset__(_rest, acc, context, _line, offset) do
-    {[{reverse_now_or_later(acc), offset}], context}
+  def __byte_offset__(rest, acc, context, _line, offset) do
+    {:{}, [], [rest, [{reverse_now_or_later(acc), offset}], context]}
   end
 
   @doc false
-  def __map__(_rest, acc, context, _line, _offset, var, call) do
+  def __map__(rest, acc, context, _line, _offset, var, call) do
     ast =
       quote do
         Enum.map(unquote(acc), fn unquote(var) -> unquote(call) end)
       end
 
-    {ast, context}
+    {:{}, [], [rest, ast, context]}
   end
 
   @doc false
-  def __reduce__(_rest, acc, context, _line, _offset, call) do
-    {[compile_call!([reverse_now_or_later(acc)], call, "reduce")], context}
+  def __reduce__(rest, acc, context, _line, _offset, call) do
+    {:{}, [], [rest, [compile_call!([reverse_now_or_later(acc)], call, "reduce")], context]}
   end
 
   ## Repeat callbacks
@@ -1664,28 +2023,28 @@ defmodule NimbleParsec do
   end
 
   @doc false
-  def __runtime_string__(_rest, acc, context, _line, _offset, _min, _max, _type) do
+  def __runtime_string__(rest, acc, context, _line, _offset, _min, _max, _type) do
     ast = quote(do: List.to_string(unquote(reverse_now_or_later(acc))))
-    {[ast], context}
+    {:{}, [], [rest, [ast], context]}
   end
 
   @doc false
-  def __compile_string__(_rest, acc, context, _line, _offset, _count, type) when is_list(acc) do
+  def __compile_string__(rest, acc, context, _line, _offset, _count, type) when is_list(acc) do
     acc =
       for entry <- :lists.reverse(acc) do
         {:"::", [], [entry, type]}
       end
 
-    {[{:<<>>, [], acc}], context}
+    {:{}, [], [rest, [{:<<>>, [], acc}], context]}
   end
 
-  def __compile_string__(_rest, acc, context, _line, _offset, _count, _type) do
+  def __compile_string__(rest, acc, context, _line, _offset, _count, _type) do
     ast = quote(do: List.to_string(unquote(reverse_now_or_later(acc))))
-    {[ast], context}
+    {:{}, [], [rest, [ast], context]}
   end
 
   @doc false
-  def __runtime_integer__(_rest, acc, context, _line, _offset, min, _max)
+  def __runtime_integer__(rest, acc, context, _line, _offset, min, _max)
       when is_integer(min) and min > 0 do
     ast =
       quote do
@@ -1693,27 +2052,27 @@ defmodule NimbleParsec do
         [:lists.foldl(fn x, acc -> x - ?0 + acc * 10 end, head, tail)]
       end
 
-    {ast, context}
+    {:{}, [], [rest, ast, context]}
   end
 
-  def __runtime_integer__(_rest, acc, context, _line, _offset, _min, _max) do
+  def __runtime_integer__(rest, acc, context, _line, _offset, _min, _max) do
     ast =
       quote do
         [head | tail] = unquote(reverse_now_or_later(acc))
         [:lists.foldl(fn x, acc -> x - ?0 + acc * 10 end, head - ?0, tail)]
       end
 
-    {ast, context}
+    {:{}, [], [rest, ast, context]}
   end
 
   @doc false
-  def __compile_integer__(_rest, acc, context, _line, _offset, _count) when is_list(acc) do
+  def __compile_integer__(rest, acc, context, _line, _offset, _count) when is_list(acc) do
     ast =
       acc
       |> quoted_ascii_to_integer(1)
       |> Enum.reduce(&{:+, [], [&2, &1]})
 
-    {[ast], context}
+    {:{}, [], [rest, [ast], context]}
   end
 
   defp reverse_now_or_later(list) when is_list(list), do: :lists.reverse(list)

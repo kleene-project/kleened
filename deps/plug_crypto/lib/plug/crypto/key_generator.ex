@@ -14,7 +14,7 @@ defmodule Plug.Crypto.KeyGenerator do
   See http://tools.ietf.org/html/rfc2898#section-5.2
   """
 
-  use Bitwise
+  import Bitwise
   @max_length bsl(1, 32) - 1
 
   @doc """
@@ -49,7 +49,7 @@ defmodule Plug.Crypto.KeyGenerator do
 
       true ->
         with_cache(cache, {secret, salt, iterations, length, digest}, fn ->
-          generate(hmac_fun(digest, secret), salt, iterations, length, 1, [], 0)
+          pbkdf2_hmac(digest, secret, salt, iterations, length)
         end)
     end
   rescue
@@ -70,32 +70,46 @@ defmodule Plug.Crypto.KeyGenerator do
     end
   end
 
-  defp generate(_fun, _salt, _iterations, max_length, _block_index, acc, length)
-       when length >= max_length do
-    acc
-    |> IO.iodata_to_binary()
-    |> binary_part(0, max_length)
-  end
-
-  defp generate(fun, salt, iterations, max_length, block_index, acc, length) do
-    initial = fun.(<<salt::binary, block_index::integer-size(32)>>)
-    block = iterate(fun, iterations - 1, initial, initial)
-    length = byte_size(block) + length
-
-    generate(fun, salt, iterations, max_length, block_index + 1, [acc | block], length)
-  end
-
-  defp iterate(_fun, 0, _prev, acc), do: acc
-
-  defp iterate(fun, iteration, prev, acc) do
-    next = fun.(prev)
-    iterate(fun, iteration - 1, next, :crypto.exor(next, acc))
-  end
-
-  # TODO: remove when we require OTP 22.1
-  if Code.ensure_loaded?(:crypto) and function_exported?(:crypto, :mac, 4) do
-    defp hmac_fun(digest, key), do: &:crypto.mac(:hmac, digest, key, &1)
+  # TODO: remove when we require OTP 24.2
+  if Code.ensure_loaded?(:crypto) and function_exported?(:crypto, :pbkdf2_hmac, 5) do
+    defp pbkdf2_hmac(digest, secret, salt, iterations, length) do
+      :crypto.pbkdf2_hmac(digest, secret, salt, iterations, length)
+    end
   else
-    defp hmac_fun(digest, key), do: &:crypto.hmac(digest, key, &1)
+    defp pbkdf2_hmac(digest, secret, salt, iterations, length) do
+      legacy_pbkdf2_hmac(hmac_fun(digest, secret), salt, iterations, length, 1, [], 0)
+    end
+
+    defp legacy_pbkdf2_hmac(_fun, _salt, _iterations, max_length, _block_index, acc, length)
+         when length >= max_length do
+      acc
+      |> IO.iodata_to_binary()
+      |> binary_part(0, max_length)
+    end
+
+    defp legacy_pbkdf2_hmac(fun, salt, iterations, max_length, block_index, acc, length) do
+      initial = fun.(<<salt::binary, block_index::integer-size(32)>>)
+      block = iterate(fun, iterations - 1, initial, initial)
+      length = byte_size(block) + length
+
+      legacy_pbkdf2_hmac(
+        fun,
+        salt,
+        iterations,
+        max_length,
+        block_index + 1,
+        [acc | block],
+        length
+      )
+    end
+
+    defp iterate(_fun, 0, _prev, acc), do: acc
+
+    defp iterate(fun, iteration, prev, acc) do
+      next = fun.(prev)
+      iterate(fun, iteration - 1, next, :crypto.exor(next, acc))
+    end
+
+    defp hmac_fun(digest, key), do: &:crypto.mac(:hmac, digest, key, &1)
   end
 end

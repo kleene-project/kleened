@@ -1,23 +1,33 @@
-# Chnagelog
+# Changelog
 
-<!-- %% CHANGELOG_ENTRIES %% -->
+## 0.16.2 (2024-03-01)
 
-### 0.14.0 - 2019-07-16 22:54:32
+* Fix warnings on Elixir v1.16+
 
-Upgrade `:makeup` dependency to version 1.0.:wq
+## 0.16.1 (2023-04-03)
 
+* Relax NimbleParsec dependency
 
-### 0.13.0 - 2019-01-01 17:33:33
+## 0.16.0 (2022-03-07)
 
-Register the `.ex` and `.exs` extensions as being supported by the `ElixirLexer`.
+Export the `root` and `root_parsec` parsecs as combinators so that they can
+be used from other modules. This is backward-compatible with the previous version
+(it only adds some new exports to the module).
 
+This way, the `root` and `root_parsec` combinators can be used from other lexers
+(such as the `EExLexer` for examples).
 
-### 0.12.0 - 2018-12-30 19:12:21
+## 0.15.2 (2021-10-13)
 
-Make use of Makeup's registry.
+* Highlight Erlang calls as modules.
+* Support digits as modifiers in sigils.
+* Support stepped ranges operators `..//`.
 
+## 0.15.1 (2021-01-29)
 
-### 0.11.0 - 2018-12-22 01:26:09
+* Multiple bug fixes and update list of tokens.
 
-Updates `makeup` dependency to 0.6.
+## 0.15.0 (2020-10-02)
 
+* Added support for Unicode characters in identifiers (atoms and variables).
+* Improved handling of sigils.

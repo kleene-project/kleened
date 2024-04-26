@@ -160,11 +160,13 @@ do_check_options([Opt={Name, _}|Opts]) ->
 		max_concurrent_streams,
 		max_decode_table_size,
 		max_encode_table_size,
+		max_fragmented_header_block_size,
 		max_frame_size_received,
 		max_frame_size_sent,
 		max_stream_window_size,
 		preface_timeout,
 		settings_timeout,
+		stream_window_data_threshold,
 		stream_window_margin_size,
 		stream_window_update_threshold
 	],
@@ -583,7 +585,7 @@ headers_frame_connect(State=#http2_state{transport=Transport, opts=Opts, tunnel_
 	ProtoOpts = case Destination of
 		#{transport := tls} ->
 			Protocols = maps:get(protocols, Destination, [http2, http]),
-			TLSOpts = gun:ensure_alpn_sni(Protocols, maps:get(tls_opts, Destination, []), DestHost),
+			TLSOpts = gun:ensure_tls_opts(Protocols, maps:get(tls_opts, Destination, []), DestHost),
 			HandshakeEvent = #{
 				stream_ref => RealStreamRef,
 				reply_to => ReplyTo,

@@ -1,5 +1,6 @@
 defmodule OpenApiSpex.OpenApi.Decode do
-  # This module exposes functionality to convert an arbitrary map into a OpenApi struct.
+  @moduledoc "This module exposes functionality to convert an arbitrary map into a OpenApi struct."
+
   alias OpenApiSpex.{
     Components,
     Contact,
@@ -29,6 +30,8 @@ defmodule OpenApiSpex.OpenApi.Decode do
     Xml
   }
 
+  @open_api_spex_extensions ["x-struct", "x-validate"]
+
   def decode(%{"openapi" => _openapi, "info" => _info, "paths" => _paths} = map) do
     map
     |> to_struct(OpenApi)
@@ -38,6 +41,7 @@ defmodule OpenApiSpex.OpenApi.Decode do
     |> prop_to_struct(:components, Components)
     |> prop_to_struct(:tags, Tag)
     |> prop_to_struct(:externalDocs, ExternalDocumentation)
+    |> add_extensions(map)
   end
 
   defp struct_from_map(struct, map) when is_atom(struct) do
@@ -56,10 +60,12 @@ defmodule OpenApiSpex.OpenApi.Decode do
   end
 
   defp map_get(map, atom_key) when is_atom(atom_key) do
-    with %{^atom_key => value} <- map do
-      {atom_key, value}
-    else
-      _ -> map_get(map, to_string(atom_key))
+    case map do
+      %{^atom_key => value} ->
+        {atom_key, value}
+
+      _ ->
+        map_get(map, to_string(atom_key))
     end
   end
 
@@ -103,8 +109,14 @@ defmodule OpenApiSpex.OpenApi.Decode do
   #
   # This function, ensures that if the map has the key — it'll convert the corresponding value
   # to an atom.
-  defp convert_value_to_atom_if_present(map, key),
-    do: update_map_if_key_present(map, key, &String.to_atom/1)
+  defp convert_value_to_atom_if_present(map, key) do
+    update_fn = fn
+      nil -> nil
+      s -> String.to_atom(s)
+    end
+
+    update_map_if_key_present(map, key, update_fn)
+  end
 
   # In some cases, e.g. Schema type we must convert values that are list of strings to a list atoms,
   #
@@ -133,6 +145,7 @@ defmodule OpenApiSpex.OpenApi.Decode do
     Tag
     |> struct_from_map(map)
     |> prop_to_struct(:externalDocs, ExternalDocumentation)
+    |> add_extensions(map)
   end
 
   defp to_struct(list, Tag) when is_list(list) do
@@ -152,6 +165,7 @@ defmodule OpenApiSpex.OpenApi.Decode do
     |> prop_to_struct(:securitySchemes, SecuritySchemes)
     |> prop_to_struct(:links, Links)
     |> prop_to_struct(:callbacks, Callbacks)
+    |> add_extensions(map)
   end
 
   defp to_struct(map, Link) do
@@ -160,6 +174,7 @@ defmodule OpenApiSpex.OpenApi.Decode do
     |> prop_to_struct(:server, Server)
     |> prop_to_struct(:requestBody, RequestBody)
     |> prop_to_struct(:parameters, Parameters)
+    |> add_extensions(map)
   end
 
   defp to_struct(map, Links), do: embedded_ref_or_struct(map, Link)
@@ -168,12 +183,15 @@ defmodule OpenApiSpex.OpenApi.Decode do
     SecurityScheme
     |> struct_from_map(map)
     |> prop_to_struct(:flows, OAuthFlows)
+    |> add_extensions(map)
   end
 
   defp to_struct(map, SecuritySchemes), do: embedded_ref_or_struct(map, SecurityScheme)
 
   defp to_struct(map, OAuthFlow) do
-    struct_from_map(OAuthFlow, map)
+    OAuthFlow
+    |> struct_from_map(map)
+    |> add_extensions(map)
   end
 
   defp to_struct(map, OAuthFlows) do
@@ -183,6 +201,7 @@ defmodule OpenApiSpex.OpenApi.Decode do
     |> prop_to_struct(:password, OAuthFlow)
     |> prop_to_struct(:clientCredentials, OAuthFlow)
     |> prop_to_struct(:authorizationCode, OAuthFlow)
+    |> add_extensions(map)
   end
 
   defp to_struct(%{"$ref" => _} = map, Schema), do: struct_from_map(Reference, map)
@@ -193,6 +212,7 @@ defmodule OpenApiSpex.OpenApi.Decode do
     |> prepare_schema()
     |> (&struct_from_map(Schema, &1)).()
     |> prop_to_struct(:xml, Xml)
+    |> add_extensions(map)
   end
 
   defp to_struct(%{"type" => "array"} = map, Schema) do
@@ -201,6 +221,31 @@ defmodule OpenApiSpex.OpenApi.Decode do
     |> (&struct_from_map(Schema, &1)).()
     |> prop_to_struct(:items, Schema)
     |> prop_to_struct(:xml, Xml)
+    |> add_extensions(map)
+  end
+
+  defp to_struct(%{"anyOf" => _valid_schemas} = map, Schema) do
+    Schema
+    |> struct_from_map(prepare_schema(map))
+    |> prop_to_struct(:anyOf, Schemas)
+    |> prop_to_struct(:discriminator, Discriminator)
+    |> add_extensions(map)
+  end
+
+  defp to_struct(%{"oneOf" => _valid_schemas} = map, Schema) do
+    Schema
+    |> struct_from_map(prepare_schema(map))
+    |> prop_to_struct(:oneOf, Schemas)
+    |> prop_to_struct(:discriminator, Discriminator)
+    |> add_extensions(map)
+  end
+
+  defp to_struct(%{"allOf" => _valid_schemas} = map, Schema) do
+    Schema
+    |> struct_from_map(prepare_schema(map))
+    |> prop_to_struct(:allOf, Schemas)
+    |> prop_to_struct(:discriminator, Discriminator)
+    |> add_extensions(map)
   end
 
   defp to_struct(%{"type" => "object"} = map, Schema) do
@@ -214,42 +259,20 @@ defmodule OpenApiSpex.OpenApi.Decode do
     |> prepare_schema()
     |> (&struct_from_map(Schema, &1)).()
     |> prop_to_struct(:properties, Schemas)
+    |> manage_additional_properties()
     |> prop_to_struct(:externalDocs, ExternalDocumentation)
-  end
-
-  defp to_struct(%{"anyOf" => _valid_schemas} = map, Schema) do
-    Schema
-    |> struct_from_map(map)
-    |> prop_to_struct(:anyOf, Schemas)
-    |> prop_to_struct(:discriminator, Discriminator)
-  end
-
-  defp to_struct(%{"oneOf" => _valid_schemas} = map, Schema) do
-    Schema
-    |> struct_from_map(map)
-    |> prop_to_struct(:oneOf, Schemas)
-    |> prop_to_struct(:discriminator, Discriminator)
-  end
-
-  defp to_struct(%{"allOf" => _valid_schemas} = map, Schema) do
-    Schema
-    |> struct_from_map(map)
-    |> prop_to_struct(:allOf, Schemas)
-    |> prop_to_struct(:discriminator, Discriminator)
+    |> add_extensions(map)
   end
 
   defp to_struct(%{"not" => _valid_schemas} = map, Schema) do
     Schema
     |> struct_from_map(map)
-    |> prop_to_struct(:not, Schemas)
+    |> prop_to_struct(:not, Schema)
+    |> add_extensions(map)
   end
 
   defp to_struct(map, Schemas) when is_map(map), do: embedded_ref_or_struct(map, Schema)
   defp to_struct(list, Schemas) when is_list(list), do: embedded_ref_or_struct(list, Schema)
-
-  defp to_struct(map, OAuthFlow) do
-    struct_from_map(OAuthFlow, map)
-  end
 
   defp to_struct(map, Callback) do
     map
@@ -270,6 +293,7 @@ defmodule OpenApiSpex.OpenApi.Decode do
     |> prop_to_struct(:requestBody, RequestBody)
     |> prop_to_struct(:callbacks, Callbacks)
     |> prop_to_struct(:servers, Server)
+    |> add_extensions(map)
   end
 
   defp to_struct(%{"$ref" => _} = map, RequestBody), do: struct_from_map(Reference, map)
@@ -278,6 +302,7 @@ defmodule OpenApiSpex.OpenApi.Decode do
     RequestBody
     |> struct_from_map(map)
     |> prop_to_struct(:content, Content)
+    |> add_extensions(map)
   end
 
   defp to_struct(map, RequestBodies), do: embedded_ref_or_struct(map, RequestBody)
@@ -291,12 +316,15 @@ defmodule OpenApiSpex.OpenApi.Decode do
     |> prop_to_struct(:examples, Examples)
     |> prop_to_struct(:content, Content)
     |> prop_to_struct(:schema, Schema)
+    |> add_extensions(map)
   end
 
   defp to_struct(map_or_list, Parameters), do: embedded_ref_or_struct(map_or_list, Parameter)
 
   defp to_struct(map, ServerVariable) do
-    struct_from_map(ServerVariable, map)
+    ServerVariable
+    |> struct_from_map(map)
+    |> add_extensions(map)
   end
 
   defp to_struct(map, ServerVariables) do
@@ -310,6 +338,7 @@ defmodule OpenApiSpex.OpenApi.Decode do
     Server
     |> struct_from_map(map)
     |> prop_to_struct(:variables, ServerVariables)
+    |> add_extensions(map)
   end
 
   defp to_struct(list, Servers) when is_list(list) do
@@ -322,6 +351,7 @@ defmodule OpenApiSpex.OpenApi.Decode do
     |> prop_to_struct(:headers, Headers)
     |> prop_to_struct(:content, Content)
     |> prop_to_struct(:links, Links)
+    |> add_extensions(map)
   end
 
   defp to_struct(map, Responses), do: embedded_ref_or_struct(map, Response)
@@ -332,6 +362,7 @@ defmodule OpenApiSpex.OpenApi.Decode do
     |> prop_to_struct(:examples, Examples)
     |> prop_to_struct(:encoding, Encoding)
     |> prop_to_struct(:schema, Schema)
+    |> add_extensions(map)
   end
 
   defp to_struct(map, Content) do
@@ -348,17 +379,19 @@ defmodule OpenApiSpex.OpenApi.Decode do
        Encoding
        |> struct_from_map(v)
        |> convert_value_to_atom_if_present(:style)
-       |> prop_to_struct(:headers, Headers)}
+       |> prop_to_struct(:headers, Headers)
+       |> add_extensions(v)}
     end)
   end
 
-  defp to_struct(map, Example), do: struct_from_map(Example, map)
+  defp to_struct(map, Example), do: Example |> struct_from_map(map) |> add_extensions(map)
   defp to_struct(map_or_list, Examples), do: embedded_ref_or_struct(map_or_list, Example)
 
   defp to_struct(map, Header) do
     Header
     |> struct_from_map(map)
     |> prop_to_struct(:schema, Schema)
+    |> add_extensions(map)
   end
 
   defp to_struct(map, Headers), do: embedded_ref_or_struct(map, Header)
@@ -376,6 +409,7 @@ defmodule OpenApiSpex.OpenApi.Decode do
     |> prop_to_struct(:trace, Operation)
     |> prop_to_struct(:parameters, Parameters)
     |> prop_to_struct(:servers, Servers)
+    |> add_extensions(map)
   end
 
   defp to_struct(map, PathItems) do
@@ -390,7 +424,12 @@ defmodule OpenApiSpex.OpenApi.Decode do
     |> struct_from_map(map)
     |> prop_to_struct(:contact, Contact)
     |> prop_to_struct(:license, License)
+    |> add_extensions(map)
   end
+
+  defp to_struct(map, mod)
+       when mod in [License, Contact, ExternalDocumentation, Discriminator, Xml],
+       do: mod |> struct_from_map(map) |> add_extensions(map)
 
   defp to_struct(list, mod) when is_list(list) and is_atom(mod),
     do: Enum.map(list, &to_struct(&1, mod))
@@ -402,5 +441,32 @@ defmodule OpenApiSpex.OpenApi.Decode do
     Map.update!(map, key, fn v ->
       to_struct(v, mod)
     end)
+  end
+
+  # additionalProperties is a reference
+  defp manage_additional_properties(%_{additionalProperties: %{"$ref" => reference}} = map) do
+    Map.put(map, :additionalProperties, %Reference{"$ref": reference})
+  end
+
+  # additionalProperties is a boolean without validation
+  defp manage_additional_properties(%_{additionalProperties: value} = map) when is_boolean(value),
+    do: map
+
+  # additionalProperties with custom one off validation
+  defp manage_additional_properties(%_{additionalProperties: %{} = props} = map) do
+    Map.put(map, :additionalProperties, to_struct(props, Schema))
+  end
+
+  defp manage_additional_properties(map), do: map
+
+  defp add_extensions(struct, map) do
+    extensions =
+      map
+      |> Enum.filter(fn {key, _val} ->
+        String.starts_with?(key, "x-") and key not in @open_api_spex_extensions
+      end)
+      |> Map.new()
+
+    Map.put(struct, :extensions, if(map_size(extensions) == 0, do: nil, else: extensions))
   end
 end

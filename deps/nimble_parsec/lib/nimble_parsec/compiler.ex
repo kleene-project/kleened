@@ -11,14 +11,15 @@ defmodule NimbleParsec.Compiler do
 
     Returns `{:ok, [token], rest, context, position, byte_offset}` or
     `{:error, reason, rest, context, line, byte_offset}` where `position`
-    describes the location of the #{name} (start position) as `{line, column_on_line}`.
+    describes the location of the #{name} (start position) as `{line, offset_to_start_of_line}`.
+
+    To column where the error occurred can be inferred from `byte_offset - offset_to_start_of_line`.
 
     ## Options
 
-      * `:line` - the initial line, defaults to 1
-      * `:byte_offset` - the initial byte offset, defaults to 0
-      * `:context` - the initial context value. It will be converted
-        to a map
+      * `:byte_offset` - the byte offset for the whole binary, defaults to 0
+      * `:line` - the line and the byte offset into that line, defaults to `{1, byte_offset}`
+      * `:context` - the initial context value. It will be converted to a map
     """
 
     spec =
@@ -30,7 +31,7 @@ defmodule NimbleParsec.Compiler do
              byte_offset: pos_integer,
              rest: binary,
              reason: String.t(),
-             context: map()
+             context: map
       end
 
     args = quote(do: [binary, opts \\ []])
@@ -38,11 +39,16 @@ defmodule NimbleParsec.Compiler do
 
     body =
       quote do
-        line = Keyword.get(opts, :line, 1)
-        offset = Keyword.get(opts, :byte_offset, 0)
         context = Map.new(Keyword.get(opts, :context, []))
+        byte_offset = Keyword.get(opts, :byte_offset, 0)
 
-        case unquote(:"#{name}__0")(binary, [], [], context, {line, offset}, offset) do
+        line =
+          case Keyword.get(opts, :line, 1) do
+            {_, _} = line -> line
+            line -> {line, byte_offset}
+          end
+
+        case unquote(:"#{name}__0")(binary, [], [], context, line, byte_offset) do
           {:ok, acc, rest, context, line, offset} ->
             {:ok, :lists.reverse(acc), rest, context, line, offset}
 
@@ -147,9 +153,22 @@ defmodule NimbleParsec.Compiler do
           body
       end
 
+    call =
+      case parsec do
+        {mod, fun} ->
+          quote do
+            unquote(mod).unquote(:"#{fun}__0")(rest, acc, [], context, line, offset)
+          end
+
+        fun ->
+          quote do
+            unquote(:"#{fun}__0")(rest, acc, [], context, line, offset)
+          end
+      end
+
     body =
       quote do
-        case unquote(:"#{parsec}__0")(rest, acc, [], context, line, offset) do
+        case unquote(call) do
           {:ok, acc, rest, context, line, offset} ->
             unquote(next)(rest, acc, stack, context, line, offset)
 
@@ -169,16 +188,22 @@ defmodule NimbleParsec.Compiler do
       {next, step} = build_next(step, config)
       args = quote(do: [rest, acc, stack, context, line, offset])
       success_body = {next, [], args}
-      {_, _, _, failure_body} = build_catch_all(kind, current, combinators, config)
 
-      {success_body, failure_body} =
-        if kind == :positive, do: {success_body, failure_body}, else: {failure_body, success_body}
+      {_, [_bin | negative_head], _, failure_body} =
+        build_catch_all(kind, current, combinators, config)
+
+      {success_body, failure_body, head} =
+        if kind == :positive do
+          {success_body, failure_body, quote(do: [acc, stack, context, line, offset])}
+        else
+          {failure_body, success_body, negative_head}
+        end
 
       defs =
         for choice <- choices do
           {[], inputs, guards, _, _, metadata} = take_bound_combinators(choice)
           {bin, _} = compile_bound_bin_pattern(inputs, metadata, quote(do: _))
-          head = quote(do: [unquote(bin) = rest, acc, stack, context, line, offset])
+          head = quote(do: [unquote(bin) = rest]) ++ quote(do: unquote(head))
           guards = guards_list_to_quoted(guards)
           {current, head, guards, success_body}
         end
@@ -201,7 +226,7 @@ defmodule NimbleParsec.Compiler do
     compile_unbound_traverse(combinators, kind, current, step, config, fun)
   end
 
-  defp compile_unbound_combinator({:times, combinators, 0, count}, current, step, config) do
+  defp compile_unbound_combinator({:times, combinators, count}, current, step, config) do
     if all_no_context_combinators?(combinators) do
       compile_bound_times(combinators, count, current, step, config)
     else
@@ -209,7 +234,7 @@ defmodule NimbleParsec.Compiler do
     end
   end
 
-  defp compile_unbound_combinator({:repeat, combinators, while}, current, step, config) do
+  defp compile_unbound_combinator({:repeat, combinators, while, _gen}, current, step, config) do
     {failure, step} = build_next(step, config)
     config = %{config | catch_all: failure, acc_depth: 0}
 
@@ -224,7 +249,7 @@ defmodule NimbleParsec.Compiler do
     compile_eventually(combinators, current, step, config)
   end
 
-  defp compile_unbound_combinator({:choice, choices} = combinator, current, step, config) do
+  defp compile_unbound_combinator({:choice, choices, _} = combinator, current, step, config) do
     config =
       update_in(config.labels, fn
         [] -> [label(combinator)]
@@ -240,7 +265,7 @@ defmodule NimbleParsec.Compiler do
 
   ## Lookahead
 
-  defp extract_choices_from_lookahead([{:choice, choices}]), do: choices
+  defp extract_choices_from_lookahead([{:choice, choices, _}]), do: choices
   defp extract_choices_from_lookahead(other), do: [other]
 
   defp compile_unbound_lookahead(combinators, kind, current, step, config) do
@@ -328,19 +353,38 @@ defmodule NimbleParsec.Compiler do
     {Enum.reverse([last_def | defs]), inline, next, step, :catch_none}
   end
 
-  defp traverse(_traversal, next, _, _, _, _, _, %{replace: true}) do
-    quote(do: unquote(next)(rest, acc, stack, context, line, offset))
+  defp traverse(_traversal, next, _, user_acc, _, _, _, %{replace: true}) do
+    quote do
+      _ = unquote(user_acc)
+      unquote(next)(rest, acc, stack, context, line, offset)
+    end
   end
 
   defp traverse(traversal, next, rest, user_acc, context, line, offset, _) do
     case apply_traverse(traversal, rest, user_acc, context, line, offset) do
-      {user_acc, ^context} when user_acc != :error ->
-        quote(do: unquote(next)(rest, unquote(user_acc) ++ acc, stack, context, line, offset))
+      {:{}, _, [rest, expanded_acc, context]} ->
+        quote do
+          _ = unquote(user_acc)
+
+          unquote(next)(
+            unquote(rest),
+            unquote(expanded_acc) ++ acc,
+            stack,
+            unquote(context),
+            line,
+            offset
+          )
+        end
+
+      {:error, reason} ->
+        quote do
+          {:error, unquote(reason), rest, context, line, offset}
+        end
 
       quoted ->
-        quote do
+        quote generated: true do
           case unquote(quoted) do
-            {user_acc, context} when is_list(user_acc) ->
+            {rest, user_acc, context} when is_list(user_acc) ->
               unquote(next)(rest, user_acc ++ acc, stack, context, line, offset)
 
             {:error, reason} ->
@@ -351,53 +395,99 @@ defmodule NimbleParsec.Compiler do
   end
 
   defp apply_traverse(mfargs, rest, acc, context, line, offset) do
-    apply_traverse(Enum.reverse(mfargs), rest, {acc, context}, line, offset)
+    apply_traverse(Enum.reverse(mfargs), {:{}, [], [rest, acc, context]}, line, offset)
   end
 
-  defp apply_traverse([mfargs | tail], rest, {acc, context}, line, offset) when acc != :error do
-    acc_context = apply_mfa(mfargs, [rest, acc, context, line, offset])
-    apply_traverse(tail, rest, acc_context, line, offset)
+  defp apply_traverse([mfargs | tail], {:{}, _, [rest, acc, context]}, line, offset) do
+    rest_acc_context = apply_traverse_mfa(mfargs, [rest, acc, context, line, offset], rest)
+    apply_traverse(tail, rest_acc_context, line, offset)
   end
 
-  defp apply_traverse([], _rest, acc_context, _line, _offset) do
-    acc_context
+  defp apply_traverse([], rest_acc_context, _line, _offset) do
+    rest_acc_context
   end
 
-  defp apply_traverse(tail, rest, acc_context, line, offset) do
-    pattern = quote(do: {acc, context} when is_list(acc))
-    args = [rest, quote(do: acc), quote(do: context), line, offset]
+  defp apply_traverse(tail, rest_acc_context, line, offset) do
+    pattern = quote(do: {rest, acc, context})
+    args = [quote(do: rest), quote(do: acc), quote(do: context), line, offset]
 
     entries =
       Enum.map(tail, fn mfargs ->
-        quote(do: unquote(pattern) <- unquote(apply_mfa(mfargs, args)))
+        quote(do: unquote(pattern) <- unquote(apply_traverse_mfa(mfargs, args, quote(do: rest))))
       end)
 
     quote do
-      with unquote(pattern) <- unquote(acc_context), unquote_splicing(entries) do
-        {acc, context}
+      with unquote(pattern) <- unquote(rest_acc_context), unquote_splicing(entries) do
+        {rest, acc, context}
       end
+    end
+  end
+
+  defp apply_traverse_mfa(mfargs, args, rest) do
+    case apply_mfa(mfargs, args) do
+      {:{}, _, [_, _, _]} = res ->
+        res
+
+      {acc, context} when acc != :error ->
+        IO.warn(
+          "Returning a two-element tuple {acc, context} in pre_traverse/post_traverse is deprecated, " <>
+            "please return {rest, acc, context} instead"
+        )
+
+        {:{}, [], [rest, acc, context]}
+
+      {:error, context} ->
+        {:error, context}
+
+      quoted ->
+        # TODO: Deprecate two element tuple return that is not error
+        quote generated: true do
+          case unquote(quoted) do
+            {_, _, _} = res -> res
+            {:error, reason} -> {:error, reason}
+            {acc, context} -> {unquote(rest), acc, context}
+          end
+        end
     end
   end
 
   ## Eventually
 
   defp compile_eventually(combinators, current, step, config) do
+    # First add the initial accumulator to the stack
+    {entrypoint, step} = build_next(step, config)
+    head = quote(do: [rest, acc, stack, context, line, offset])
+    args = quote(do: [rest, acc, [acc | stack], context, line, offset])
+    body = {entrypoint, [], args}
+    current_def = {current, head, true, body}
+
+    # Now define the failure point which will recur
     {failure, step} = build_next(step, config)
-    failure_def = build_eventually_next_def(current, failure)
+    failure_def = build_eventually_next_def(entrypoint, failure)
+    config = update_in(config.acc_depth, &(&1 + 1))
     catch_all_def = build_catch_all(:positive, failure, combinators, config)
 
+    # And compile down the inner combinators
     config = %{config | catch_all: failure, acc_depth: 0}
-    {defs, inline, success, step} = compile(combinators, [], [], current, step, config)
+    {defs, inline, success, step} = compile(combinators, [], [], entrypoint, step, config)
 
-    defs = Enum.reverse(defs, [failure_def, catch_all_def])
-    {defs, [{failure, @arity} | inline], success, step, :catch_none}
+    # In the exit remove the accumulator from the stack
+    {exitpoint, step} = build_next(step, config)
+    head = quote(do: [rest, acc, [_ | stack], context, line, offset])
+    args = quote(do: [rest, acc, stack, context, line, offset])
+    body = {exitpoint, [], args}
+    success_def = {success, head, true, body}
+
+    defs = Enum.reverse(defs, [success_def, current_def, failure_def, catch_all_def])
+    inline = [{success, @arity}, {current, @arity}, {failure, @arity} | inline]
+    {defs, inline, exitpoint, step, :catch_none}
   end
 
-  defp build_eventually_next_def(current, failure) do
-    head = quote(do: [<<byte, rest::binary>>, acc, stack, context, line, offset])
+  defp build_eventually_next_def(entrypoint, failure) do
+    head = quote(do: [<<byte, rest::binary>>, _acc, [acc | _] = stack, context, line, offset])
     offset = add_offset(quote(do: offset), 1)
     line = add_line(quote(do: line), offset, quote(do: byte))
-    body = {current, [], quote(do: [rest, acc, stack, context]) ++ [line, offset]}
+    body = {entrypoint, [], quote(do: [rest, acc, stack, context]) ++ [line, offset]}
     {failure, head, true, body}
   end
 
@@ -484,8 +574,8 @@ defmodule NimbleParsec.Compiler do
     {defs, inline, next, step, :catch_none}
   end
 
-  defp compile_time_repeat_while({:cont, quote(do: context)}), do: :cont
-  defp compile_time_repeat_while({:halt, quote(do: context)}), do: :halt
+  defp compile_time_repeat_while({:cont, {:context, _, __MODULE__}}), do: :cont
+  defp compile_time_repeat_while({:halt, {:context, _, __MODULE__}}), do: :halt
   defp compile_time_repeat_while(_), do: :none
 
   defp repeat_while(quoted, true_name, true_args, false_name, false_args) do
@@ -499,8 +589,8 @@ defmodule NimbleParsec.Compiler do
       :none ->
         quote do
           case unquote(quoted) do
-            {:cont, context} -> unquote({true_name, [], true_args})
-            {:halt, context} -> unquote({false_name, [], false_args})
+            {:cont, unquote(Enum.at(true_args, 3))} -> unquote({true_name, [], true_args})
+            {:halt, unquote(Enum.at(false_args, 3))} -> unquote({false_name, [], false_args})
           end
         end
     end
@@ -649,7 +739,7 @@ defmodule NimbleParsec.Compiler do
   #
   # For example, a lookahead at the beginning doesn't need a context.
   # A choice that is bound doesn't need one either.
-  defp all_no_context_combinators?([{:lookahead, look_combinators, _kind} | combinators]) do
+  defp all_no_context_combinators?([{:lookahead, look_combinators, _} | combinators]) do
     all_bound_combinators?(look_combinators) and
       all_no_context_combinators_next?(combinators)
   end
@@ -658,7 +748,7 @@ defmodule NimbleParsec.Compiler do
     all_no_context_combinators_next?(combinators)
   end
 
-  defp all_no_context_combinators_next?([{:choice, choice_combinators, _kind} | combinators]) do
+  defp all_no_context_combinators_next?([{:choice, choice_combinators, _} | combinators]) do
     all_bound_combinators?(choice_combinators) and
       all_no_context_combinators_next?(combinators)
   end
@@ -756,15 +846,15 @@ defmodule NimbleParsec.Compiler do
     {:ok, [string], [], [string], %{metadata | line: line, offset: offset}}
   end
 
-  defp bound_combinator({:bin_segment, inclusive, exclusive, modifiers}, metadata) do
+  defp bound_combinator({:bin_segment, inclusive, exclusive, modifier}, metadata) do
     %{line: line, offset: offset, counter: counter} = metadata
 
     {var, counter} = build_var(counter)
-    input = apply_bin_modifiers(var, modifiers)
+    input = apply_bin_modifier(var, modifier)
     guards = compile_bin_ranges(var, inclusive, exclusive)
 
     offset =
-      if :integer in modifiers do
+      if modifier == :integer do
         add_offset(offset, 1)
       else
         add_offset(offset, quote(do: byte_size(<<unquote(input)>>)))
@@ -798,7 +888,7 @@ defmodule NimbleParsec.Compiler do
         {traverse_line, traverse_offset} = pre_post_traverse(kind, pre_metadata, post_metadata)
 
         case apply_traverse(mfargs, rest, outputs, context, traverse_line, traverse_offset) do
-          {outputs, ^context} when outputs != :error ->
+          {:{}, _, [^rest, outputs, ^context]} when outputs != :error ->
             {:ok, inputs, guards, outputs, post_metadata}
 
           _ ->
@@ -838,7 +928,7 @@ defmodule NimbleParsec.Compiler do
 
   defp newline_allowed?(ors) do
     Enum.any?(ors, fn
-      _.._ = range -> ?\n in range
+      _.._//_ = range -> ?\n in range
       codepoint -> ?\n === codepoint
     end)
   end
@@ -847,7 +937,7 @@ defmodule NimbleParsec.Compiler do
 
   defp newline_forbidden?(ands) do
     Enum.any?(ands, fn
-      {:not, _.._ = range} -> ?\n in range
+      {:not, _.._//_ = range} -> ?\n in range
       {:not, codepoint} -> ?\n === codepoint
     end)
   end
@@ -881,16 +971,19 @@ defmodule NimbleParsec.Compiler do
     label
   end
 
-  defp label({:bin_segment, inclusive, exclusive, modifiers}) do
-    inclusive = Enum.map(inclusive, &inspect_bin_range(&1))
-    exclusive = Enum.map(exclusive, &inspect_bin_range(elem(&1, 1)))
+  defp label({:bin_segment, inclusive, exclusive, modifier}) do
+    {inclusive, printable?} = Enum.map_reduce(inclusive, true, &inspect_bin_range(&1, &2))
+
+    {exclusive, printable?} =
+      Enum.map_reduce(exclusive, printable?, &inspect_bin_range(elem(&1, 1), &2))
 
     prefix =
       cond do
-        :integer in modifiers -> "byte"
-        :utf8 in modifiers -> "utf8 codepoint"
-        :utf16 in modifiers -> "utf16 codepoint"
-        :utf32 in modifiers -> "utf32 codepoint"
+        modifier == :integer and not printable? -> "byte"
+        modifier == :integer -> "ASCII character"
+        modifier == :utf8 -> "utf8 codepoint"
+        modifier == :utf16 -> "utf16 codepoint"
+        modifier == :utf32 -> "utf32 codepoint"
       end
 
     prefix <> Enum.join([Enum.join(inclusive, " or") | exclusive], ", and not")
@@ -904,7 +997,7 @@ defmodule NimbleParsec.Compiler do
     labels(combinators)
   end
 
-  defp label({:repeat, combinators, _}) do
+  defp label({:repeat, combinators, _, _}) do
     labels(combinators)
   end
 
@@ -912,16 +1005,20 @@ defmodule NimbleParsec.Compiler do
     labels(combinators) <> " eventually"
   end
 
-  defp label({:times, combinators, _, _}) do
+  defp label({:times, combinators, _}) do
     labels(combinators)
   end
 
-  defp label({:choice, choices}) do
+  defp label({:choice, choices, _}) do
     Enum.map_join(choices, " or ", &labels/1)
   end
 
   defp label({:traverse, combinators, _, _}) do
     labels(combinators)
+  end
+
+  defp label({:parsec, {_module, function}}) do
+    Atom.to_string(function)
   end
 
   defp label({:parsec, name}) do
@@ -947,59 +1044,48 @@ defmodule NimbleParsec.Compiler do
 
   defp bin_range_to_guard(var, range) do
     case range do
-      min..max when min < max ->
+      min..min//step when abs(step) == 1 ->
+        quote(do: unquote(var) === unquote(min))
+
+      min..max//1 ->
         quote(do: unquote(var) >= unquote(min) and unquote(var) <= unquote(max))
 
-      min..max when min > max ->
+      min..max//-1 ->
         quote(do: unquote(var) >= unquote(max) and unquote(var) <= unquote(min))
-
-      min..min ->
-        quote(do: unquote(var) === unquote(min))
 
       min when is_integer(min) ->
         quote(do: unquote(var) === unquote(min))
 
-      {:not, min..max} when min < max ->
+      {:not, min..min//step} when abs(step) == 1 ->
+        quote(do: unquote(var) !== unquote(min))
+
+      {:not, min..max//1} ->
         quote(do: unquote(var) < unquote(min) or unquote(var) > unquote(max))
 
-      {:not, min..max} when min > max ->
+      {:not, min..max//-1} ->
         quote(do: unquote(var) < unquote(max) or unquote(var) > unquote(min))
-
-      {:not, min..min} ->
-        quote(do: unquote(var) !== unquote(min))
 
       {:not, min} when is_integer(min) ->
         quote(do: unquote(var) !== unquote(min))
     end
   end
 
-  defp inspect_bin_range(min..max) do
-    if ascii?(min) and ascii?(max) do
-      <<" in the range ", ??, min, ?., ?., ??, max>>
-    else
-      " in the range #{Integer.to_string(min)}..#{Integer.to_string(max)}"
-    end
+  defp inspect_bin_range(min..max//_, printable?) do
+    {" in the range #{inspect_char(min)} to #{inspect_char(max)}",
+     printable? and printable?(min) and printable?(max)}
   end
 
-  defp inspect_bin_range(min) do
-    if ascii?(min) do
-      <<" equal to ", ??, min>>
-    else
-      " equal to #{Integer.to_string(min)}"
-    end
+  defp inspect_bin_range(min, printable?) do
+    {" equal to #{inspect_char(min)}", printable? and printable?(min)}
   end
 
-  defp ascii?(char), do: char >= 32 and char <= 126
+  defp printable?(codepoint), do: List.ascii_printable?([codepoint])
+  defp inspect_char(codepoint), do: inspect(<<codepoint::utf8>>)
 
-  defp apply_bin_modifiers(expr, modifiers) do
-    case modifiers do
-      [] ->
-        expr
+  defp apply_bin_modifier(expr, :integer), do: expr
 
-      _ ->
-        modifiers = Enum.map(modifiers, &Macro.var(&1, __MODULE__))
-        {:"::", [], [expr, Enum.reduce(modifiers, &{:-, [], [&2, &1]})]}
-    end
+  defp apply_bin_modifier(expr, modifier) do
+    {:"::", [], [expr, Macro.var(modifier, __MODULE__)]}
   end
 
   ## Helpers

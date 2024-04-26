@@ -52,7 +52,7 @@ defmodule Plug.Conn.Utils do
 
   """
   @spec media_type(binary) :: {:ok, type :: binary, subtype :: binary, params} | :error
-  def media_type(binary) do
+  def media_type(binary) when is_binary(binary) do
     case strip_spaces(binary) do
       "*/*" <> t -> mt_params(t, "*", "*")
       t -> mt_first(t, "")
@@ -156,6 +156,9 @@ defmodule Plug.Conn.Utils do
       iex> params("=")
       %{}
 
+      iex> params(";")
+      %{}
+
   """
   @spec params(binary) :: params
   def params(t) do
@@ -210,11 +213,20 @@ defmodule Plug.Conn.Utils do
       iex> token(~S["<f\oo>\"<b\ar>"])
       "<foo>\"<bar>"
 
+      iex> token(~s["])
+      false
+
       iex> token("foo  ")
       "foo"
 
       iex> token("foo bar")
       false
+
+      iex> token("")
+      false
+
+      iex> token(" ")
+      ""
 
   """
   @spec token(binary) :: binary | false
@@ -253,6 +265,9 @@ defmodule Plug.Conn.Utils do
       iex> list("empties, , are,, filtered")
       ["empties", "are", "filtered"]
 
+      iex> list("whitespace , , ,,   is   ,definitely,optional")
+      ["whitespace", "is", "definitely", "optional"]
+
   """
   @spec list(binary) :: [binary]
   def list(binary) do
@@ -288,7 +303,17 @@ defmodule Plug.Conn.Utils do
 
   defp strip_spaces("\r\n" <> t), do: strip_spaces(t)
   defp strip_spaces(<<h, t::binary>>) when h in [?\s, ?\t], do: strip_spaces(t)
-  defp strip_spaces(t), do: t
+  defp strip_spaces(t), do: trim_trailing(t)
+
+  defp trim_trailing(binary), do: trim_trailing(binary, byte_size(binary))
+
+  defp trim_trailing(binary, pos) do
+    if pos > 0 and :binary.at(binary, pos - 1) in [?\s, ?\t] do
+      trim_trailing(binary, pos - 1)
+    else
+      binary_part(binary, 0, pos)
+    end
+  end
 
   defp downcase_char(char) when char in @upper, do: char + 32
   defp downcase_char(char), do: char

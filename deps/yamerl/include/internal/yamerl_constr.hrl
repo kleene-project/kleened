@@ -1,6 +1,6 @@
 %-
 % Copyright (c) 2012-2014 Yakaz
-% Copyright (c) 2016-2018 Jean-Sébastien Pédron <jean-sebastien.pedron@dumbbell.fr>
+% Copyright (c) 2016-2022 Jean-Sébastien Pédron <jean-sebastien.pedron@dumbbell.fr>
 % All rights reserved.
 %
 % Redistribution and use in source and binary forms, with or without
@@ -43,14 +43,14 @@
 %% -------------------------------------------------------------------
 
 -record(unfinished_node, {
-    module = ?MODULE,
-    path,
-    pres,
-    priv
+    module = ?MODULE :: atom(),
+    path  :: tuple(),
+    pres  :: [tuple()],
+    priv  :: any()
   }).
 
 -record(node_anchor, {
-    name = ""
+    name = "" :: string()
   }).
 
 -record(yamerl_constr, {

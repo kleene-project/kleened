@@ -1,7 +1,11 @@
 # Open API Spex
 
-[![Build Status](https://travis-ci.com/open-api-spex/open_api_spex.svg?branch=master)](https://travis-ci.com/open-api-spex/open_api_spex)
-[![Hex.pm](https://img.shields.io/hexpm/v/open_api_spex.svg)](https://hex.pm/packages/open_api_spex)
+[![Elixir CI](https://github.com/open-api-spex/open_api_spex/actions/workflows/elixir.yml/badge.svg)](https://github.com/open-api-spex/open_api_spex/actions/workflows/elixir.yml)
+[![Module Version](https://img.shields.io/hexpm/v/open_api_spex.svg)](https://hex.pm/packages/open_api_spex)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/open_api_spex/)
+[![Total Download](https://img.shields.io/hexpm/dt/open_api_spex.svg)](https://hex.pm/packages/open_api_spex)
+[![License](https://img.shields.io/hexpm/l/open_api_spex.svg)](https://github.com/open-api-spex/open_api_spex/blob/master/LICENSE)
+[![Last Updated](https://img.shields.io/github/last-commit/open-api-spex/open_api_spex.svg)](https://github.com/open-api-spex/open_api_spex/commits/master)
 
 Leverage Open API Specification 3 (formerly Swagger) to document, test, validate and explore your Plug and Phoenix APIs.
 
@@ -11,16 +15,16 @@ Leverage Open API Specification 3 (formerly Swagger) to document, test, validate
 - Validate responses against schemas in tests, ensuring your docs are accurate and reliable
 - Explore the API interactively with [SwaggerUI](https://swagger.io/swagger-ui/)
 
-Full documentation available on [hexdocs](https://hexdocs.pm/open_api_spex/)
+Full documentation available on [HexDocs](https://hexdocs.pm/open_api_spex/).
 
 ## Installation
 
-The package can be installed by adding `open_api_spex` to your list of dependencies in `mix.exs`:
+The package can be installed by adding `:open_api_spex` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
   [
-    {:open_api_spex, "~> 3.10"}
+    {:open_api_spex, "~> 3.18"}
   ]
 end
 ```
@@ -56,12 +60,12 @@ defmodule MyAppWeb.ApiSpec do
 end
 ```
 
-Or you can use application's spec value in `info:` key.
+Or you can use your application's spec values in the `info:` key.
 
 ```elixir
 info: %Info{
-  description: Application.spec(:my_app, :description)
-  version: Application.spec(:my_app, :vsn)
+  title: to_string(Application.spec(:my_app, :description)),
+  version: to_string(Application.spec(:my_app, :vsn))
 }
 ```
 
@@ -126,42 +130,14 @@ Note: In order to prevent Elixir Formatter from automatically adding parentheses
 call arguments, add `:open_api_spex` to the `import_deps` list in `.formatter.exs`:
 
 .formatter.exs:
+
 ```elixir
 [
   import_deps: [:open_api_spex]
 ]
 ```
 
-There is a convenient shortcut `:type` for base data types supported by open api
-
-```elixir
-parameters: [
-  id: [in: :query, type: :integer, required: true, description: "User ID", example: 1001]
-]
-```
-
-The responses can also be defined using keyword list syntax,
-and the HTTP status codes can be replaced with their text equivalents:
-
-```elixir
-responses: [
-  ok: {"User response", "application/json", MyAppWeb.Schemas.UserResponse},
-  unprocessable_entity: {"Bad request parameters", "application/json", MyAppWeb.Schemas.BadRequestParameters},
-  not_found: {"Not found", "application/json", MyAppWeb.Schemas.NotFound}
-]
-```
-
-The full set of atom keys are defined in `Plug.Conn.Status.code/1`.
-
-Alternately, the HTTP status codes can be specified directly:
-
-```elixir
-responses: %{
-  200 => {"User response", "application/json", MyAppWeb.Schemas.UserResponse},
-  422 => {"Bad request parameters", "application/json", MyAppWeb.Schemas.BadRequestParameters},
-  404 => {"Not found", "application/json", MyAppWeb.Schemas.NotFound}
-}
-```
+For further information about defining operations, see `OpenApiSpex.ControllerSpecs`.
 
 If you need to omit the spec for some action then pass false to the
 second argument of `operation/2` for the action:
@@ -183,7 +159,7 @@ OpenAPI's (and JSON Schema's) `camelCase` convention.
 
 #### %Operation{}
 
-If ControllerSpecs-style operation specs don't provide the flexibiliy you need, the `%Operation{}` struct
+If ControllerSpecs-style operation specs don't provide the flexibility you need, the `%Operation{}` struct
 and related structs can be used instead. See the
 [example user controller that uses `%Operation{}` structs](https://github.com/open-api-spex/open_api_spex/blob/master/examples/phoenix_app/lib/phoenix_app_web/controllers/user_controller_with_struct_specs.ex).
 
@@ -270,20 +246,27 @@ For more examples of schema definitions, see the
 To serve the API spec from your application, first add the `OpenApiSpex.Plug.PutApiSpec` plug somewhere in the pipeline.
 
 ```elixir
-  pipeline :api do
-    plug OpenApiSpex.Plug.PutApiSpec, module: MyAppWeb.ApiSpec
-  end
+pipeline :api do
+  plug OpenApiSpex.Plug.PutApiSpec, module: MyAppWeb.ApiSpec
+end
 ```
 
 Now the spec will be available for use in downstream plugs.
 The `OpenApiSpex.Plug.RenderSpec` plug will render the spec as JSON:
 
 ```elixir
-  scope "/api" do
-    pipe_through :api
-    resources "/users", MyAppWeb.UserController, only: [:create, :index, :show]
-    get "/openapi", OpenApiSpex.Plug.RenderSpec, []
-  end
+scope "/api" do
+  pipe_through :api
+  resources "/users", MyAppWeb.UserController, only: [:create, :index, :show]
+  get "/openapi", OpenApiSpex.Plug.RenderSpec, []
+end
+```
+
+In development, to ensure the rendered spec is refreshed, you should disable caching with:
+
+```elixir
+# config/dev.exs
+config :open_api_spex, :cache_adapter, OpenApiSpex.Plug.NoneCache
 ```
 
 ## Generating the Spec
@@ -293,6 +276,43 @@ convenience, create a direct alias:
 
 ```shell
 mix openapi.spec.json --spec MyAppWeb.ApiSpec
+mix openapi.spec.yaml --spec MyAppWeb.ApiSpec
+```
+
+Invoking this task starts the application by default. This can be
+disabled with the `--start-app=false` option.
+
+Please make to replace any calls to [OpenApiSpex.Server.from_endpoint](https://hexdocs.pm/open_api_spex/OpenApiSpex.Server.html#from_endpoint/1) with a `%OpenApiSpex.Server{}` struct like below:
+
+```elixir
+  %OpenApi{
+    info: %Info{
+      title: "Phoenix App",
+      version: "1.0"
+    },
+    # Replace this 👇
+    servers: [OpenApiSpex.Server.from_endpoint(MyAppWeb.Endpoint)],
+    # With this 👇
+    servers: [%OpenApiSpex.Server{url: "https://yourapi.example.com"}],
+  }
+```
+
+NOTE: You need to add the `ymlr` dependency to write swagger file in YAML format:
+
+```elixir
+
+def deps do
+  [
+    {:ymlr, "~> 2.0"}
+  ]
+end
+```
+
+For more options read the [docs](https://hexdocs.pm/open_api_spex/Mix.Tasks.Openapi.Spec.Json.html).
+
+```shell
+mix help openapi.spec.json
+mix help openapi.spec.yaml
 ```
 
 ## Serve Swagger UI
@@ -303,19 +323,19 @@ serve a SwaggerUI interface. The `path:` plug option must be supplied to give th
 All JavaScript and CSS assets are sourced from cdnjs.cloudflare.com, rather than vendoring into this package.
 
 ```elixir
-  scope "/" do
-    pipe_through :browser # Use the default browser stack
+scope "/" do
+  pipe_through :browser # Use the default browser stack
 
-    get "/", MyAppWeb.PageController, :index
-    get "/swaggerui", OpenApiSpex.Plug.SwaggerUI, path: "/api/openapi"
-  end
+  get "/", MyAppWeb.PageController, :index
+  get "/swaggerui", OpenApiSpex.Plug.SwaggerUI, path: "/api/openapi"
+end
 
-  scope "/api" do
-    pipe_through :api
+scope "/api" do
+  pipe_through :api
 
-    resources "/users", MyAppWeb.UserController, only: [:create, :index, :show]
-    get "/openapi", OpenApiSpex.Plug.RenderSpec, []
-  end
+  resources "/users", MyAppWeb.UserController, only: [:create, :index, :show]
+  get "/openapi", OpenApiSpex.Plug.RenderSpec, []
+end
 ```
 
 ## Importing an existing schema file
@@ -338,14 +358,13 @@ open_api_spec_from_yaml = "encoded_schema.yaml"
   |> OpenApiSpex.OpenApi.Decode.decode()
 ```
 
-You can then use the loaded spec to with `OpenApiSpex.cast_and_validate/4`, like:
+You can then use the loaded spec to with `OpenApiSpex.cast_and_validate/3`, like:
 
 ```elixir
 {:ok, _} = OpenApiSpex.cast_and_validate(
   open_api_spec_from_json, # or open_api_spec_from_yaml
   spec.paths["/some_path"].post,
-  test_conn,
-  "application/json"
+  test_conn
 )
 ```
 
@@ -384,31 +403,40 @@ defmodule MyAppWeb.UserController do
   use MyAppWeb, :controller
   use OpenApiSpex.ControllerSpecs
 
-  alias MyAppWeb.Schemas.{User, UserRequest, UserResponse}
+  alias MyAppWeb.Schemas.{UserParams, UserResponse}
 
   plug OpenApiSpex.Plug.CastAndValidate, json_render_error_v2: true
 
-  operation :create,
-    summary: "Create user",
-    description: "Creates a user from the given params.\nThis is another line of text in the description."
+  operation :update,
+    summary: "Update user",
+    description: "Updates with the given params.\nThis is another line of text in the description.",
     parameters: [
-      id: [in: :query, type: :integer, description: "user ID"]
+      id: [in: :path, type: :integer, description: "user ID"],
+      vsn: [in: :query, type: :integer, description: "API version number"],
+      "api-version": [in: :header, type: :integer, description: "API version number"]
     ],
-    request_body: {"The user attributes", "application/json", UserRequest},
+    request_body: {"The user attributes", "application/json", UserParams},
     responses: %{
-      201 => {"User", "application/json", UserResponse}
+      201 => {"User", "application/json", UserResponse},
       422 => OpenApiSpex.JsonErrorResponse.response()
     }
-  def create(
+  def update(
         conn = %{
-          body_params: %UserRequest{
-            user: %User{name: name, email: email, birthday: birthday = %Date{}}
+          body_params: %UserParams{
+            name: name,
+            email: email,
+            birthday: %Date{} = birthday
           }
         },
         %{id: id}
       ) do
     # conn.body_params cast to UserRequest struct
+    # conn.params combines path params, query params and header params
     # conn.params.id cast to integer
+    # conn.params.vsn cast to integer
+    # conn.params[:"api-version"] cast to integer
+    # params is the same as conn.params
+    # params.id cast to integer
 
     # Note: Using pattern-matching in the action function's arguments can
     # cause Dialyzer to complain. This is because Dialyzer expects the
@@ -522,3 +550,9 @@ test "UserController produces a UsersResponse", %{conn: conn} do
   assert_schema(json, "UsersResponse", api_spec)
 end
 ```
+
+## Copyright and License
+
+Copyright (c) 2017 Michael Buhot
+
+Licensed under the Mozilla Public License, Version 2.0, which can be found in [LICENSE](./LICENSE).

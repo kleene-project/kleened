@@ -1,4 +1,219 @@
-# 3.10.0
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## v3.18.3 - 2024-03-15
+
+* Relax dependency constraint on ymlr to allow version ~> 5.0 by @egze in https://github.com/open-api-spex/open_api_spex/pull/586
+
+## v3.18.2 - 2024-01-26
+
+* Fix 'AllOf cast returns a map, but I expected a struct' by @angelikatyborska in https://github.com/open-api-spex/open_api_spex/pull/592
+
+## v3.18.1 - 2023-12-19
+
+* Fix `assert_operation_response/2` header lookup by @msutkowski in https://github.com/open-api-spex/open_api_spex/pull/584
+* Exclude empty paths (`operation false`) from generated spec by @alisinabh in https://github.com/open-api-spex/open_api_spex/pull/583
+* Cast discriminator when no title present (#574) by @albertored in https://github.com/open-api-spex/open_api_spex/pull/574
+* Docstest Operation.parameter/5 by @zorbash
+* Document the spec export task `--filename` option by @zorbash
+
+## v3.18.0 - 2023-08-23
+
+* Relax dependency constraint on ymlr to allow version ~> 4.0 by @arcanemachine in https://github.com/open-api-spex/open_api_spex/pull/544
+* Fix deprecation warning on Elixir 1.15, require Elixir 1.11, adapt CI by @thbar in https://github.com/open-api-spex/open_api_spex/pull/550
+* Add `--quiet` option for spec generation by @Cowa in https://github.com/open-api-spex/open_api_spex/pull/557
+* Fix casting non-objects against discriminator #551 by @gianluca-nitti in https://github.com/open-api-spex/open_api_spex/pull/552
+* feat: add assert_operation_response, assert_raw_schema by @msutkowski in https://github.com/open-api-spex/open_api_spex/pull/545
+
+## v3.17.3 - 2023-05-30
+
+* Raise meaningful error message when `SchemaResolver.resolve_schema_modules_from_schema` failed to pattern match by @yuchunc in https://github.com/open-api-spex/open_api_spex/pull/541
+* Support structs as inputs when casting objects by @gianluca-nitti in https://github.com/open-api-spex/open_api_spex/pull/529
+* Fix #540 `PathItem.from_routes/1` dialyzer warnings - @zorbash - 055c8e0131a4f8
+
+## v3.17.2 - 2023-05-26
+
+* Fix `Schema.example/2` for `anyOf` - @zorbash - 3046c68
+
+## v3.17.1 - 2023-05-22
+
+* Add missing `Reference.resolve_response/2` - @zorbash - a5bd81dac
+
+## v3.17.0 - 2023-05-18
+
+* Support passing a `%Reference{}` as a response when doing controller specs by @mracos in https://github.com/open-api-spex/open_api_spex/pull/532
+* Implement `OpenApiSpex.Schema.example/2` which resolves references - @zorbash - 45a26f045776
+
+## v3.16.4- 2023-05-17
+
+* Ensure schemas with discriminator work with atom-keyed maps - a7b8067a7a
+* Ensure spec decoding converts `required` items into atoms for `allOf` / `anyOf` / `oneOf` - a7b8067a7a
+
+## v3.16.3 - 2023-05-02
+
+* Keep discriminator errors relevant by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/533
+* Avoid compile time dependencies by @doorgan in https://github.com/open-api-spex/open_api_spex/pull/536
+
+## v3.16.2 - 2023-04-13
+
+* Infer moduledoc from schema by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/525
+* Fix typespec and add example to Paths.from_routes/1 by @thiagogsr in https://github.com/open-api-spex/open_api_spex/pull/534
+
+## v3.16.1 - 2023-02-07
+
+* Accept dates and datetimes in formatted string schemas by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/524
+
+## v3.16.0 - 2022-11-23
+
+* Optimise property counting for object validations by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/514
+* Omit required from schemas when list is empty by @mbuhot in https://github.com/open-api-spex/open_api_spex/pull/515
+
+## v3.15.0 - 2022-11-02
+
+* Resolve schema modules in discriminator mapping by @mbuhot in https://github.com/open-api-spex/open_api_spex/pull/511
+
+## v3.14.0 - 2022-10-23
+
+Thanks to the contributions of the community
+
+- [@zorbash](https://github.com/zorbash)
+- [@thbar](https://github.com/thbar)
+- [@gmile](https://github.com/gmile)
+- [@lucacorti](https://github.com/lucacorti)
+
+* Enhancement: Allow casting atoms as strings by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/497
+* Fix: Relax dependency constraint on ymlr by @thbar in https://github.com/open-api-spex/open_api_spex/pull/502
+* Enhancement: Implement casting of "byte" string type by @gmile in https://github.com/open-api-spex/open_api_spex/pull/504
+* Enhancement: Make OpenApiSpex.resolve_schema/2 work with schema modules by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/458
+* Fix: Fix oneOf/allOf/anyOf and schema module in Discriminator mapping by @lucacorti in https://github.com/open-api-spex/open_api_spex/pull/455
+
+## v3.13.0 - 2022-09-24
+
+Thanks to the contributions of the community
+
+- [@MichalDolata](https://github.com/MichalDolata)
+- [@mbuhot](https://github.com/mbuhot)
+- [@zorbash](https://github.com/zorbash)
+- [@albertored](https://github.com/albertored)
+- [@rolandtritsch](https://github.com/rolandtritsch)
+- [@natali-maximenko](https://github.com/natali-maximenko)
+- [@Eein](https://github.com/Eein)
+
+* Docs: Document OpenApiSpex.Plug.NoneCache #480 by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/480
+* Enhancement: Improve example apps #481 by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/481
+* Infrastructure: Fix CI workflow  by @mbuhot
+* Enhancement: Fix compilation warnings #479 by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/479
+* Enhancement: Allow to configure casting to not automatically populate default values #460 by @albertored in https://github.com/open-api-spex/open_api_spex/pull/460
+* Fix: (UndefinedFunctionError) #447 by @rolandtritsch in https://github.com/open-api-spex/open_api_spex/pull/447
+* Enhancement: Allow omitting parens in test assertion functions #485 by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/485
+* Fix: `not` schemas not decoded correctly #484 by @albertored in https://github.com/open-api-spex/open_api_spex/pull/484
+* Enhancement: Add `--start-app` option in openapi generation task #489 by @natali-maximenko in https://github.com/open-api-spex/open_api_spex/pull/489
+* Enhancement: Loosen poison dependency to allow using version 3.0 #483 by @Eein in https://github.com/open-api-spex/open_api_spex/pull/483
+* Enhancement: Bump swagger-ui JS dependency to 4.14.0 by @zorbash
+
+**Full Changelog**: https://github.com/open-api-spex/open_api_spex/compare/v3.12.0...v3.13.0
+
+## v3.12.0 - 2022-07-21
+
+Thanks to the contributions of the community
+
+- [@pxp9](https://github.com/pxp9)
+- [@tfwright](https://github.com/tfwright)
+- [@juantascon](https://github.com/juantascon)
+- [@riccardomanfrin](https://github.com/riccardomanfrin)
+- [@rogerweb](https://github.com/rogerweb)
+- [@zorbash](https://github.com/zorbash)
+- [@gianluca-nitti](https://github.com/nitti)
+- [@MichalDolata](https://github.com/MichalDolata)
+- [@Geekfish](https://github.com/Geekfish)
+- [@lazebny](https://github.com/lazebny)
+- [@Eein](https://github.com/Eein)
+
+* Docs: Solve Issue #396 by @pxp9 in https://github.com/open-api-spex/open_api_spex/pull/397
+* Docs: Clarify controller example by @tfwright in https://github.com/open-api-spex/open_api_spex/pull/405
+* Fix: Consider one-shot additionalProperties in .decode() by @zoten in https://github.com/open-api-spex/open_api_spex/pull/413
+* Fix: Casting Encoding without style field by @juantascon in https://github.com/open-api-spex/open_api_spex/pull/395
+* Fix: Adds responses dereferencing by @riccardomanfrin in https://github.com/open-api-spex/open_api_spex/pull/400
+* Docs: Fix typos by @kianmeng in https://github.com/open-api-spex/open_api_spex/pull/414
+* Enhancement: Implement Extendable protocol for all structs that can have extensions by @albertored in https://github.com/open-api-spex/open_api_spex/pull/415
+* Fix: decode/1 function correctly populates the :extensions field of structs by @albertored in https://github.com/open-api-spex/open_api_spex/pull/416
+* Fix: Allow empty schemas to be validated as wildcards by @zoten in https://github.com/open-api-spex/open_api_spex/pull/419
+* Docs: Fix schema example minor syntax issues (#431) by @rogerweb in https://github.com/open-api-spex/open_api_spex/pull/433
+* Enhancement: Bump swagger_ui version to 4.6.2 by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/437
+* Enhancement: Implement flag to omit vendor extensions in mix openapi.spec.json by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/439
+* Enhancement: Generate examples for UUID formatted strings by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/444
+* Enhancement: Format code with mix format by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/449
+* Docs: Fix typo in result of JsonErrorResponse.response() by @gianluca-nitti in https://github.com/open-api-spex/open_api_spex/pull/448
+* Fix: Avoids overwriting Plug.Conn body_params and params with the cast outcome by @albertored in https://github.com/open-api-spex/open_api_spex/pull/425
+* Enhancement: Multiple content types by @moxley in https://github.com/open-api-spex/open_api_spex/pull/451
+* Fix: llow empty content for Response by @MichalDolata in https://github.com/open-api-spex/open_api_spex/pull/453
+* Infrastructure: Improve CI pipeline by @lucacorti in https://github.com/open-api-spex/open_api_spex/pull/377
+* Fix: upport RequestBody passed to operation macro by @Geekfish in https://github.com/open-api-spex/open_api_spex/pull/456
+* Enhancement: Allow extensions in all OpenApi structures by @albertored in https://github.com/open-api-spex/open_api_spex/pull/438
+* Enhancement: ast parameters with json content-type by @albertored in https://github.com/open-api-spex/open_api_spex/pull/445
+* Docs: Code formatting in README by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/459
+* Validate :integer type format by @wingyplus in https://github.com/open-api-spex/open_api_spex/pull/465
+* Fix: Do not accepting float number in integer type by @wingyplus in https://github.com/open-api-spex/open_api_spex/pull/468
+* Fix: anyOf cast crash when Cast.cast return a struct by @wingyplus in https://github.com/open-api-spex/open_api_spex/pull/469
+* Fix: Decoding of discriminators when `type: object` is present by @albertored in https://github.com/open-api-spex/open_api_spex/pull/471
+* Fix: Correctly cast not map bodies (plug puts them under _json key) by @albertored in https://github.com/open-api-spex/open_api_spex/pull/470
+* Enhancement: Add YAML formatter #463 by @lazebny in https://github.com/open-api-spex/open_api_spex/pull/464
+* Enhancement: use cache adapter at runtime instead of compile time for PutApiSpec by @Eein in https://github.com/open-api-spex/open_api_spex/pull/461
+* Infrastructure: Build and publish a hex.pm package automatically by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/474
+
+**Full Changelog**: https://github.com/open-api-spex/open_api_spex/compare/v3.11.0...v3.12.0
+
+## v3.11.0 - 2021-10-29
+
+Thanks to the contributions of the community ❤️💙💛💜🧡
+
+- [@asppsa](https://github.com/asppsa)
+- [@ElijahBrandyberry](https://github.com/ElijahBrandyberry)
+- [@kianmeng](https://github.com/kianmeng)
+- [@lucacorti](https://github.com/lucacorti)
+- [@m0rt3nlund](https://github.com/m0rt3nlund)
+- [@mbuhot](https://github.com/mbuhot)
+- [@moxley](https://github.com/moxley)
+- [@nimish-mehta](https://github.com/nimish)
+- [@reneweteling](https://github.com/reneweteling)
+- [@stefanluptak](https://github.com/stefanluptak)
+- [@vitorbortolotti](https://github.com/vitorbortolotti)
+- [@vorce](https://github.com/vorce)
+- [@ycherniavskyi](https://github.com/ycherniavskyi)
+- [@zoten](https://github.com/zoten)
+- [seantanly](https://github.com/eantanly)
+
+* Docs: Fix Application.spec/2 example in README #344
+* Docs: Misc doc changes (#355)
+* Docs: JsonApiErrorResponse vs JsonErrorResponse (#385)
+* Enhancement: Allow casting params where parameter.content schema is a Reference (#356)
+* Enhancement: external_docs via controller @doc and @moduledoc or ControllerSpecs DSL (#329)
+* Enhancement: Add optional header in opts to Operation.response (#332)
+* Enhancement: Add callback support to operation_spec (#345)
+* Enhancement: Adding helpers to OpenApiSpex.TestAssertions (#343)
+* Enhancement: Collect all errors occurred during cast properties (#354)
+* Enhancement: Add support for multiple specs for the same Phoenix router (#369)
+* Enhancement: updated swagger-ui to 3.34.0 (#378)
+* Fix casting additionalProperties (#386)
+* Fix JsonErrorResponse schema definition (#383)
+* Fix: test for cast of query parameters with style: form and explode: false (#364)
+* Fix: any_of cast for multiple schemas (#366)
+* Fix: Handle oneOf cast when there are multiple success along with failure (#362)
+* Fix: Casting of additionalProperties with references (#360)
+* Fix: Schema.example/1 for schema module (#358)
+* Fix: Stop circular dependency by injecting the schema into list of already processed schemas (#352)
+* Fix: Cast default for referenced schema (#337)
+* Fix: don't json encode swagger-ui methods (#325)
+* Fix: relax requirement on poison preventing version conflicts in library usage (#322)
+* Fix: Allow top level security to apply to operations #321
+* Fix: return error tuple when discriminator cast fails (#393)
+* Infrastructure: Run Elixir CI with GitHub Actions (#347)
+
+## v3.10.0 - 2021-01-11
 
 Thanks to the contributions of the community ❤️💙💛💜🧡
 
@@ -12,39 +227,39 @@ Thanks to the contributions of the community ❤️💙💛💜🧡
 - [dwmcc](https://github.com/dwmcc)
 - [wingyplus](https://github.com/wingyplus)
 
-- Feature: Support OAuth2 for swagger-ui (#217)
-- Feature: Support `default` response type in responses (#301)
-- Feature: Allow overriding `x-struct` in `OpenApiSpex.shcmea/1` (#304)
-- Feature: Ability to specify `deprecated` in ControllerSpec operation (#296)
-- Feature: `:struct?` and `:derive?` options in `OpenApiSpex.schema/1` (#312)
-- Feature: `OpenApiSpex.add_schemas/2` (#314)
-- Enhancement: Remove api_spec data from Conn (#286)
-- Enhancement: More informative errors for bad schema (#288, #284, #287) 
-- Fix: Convert `:format` value to atom when decoding schema file (#293)
-- Fix: Type spec in OpenApiSpex.Info
-- Fix: Elixir Formatter rules in published package (#306)
-- Docs: Fix spelling error in example code (#295)
-- Docs: Fix type in README (#297)
-- Docs: Fix links and punctuation in README (#298)
-- Docs: Promote ControlerSpecs as the preferred API for controller operations (#311)
+* Feature: Support OAuth2 for swagger-ui (#217)
+* Feature: Support `default` response type in responses (#301)
+* Feature: Allow overriding `x*struct` in `OpenApiSpex.schema/1` (#304)
+* Feature: Ability to specify `deprecated` in ControllerSpec operation (#296)
+* Feature: `:struct?` and `:derive?` options in `OpenApiSpex.schema/1` (#312)
+* Feature: `OpenApiSpex.add_schemas/2` (#314)
+* Enhancement: Remove api_spec data from Conn (#286)
+* Enhancement: More informative errors for bad schema (#288, #284, #287)
+* Fix: Convert `:format` value to atom when decoding schema file (#293)
+* Fix: Type spec in OpenApiSpex.Info
+* Fix: Elixir Formatter rules in published package (#306)
+* Docs: Fix spelling error in example code (#295)
+* Docs: Fix type in README (#297)
+* Docs: Fix links and punctuation in README (#298)
+* Docs: Promote ControlerSpecs as the preferred API for controller operations (#311)
 
-# 3.9.0
+## v3.9.0 - 2020-09-14
 
 Thanks to the contributions of the community ❤️💙💛💜🧡
 
 - [feng19](https://github.com/feng19)
 - [jbernardo95](https://github.com/jbernardo95)
 
-- Feature: Generate example from schema (#266)
-- Feature: Allow SwaggerUI to be configured via Plug opts (#271)
-- Feature: Warn on invalid or missing operation specs (#273, #278)
-- Feature: Experimental alternative API for defining Operation specs (#265, #280)
-- Fix: Handle the same operation occurring at different routes (#272)
-- Fix: Casting header names that have upper-case letters in specs (#281)
-- Maint: Upgrade Elixir dependencies in example projects (#269)
-- Maint: Format project with Elixir Formatter (#279)
+* Feature: Generate example from schema (#266)
+* Feature: Allow SwaggerUI to be configured via Plug opts (#271)
+* Feature: Warn on invalid or missing operation specs (#273, #278)
+* Feature: Experimental alternative API for defining Operation specs (#265, #280)
+* Fix: Handle the same operation occurring at different routes (#272)
+* Fix: Casting header names that have upper case letters in specs (#281)
+* Maint: Upgrade Elixir dependencies in example projects (#269)
+* Maint: Format project with Elixir Formatter (#279)
 
-# 3.8.0
+## v3.8.0 - 2020-08-22
 
 Thanks to the contributions of the community ❤️💙💛💜🧡
 
@@ -74,7 +289,7 @@ Thanks to the contributions of the community ❤️💙💛💜🧡
 * Fix: ReferenceError: `components.parameter` missing `s` in CastParamters (#257)
 * Fix: struct def for custom validators (#263)
 
-# 3.7.0
+## v3.7.0 - 2020-06-05
 
 Thanks to the contributions of the community ❤️💙💛💜🧡
 
@@ -97,7 +312,7 @@ Thanks to the contributions of the community ❤️💙💛💜🧡
 * Fix: CastAndValidate: incorrect content-type handling (#218)
 * Fix: Can't cast and validate a JSON array as request body (#229)
 
-# 3.6.0
+## v3.6.0 - 2020-02-13
 
 Thanks to the contributions of the community ❤️💙💛💜🧡
 
@@ -115,7 +330,7 @@ Thanks to the contributions of the community ❤️💙💛💜🧡
 * Fix: Support free-form query parameters (#171)
 * Fix: Resolve schema modules from Response in Components (#186)
 
-# 3.5.2
+## v3.5.2 - 2019-11-15
 
 Thanks to the contributions of the community ❤️💙💛💜🧡
 
@@ -125,7 +340,7 @@ Thanks to the contributions of the community ❤️💙💛💜🧡
 * Fix: Update README for Info from `Application.spec/2` (#174)
 * Fix: Casting for unsupported params (#170)
 
-# 3.5.1
+## v3.5.1 - 2019-11-10
 
 Thanks to the contributions of the community ❤️💙💛💜🧡
 
@@ -135,7 +350,7 @@ Thanks to the contributions of the community ❤️💙💛💜🧡
 * Fix: In ExDoc-based operation spec (experimental), change key name used to define `requestBody` (#164)
 * Fix: `oneOf` schema having object schemas (#167)
 
-# 3.5.0
+## v3.5.0 - 2019-10-29
 
 Thanks to the contributions of the community ❤️💙💛💜🧡
 
@@ -256,7 +471,7 @@ defmodule MyAppWeb.MyControllerTest do
 end
 ```
 
-# 3.4.0
+## v3.4.0 - 2019-06-14
 
 Thanks to the contributions of the community ❤️💙💛💜🧡
 
@@ -266,48 +481,48 @@ Thanks to the contributions of the community ❤️💙💛💜🧡
 
 * Feature: the `OpenApiSpex` and `OpenApiSpex.Info` structs now support [extensions](https://swagger.io/docs/specification/openapi-extensions/) (#108) (#114)
 
-The `extensions` key may contain any additional data that should be included in the info, eg the `x-logo` and `x-tagGroups` extensions:
+  The `extensions` key may contain any additional data that should be included in the info, eg the `x-logo` and `x-tagGroups` extensions:
 
-```elixir
- spec = %OpenApi{
-   info: %Info{
-     title: "Test",
-     version: "1.0.0",
+  ```elixir
+   spec = %OpenApi{
+     info: %Info{
+       title: "Test",
+       version: "1.0.0",
+       extensions: %{
+         "x-logo" => %{
+           "url" => "https://example.com/logo.png",
+           "backgroundColor" => "#FFFFFF",
+           "altText" => "Example logo"
+         }
+       }
+     },
      extensions: %{
-       "x-logo" => %{
-         "url" => "https://example.com/logo.png",
-         "backgroundColor" => "#FFFFFF",
-         "altText" => "Example logo"
-       }
-     }
-   },
-   extensions: %{
-     "x-tagGroups" => [
-       %{
-         "name" => "Methods",
-         "tags" => [
-           "Search",
-           "Fetch",
-           "Delete"
-         ]
-       }
-     ]
-   },
-   paths: %{ ... }
- }
-```
+       "x-tagGroups" => [
+         %{
+           "name" => "Methods",
+           "tags" => [
+             "Search",
+             "Fetch",
+             "Delete"
+           ]
+         }
+       ]
+     },
+     paths: %{ ... }
+   }
+  ```
 
 - Deprecation: `OpenApiSpex.Server.from_endpoint/2` has been deprecated in favor of `OpenApiSpex.Server.from_endpoint/1`.
   Simply remove the `otp_app:` option from the call to use the new function. (#116)
 
-```elixir
+  ```elixir
   # server = Server.from_endpoint(Endpoint, otp_app: :my_phoenix_app)
   server = Server.from_endpoint(MyPhoenixAppWeb.Endpoint)
-```
+  ```
 
 - Fix: The internal representation of a Phoenix Route struct changed in Phoenix 1.4.7 breaking the `OpenApiSpex.Paths.from_router/1` function. OpenApiSpex 3.4.0 will support both representations until the Phoenix API becomes stable. (#118)
 
-# 3.3.0
+## v3.3.0 - 2019-05-05
 
 Thanks to the contributions from the community! 👍
 
@@ -320,19 +535,19 @@ Thanks to the contributions from the community! 👍
 
 * Feature: Enums expressed as atoms or atom-keyed maps can be cast from strings (or string-keyed maps). (#60) (#101)
 
-Example:
+  Example:
 
-```elixir
+  ```elixir
   parameters: [
     Operation.parameter(:sort, :query, :string, "sort direction", enum: [:asc, :desc])
   ],
-```
+  ```
 
 - Fix: Schema module references are resolved in in-line parameter/response schemas. (#77) (#105)
 
-Example: The response schema is given in-line as an array, but items are resolved from the `User` module.
+  Example: The response schema is given in-line as an array, but items are resolved from the `User` module.
 
-```elixir
+  ```elixir
   responses: %{
     200 => Operation.response(
       "User array",
@@ -343,7 +558,7 @@ Example: The response schema is given in-line as an array, but items are resolve
       }
     )
   }
-```
+  ```
 
 - Fix: Ensure integer query parameters are validated correctly after conversion from string. (#106)
 - Fix: Ensure integers are validated correctly against schema `minimum`, `maximum`, `exlcusiveMinimum` and `exclusiveMaximum` attributes. (#97)
@@ -353,7 +568,7 @@ Example: The response schema is given in-line as an array, but items are resolve
 - Docs: Improved documentation for combined `CastAndValidate` plug. (#91)
 - Internals: Cache mapping from phoenix controller/action to OpenApi operation. (#102)
 
-# 3.2.1
+## v3.2.1 - 2019-03-11
 
 Patch release for documentation updates and improved error rendering Plug when using `CastAndValidate`.
 
@@ -361,7 +576,7 @@ Thanks [moxley](https://github.com/moxley)!
 
 - Cast and validate guide (#89)
 
-# 3.2.0
+## v3.2.0 - 2019-03-10
 
 This release contains many improvements and internal changes thanks to the contributions of the community!
 
@@ -384,7 +599,7 @@ This release contains many improvements and internal changes thanks to the contr
 * Fix: Gracefully report error when failing to convert request params to an object type (#63)
 * Internals: Improved code organisation of unit test suite (#62)
 
-# 3.1.0
+## v3.1.0 - 2018-10-28
 
 - Add support for validating polymorphic schemas using `oneOf`, `anyOf`, `allOf`, `not` constructs.
 - Updated example apps to work with new API
@@ -392,7 +607,7 @@ This release contains many improvements and internal changes thanks to the contr
 
 Thanks to [fenollp](https://github.com/fenollp) and [tapickell](https://github.com/tapickell) for contributions!
 
-# 3.0.0
+## v3.0.0 - 2018-10-25
 
 Major version bump as the behaviour of `OpenApiSpex.Plug.Cast` has changed (#39).
 To enable requests that contain a body as well as path or query params, the result of casting the
@@ -415,14 +630,14 @@ to
 - Fix: Support casting GET requests without Content-Type header (#50, #49)
 - Open API Spex has been moved to the new `open-api-spex` Github organisation
 
-# 2.3.1
+## v2.3.1 - 2018-09-09
 
 - Docs: Update example application to include swagger generate mix task (#41)
 - Fix: Ignore charset in content-type header when looking up schema by content type. (#45)
 
 Thanks to [dmt](https://github.com/dmt) and [fenollp](https://github.com/fenollp) for contributions!
 
-# 2.3.0
+## v2.3.0 - 2018-08-05
 
 - Feature: Validate string enum types. (#33)
 - Feature: Detect and report missing API spec in `OpenApiSpex.Plug.Cast` (#37)
@@ -431,29 +646,29 @@ Thanks to [dmt](https://github.com/dmt) and [fenollp](https://github.com/fenollp
 Thanks to [slavo2](https://github.com/slavo2) and [anagromataf](https://github.com/anagromataf) for
 contributions!
 
-# 2.2.0
+## v2.2.0 - 2018-07-07
 
 - Feature: Support composite schemas in `OpenApiSpex.schema`
 
-structs defined with `OpenApiSpex.schema` will include all properties defined in schemas
-listed in `allOf`. See the `OpenApiSpex.Schema` docs for some examples.
+  structs defined with `OpenApiSpex.schema` will include all properties defined in schemas
+  listed in `allOf`. See the `OpenApiSpex.Schema` docs for some examples.
 
 - Feature: Support composite and polymorphic schemas with `OpenApiSpex.cast/3`.
   - `discriminator` is used to cast polymorphic shemas to a more specific schema.
   - `allOf` will cast all properties in each included schema
   - `oneOf` / `anyOf` will attempt to use each schema until a successful cast is made
 
-# 2.1.1
+## v2.1.1 - 2018-06-12
 
 - Fix: (#24, #25) Operations that define `parameters` and a `requestBody` schema can be validated.
 
-# 2.1.0
+## v2.1.0 - 2018-06-08
 
 - Feature: (#16) Error response from `OpenApiSpex.cast` when value contains unknown properties and schema declares `additionalProperties: false`.
 - Feature: (#20) Update swagger-ui to version 3.17.0.
 - Fix: (#17, #21, #22) Update typespecs for struct types.
 
-# 2.0.0
+## v2.0.0 - 2018-06-06
 
 Major version update following from API change in `OpenApiSpex.cast` and `OpenApiSpex.validate`.
 When casting/validating all parameters against an `OpenApiSpex.Operation`, the complete `Plug.Conn` struct must now be passed, where the combined params map was previously accepted.
@@ -470,32 +685,32 @@ Thanks [cstaud](https://github.com/cstaud), [rutho](https://github.com/ThomasRue
 - Fix: `OpenApiSpex.schema` macro allows defining schemas without any properties
 - Fix: type declarations better reflect when `nil` is allowed
 
-# 1.1.4
+## v1.1.4 - 2018-01-21
 
 - `additionalProperties` is now `nil` by default, was previously `true`
 
-# 1.1.3
+## v1.1.3 - 2017-10-15
 
 - Fix several bugs and make some minor enhancements to schema casting and validating.
 - Add sample application to enable end-to-end testing
 
-# 1.1.2
+## v1.1.2 - 2017-10-15
 
 Fix openapi version output in generated spec.
 
-# 1.1.1
+## v1.1.1 - 2017-10-15
 
 Update swagger-ui to version 3.3.2
 
-# 1.1.0
+## v1.1.0 - 2017-10-15
 
 Include path to invalid element in validation errors.
 Eg: "#/user/name: Value does not match pattern: [a-zA-Z][a-za-z0-9_]+"
 
-# 1.0.1
+## v1.0.1 - 2017-10-12
 
 Cache API spec in application environment after first call to PutApiSpec plug
 
-# 1.0.0
+## v1.0.0 - 2017-10-02
 
 Initial release. This package is inspired by [phoenix_swagger](https://github.com/xerions/phoenix_swagger) but targets Open API Spec 3.0.

@@ -1,14 +1,14 @@
 defmodule NimbleParsec.MixProject do
   use Mix.Project
 
-  @version "0.5.3"
-  @url "https://github.com/plataformatec/nimble_parsec"
+  @version "1.4.0"
+  @url "https://github.com/dashbitco/nimble_parsec"
 
   def project do
     [
       app: :nimble_parsec,
       version: @version,
-      elixir: "~> 1.4",
+      elixir: "~> 1.12",
       name: "NimbleParsec",
       description: "A simple and fast library for text-based parser combinators",
       aliases: [docs: &build_docs/1],
@@ -22,9 +22,9 @@ defmodule NimbleParsec.MixProject do
 
   defp package do
     %{
-      licenses: ["Apache 2"],
+      licenses: ["Apache-2.0"],
       maintainers: ["José Valim"],
-      links: %{"GitHub" => "https://github.com/plataformatec/nimble_parsec"}
+      links: %{"GitHub" => @url}
     }
   end
 

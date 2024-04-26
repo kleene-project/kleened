@@ -1,5 +1,8 @@
 # Makeup
 
+[![Module Version](https://img.shields.io/hexpm/v/makeup.svg)](https://hex.pm/packages/makeup)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/makeup/)
+
 ## Introduction
 
 Makeup is a "generic syntax highlighter suitable for use in code hosting, forums, wikis or other applications that need to prettify source code" . This tagline was shamelessly stolen from the [Pygments website](http://pygments.org/).
@@ -7,7 +10,7 @@ Makeup is a "generic syntax highlighter suitable for use in code hosting, forums
 Pygments the major inspiration for this package, and the structure is basically the same.
 It has **lexers**, **formatters** and **styles**.
 
-* **Lexers** turn the source code into a list of tokens
+* **Lexers** turn the source code into a list of tokens.
 * **Formatters** turn the list of tokens into something else (HTML, TeX, images, etc.).
   Currently only an HTML formatter exists.
 * **Styles** customize the output of the formatter.
@@ -16,23 +19,29 @@ It has **lexers**, **formatters** and **styles**.
 
 ## Demo
 
-To see a sample of Makeup's output, go check the [demo](https://tmbb.github.io/makeup_demo/).
+To see a sample of Makeup's output, go check the [demo](https://elixir-makeup.github.io/makeup_demo/).
 Please note that not all styles define all differences between tokens.
 In a given style, strings and characters might be rendered in the same color while in others , the colors might be different.
+
 That is style-dependent.
+
 Some of the richer styles are
-the Tango style ([elixir](https://tmbb.github.io/makeup_demo/elixir.html#tango)),
-the Colorful style ([elixir](https://tmbb.github.io/makeup_demo/elixir.html#colorful)),
-the Default style ([elixir](https://tmbb.github.io/makeup_demo/elixir.html#default)) and
-the Friendly style ([elixir](https://tmbb.github.io/makeup_demo/elixir.html#friendly)).
+the Tango style ([elixir](https://elixir-makeup.github.io/makeup_demo/elixir.html#tango)),
+the Colorful style ([elixir](https://elixir-makeup.github.io/makeup_demo/elixir.html#colorful)),
+the Default style ([elixir](https://elixir-makeup.github.io/makeup_demo/elixir.html#default)), and
+the Friendly style ([elixir](https://elixir-makeup.github.io/makeup_demo/elixir.html#friendly)).
 
 ## Supported Languages
 
-Currently, the only supported source language is
-[Elixir](https://tmbb.github.io/makeup_demo/elixir.html).
+The supported source languages are:
 
-HTML5 used to be supported, but the newest version has removed it
-(because the old lexer is no longer backward compatible with the new version)
+  * [Elixir](https://github.com/elixir-makeup/makeup_elixir)
+  * [Erlang](https://github.com/elixir-makeup/makeup_erlang)
+  * [C](https://github.com/elixir-makeup/makeup_c)
+  * [HTML](https://github.com/elixir-makeup/makeup_html)
+  * [Diff](https://github.com/elixir-makeup/makeup_diff)
+  * [JSON](https://github.com/elixir-makeup/makeup_json)
+  * [(H)EEx](https://github.com/elixir-makeup/makeup_eex)
 
 ## Installation
 
@@ -48,10 +57,7 @@ def deps do
 end
 ```
 
-Documentation can be found at
-[https://hexdocs.pm/makeup](https://hexdocs.pm/makeup).
-
-The ExDocs are still pretty primitive.
+Documentation can be found at [https://hexdocs.pm/makeup](https://hexdocs.pm/makeup).
 
 ## Changes
 
@@ -76,7 +82,7 @@ To generate a stylesheet:
 
 ```
 Makeup.stylesheet(style) # by default, the StyleMap.default style is used.
-# ... output ommited
+# ... output omitted
 ```
 
 ## Advantages over Pygments
@@ -90,23 +96,16 @@ Most Pygments lexers use something like a state table that works based on regex 
 and uses the results of those matches to switch to another state.
 Using a PEG parser we can define the grammar in a more natural way.
 
+
+The lexers are written using the excellent [NimbleParsec](https://github.com/dashbitco/nimble_parsec) parser.
+
 ## Disadvantages over Pygments
 
-It supports only a single language (yet, contributions are welcome!).
-
-The lexers are written using the excellent [NimbleParsec](https://github.com/plataformatec/nimble_parsec) parser.
-
-Older version used the ExSpirit parser, which was more flexible but slower (about 10x slower) and a little less easy to use.
-
-## Benchmarks
-
-TODO
+It supports fewer languages.
 
 ## Documentation on how to write a new lexer
 
-Contributions are highly appreciated.
-The mos direct way you can contribute to Makeup is by writing a new lexer.
-You can find some information here: [CONTRIBUTING.md](CONTRIBUTING.md)
+Contributions are highly appreciated. The most direct way you can contribute to Makeup is by writing a new lexer. You can find some information here: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## LICENSE
 

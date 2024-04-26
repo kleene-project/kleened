@@ -2,16 +2,19 @@ defmodule Plug do
   @moduledoc """
   The plug specification.
 
+  ## Types of plugs
+
   There are two kind of plugs: function plugs and module plugs.
 
-  #### Function plugs
+  ### Function plugs
 
-  A function plug is any function that receives a connection and a set of
-  options and returns a connection. Its type signature must be:
+  A function plug is by definition any function that receives a connection
+  and a set of options and returns a connection. Function plugs must have
+  the following type signature:
 
       (Plug.Conn.t, Plug.opts) :: Plug.Conn.t
 
-  #### Module plugs
+  ### Module plugs
 
   A module plug is an extension of the function plug. It is a module that must
   export:
@@ -50,8 +53,7 @@ defmodule Plug do
 
   ## The Plug pipeline
 
-  The `Plug.Builder` module provides conveniences for building plug
-  pipelines.
+  The `Plug.Builder` module provides conveniences for building plug pipelines.
   """
 
   @type opts ::
@@ -70,18 +72,17 @@ defmodule Plug do
   require Logger
 
   @doc """
-  Run a series of Plugs at runtime.
+  Run a series of plugs at runtime.
 
   The plugs given here can be either a tuple, representing a module plug
   and their options, or a simple function that receives a connection and
   returns a connection.
 
-  If any of the plugs halt, the remaining plugs are not invoked. If the
-  given connection was already halted, none of the plugs are invoked
-  either.
+  If any plug halts, the connection won't invoke the remaining plugs. If the
+  given connection was already halted, none of the plugs are invoked either.
 
-  While `Plug.Builder` works at compile-time, this is a straight-forward
-  alternative that works at runtime.
+  While `Plug.Builder` is designed to operate at compile-time, the `run` function
+  serves as a straightforward alternative for runtime executions.
 
   ## Examples
 
@@ -89,7 +90,7 @@ defmodule Plug do
 
   ## Options
 
-    * `:log_on_halt` - a log level to be used if a Plug halts
+    * `:log_on_halt` - a log level to be used if a plug halts
 
   """
   @spec run(Plug.Conn.t(), [{module, opts} | (Plug.Conn.t() -> Plug.Conn.t())], Keyword.t()) ::
@@ -133,11 +134,11 @@ defmodule Plug do
   defp do_run(conn, [], _level), do: conn
 
   @doc """
-  Forwards requests to another Plug setting the connection to a trailing subpath of the request.
+  Forwards requests to another plug while setting the connection to a trailing subpath of the request.
 
-  The `path_info` on the forwarded connection will only include the trailing segments
-  of the request path supplied to forward, while `conn.script_name` will
-  retain the correct base path for e.g. url generation.
+  The `path_info` on the forwarded connection will only include the request path trailing segments
+  supplied to the `forward` function. The `conn.script_name` attribute retains the correct base path,
+  e.g., url generation.
 
   ## Example
 

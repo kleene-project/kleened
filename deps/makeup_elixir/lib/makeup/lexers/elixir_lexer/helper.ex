@@ -15,8 +15,8 @@ defmodule Makeup.Lexers.ElixirLexer.Helper do
     string("\\" <> rdelim_first_char)
   end
 
-  def sigil(ldelim, rdelim, ranges, middle, ttype, attrs \\ %{}) do
-    left = string("~") |> utf8_string(ranges, 1) |> string(ldelim)
+  def sigil(ldelim, rdelim, ranges, middle) do
+    left = string("~") |> utf8_char(ranges) |> string(ldelim)
     right = string(rdelim)
 
     choices = middle ++ [utf8_char([])]
@@ -24,8 +24,20 @@ defmodule Makeup.Lexers.ElixirLexer.Helper do
     left
     |> repeat(lookahead_not(right) |> choice(choices))
     |> concat(right)
-    |> optional(utf8_string([?a..?z, ?A..?Z], min: 1))
-    |> post_traverse({Combinators, :collect_raw_chars_and_binaries, [ttype, attrs]})
+    |> optional(utf8_string([?a..?z, ?A..?Z, ?0..?9], min: 1))
+    |> post_traverse({__MODULE__, :build_sigil, []})
+  end
+
+  def build_sigil(rest, acc, context, line, offset) do
+    type =
+      case Enum.at(acc, -2) do
+        sigil when sigil in ~c"sScC" -> :string
+        sigil when sigil in ~c"rR" -> :string_regex
+        sigil when sigil in ~c"TDNU" -> :literal_date
+        _ -> :string_sigil
+      end
+
+    Combinators.collect_raw_chars_and_binaries(rest, acc, context, line, offset, type, %{})
   end
 
   def escaped(literal) when is_binary(literal) do
@@ -33,27 +45,30 @@ defmodule Makeup.Lexers.ElixirLexer.Helper do
   end
 
   def keyword_matcher(kind, fun_name, words) do
-    heads = for {ttype, words} <- words do
-      for word <- words do
-        case kind do
-          :defp ->
-            quote do
-              defp unquote(fun_name)([{:name, attrs, unquote(ttype)} | tokens]) do
-                [{unquote(ttype), attrs, unquote(word)} | unquote(fun_name)(tokens)]
+    heads =
+      for {ttype, words} <- words do
+        for word <- words do
+          case kind do
+            :defp ->
+              quote do
+                defp unquote(fun_name)([{:name, attrs, unquote(ttype)} | tokens]) do
+                  [{unquote(ttype), attrs, unquote(word)} | unquote(fun_name)(tokens)]
+                end
               end
-            end |> IO.inspect
-          :def ->
-            quote do
-              def unquote(fun_name)([{:name, attrs, unquote(ttype)} | tokens]) do
-                [{unquote(ttype), attrs, unquote(word)} | unquote(fun_name)(tokens)]
+              |> IO.inspect()
+
+            :def ->
+              quote do
+                def unquote(fun_name)([{:name, attrs, unquote(ttype)} | tokens]) do
+                  [{unquote(ttype), attrs, unquote(word)} | unquote(fun_name)(tokens)]
+                end
               end
-            end
+          end
         end
       end
-    end
 
     quote do
-      unquote_splicing(heads)
+      (unquote_splicing(heads))
     end
   end
 end

@@ -2,12 +2,12 @@
 
 PROJECT = cowboy
 PROJECT_DESCRIPTION = Small, fast, modern HTTP server.
-PROJECT_VERSION = 2.9.0
+PROJECT_VERSION = 2.12.0
 PROJECT_REGISTERED = cowboy_clock
 
 # Options.
 
-PLT_APPS = public_key ssl
+PLT_APPS = public_key ssl # ct_helper gun common_test inets
 CT_OPTS += -ct_hooks cowboy_ct_hook [] # -boot start_sasl
 
 # Dependencies.
@@ -15,7 +15,7 @@ CT_OPTS += -ct_hooks cowboy_ct_hook [] # -boot start_sasl
 LOCAL_DEPS = crypto
 
 DEPS = cowlib ranch
-dep_cowlib = git https://github.com/ninenines/cowlib 2.11.0
+dep_cowlib = git https://github.com/ninenines/cowlib 2.13.0
 dep_ranch = git https://github.com/ninenines/ranch 1.8.0
 
 DOC_DEPS = asciideck
@@ -29,10 +29,8 @@ dep_gun = git https://github.com/ninenines/gun master
 dep_ci.erlang.mk = git https://github.com/ninenines/ci.erlang.mk master
 DEP_EARLY_PLUGINS = ci.erlang.mk
 
-AUTO_CI_OTP ?= OTP-LATEST-22+
-AUTO_CI_HIPE ?= OTP-LATEST
-# AUTO_CI_ERLLVM ?= OTP-LATEST
-AUTO_CI_WINDOWS ?= OTP-LATEST-22+
+AUTO_CI_OTP ?= OTP-LATEST-24+
+AUTO_CI_WINDOWS ?= OTP-LATEST-24+
 
 # Hex configuration.
 
@@ -40,8 +38,8 @@ define HEX_TARBALL_EXTRA_METADATA
 #{
 	licenses => [<<"ISC">>],
 	links => #{
-		<<"User guide">> => <<"https://ninenines.eu/docs/en/cowboy/2.9/guide/">>,
-		<<"Function reference">> => <<"https://ninenines.eu/docs/en/cowboy/2.9/manual/">>,
+		<<"User guide">> => <<"https://ninenines.eu/docs/en/cowboy/2.12/guide/">>,
+		<<"Function reference">> => <<"https://ninenines.eu/docs/en/cowboy/2.12/manual/">>,
 		<<"GitHub">> => <<"https://github.com/ninenines/cowboy">>,
 		<<"Sponsor">> => <<"https://github.com/sponsors/essen">>
 	}
@@ -52,7 +50,7 @@ endef
 
 include erlang.mk
 
-# Don't run the examples test suite by default.
+# Don't run the examples/autobahn test suites by default.
 
 ifndef FULL
 CT_SUITES := $(filter-out examples ws_autobahn,$(CT_SUITES))
@@ -69,7 +67,7 @@ app:: rebar.config
 
 # Dialyze the tests.
 
-DIALYZER_OPTS += --src -r test
+#DIALYZER_OPTS += --src -r test
 
 # h2spec setup.
 
@@ -88,13 +86,6 @@ $(H2SPEC):
 	$(verbose) git clone --depth 1 https://github.com/summerwind/h2spec $(dir $(H2SPEC)) || true
 	$(verbose) $(MAKE) -C $(dir $(H2SPEC)) build MAKEFLAGS= || true
 
-# Use erl_make_certs from the tested release during CI
-# and ensure that ct_helper is always recompiled.
-
-ci-setup:: clean deps test-deps
-	$(gen_verbose) cp ~/.kerl/builds/$(CI_OTP_RELEASE)/otp_src_git/lib/ssl/test/erl_make_certs.erl deps/ct_helper/src/ || true
-	$(gen_verbose) $(MAKE) -C $(DEPS_DIR)/ct_helper clean app
-
 # Prepare for the release.
 
 prepare_tag:
@@ -110,8 +101,11 @@ prepare_tag:
 	$(verbose) echo -n "GUIDE:  "
 	$(verbose) grep -h dep_$(PROJECT)_commit doc/src/guide/*.asciidoc || true
 	$(verbose) echo
+	$(verbose) echo "Links in the README:"
+	$(verbose) grep http.*:// README.asciidoc
+	$(verbose) echo
 	$(verbose) echo "Titles in most recent CHANGELOG:"
-	$(verbose) for f in `ls -r doc/src/guide/migrating_from_*.asciidoc | head -n1`; do \
+	$(verbose) for f in `ls -rv doc/src/guide/migrating_from_*.asciidoc | head -n1`; do \
 		echo $$f:; \
 		grep == $$f; \
 	done

@@ -9,6 +9,7 @@
 -module(hackney_response).
 
 -include("hackney.hrl").
+-include("hackney_lib.hrl").
 
 -type response_state() :: start | waiting | on_status | on_headers | on_body.
 -export_type([response_state/0]).
@@ -165,28 +166,39 @@ stream_body1(Error, _Client) ->
 
 -spec stream_body_recv(binary(), #client{})
     -> {ok, binary(), #client{}} | {error, term()}.
-stream_body_recv(Buffer, Client=#client{version=Version, clen=CLen}) ->
+stream_body_recv(Buffer, Client=#client{parser=#hparser{body_state={stream, _, TransferState, _}}}) ->
+  case recv(Client, TransferState) of
+    {ok, Data} ->
+      stream_body(Data, Client);
+    {error, Reason} ->
+      stream_body_recv_error(Reason, Buffer, Client)
+  end;
+stream_body_recv(Buffer, Client=#client{parser=#hparser{body_state=done}}) ->
   case recv(Client) of
     {ok, Data} ->
       stream_body(Data, Client);
     {error, Reason} ->
-      Client2 = close(Client),
-      case Reason of
-        closed when (Version =:= {1, 0} orelse Version =:= {1, 1}) andalso (CLen =:= nil orelse CLen =:= undefined) ->
-          {ok, Buffer, Client2#client{response_state=done,
-            body_state=done,
-            buffer = <<>>,
-            parser=nil}};
-        closed when Client#client.te =:= <<"identity">> ->
-          {ok, Buffer, Client2#client{response_state=done,
-            body_state=done,
-            buffer = <<>>}};
-        closed ->
-          {error, {closed, Buffer}};
-        _Else ->
-          {error, Reason}
-      end
+      stream_body_recv_error(Reason, Buffer, Client)
   end.
+
+stream_body_recv_error(Reason, Buffer, Client=#client{version=Version, clen=CLen}) ->
+  Client2 = close(Client),
+  case Reason of
+    closed when (Version =:= {1, 0} orelse Version =:= {1, 1}) andalso (CLen =:= nil orelse CLen =:= undefined) ->
+      {ok, Buffer, Client2#client{response_state=done,
+                                  body_state=done,
+                                  buffer = <<>>,
+                                  parser=nil}};
+    closed when Client#client.te =:= <<"identity">> ->
+      {ok, Buffer, Client2#client{response_state=done,
+                                  body_state=done,
+                                  buffer = <<>>}};
+    closed ->
+      {error, {closed, Buffer}};
+    _Else ->
+      {error, Reason}
+  end.
+
 
 %% @doc stream a multipart response
 %%
@@ -220,7 +232,7 @@ multipart_data(Client, Length, {mp_mixed, Cont}) ->
 multipart_data(Client, Length, {mp_mixed_eof, Cont}) ->
   {mp_mixed_eof, Client#client{multipart={Length, Cont}}};
 multipart_data(Client, Length, eof)
-  when Length =:= 0 orelse Length =:= nil ->
+  when Length =:= 0 orelse Length =:= nil orelse Length =:= undefined ->
   Client2 = end_stream_body(<<>>, Client),
   {eof, Client2#client{body_state=done, multipart=nil}};
 multipart_data(Client, _, eof) ->
@@ -228,9 +240,11 @@ multipart_data(Client, _, eof) ->
   {skip, Client2} = skip_body(Client),
   {eof, Client2#client{multipart=nil}};
 multipart_data(Client, Length, {more, Parser})
-  when Length > 0 orelse Length =:= nil->
+  when Length > 0 orelse Length =:= nil orelse Length =:= undefined ->
   case stream_body(Client) of
-    {ok, Data, Client2} when Length =:= nil ->
+    {ok, Data, Client2} when Length =:= nil  ->
+      multipart_data(Client2, Length, Parser(Data));
+    {ok, Data, Client2} when Length =:= undefined  ->
       multipart_data(Client2, Length, Parser(Data));
     {ok, << Data:Length/binary, Buffer/binary >>, Client2} ->
       multipart_data(Client2#client{buffer=Buffer}, 0,
@@ -345,6 +359,13 @@ maybe_close(#client{version={Min,Maj}, headers=Headers, clen=CLen}) ->
   end.
 
 recv(#client{transport=Transport, socket=Skt, recv_timeout=Timeout}) ->
+  Transport:recv(Skt, 0, Timeout).
+
+recv(#client{transport=Transport, socket=Skt, recv_timeout=Timeout}, {_BufSize, undefined}) ->
+  Transport:recv(Skt, 0, Timeout);
+recv(#client{transport=Transport, socket=Skt, recv_timeout=Timeout}, {BufSize, ExpectedSize}) when ExpectedSize >= BufSize ->
+  Transport:recv(Skt, ExpectedSize - BufSize, Timeout);
+recv(#client{transport=Transport, socket=Skt, recv_timeout=Timeout}, {_BufSize, _ExpectedSize}) ->
   Transport:recv(Skt, 0, Timeout).
 
 close(#client{socket=nil}=Client) ->

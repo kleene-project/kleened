@@ -33,7 +33,7 @@ defmodule OpenApiSpex.Plug.Cast do
         def init(opts), do: opts
 
         def call(conn, reason) do
-          msg = %{error: reason} |> Posion.encode!()
+          msg = %{error: reason} |> Poison.encode!()
 
           conn
           |> Conn.put_resp_content_type("application/json")
@@ -44,7 +44,8 @@ defmodule OpenApiSpex.Plug.Cast do
 
   @behaviour Plug
 
-  alias Plug.Conn
+  alias OpenApiSpex.Cast.Utils
+  alias OpenApiSpex.Plug.PutApiSpec
 
   @impl Plug
   @deprecated "Use OpenApiSpex.Plug.CastAndValidate instead"
@@ -60,15 +61,12 @@ defmodule OpenApiSpex.Plug.Cast do
         operation_id: operation_id,
         render_error: render_error
       }) do
-    {spec, operation_lookup} = OpenApiSpex.Plug.PutApiSpec.get_spec_and_operation_lookup(conn)
+    {spec, operation_lookup} = PutApiSpec.get_spec_and_operation_lookup(conn)
     operation = operation_lookup[operation_id]
 
-    content_type =
-      Conn.get_req_header(conn, "content-type")
-      |> Enum.at(0, "")
-      |> String.split(";")
-      |> Enum.at(0)
+    content_type = Utils.content_type_from_header(conn)
 
+    # credo:disable-for-next-line
     case apply(OpenApiSpex, :cast, [spec, operation, conn, content_type]) do
       {:ok, conn} ->
         conn

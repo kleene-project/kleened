@@ -51,7 +51,7 @@ defmodule OpenApiSpex.Schema do
           alias OpenApiSpex.{Schema, Discriminator}
           OpenApiSpex.schema(%{
             title: "PetCommon",
-            description: "Properties common to all Pets"
+            description: "Properties common to all Pets",
             type: :object,
             properties: %{
               name: %Schema{type: :string},
@@ -77,7 +77,7 @@ defmodule OpenApiSpex.Schema do
                     type: :string,
                     description: "The measured skill for hunting",
                     default: "lazy",
-                    enum: ["clueless", "lazy", "adventurous", "aggresive"]
+                    enum: ["clueless", "lazy", "adventurous", "aggressive"]
                   }
                 },
                 required: [:huntingSkill]
@@ -116,7 +116,7 @@ defmodule OpenApiSpex.Schema do
 
         defmodule Pet do
           require OpenApiSpex
-          alias OpenApiSpex.{Schema, Discriminator}
+          alias OpenApiSpex.Discriminator
           OpenApiSpex.schema(%{
             title: "Pet",
             type: :object,
@@ -129,15 +129,17 @@ defmodule OpenApiSpex.Schema do
             ]
           })
         end
+      end
   """
 
   alias OpenApiSpex.{
-    Schema,
-    Reference,
     DeprecatedCast,
     Discriminator,
-    Xml,
-    ExternalDocumentation
+    ExternalDocumentation,
+    OpenApi,
+    Reference,
+    Schema,
+    Xml
   }
 
   @doc """
@@ -183,7 +185,8 @@ defmodule OpenApiSpex.Schema do
     :example,
     :deprecated,
     :"x-struct",
-    :"x-validate"
+    :"x-validate",
+    :extensions
   ]
 
   @typedoc """
@@ -249,7 +252,8 @@ defmodule OpenApiSpex.Schema do
           example: any,
           deprecated: boolean | nil,
           "x-struct": module | nil,
-          "x-validate": module | nil
+          "x-validate": module | nil,
+          extensions: %{String.t() => any()} | nil
         }
 
   @typedoc """
@@ -290,9 +294,9 @@ defmodule OpenApiSpex.Schema do
     - Cast the properties using each schema listing in `allOf`. When a property is defined in
       multiple `allOf` schemas, it will be cast using the first schema listed containing the property.
 
-    - Cast the value using each schema listed in `oneOf`, stopping as soon as a sucessful cast is made.
+    - Cast the value using each schema listed in `oneOf`, stopping as soon as a successful cast is made.
 
-    - Cast the value using each schema listed in `anyOf`, stopping as soon as a succesful cast is made.
+    - Cast the value using each schema listed in `anyOf`, stopping as soon as a successful cast is made.
   """
   defdelegate cast(schema, value, schemas), to: DeprecatedCast
 
@@ -318,14 +322,16 @@ defmodule OpenApiSpex.Schema do
   defdelegate validate(schema, value, path, schemas), to: DeprecatedCast
 
   @doc """
-  Get the names of all properties definied for a schema.
+  Get the names of all properties defined for a schema.
 
   Includes all properties directly defined in the schema, and all schemas
   included in the `allOf` list.
   """
   def properties(schema = %Schema{type: :object, properties: properties = %{}}) do
-    for({name, property} <- properties, do: {name, default(property)}) ++
-      properties(%{schema | properties: nil})
+    properties
+    |> Enum.map(fn {name, property} -> {name, default(property)} end)
+    |> Enum.concat(properties(%{schema | properties: nil}))
+    |> Enum.uniq_by(fn {name, _property} -> name end)
   end
 
   def properties(%Schema{allOf: schemas}) when is_list(schemas) do
@@ -357,6 +363,7 @@ defmodule OpenApiSpex.Schema do
         assert ...
       end
   """
+  @spec example(schema :: Schema.t() | module) :: map | String.t() | number | boolean
   def example(%Schema{example: example} = schema) when not is_nil(example) do
     schema.example
   end
@@ -381,6 +388,7 @@ defmodule OpenApiSpex.Schema do
     Map.new(properties(schema), fn {prop_name, _} ->
       property = schema.properties[prop_name]
       example_value = example(property)
+
       {prop_name, example_value}
     end)
   end
@@ -392,19 +400,68 @@ defmodule OpenApiSpex.Schema do
 
   def example(%Schema{type: :string, format: :date}), do: "2020-04-20"
   def example(%Schema{type: :string, format: :"date-time"}), do: "2020-04-20T16:20:00Z"
+  def example(%Schema{type: :string, format: :uuid}), do: "02ef9c5f-29e6-48fc-9ec3-7ed57ed351f6"
 
   def example(%Schema{type: :string}), do: ""
   def example(%Schema{type: :integer} = s), do: example_for(s, :integer)
   def example(%Schema{type: :number} = s), do: example_for(s, :number)
   def example(%Schema{type: :boolean}), do: false
+  def example(schema_module) when is_atom(schema_module), do: example(schema_module.schema())
   def example(_schema), do: nil
 
-  defp default(schema_module) when is_atom(schema_module), do: schema_module.schema().default
-  defp default(%{default: default}), do: default
-  defp default(%Reference{}), do: nil
+  @doc """
+  Generate example value from a `OpenApiSpex.Schema` or a `OpenApiSpex.Reference` struct.
 
-  defp default(value) do
-    raise "Expected %Schema{}, schema module, or %Reference{}. Got: #{inspect(value)}"
+  The second parameter must either be an `OpenApiSpex.OpenApi` struct or a map of schemas.
+
+  See also: `example/1`.
+  """
+  @spec example(schema :: Schema.t() | module, schemas :: OpenApi.t() | map) ::
+          map | String.t() | number | boolean
+  def example(schema, %OpenApi{} = spec) do
+    example(schema, spec.components.schemas)
+  end
+
+  def example(%Schema{type: type} = schema, _schemas)
+      when type in [:string, :integer, :number, :boolean] do
+    example(schema)
+  end
+
+  def example(%Schema{example: example} = schema, _schemas) when not is_nil(example) do
+    schema.example
+  end
+
+  def example(%Schema{enum: [example | _]}, _schemas), do: example
+  def example(%Schema{oneOf: [schema | _]}, schemas), do: example(schema, schemas)
+  def example(%Schema{anyOf: [schema | _]}, schemas), do: example(schema, schemas)
+
+  def example(%Schema{allOf: schemas}, all_schemas) when is_list(schemas) do
+    example_for(schemas, :allOf, all_schemas)
+  end
+
+  def example(%Schema{anyOf: schemas}, all_schemas) when is_list(schemas) do
+    example_for(schemas, :anyOf, all_schemas)
+  end
+
+  def example(%Schema{type: :object} = schema, schemas) do
+    Map.new(properties(schema), fn {prop_name, _} ->
+      property = schema.properties[prop_name]
+
+      {prop_name, example(property, schemas)}
+    end)
+  end
+
+  def example(%Schema{type: :array} = schema, schemas) do
+    item_example = example(schema.items, schemas)
+    [item_example]
+  end
+
+  def example(schema_module, schemas) when is_atom(schema_module) do
+    example(schema_module.schema(), schemas)
+  end
+
+  def example(%Reference{} = reference, schemas) do
+    example(Reference.resolve_schema(reference, schemas), schemas)
   end
 
   defp example_for(schemas, type) when type in [:anyOf, :allOf] do
@@ -437,4 +494,18 @@ defmodule OpenApiSpex.Schema do
        do: 0.0
 
   defp example_for(_schema, type) when type in [:number, :integer], do: 0
+
+  defp example_for(schemas, type, all_schemas) when type in [:anyOf, :allOf] do
+    schemas
+    |> Enum.map(&example(&1, all_schemas))
+    |> Enum.reduce(%{}, &Map.merge/2)
+  end
+
+  defp default(schema_module) when is_atom(schema_module), do: schema_module.schema().default
+  defp default(%{default: default}), do: default
+  defp default(%Reference{}), do: nil
+
+  defp default(value) do
+    raise "Expected %Schema{}, schema module, or %Reference{}. Got: #{inspect(value)}"
+  end
 end

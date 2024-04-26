@@ -27,7 +27,9 @@
 
 -spec verify_fun(Cert :: #'OTPCertificate'{},
                  Event :: {bad_cert, Reason :: atom() | {revoked, atom()}} |
-                          {extension, #'Extension'{}}, InitialUserState :: term()) ->
+                          {extension, #'Extension'{}} |
+                          valid | valid_peer,
+                 InitialUserState :: term()) ->
                     {valid, UserState :: term()} | {valid_peer, UserState :: user_state()} |
                     {fail, Reason :: term()} | {unknown, UserState :: term()}.
 verify_fun(_, {bad_cert, _} = Reason, _) ->
@@ -121,7 +123,7 @@ try_match_wildcard(BeforeW, AfterW, SingleCharW, Pattern) ->
   FirstPatternDotPos = ssl_verify_string:chr(Pattern, $.),
   case SingleCharW of
     true ->
-      %% only compare againts whole left-most label in pattern
+      %% only compare against whole left-most label in pattern
       case_insensitive_match(AfterW, ssl_verify_string:substr(Pattern, FirstPatternDotPos));
     false ->
       case wildcard_not_in_a_label(BeforeW, AfterW) of

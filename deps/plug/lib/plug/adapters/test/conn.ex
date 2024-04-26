@@ -6,8 +6,13 @@ defmodule Plug.Adapters.Test.Conn do
 
   def conn(conn, method, uri, body_or_params) do
     maybe_flush()
-
     uri = URI.parse(uri)
+
+    if is_binary(uri.path) and not String.starts_with?(uri.path, "/") do
+      # TODO: Convert to an error
+      IO.warn("the URI path used in plug tests must start with \"/\", got: #{inspect(uri.path)}")
+    end
+
     method = method |> to_string |> String.upcase()
     query = uri.query || ""
     owner = self()
@@ -31,6 +36,8 @@ defmodule Plug.Adapters.Test.Conn do
         })
     }
 
+    conn_port = if conn.port != 0, do: conn.port, else: 80
+
     %Plug.Conn{
       conn
       | adapter: {__MODULE__, state},
@@ -38,7 +45,7 @@ defmodule Plug.Adapters.Test.Conn do
         method: method,
         owner: owner,
         path_info: split_path(uri.path),
-        port: uri.port || 80,
+        port: uri.port || conn_port,
         remote_ip: conn.remote_ip || {127, 0, 0, 1},
         req_headers: req_headers,
         request_path: uri.path,
@@ -112,6 +119,16 @@ defmodule Plug.Adapters.Test.Conn do
   def inform(%{owner: owner, ref: ref}, status, headers) do
     send(owner, {ref, :inform, {status, headers}})
     :ok
+  end
+
+  def upgrade(%{owner: owner, ref: ref}, :not_supported = protocol, opts) do
+    send(owner, {ref, :upgrade, {protocol, opts}})
+    {:error, :not_supported}
+  end
+
+  def upgrade(%{owner: owner, ref: ref} = state, protocol, opts) do
+    send(owner, {ref, :upgrade, {protocol, opts}})
+    {:ok, state}
   end
 
   def push(%{owner: owner, ref: ref}, path, headers) do

@@ -1,11 +1,14 @@
 defmodule ExDoc.Autolink do
   @moduledoc false
 
-  # * `:app` - the app that the docs are being generated for. When linking modules they are
+  # * `:apps` - the apps that the docs are being generated for. When linking modules they are
   #   checked if they are part of the app and based on that the links are relative or absolute.
   #
   # * `:current_module` - the module that the docs are being generated for. Used to link local
   #   calls and see if remote calls are in the same app.
+  #
+  # * `:current_kfa` - the kind, function, arity that the docs are being generated for. Is nil
+  #    if there is no such thing. Used to generate more accurate warnings.
   #
   # * `:module_id` - id of the module being documented (e.g.: `"String"`)
   #
@@ -13,101 +16,223 @@ defmodule ExDoc.Autolink do
   #
   # * `:line` - line number of the beginning of the documentation
   #
+  # * `:language` - the language call-back module to use
+  #
   # * `:id` - a module/function/etc being documented (e.g.: `"String.upcase/2"`)
   #
   # * `:ext` - the extension (`".html"`, "`.xhtml"`, etc)
   #
-  # * `:extras` - list of extras
+  # * `:extras` - map of extras
   #
-  # * `:skip_undefined_reference_warnings_on` - list of modules to skip the warning on
+  # * `:skip_undefined_reference_warnings_on` - function that will be called with
+  #    a module/function/file/etc and return a boolean whether to skip warning on it.
+  #
+  # * `:skip_code_autolink_to` - function that will be called with a term and return a boolean
+  #    whether to skip autolinking to it.
+  #
+  # * `:filtered_modules` - A list of module nodes that were filtered by the retriever
+  #
+  # * `:warnings` - one of:
+  #
+  #     * `:emit` (default)
+  #
+  #     * `:raise` (useful for tests)
+  #
+  #     * `:send` - send back to caller (useful for tests)
 
-  @enforce_keys [:app, :file]
+  alias ExDoc.Refs
 
   defstruct [
-    :app,
     :current_module,
     :module_id,
     :id,
-    :file,
     :line,
+    :language,
+    file: "nofile",
+    apps: [],
     extras: [],
+    deps: [],
     ext: ".html",
-    skip_undefined_reference_warnings_on: []
+    current_kfa: nil,
+    siblings: [],
+    skip_undefined_reference_warnings_on: &ExDoc.Config.skip_undefined_reference_warnings_on/1,
+    skip_code_autolink_to: &ExDoc.Config.skip_code_autolink_to/1,
+    force_module_prefix: nil,
+    filtered_modules: [],
+    warnings: :emit
   ]
 
-  alias ExDoc.Formatter.HTML
-  alias ExDoc.Formatter.HTML.Templates, as: T
-  alias ExDoc.Refs
-
   @hexdocs "https://hexdocs.pm/"
-  @otpdocs "http://www.erlang.org/doc/man/"
+  @otpdocs "https://www.erlang.org/doc/man/"
+  @otpappdocs "https://www.erlang.org/doc/apps/"
 
-  def doc(ast, options \\ []) do
-    config = struct!(__MODULE__, options)
-    walk(ast, config)
+  def app_module_url(tool, module, anchor \\ nil, config)
+
+  def app_module_url(:ex_doc, module, nil, %{current_module: module} = config) do
+    app_module_url(:ex_doc, module, "#content", config)
   end
 
-  defp walk(list, config) when is_list(list) do
-    Enum.map(list, &walk(&1, config))
+  def app_module_url(:ex_doc, module, anchor, %{current_module: module} = config) do
+    path = module |> inspect() |> String.trim_leading(":")
+    ex_doc_app_url(module, config, path, config.ext, "#{anchor}")
   end
 
-  defp walk(binary, _) when is_binary(binary) do
-    binary
+  def app_module_url(:ex_doc, module, anchor, config) do
+    path = module |> inspect() |> String.trim_leading(":")
+    ex_doc_app_url(module, config, path, config.ext, "#{anchor}")
   end
 
-  defp walk({:pre, _, _} = ast, _config) do
-    ast
+  def app_module_url(:otp, module, anchor, _config) do
+    @otpdocs <> "#{module}.html#{anchor}"
   end
 
-  defp walk({:a, attrs, inner} = ast, config) do
-    cond do
-      url = custom_link(attrs, config) ->
-        {:a, Keyword.put(attrs, :href, url), inner}
-
-      url = extra_link(attrs, config) ->
-        {:a, Keyword.put(attrs, :href, url), inner}
-
-      true ->
-        ast
-    end
+  def app_module_url(:no_tool, _, _, _) do
+    nil
   end
 
-  defp walk({:code, attrs, [code]} = ast, config) do
-    if url = url(code, :regular, config) do
-      code = remove_prefix(code)
-      {:a, [href: url], [{:code, attrs, [code]}]}
+  defp string_app_module_url(string, tool, module, anchor, config) do
+    if Enum.any?(config.filtered_modules, &(&1.module == module)) do
+      # TODO: Remove on Elixir v1.14
+      prefix =
+        if unquote(Version.match?(System.version(), ">= 1.14.0")) do
+          ""
+        else
+          ~s|"#{string}" |
+        end
+
+      warn(config, prefix <> "reference to a filtered module")
+      nil
     else
-      ast
+      app_module_url(tool, module, anchor, config)
     end
   end
 
-  defp walk({tag, attrs, ast}, config) do
-    {tag, attrs, walk(ast, config)}
-  end
-
-  defp custom_link(attrs, config) do
-    with {:ok, href} <- Keyword.fetch(attrs, :href),
-         [[_, text]] <- Regex.scan(~r/^`(.+)`$/, href) do
-      url(text, :custom_link, config)
-    else
-      _ -> nil
-    end
-  end
-
-  defp extra_link(attrs, config) do
-    with {:ok, href} <- Keyword.fetch(attrs, :href),
-         uri <- URI.parse(href),
-         nil <- uri.host,
-         true <- is_binary(uri.path),
-         true <- uri.path == Path.basename(uri.path),
-         ".md" <- Path.extname(uri.path) do
-      if uri.path in config.extras do
-        without_ext = String.trim_trailing(uri.path, ".md")
-        fragment = (uri.fragment && "#" <> uri.fragment) || ""
-        HTML.text_to_id(without_ext) <> config.ext <> fragment
+  @doc false
+  def ex_doc_app_url(module, config, path, ext, suffix) do
+    if app = app(module) do
+      if app in config.apps do
+        path <> ext <> suffix
       else
-        message = "documentation references file `#{uri.path}` but it doesn't exists"
-        warn(message, config.file, config.line, config.id)
+        config.deps
+        |> Keyword.get_lazy(app, fn -> @hexdocs <> "#{app}" end)
+        |> String.trim_trailing("/")
+        |> Kernel.<>("/" <> path <> ".html" <> suffix)
+      end
+    else
+      path <> ext <> suffix
+    end
+  end
+
+  defp app(module) do
+    case :code.which(module) do
+      :preloaded ->
+        :erts
+
+      maybe_path ->
+        case :application.get_application(module) do
+          {:ok, app} ->
+            app
+
+          _ ->
+            with true <- is_list(maybe_path),
+                 [_, "ebin", app, "lib" | _] <- maybe_path |> Path.split() |> Enum.reverse() do
+              String.split(app, "-") |> hd() |> String.to_atom()
+            else
+              _ -> nil
+            end
+        end
+    end
+  end
+
+  @doc false
+  def tool(module, config) do
+    if match?("Elixir." <> _, Atom.to_string(module)) do
+      :ex_doc
+    else
+      app = app(module)
+      apps = Enum.uniq(config.apps ++ Keyword.keys(config.deps))
+
+      if is_app_otp(app) and app not in apps do
+        :otp
+      else
+        :ex_doc
+      end
+    end
+  end
+
+  defp is_app_otp(app) do
+    maybe_lib_dir_path = :code.lib_dir(app)
+    is_list(maybe_lib_dir_path) and List.starts_with?(maybe_lib_dir_path, :code.root_dir())
+  end
+
+  def maybe_warn(config, ref, visibility, metadata) do
+    file = Path.relative_to_cwd(config.file)
+
+    unless Enum.any?(
+             [config.id, config.module_id, file],
+             config.skip_undefined_reference_warnings_on
+           ) do
+      warn(config, ref, visibility, metadata)
+    end
+  end
+
+  @ref_regex ~r/^`(.+)`$/
+
+  def custom_link(attrs, config) do
+    case Keyword.fetch(attrs, :href) do
+      {:ok, href} ->
+        case Regex.scan(@ref_regex, href) do
+          [[_, custom_link]] ->
+            custom_link
+            |> url(:custom_link, config)
+            |> remove_and_warn_if_invalid(custom_link, config)
+
+          [] ->
+            build_extra_link(href, config)
+        end
+
+      _ ->
+        nil
+    end
+  end
+
+  def url(string = "mix help " <> name, mode, config) do
+    name |> mix_task(string, mode, config) |> maybe_remove_link(mode)
+  end
+
+  def url(string = "mix " <> name, mode, config) do
+    name |> mix_task(string, mode, config) |> maybe_remove_link(mode)
+  end
+
+  def url(string, mode, config) do
+    if config.skip_code_autolink_to.(string) do
+      nil
+    else
+      parse_url(string, mode, config)
+    end
+  end
+
+  defp remove_and_warn_if_invalid(nil, reference, config) do
+    warn(
+      config,
+      ~s[documentation references "#{reference}" but it is invalid]
+    )
+
+    :remove_link
+  end
+
+  defp remove_and_warn_if_invalid(result, _, _), do: result
+
+  @builtin_ext [".livemd", ".cheatmd", ".md", ".txt", ""]
+
+  defp build_extra_link(link, config) do
+    with %{scheme: nil, host: nil, path: path} = uri <- URI.parse(link),
+         true <- is_binary(path) and path != "" and not (path =~ @ref_regex),
+         true <- Path.extname(path) in @builtin_ext do
+      if file = config.extras[Path.basename(path)] do
+        append_fragment(file <> config.ext, uri.fragment)
+      else
+        maybe_warn(config, nil, nil, %{file_path: path, original_text: link})
         nil
       end
     else
@@ -115,73 +240,122 @@ defmodule ExDoc.Autolink do
     end
   end
 
-  @basic_types [
-    any: 0,
-    none: 0,
-    atom: 0,
-    map: 0,
-    pid: 0,
-    port: 0,
-    reference: 0,
-    struct: 0,
-    tuple: 0,
-    integer: 0,
-    float: 0,
-    neg_integer: 0,
-    non_neg_integer: 0,
-    pos_integer: 0,
-    list: 1,
-    nonempty_list: 1,
-    improper_list: 2,
-    maybe_improper_list: 2
-  ]
+  defp maybe_remove_link(nil, :custom_link) do
+    :remove_link
+  end
 
-  @built_in_types [
-    term: 0,
-    arity: 0,
-    as_boolean: 1,
-    binary: 0,
-    bitstring: 0,
-    boolean: 0,
-    byte: 0,
-    char: 0,
-    charlist: 0,
-    nonempty_charlist: 0,
-    fun: 0,
-    function: 0,
-    identifier: 0,
-    iodata: 0,
-    iolist: 0,
-    keyword: 0,
-    keyword: 1,
-    list: 0,
-    nonempty_list: 0,
-    maybe_improper_list: 0,
-    nonempty_maybe_improper_list: 0,
-    mfa: 0,
-    module: 0,
-    no_return: 0,
-    node: 0,
-    number: 0,
-    struct: 0,
-    timeout: 0
-  ]
+  defp maybe_remove_link(result, _mode) do
+    result
+  end
 
-  defp url("mix help " <> name, _mode, config), do: mix_task(name, config)
-  defp url("mix " <> name, _mode, config), do: mix_task(name, config)
+  defp mix_task(name, string, mode, config) do
+    {module, url, visibility} =
+      if name =~ ~r/^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*$/ do
+        parts = name |> String.split(".") |> Enum.map(&Macro.camelize/1)
+        module = Module.concat([Mix, Tasks | parts])
 
-  defp url(code, mode, config) do
-    case String.split(code, "/") do
-      [left, right] ->
+        {module, module_url(module, :regular_link, config, string),
+         Refs.get_visibility({:module, module})}
+      else
+        {nil, nil, :undefined}
+      end
+
+    if url in [nil, :remove_link] and mode == :custom_link do
+      maybe_warn(config, {:module, module}, visibility, %{
+        mix_task: true,
+        original_text: string
+      })
+    end
+
+    url
+  end
+
+  defp module_url(module, anchor \\ nil, mode, config, string) do
+    ref = {:module, module}
+
+    case {mode, Refs.get_visibility(ref)} do
+      {_link_type, visibility} when visibility in [:public, :limited] ->
+        string_app_module_url(string, tool(module, config), module, anchor, config)
+
+      {:regular_link, :undefined} ->
+        nil
+
+      {:custom_link, visibility} when visibility in [:hidden, :undefined] ->
+        maybe_warn(config, ref, visibility, %{original_text: string})
+        :remove_link
+
+      {_link_type, visibility} ->
+        maybe_warn(config, ref, visibility, %{original_text: string})
+        nil
+    end
+  end
+
+  defp extra_url(string, config) do
+    case String.split(string, ":", parts: 2) do
+      [app, extra] ->
+        {extra, anchor} =
+          case String.split(extra, "#", parts: 2) do
+            [extra] ->
+              {extra, ""}
+
+            [extra, anchor] ->
+              {extra, "#" <> anchor}
+          end
+
+        app = String.to_atom(app)
+
+        config.deps
+        |> Keyword.get_lazy(app, fn ->
+          if Application.ensure_loaded(app) != :ok do
+            maybe_warn(
+              config,
+              "documentation references \"e:#{string}\" but #{app} cannot be found.",
+              nil,
+              %{}
+            )
+          end
+
+          prefix =
+            cond do
+              app in config.apps -> ""
+              is_app_otp(app) -> @otpappdocs
+              true -> @hexdocs
+            end
+
+          prefix <> "#{app}"
+        end)
+        |> String.trim_trailing("/")
+        |> Kernel.<>("/" <> convert_extra_extension(extra, config) <> anchor)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp convert_extra_extension(extra, config) do
+    if Path.extname(extra) in @builtin_ext do
+      Path.rootname(extra) <> config.ext
+    else
+      extra
+    end
+  end
+
+  defp parse_url(string, mode, config) do
+    case Regex.run(~r{^(.+)/(\d+)$}, string) do
+      [_, left, right] ->
         with {:ok, arity} <- parse_arity(right) do
           {kind, rest} = kind(left)
 
-          case parse_module_function(rest) do
+          case config.language.parse_module_function(rest) do
             {:local, function} ->
-              local_url(kind, function, arity, config)
+              kind
+              |> local_url(function, arity, config, string, mode: mode)
+              |> maybe_remove_link(mode)
 
             {:remote, module, function} ->
-              remote_url(kind, module, function, arity, config)
+              {kind, module, function, arity}
+              |> remote_url(config, string, mode: mode)
+              |> maybe_remove_link(mode)
 
             :error ->
               nil
@@ -191,12 +365,27 @@ defmodule ExDoc.Autolink do
             nil
         end
 
-      [string] ->
-        case parse_module(string, mode) do
-          {:module, module} ->
-            module_url(module, config)
+      nil ->
+        case string do
+          "m:" <> rest ->
+            parse_module_with_anchor(rest, config)
 
-          :error ->
+          "e:" <> rest ->
+            extra_url(rest, config)
+
+          string when mode == :custom_link ->
+            parse_module_with_anchor(string, config)
+
+          string when not config.force_module_prefix ->
+            case config.language.parse_module(string, mode) do
+              {:module, module} ->
+                module_url(module, mode, config, string)
+
+              :error ->
+                nil
+            end
+
+          _ ->
             nil
         end
 
@@ -205,13 +394,18 @@ defmodule ExDoc.Autolink do
     end
   end
 
-  defp kind("c:" <> rest), do: {:callback, rest}
-  defp kind("t:" <> rest), do: {:type, rest}
-  defp kind(rest), do: {:function, rest}
+  defp parse_module_with_anchor(string, config) do
+    destructure [rest, fragment], String.split(string, "#", parts: 2)
+    # TODO: rename :custom_link to :strict i.e. we expect ref to be valid
+    # force custom_link mode because of m: prefix.
+    case config.language.parse_module(rest, :custom_link) do
+      {:module, module} ->
+        module_url(module, fragment && "#" <> fragment, :custom_link, config, rest)
 
-  defp remove_prefix("c:" <> rest), do: rest
-  defp remove_prefix("t:" <> rest), do: rest
-  defp remove_prefix(rest), do: rest
+      :error ->
+        nil
+    end
+  end
 
   defp parse_arity(string) do
     case Integer.parse(string) do
@@ -220,280 +414,217 @@ defmodule ExDoc.Autolink do
     end
   end
 
-  defp parse_module_function(string) do
-    case string |> String.split(".") |> Enum.reverse() do
-      [string] ->
-        with {:function, function} <- parse_function(string) do
-          {:local, function}
-        end
+  def kind("c:" <> rest), do: {:callback, rest}
+  def kind("t:" <> rest), do: {:type, rest}
+  ## \\ does not work for :custom_url as Earmark strips the \...
+  def kind("\\" <> rest), do: {:function, rest}
+  def kind(rest), do: {:function, rest}
 
-      ["", "" | rest] ->
-        module_string = rest |> Enum.reverse() |> Enum.join(".")
+  def local_url(kind, name, arity, config, original_text, options \\ [])
 
-        with {:module, module} <- parse_module(module_string, :custom_link) do
-          {:remote, module, :.}
-        end
-
-      [function_string | rest] ->
-        module_string = rest |> Enum.reverse() |> Enum.join(".")
-
-        with {:module, module} <- parse_module(module_string, :custom_link),
-             {:function, function} <- parse_function(function_string) do
-          {:remote, module, function}
-        end
-    end
-  end
-
-  defp parse_module(<<first>> <> _ = string, _mode) when first in ?A..?Z do
-    do_parse_module(string)
-  end
-
-  defp parse_module(<<?:>> <> _ = string, :custom_link) do
-    do_parse_module(string)
-  end
-
-  defp parse_module(_, _) do
-    :error
-  end
-
-  defp do_parse_module(string) do
-    case Code.string_to_quoted(string, warn_on_unnecessary_quotes: false) do
-      {:ok, module} when is_atom(module) -> {:module, module}
-      {:ok, {:__aliases__, _, parts}} -> {:module, Module.concat(parts)}
-      _ -> :error
-    end
-  end
-
-  defp parse_function(string) do
-    case Code.string_to_quoted(":" <> string) do
-      {:ok, function} when is_atom(function) -> {:function, function}
-      _ -> :error
-    end
-  end
-
-  defp mix_task(name, config) do
-    if name =~ ~r/^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*$/ do
-      parts = name |> String.split(".") |> Enum.map(&Macro.camelize/1)
-      module_url(Module.concat([Mix, Tasks | parts]), config)
-    end
-  end
-
-  @doc """
-  Converts given types/specs `ast` into HTML with links.
-  """
-  def typespec(ast, options) do
-    config = struct!(__MODULE__, options)
-
-    string =
-      ast
-      |> Macro.to_string()
-      |> Code.format_string!(line_length: 80)
-      |> IO.iodata_to_binary()
-
-    name = typespec_name(ast)
-    {name, rest} = split_name(string, name)
-    name <> do_typespec(rest, config)
-  end
-
-  defp typespec_name({:"::", _, [{name, _, _}, _]}), do: Atom.to_string(name)
-  defp typespec_name({:when, _, [left, _]}), do: typespec_name(left)
-  defp typespec_name({name, _, _}) when is_atom(name), do: Atom.to_string(name)
-
-  # extract out function name so we don't process it. This is to avoid linking it when there's
-  # a type with the same name
-  defp split_name(string, name) do
-    if String.starts_with?(string, name) do
-      {name, binary_part(string, byte_size(name), byte_size(string) - byte_size(name))}
-    else
-      {"", string}
-    end
-  end
-
-  defp do_typespec(string, config) do
-    regex =
-      ~r/((?:((?:\:[a-z][_a-zA-Z0-9]*)|(?:[A-Z][_a-zA-Z0-9]*(?:\.[A-Z][_a-zA-Z0-9]*)*))\.)?(\w+!?))(\(.*\))/
-
-    Regex.replace(regex, string, fn _all, call_string, module_string, name_string, rest ->
-      module = string_to_module(module_string)
-      name = String.to_atom(name_string)
-      arity = count_args(rest, 0, 0)
-
-      url =
-        if module do
-          remote_url(:type, module, name, arity, config)
-        else
-          local_url(:type, name, arity, config)
-        end
-
-      if url do
-        ~s[<a href="#{url}">#{T.h(call_string)}</a>]
-      else
-        call_string
-      end <> do_typespec(rest, config)
-    end)
-  end
-
-  defp string_to_module(""), do: nil
-
-  defp string_to_module(string) do
-    if String.starts_with?(string, ":") do
-      string |> String.trim_leading(":") |> String.to_atom()
-    else
-      Module.concat([string])
-    end
-  end
-
-  defp count_args("()" <> _, 0, 0), do: 0
-  defp count_args("(" <> rest, counter, acc), do: count_args(rest, counter + 1, acc)
-  defp count_args("[" <> rest, counter, acc), do: count_args(rest, counter + 1, acc)
-  defp count_args("{" <> rest, counter, acc), do: count_args(rest, counter + 1, acc)
-  defp count_args(")" <> _, 1, acc), do: acc + 1
-  defp count_args(")" <> rest, counter, acc), do: count_args(rest, counter - 1, acc)
-  defp count_args("]" <> rest, counter, acc), do: count_args(rest, counter - 1, acc)
-  defp count_args("}" <> rest, counter, acc), do: count_args(rest, counter - 1, acc)
-  defp count_args("," <> rest, 1, acc), do: count_args(rest, 1, acc + 1)
-  defp count_args(<<_>> <> rest, counter, acc), do: count_args(rest, counter, acc)
-  defp count_args("", _counter, acc), do: acc
-
-  ## Internals
-
-  defp module_url(module, config) do
-    if module == config.current_module do
-      "#content"
-    else
-      if Refs.public?({:module, module}) do
-        module_url(tool(module), module, config)
-      end
-    end
-  end
-
-  defp module_url(:ex_doc, module, config) do
-    ex_doc_app_url(module, config) <> inspect(module) <> config.ext
-  end
-
-  defp module_url(:otp, module, _config) do
-    @otpdocs <> "#{module}.html"
-  end
-
-  defp local_url(:type, name, arity, config) when {name, arity} in @basic_types do
-    ex_doc_app_url(Kernel, config) <> "typespecs" <> config.ext <> "#basic-types"
-  end
-
-  defp local_url(:type, name, arity, config) when {name, arity} in @built_in_types do
-    ex_doc_app_url(Kernel, config) <> "typespecs" <> config.ext <> "#built-in-types"
-  end
-
-  defp local_url(kind, name, arity, config) do
+  def local_url(kind, name, arity, config, original_text, options) do
     module = config.current_module
     ref = {kind, module, name, arity}
+    mode = Keyword.get(options, :mode, :regular_link)
+    visibility = Refs.get_visibility(ref)
 
-    if Refs.public?(ref) do
-      fragment(tool(module), kind, name, arity)
+    case {kind, visibility} do
+      {_kind, :public} ->
+        fragment(tool(module, config), kind, name, arity)
+
+      {:function, _visibility} ->
+        case config.language.try_autoimported_function(name, arity, mode, config, original_text) do
+          nil ->
+            if mode == :custom_link do
+              maybe_warn(config, ref, visibility, %{original_text: original_text})
+            end
+
+            nil
+
+          url ->
+            url
+        end
+
+      {:type, _visibility} ->
+        case config.language.try_builtin_type(name, arity, mode, config, original_text) do
+          nil ->
+            if mode == :custom_link or config.language == ExDoc.Language.Erlang do
+              maybe_warn(config, ref, visibility, %{original_text: original_text})
+            end
+
+            nil
+
+          url ->
+            url
+        end
+
+      _ ->
+        maybe_warn(config, ref, visibility, %{original_text: original_text})
+        nil
     end
   end
 
-  defp remote_url(kind, module, name, arity, config) do
-    ref = {kind, module, name, arity}
-
-    if Refs.public?(ref) do
-      case tool(module) do
-        :no_tool ->
-          nil
-
-        tool ->
-          if module == config.current_module do
-            fragment(tool, kind, name, arity)
-          else
-            module_url(tool, module, config) <> fragment(tool, kind, name, arity)
-          end
-      end
-    else
-      if Refs.public?({:module, module}) do
-        maybe_warn({kind, module, name, arity}, config)
-      end
-
-      nil
-    end
+  def fragment(tool, kind, nil, arity) do
+    fragment(tool, kind, "nil", arity)
   end
 
-  defp ex_doc_app_url(module, config) do
-    app = config.app
-
-    case :application.get_application(module) do
-      {:ok, ^app} -> ""
-      {:ok, app} -> @hexdocs <> "#{app}/"
-      _ -> ""
-    end
+  def fragment(:ex_doc, kind, name, arity) do
+    "#" <> prefix(kind) <> "#{encode_fragment_name(name)}/#{arity}"
   end
 
-  defp fragment(:ex_doc, kind, name, arity) do
-    prefix =
-      case kind do
-        :function -> ""
-        :callback -> "c:"
-        :type -> "t:"
-      end
-
-    "#" <> prefix <> "#{T.enc(Atom.to_string(name))}/#{arity}"
-  end
-
-  defp fragment(:otp, kind, name, arity) do
+  def fragment(:otp, kind, name, arity) do
     case kind do
-      :function -> "##{name}-#{arity}"
-      :callback -> "#Module:#{name}-#{arity}"
-      :type -> "#type-#{name}"
+      :function -> "##{encode_fragment_name(name)}-#{arity}"
+      :callback -> "#Module:#{encode_fragment_name(name)}-#{arity}"
+      :type -> "#type-#{encode_fragment_name(name)}"
     end
   end
 
-  defp tool(module) do
-    name = Atom.to_string(module)
+  defp encode_fragment_name(name) when is_atom(name) do
+    encode_fragment_name(Atom.to_string(name))
+  end
 
-    if name == String.downcase(name) do
-      case :code.which(module) do
-        :preloaded ->
-          :otp
+  defp encode_fragment_name(name) when is_binary(name) do
+    URI.encode(name)
+  end
 
-        :non_existing ->
-          :no_tool
+  defp prefix(kind)
+  defp prefix(:function), do: ""
+  defp prefix(:callback), do: "c:"
+  defp prefix(:type), do: "t:"
 
-        path ->
-          if String.starts_with?(List.to_string(path), List.to_string(:code.lib_dir())) do
-            :otp
-          else
-            :no_tool
-          end
+  def remote_url({kind, module, name, arity} = ref, config, original_text, opts \\ []) do
+    warn? = Keyword.get(opts, :warn?, true)
+    mode = Keyword.get(opts, :mode, :regular_link)
+    same_module? = module == config.current_module
+
+    case {mode, Refs.get_visibility({:module, module}), Refs.get_visibility(ref)} do
+      {_mode, _module_visibility, :public} ->
+        tool = tool(module, config)
+
+        if same_module? do
+          fragment(tool, kind, name, arity)
+        else
+          url = string_app_module_url(original_text, tool, module, nil, config)
+          url && url <> fragment(tool, kind, name, arity)
+        end
+
+      {:regular_link, module_visibility, :undefined}
+      when module_visibility == :public
+      when module_visibility == :limited and kind != :type ->
+        if warn? do
+          maybe_warn(config, ref, :undefined, %{original_text: original_text})
+        end
+
+        nil
+
+      {:regular_link, _module_visibility, :undefined}
+      when not same_module? and
+             (config.language != ExDoc.Language.Erlang or kind == :function) ->
+        nil
+
+      {_mode, _module_visibility, visibility} ->
+        if warn? do
+          maybe_warn(config, ref, visibility, %{original_text: original_text})
+        end
+
+        nil
+    end
+  end
+
+  @doc false
+  def warn(config, message) do
+    f =
+      case config.current_kfa do
+        {:function, f, a} ->
+          [function: {f, a}]
+
+        _ ->
+          []
       end
-    else
-      :ex_doc
+
+    stacktrace_info = [file: config.file, line: config.line, module: config.current_module] ++ f
+
+    case config.warnings do
+      :emit ->
+        ExDoc.Utils.warn(message, stacktrace_info)
+
+      :raise ->
+        ExDoc.Utils.warn(message, stacktrace_info)
+        raise "fail due to warnings"
+
+      :send ->
+        send(self(), {:warn, message, file: config.file, line: config.line})
     end
   end
 
-  defp maybe_warn({kind, module, name, arity}, config) do
-    skipped = config.skip_undefined_reference_warnings_on
-    file = Path.relative_to(config.file, File.cwd!())
-    line = config.line
+  defp warn(config, ref, visibility, metadata)
 
-    unless Enum.any?([config.id, config.module_id, file], &(&1 in skipped)) do
-      warn({kind, module, name, arity}, file, line, config.id)
-    end
-  end
-
-  defp warn({kind, module, name, arity}, file, line, id) do
+  defp warn(
+         config,
+         {:module, _module},
+         visibility,
+         %{mix_task: true, original_text: original_text}
+       ) do
     message =
-      "documentation references #{kind} #{inspect(module)}.#{name}/#{arity}" <>
-        " but it is undefined or private"
+      "documentation references \"#{original_text}\" but it is " <>
+        format_visibility(visibility, :module)
 
-    warn(message, file, line, id)
+    warn(config, message)
   end
 
-  defp warn(message, file, line, id) do
-    warning = IO.ANSI.format([:yellow, "warning: ", :reset])
+  defp warn(
+         config,
+         {:module, _module},
+         visibility,
+         %{original_text: original_text}
+       ) do
+    message =
+      "documentation references module \"#{original_text}\" but it is " <>
+        format_visibility(visibility, :module)
 
-    stacktrace =
-      "  #{file}" <>
-        if(line, do: ":#{line}", else: "") <>
-        if(id, do: ": #{id}", else: "")
-
-    IO.puts(:stderr, [warning, message, ?\n, stacktrace, ?\n])
+    warn(config, message)
   end
+
+  defp warn(
+         config,
+         nil,
+         _visibility,
+         %{file_path: _file_path, original_text: original_text}
+       ) do
+    message = "documentation references file \"#{original_text}\" but it does not exist"
+
+    warn(config, message)
+  end
+
+  defp warn(
+         config,
+         {kind, _module, _name, _arity},
+         visibility,
+         %{original_text: original_text}
+       ) do
+    message =
+      "documentation references #{kind} \"#{original_text}\" but it is " <>
+        format_visibility(visibility, kind)
+
+    warn(config, message)
+  end
+
+  defp warn(config, message, _, _) when is_binary(message) do
+    warn(config, message)
+  end
+
+  # there is not such a thing as private callback or private module
+  def format_visibility(visibility, kind) when kind in [:module, :callback], do: "#{visibility}"
+
+  # typep is defined as :hidden, since there is no :private visibility value
+  # but type defined with @doc false also is the stored the same way.
+  def format_visibility(:hidden, :type), do: "hidden or private"
+
+  # for the rest, it can either be undefined or private
+  def format_visibility(:undefined, _kind), do: "undefined or private"
+  def format_visibility(visibility, _kind), do: "#{visibility}"
+
+  defp append_fragment(url, nil), do: url
+  defp append_fragment(url, fragment), do: url <> "#" <> fragment
 end

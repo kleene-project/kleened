@@ -1,6 +1,6 @@
 %-
 % Copyright (c) 2012-2014 Yakaz
-% Copyright (c) 2016-2018 Jean-Sébastien Pédron <jean-sebastien.pedron@dumbbell.fr>
+% Copyright (c) 2016-2022 Jean-Sébastien Pédron <jean-sebastien.pedron@dumbbell.fr>
 % All rights reserved.
 %
 % Redistribution and use in source and binary forms, with or without
@@ -121,7 +121,7 @@
     last_token_endcol   = 1     :: pos_integer(),
 
     %%
-    %% Stream informations.
+    %% Stream information.
     %%
 
     %% Character encoding of the stream. It must be a valid Unicode
@@ -129,8 +129,8 @@
     encoding :: encoding() | undefined,
 
     %%
-    %% Document informations.
-    %% Those informations are reset between each document.
+    %% Document information.
+    %% Those information are reset between each document.
     %%
 
     %% "doc_started" indicates if the document is started or not.

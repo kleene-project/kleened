@@ -3,17 +3,17 @@ defmodule OpenApiSpex.Components do
   Defines the `OpenApiSpex.Components.t` type.
   """
   alias OpenApiSpex.{
-    Schema,
-    Reference,
-    Response,
-    Parameter,
-    Example,
-    RequestBody,
-    Header,
-    SecurityScheme,
-    Link,
     Callback,
-    Components
+    Components,
+    Example,
+    Header,
+    Link,
+    Parameter,
+    Reference,
+    RequestBody,
+    Response,
+    Schema,
+    SecurityScheme
   }
 
   defstruct [
@@ -25,10 +25,12 @@ defmodule OpenApiSpex.Components do
     :headers,
     :securitySchemes,
     :links,
-    :callbacks
+    :callbacks,
+    :extensions
   ]
 
   @type schemas_map :: %{String.t() => Schema.t() | Reference.t()}
+  @type responses_map :: %{String.t() => Response.t() | Reference.t()}
 
   @typedoc """
   [Components Object](https://swagger.io/specification/#componentsObject)
@@ -39,13 +41,14 @@ defmodule OpenApiSpex.Components do
   """
   @type t :: %Components{
           schemas: schemas_map | nil,
-          responses: %{String.t() => Response.t() | Reference.t()} | nil,
+          responses: responses_map | nil,
           parameters: %{String.t() => Parameter.t() | Reference.t()} | nil,
           examples: %{String.t() => Example.t() | Reference.t()} | nil,
           requestBodies: %{String.t() => RequestBody.t() | Reference.t()} | nil,
           headers: %{String.t() => Header.t() | Reference.t()} | nil,
           securitySchemes: %{String.t() => SecurityScheme.t() | Reference.t()} | nil,
           links: %{String.t() => Link.t() | Reference.t()} | nil,
-          callbacks: %{String.t() => Callback.t() | Reference.t()} | nil
+          callbacks: %{String.t() => Callback.t() | Reference.t()} | nil,
+          extensions: %{String.t() => any()} | nil
         }
 end

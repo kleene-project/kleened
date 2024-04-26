@@ -1,5 +1,504 @@
 # Changelog
 
+## v0.32.1 (2024-04-12)
+
+  * Bug fixes
+    * Add version dropdown back on hexdocs.pm
+    * Improve search input styling and scrolling
+
+## v0.32.0 (2024-04-10)
+
+  * Enhancements
+    * Add the ability to see previews during autocompletion
+    * Remove serif font for content and prefer using the operating system font instead
+    * Allow the search bar to be focused at any moment
+    * Make functions acceptable for `:skip_undefined_reference_warnings_on`
+    * Make functions acceptable for `:skip_code_autolink_to`
+    * Allow using meta tags to disable autocompletion and configure the full text search
+
+  * Bug fixes
+    * Fix blockquote padding inside tabset on small screens
+    * Consistently index h2 and h3 headers
+
+## v0.31.2 (2024-03-05)
+
+  * Enhancements
+    * Add `equiv` handling for types and callbacks for Erlang
+    * Add cmd-k/ctrl-k shortcut to focus searchbar
+    * Use dark backgrounds for admonition blocks in dark theme
+    * Autolink .cheatmd files
+    * Warn when extra link targets an application not in dependencies
+    * Add support for `before_closing_footer_tag`
+
+  * Bug fixes
+    * Fix sidebar toggle flickering on page load
+    * Fix background color inside code snippets with no language in dark mode
+    * Hide search bar and background layer on print
+    * Use blue links for Erlang
+    * Fix logo not declared in EPUB's OPF manifest
+    * Escape URIs and titles in EPUB
+    * Fix URL slug not updating on anchor clicks
+
+## v0.31.1 (2024-01-11)
+
+  * Enhancements
+    * Make the sidebar horizontally resizable
+    * Show the sidebar button and search bar on scroll up on mobile devices
+    * More improvements to Erlang/OTP 27 support
+    * Document that `source_url_pattern` can be a fun
+    * Support `m:Module#anchor`
+
+## v0.31.0 (2023-12-11)
+
+  * Enhancements
+    * Allow searching atoms, module attributes, and words finishing with `?` and `!`
+    * Support upcoming Erlang/OTP 27 documentation format
+    * Include prebuilt binaries on every release
+    * Add borders dividing table rows in rendered content
+    * Add accurate warnings for missing docs from Elixir v1.16+
+    * Support `e:dep:some-page.md` for explicitly linking to a page in a package
+    * Support `m:SomeModule` for explicitly linking to a module
+    * Add `noindex` meta tag to 404 and Search pages
+    * Move search to the main content so we can display more results
+    * Warn when referencing functions, types, and callbacks from filtered out modules
+
+  * Bug fixes
+    * Fix search for words with hyphens in them
+    * Fix search for contents inside EEx interpolation
+
+## v0.30.9 (2023-10-20)
+
+  * Bug fixes
+    * Fix a scenario where invalid assets would be generated
+
+  * Enhancements
+    * Add admonition EPUB styles
+
+## v0.30.8 (2023-10-17)
+
+  * Bug fixes
+    * Fix regression in umbrella applications
+
+## v0.30.7 (2023-10-15)
+
+  * Bug fixes
+    * Do not crash on EDoc type annotations
+    * Do not crash on functions without name
+    * Handle remote types in records
+    * Fix scrolling to top on iOS
+    * Fix invalid output markup for “hover link” headings
+
+  * Enhancements
+    * Support any String.Chars as the extra page name
+    * Improve screen reader accessibility
+    * Add `:skip_code_autolink_to` option
+
+## v0.30.6 (2023-08-25)
+
+  * Enhancements
+    * Extract title from Markdown file when preceeded with comments
+    * Improve focus navigation in notebooks
+
+## v0.30.5 (2023-08-12)
+
+  * Bug fixes
+    * Fix style for code in headers
+    * Fix search data generation for Erlang/OTP
+
+## v0.30.4 (2023-08-03)
+
+  * Bug fixes
+    * Fix style for anchors in headers
+
+## v0.30.3 (2023-07-15)
+
+  * Enhancements
+    * Compress search index before storing in local storage
+
+  * Bug fixes
+    * Fix styling for headers on cheatsheets and small screens
+
+## v0.30.2 (2023-07-11)
+
+  * Bug fixes
+    * Fix escaping in `search_data.json`
+    * Skip vega-lite code blocks in `search_data.json`
+
+## v0.30.1 (2023-07-07)
+
+  * Bug fixes
+    * Fix styling for headers on cheatsheets and small screens
+
+## v0.30.0 (2023-07-07)
+
+  * Enhancements
+    * Support tabsets (see the README for more information)
+    * Improve search results and indexing by storing more data and metadata
+    * Warn on invalid references in links
+    * Strike-through deprecated items on autocompletion
+    * Add source URL link to API reference page
+    * Allow multiple extra files with the same name by generating unique names in case of conflicts
+
+  * Bug fixes
+    * Fix rendering of large code blocks in admonition texts
+    * Do not log errors on module mismatch in case-insensitive file systems
+
+## v0.29.4 (2023-03-29)
+
+  * Bug fixes
+    * Fix sidebar element with no children taking additional padding
+    * Fix elements being rendered too thick on macOS
+    * Fix rendering of HTML elements inside tooltips
+
+## v0.29.3 (2023-03-17)
+
+  * Enhancements
+    * Propagate `:since` metadata from modules
+    * Add support for MFAs and maps in `before_closing_body_tag` and `before_closing_head_tag`
+
+  * Bug fixes
+    * Improve font consistency across different OSes
+    * Keep language class on livebook output code block
+    * Ensure switches have higher precedence than config
+
+## v0.29.2 (2023-03-02)
+
+  * Enhancements
+    * Improvements to cheatsheets spacing
+    * Improvements to cheatsheets print
+    * Include sections of modules and extras in search suggestions
+    * Make sidebar links full-width and add hover states
+    * Improve clickable area of sidebar tabs
+    * Improve contrast on sidebar
+
+  * Bug fix
+    * Add media type for .license files for epub
+    * Fix overscroll on the sidebar
+    * Focus search input immediately after keyboard shortcut
+    * Don't attempt parsing code blocks that don't look like modules
+    * Fix visited link color in admonition blocks
+
+## v0.29.1 (2022-11-21)
+
+  * Enhancements
+    * Add optional function annotations
+    * Support media print on stylesheets
+    * Add download ePub link to footer
+    * Support extras for Erlang
+    * Add tooltip to functions on sidebar
+    * Disable spellcheck and autocorrect on search input
+
+  * Bug fix
+    * Special handle functions called `record/*` in Erlang
+
+  * Deprecations
+    * Rename `:groups_for_functions` to `:groups_for_docs`
+
+## v0.29.0 (2022-10-19)
+
+  * Enhancements
+    * Support cheatsheets as `.cheatmd` files
+
+  * Bug fix
+    * Collapse sidebar when resizing page even if stored in the session as opened
+
+## v0.28.6 (2022-10-13)
+
+  * Enhancements
+    * Add Elixir special punctuation ! and ? to natural sort
+    * Add night mode to settings pane
+    * Support --proglang in mix docs
+    * Save sidebar state per session
+    * Distinguish output code blocks in Livebooks
+
+  * Bug fixes
+    * Prevent sidebar button scrolling out of view
+    * Prevent unreadable text when using inline code with admonition headers
+
+## v0.28.5 (2022-08-18)
+
+  * Enhancements
+    * Do not preserve spaces from spec declaration in signature rendering
+    * Index hyphens in search
+    * Index `@` in search
+    * Change minimal package search length to 2
+
+  * Bug fixes
+    * Remove extra `term()` argument at start of `@macrocallback`
+
+## v0.28.4 (2022-04-28)
+
+  * Enhancements
+    * Add a toast when changing theme via keyboard
+    * Automatically convert `.livemd` links to `.html` ones
+    * Show programming language in HTML footer
+
+  * Bug fixes
+    * Properly escape `%/2` special form
+    * Improve ranking of exact-matching modules in search
+
+## v0.28.3 (2022-03-23)
+
+  * Enhacements
+    * Include page titles in autocomplete suggestions
+    * Allow theme to be set to "System" version
+    * Remove "Specs" heading and render full typespecs
+    * Support for `source_url_pattern` in config being a function
+
+  * Bug fixes
+    * Adjustments for blockquotes and admonition blocks in dark mode
+    * Fix module sorting when a list of dirs is provided
+    * Consider casing of letters when sorting items in the menu, summary, function list, etc
+
+## v0.28.2 (2022-02-23)
+
+  * Bug fixes
+    * Fix links and code tags in admonition text blocks for dark mode
+
+## v0.28.1 (2022-02-20)
+
+  * Enhancements
+    * Add support for admonition text blocks
+    * Improve accessibility for light and dark themes
+
+  * Bug fixes
+    * Ensure that `mix docs --open` works on Windows
+    * Ensure search tokenizer also splits on underscore
+    * Fix false warnings about missing types when running ExDoc in escript mode
+    * Don't navigate when clicking the current page
+
+## v0.28.0 (2022-01-24)
+
+ExDoc v0.28.0 requires Elixir v1.11+.
+
+  * Enhancements
+    * Use custom scrollbar in the sidebar
+    * Keep hamburger absolute to the opened sidebar
+    * Support `--open` flag on `mix docs`
+    * The copy button now only copies selectable content
+
+  * Bug fixes
+    * Make sure filename configuration in `:extras` is used across links
+    * Ensure all `extras` pages have a title generated
+    * Fix margin on 3rd level headers and beyond
+    * Ensure a task that defines callbacks is still listed as a task
+
+## v0.27.3 (2022-01-12)
+
+  * Bug fixes
+    * Make HexDocs search case insensitive
+    * Improve sidebar open/close animation
+
+## v0.27.2 (2022-01-11)
+
+  * Bug fixes
+    * Fix version dropdown when hosted on HexDocs
+    * Fix tooltips
+    * Fix JavaScript error when Hex package information is not available
+
+## v0.27.1 (2022-01-11)
+
+  * Bug fixes
+    * Several usability fixes on the new layout
+    * Keep page ordering
+
+## v0.27.0 (2022-01-11)
+
+  * Enhancements
+    * Introduce new sidebar design
+    * Add `--quiet` option to CLI
+    * Support multiple formatters in the CLI
+    * Show structs as `%Struct{}` instead of `__struct__` in the sidebar
+    * Point Erlang links to `www.erlang.org` instead of `erlang.org`
+    * Improvements to the night mode and styling
+
+## v0.26.0 (2021-11-21)
+
+  * Backwards incompatible changes
+    * `:filter_prefix` has been renamed to `:filter_modules` and supports anonymous functions
+    * `:source_ref` now defaults to `"main"`
+    * Dropped support for smartypants in Markdown
+
+  * Bug fixes
+    * Do not warn on links to sections
+
+  * Enhancements
+    * Add copy button to code snippets
+    * Add `translate="no"` to the relevant attributes to improve interoperability with automatic translation tools
+    * Support optional module annotations
+    * Introduce a settings modal to group most of configuration
+    * Allow customizing the Livebook expansion URL
+    * Provide documentation on how to render plugins such as Katex, VegaLite, and Mermaid
+
+## v0.25.5 (2021-10-20)
+
+  * Bug fixes
+    * Do not duplicate API Reference title
+    * Update assets for Livebook badge functionality
+
+## v0.25.4 (2021-10-20)
+
+  * Enhancements
+    * Add source link to pages in `:extras`
+    * Add "Run in Livebook" badge to `.livemd` pages in `:extras`
+
+  * Bug fixes
+    * Do not generate entries for private Erlang functions
+    * Do not trim `?` and `!` from Elixir tokens on search
+
+  * Incompatible changes
+    * Remove unused `:source_root` option
+
+## v0.25.3 (2021-09-21)
+
+  * Enhancements
+    * Track user preference for sidebar state
+
+  * Bug fixes
+    * Do not double escape page titles on the sidebar
+    * Do not fail when documenting cover compiled modules
+    * Don't crash upon doc chunks for unknown beam languages
+
+## v0.25.2 (2021-09-02)
+
+  * Enhancements
+    * Add support for Livebook's `.livemd` Markdown files
+    * Preload all applications starting with `makeup_` before doc generation
+    * Add Hex package config and display "Find on Hex" footer links
+
+## v0.25.1 (2021-08-02)
+
+  * Enhancements
+    * Supporting grouping of callbacks
+    * Use shell lexer for code blocks with no language and starting with `$ `
+
+  * Bug fixes
+    * Fix generating type signatures with maps
+    * Skip Erlang modules that have empty docs
+    * Skip Erlang functions that have empty docs
+    * Fix accidentally showing shape of opaque types
+
+## v0.25.0 (2021-07-20)
+
+  * Enhancements
+    * Handle remote types when generating signatures, e.g. `@callback callback1(GenServer.options())` becomes `callback1(options)`
+    * Support Markdown processor options
+    * Add `--paths` command line argument to prepend directories to the code path when generating docs
+    * Make shell prompt, `$ `, not selectable for `shell`, `sh`, `bash` and `zsh` code blocks
+
+  * Bug fixes
+    * Fix custom links to undefined/hidden references
+    * Fix generating external links with `:deps` configuration
+    * Add ellipsis to more sections
+
+  * Backwards incompatible changes
+    * Remove function landing pages
+
+## v0.24.2 (2021-04-06)
+
+  * Enhancements
+    * Support stepped range syntax
+
+  * Bug fixes
+    * Add spaces on paragraph endings for search results
+    * Fix bug defining app name in config
+    * Fix rendering void elements (`<br>` etc)
+
+## v0.24.1 (2021-03-22)
+
+  * Bug fixes
+    * Fix generating function landing pages
+
+## v0.24.0 (2021-03-16)
+
+  * Enhancements
+    * Drop jQuery and refactor JavaScript codebase
+    * Remove highlight.js in favour of migration to Makeup
+    * Change autolink to return both path and hash for the current module
+    * Add next/previous at the end of extra pages
+    * Improve search input blur handling
+    * Update erlang.org/man URL
+    * Add function landing page
+
+  * Bug fixes
+    * Ignore extensions when generating external links
+    * Fix autolink to handle URIs with arbitrary scheme part without warning
+    * Fix undefined reference warning for typespecs
+    * Fix search click behavior when a suggestion refers the current page
+    * Don't crash when we can't format spec
+    * Fix HTML escaping
+
+## v0.23.0 (2020-10-12)
+
+Requires Elixir v1.10.
+
+  * Enhancements
+    * Improve warnings on broken references
+    * Support Elixir v1.12-dev
+
+  * Bug fixes
+    * Respect deps config in autolink
+    * Fix html escaping in the sidebar entries
+    * Fix retrieving specs for macros with `when`
+    * Raise if none of :name or :app are found in mix.exs
+    * Don't crash on code blocks like "A.b.C"
+
+## v0.22.6 (2020-09-16)
+
+  * Bug fixes
+    * Properly fix CSS bug on headings
+    * Add expansion arrow to sections on sidebar
+
+## v0.22.5 (2020-09-13)
+
+  * Bug fixes
+    * Fix CSS bug on headings
+
+## v0.22.4 (2020-09-12)
+
+  * Enhancements
+    * Improve accessibility and add aria labels
+    * Show different title and message for a empty search value
+
+## v0.22.3 (2020-07-25)
+
+  * Bug fixes
+    * [HTML+EPUB] Remove overlapping functions from defaults
+    * [HTML] Don't show tooltip for module sections and non-html files
+    * [HTML] Make sure tooltips work with escape ids.
+
+## v0.22.2 (2020-07-20)
+
+  * Enhancements
+    * [HTML+EPUB] Add support for path dependent markdown autolink (`feeddc1`)
+    * [HTML+EPUB] Improve auto-linking to callbacks and types (`12c0a01`)
+    * [HTML+EPUB] Replace `<kbd>` with `<kbd><kbd>` when it represents keys to be hit (`bd2b8df`)
+    * [HTML] Hide sidebar-over-content on click/tap outside it (`b050775`)
+    * [HTML] Redirect to correct file when changing version (`0f6f24b`)
+    * [mix docs] Allow files with no extension in extra files (`26b93b6`)
+    * [mix docs] Link to siblings in an umbrella (`b0d6fdd`)
+    * [mix docs] Switch to `earmark_parser`. Run `mix deps.unlock --unused` to remove the now
+      unused `earmark` dependency. (`021c772`)
+
+  * Bug fixes
+    * [HTML+EPUB] Bring back auto-linking to Kernel and Kernel.SpecialForms (`fa174eb`)
+    * [HTML+EPUB] Escape HTML special characters in signature (`5fed479`)
+    * [HTML+EPUB] Fix auto-linking `./2` and `../2` (`2e40acb`)
+    * [HTML+EPUB] Fix list of basic types to auto-link (`6df4a3b`)
+    * [HTML+EPUB] Make HTML valid (`1187ace`)
+    * [HTML] Escape HTML special characters in sidebar (`d26ca71`)
+    * [HTML] Fix keyboard shortcuts on non US keyboard layouts (`829c4ee`)
+    * [HTML] Fix text overflow in sidebar (`a4ff547`)
+    * [HTML] Handle snake case terms in search results (`d511d55`)
+    * [mix docs] Don't crash on markdown that triggers warning (`e7cb79c`)
+
+## v0.22.1 (2020-05-19)
+
+  * Bug fixes
+    * [mix docs] Depend on earmark `~> 1.4.0`
+    * [mix docs] Don't crash on comments in markdown
+    * [mix docs] Don't crash on HTML in markdown
+
 ## v0.22.0 (2020-05-11)
 
   * Enhancements
@@ -122,7 +621,7 @@
   * Bug fixes
     * Always expand menu items, even if has a single child
     * Fix sidebar bottom margin on Firefox
-    * Fix anchor links sometimes not working by moving js to html head
+    * Fix anchor links sometimes not working by moving JS to HTML head
     * Unify code styling for makeup and hljs
     * Do not replace the content of custom links pointing to Elixir modules
     * Remove border-left on deprecated to not mistake it with a heading

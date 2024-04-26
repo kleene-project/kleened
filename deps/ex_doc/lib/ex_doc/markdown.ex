@@ -8,15 +8,20 @@ defmodule ExDoc.Markdown do
 
   ExDoc supports the following Markdown parsers out of the box:
 
-    * [Earmark](http://github.com/pragdave/earmark)
+    * [EarmarkParser](https://github.com/robertdober/earmark_parser)
 
-  ExDoc uses Earmark by default.
+  ExDoc uses EarmarkParser by default.
   """
 
   @doc """
   Converts markdown into HTML.
   """
   @callback to_ast(String.t(), Keyword.t()) :: term()
+
+  @doc """
+  Returns true if all dependencies necessary are available.
+  """
+  @callback available?() :: boolean()
 
   @markdown_processors [
     ExDoc.Markdown.Earmark
@@ -28,7 +33,8 @@ defmodule ExDoc.Markdown do
   Converts the given markdown document to HTML AST.
   """
   def to_ast(text, opts \\ []) when is_binary(text) do
-    get_markdown_processor().to_ast(text, opts)
+    {processor, options} = get_markdown_processor()
+    processor.to_ast(text, options |> Keyword.merge(opts))
   end
 
   @doc """
@@ -36,26 +42,30 @@ defmodule ExDoc.Markdown do
   """
   def get_markdown_processor do
     case Application.fetch_env(:ex_doc, @markdown_processor_key) do
-      {:ok, processor} ->
-        processor
+      {:ok, {processor, options}} ->
+        {processor, options}
 
       :error ->
         processor = find_markdown_processor() || raise_no_markdown_processor()
-        put_markdown_processor(processor)
-        processor
+        put_markdown_processor({processor, []})
+        {processor, []}
     end
   end
 
   @doc """
   Changes the markdown processor globally.
   """
-  def put_markdown_processor(processor) do
-    Application.put_env(:ex_doc, @markdown_processor_key, processor)
+  def put_markdown_processor(processor) when is_atom(processor) do
+    put_markdown_processor({processor, []})
+  end
+
+  def put_markdown_processor({processor, options}) do
+    Application.put_env(:ex_doc, @markdown_processor_key, {processor, options})
   end
 
   defp find_markdown_processor do
     Enum.find(@markdown_processors, fn module ->
-      Code.ensure_loaded?(module) && module.available?
+      Code.ensure_loaded?(module) && module.available?()
     end)
   end
 

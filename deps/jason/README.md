@@ -19,7 +19,7 @@ in `mix.exs`:
 
 ```elixir
 def deps do
-  [{:jason, "~> 1.3"}]
+  [{:jason, "~> 1.4"}]
 end
 ```
 
@@ -96,6 +96,8 @@ Jason has a couple feature differences compared to Poison.
     of the `Jason.Encoder` protocol is always required.
   * different pretty-printing customisation options (default `pretty: true` works the same)
 
+### Encoders
+
 If you require encoders for any of the unsupported collection types, I suggest
 adding the needed implementations directly to your project:
 
@@ -132,6 +134,20 @@ you may use `Protocol.derive/3` placed outside of any module:
 Protocol.derive(Jason.Encoder, NameOfTheStruct, only: [...])
 Protocol.derive(Jason.Encoder, NameOfTheStruct)
 ```
+
+## Injecting an already encoded JSON inside a to-be-encoded structure
+
+If parts of the to-be-encoded structure are already JSON-encoded, you can
+use `Jason.Fragment` to mark the parts as already encoded, and avoid a
+decoding/encoding roundtrip.
+
+```elixir
+already_encoded_json = Jason.encode!(%{hello: "world"})
+Jason.encode!(%{foo: Jason.Fragment.new(already_encoded_json)})
+````
+
+This feature is especially useful if you need to cache a part of the JSON,
+or if it is already provided by another system (e.g. `jsonb_agg` with Postgres).
 
 ## License
 

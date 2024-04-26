@@ -1,3 +1,20 @@
+0.15.3
+------
+#### Enhancements
+- Support `--import_cover` option.
+  - Import coverdata if needed (#292).
+
+0.15.2
+------
+#### Changes
+- Add .coverdata file export (#298).
+  - Allow default use of `mix test --cover --export-coverage XXX`.
+
+0.15.1
+------
+#### Changes
+- Improve logging for a case with the missing source file (#295).
+
 0.15.0
 ------
 #### Enhancements

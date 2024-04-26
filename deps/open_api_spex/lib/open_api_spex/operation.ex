@@ -8,6 +8,7 @@ defmodule OpenApiSpex.Operation do
     MediaType,
     Operation,
     Parameter,
+    PathItem,
     Reference,
     RequestBody,
     Response,
@@ -16,6 +17,8 @@ defmodule OpenApiSpex.Operation do
     SecurityRequirement,
     Server
   }
+
+  alias Plug.Conn
 
   @enforce_keys :responses
   defstruct tags: [],
@@ -29,7 +32,8 @@ defmodule OpenApiSpex.Operation do
             callbacks: %{},
             deprecated: false,
             security: nil,
-            servers: nil
+            servers: nil,
+            extensions: nil
 
   @typedoc """
   [Operation Object](https://swagger.io/specification/#operationObject)
@@ -48,7 +52,8 @@ defmodule OpenApiSpex.Operation do
           callbacks: %{String.t() => Callback.t() | Reference.t()},
           deprecated: boolean,
           security: [SecurityRequirement.t()] | nil,
-          servers: [Server.t()] | nil
+          servers: [Server.t()] | nil,
+          extensions: %{String.t() => any()} | nil
         }
 
   @doc """
@@ -81,11 +86,27 @@ defmodule OpenApiSpex.Operation do
 
   @doc """
   Shorthand for constructing an `OpenApiSpex.Parameter` given name, location, type, description and optional examples
+
+  ## Examples
+
+      iex> Operation.parameter(
+      ...>   :status,
+      ...>   :query,
+      ...>   %OpenApiSpex.Schema{type: :string, enum: ["pending", "in_progress", "completed"]},
+      ...>   "The status of an entity"
+      ...> )
+      %OpenApiSpex.Parameter{
+        name: :status,
+        in: :query,
+        description: "The status of an entity",
+        required: false,
+        schema: %OpenApiSpex.Schema{enum: ["pending", "in_progress", "completed"], type: :string}
+      }
   """
   @spec parameter(
           name :: atom,
           location :: Parameter.location(),
-          type :: Reference.t() | Schema.t() | atom,
+          type :: Reference.t() | Schema.t() | Parameter.type() | atom(),
           description :: String.t(),
           opts :: keyword
         ) :: Parameter.t()
@@ -109,43 +130,54 @@ defmodule OpenApiSpex.Operation do
   """
   @spec request_body(
           description :: String.t(),
-          media_type :: String.t(),
+          media_type :: String.t() | %{String.t() => Keyword.t() | MediaType.t()},
           schema_ref :: Schema.t() | Reference.t() | module,
           opts :: keyword
         ) :: RequestBody.t()
   def request_body(description, media_type, schema_ref, opts \\ []) do
+    content_opts =
+      case opts do
+        %MediaType{} = media_type ->
+          %MediaType{media_type | schema: schema_ref}
+
+        opts when is_list(opts) ->
+          opts
+          |> Keyword.take([:example, :examples])
+          |> Keyword.put(:schema, schema_ref)
+      end
+
     %RequestBody{
       description: description,
-      content: %{
-        media_type => %MediaType{
-          schema: schema_ref,
-          example: opts[:example],
-          examples: opts[:examples]
-        }
-      },
+      content: build_content_map(media_type, content_opts),
       required: opts[:required] || false
     }
   end
 
   @doc """
-  Shorthand for constructing a Response with description, media_type, schema and optional examples
+  Shorthand for constructing a Response with description, media_type, schema and optional headers or examples
   """
   @spec response(
           description :: String.t(),
-          media_type :: String.t(),
-          schema_ref :: Schema.t() | Reference.t() | module,
+          media_type :: String.t() | %{String.t() => Keyword.t() | MediaType.t()} | nil,
+          schema_ref :: Schema.t() | Reference.t() | module | nil,
           opts :: keyword
         ) :: Response.t()
   def response(description, media_type, schema_ref, opts \\ []) do
+    content_opts =
+      case opts do
+        %MediaType{} = media_type ->
+          %MediaType{media_type | schema: schema_ref}
+
+        opts when is_list(opts) ->
+          opts
+          |> Keyword.take([:example, :examples])
+          |> Keyword.put(:schema, schema_ref)
+      end
+
     %Response{
       description: description,
-      content: %{
-        media_type => %MediaType{
-          schema: schema_ref,
-          example: opts[:example],
-          examples: opts[:examples]
-        }
-      }
+      headers: opts[:headers],
+      content: build_response_content_map(media_type, content_opts)
     }
   end
 
@@ -236,10 +268,8 @@ defmodule OpenApiSpex.Operation do
     with :ok <- validate_required_parameters(operation.parameters || [], conn.params),
          parameters <-
            Enum.filter(operation.parameters || [], &Map.has_key?(conn.params, &1.name)),
-         :ok <- validate_parameter_schemas(parameters, conn.params, schemas),
-         :ok <-
-           validate_body_schema(operation.requestBody, conn.body_params, content_type, schemas) do
-      :ok
+         :ok <- validate_parameter_schemas(parameters, conn.params, schemas) do
+      validate_body_schema(operation.requestBody, conn.body_params, content_type, schemas)
     end
   end
 
@@ -288,5 +318,27 @@ defmodule OpenApiSpex.Operation do
     |> Map.get(content_type)
     |> Map.get(:schema)
     |> Schema.validate(params, schemas)
+  end
+
+  defp build_response_content_map(nil, _media_type_opts), do: nil
+
+  defp build_response_content_map(media_type, media_type_opts),
+    do: build_content_map(media_type, media_type_opts)
+
+  defp build_content_map(media_type, media_type_opts) when is_binary(media_type) do
+    %{
+      media_type => struct!(MediaType, media_type_opts)
+    }
+  end
+
+  defp build_content_map(media_types, shared_opts) when is_map(media_types) do
+    Map.new(media_types, fn {media_type, opts} ->
+      opts = opts |> Keyword.new() |> Keyword.merge(shared_opts)
+      {media_type, struct!(MediaType, opts)}
+    end)
+  end
+
+  defp build_content_map(media_types, _shared_opts) do
+    raise "Expected string or map as a media type. Got: #{inspect(media_types)}"
   end
 end

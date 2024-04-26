@@ -27,7 +27,7 @@ defmodule OpenApiSpex.Plug.Validate do
         render_error: MyApp.RenderError
 
         def render_error(conn, reason) do
-          msg = %{error: reason} |> Posion.encode!()
+          msg = %{error: reason} |> Poison.encode!()
 
           conn
           |> Conn.put_resp_content_type("application/json")
@@ -40,7 +40,7 @@ defmodule OpenApiSpex.Plug.Validate do
         def init(opts), do: opts
 
         def call(conn, reason) do
-          msg = %{error: reason} |> Posion.encode!()
+          msg = %{error: reason} |> Poison.encode!()
 
           conn
           |> Conn.put_resp_content_type("application/json")
@@ -70,9 +70,11 @@ defmodule OpenApiSpex.Plug.Validate do
       |> String.split(";", parts: 2)
       |> Enum.at(0)
 
-    with :ok <- apply(OpenApiSpex, :validate, [spec, operation, conn, content_type]) do
-      conn
-    else
+    # credo:disable-for-next-line
+    case apply(OpenApiSpex, :validate, [spec, operation, conn, content_type]) do
+      :ok ->
+        conn
+
       {:error, reason} ->
         opts = render_error.init(reason)
 

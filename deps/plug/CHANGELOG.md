@@ -1,5 +1,134 @@
 # Changelog
 
+## v1.15.3 (2024-01-16)
+
+### Enhancements
+
+  * Allow setting the port on the connection in tests
+  * Allow returning `{:ok, payload}` on inform
+  * Allow custom exceptions in `validate_utf8` option
+  * Allow skipping sent body on chunked replies
+
+## v1.15.2 (2023-11-14)
+
+### Enhancements
+
+  * Add `:assign_as` option to `Plug.RequestId`
+  * Improve performance of `Plug.RequestId`
+  * Avoid clashes between Plug nodes
+  * Add specs to `Plug.BasicAuth`
+  * Fix a bug with non-string `_method` body parameters in `Plug.MethodOverride`
+
+## v1.15.1 (2023-10-06)
+
+### Enhancements
+
+  * Relax requirement on `plug_crypto`
+
+## v1.15.0 (2023-10-01)
+
+### Enhancements
+
+  * Add `Plug.Conn.get_session/3` for default value
+  * Allow `Plug.SSL.configure/1` to accept all :ssl options
+  * Optimize query decoding by 15% to 45% - this removes the previously deprecated `:limit` MFA and `:include_unnamed_parts_at` from MULTIPART. This may be backwards incompatible for applications that were relying on ambiguous arguments, such as `user[][key]=1&user[][key]=2`, which has unspecified parsing behaviour
+
+## v1.14.2 (2023-03-23)
+
+### Bug fixes
+
+  * Properly deprecate `Plug.Adapters.Cowboy` before removal
+
+## v1.14.1 (2023-03-17)
+
+### Enhancements
+
+  * Add `nest_all_json` option to JSON parser
+  * Make action on Plug.Debugger page look like a button
+  * Better formatting of exceptions on the error page
+  * Provide stronger response header validation
+
+## v1.14.0 (2022-10-31)
+
+Require Elixir v1.10+.
+
+### Enhancements
+
+  * Add `Plug.Conn.prepend_req_headers/2` and `Plug.Conn.merge_req_headers/2`
+  * Support adapter upgrades with `Plug.Conn.upgrade_adapter/3`
+  * Add "Copy to Markdown" button in exception page
+  * Support exclusive use of tlsv1.3
+
+### Bug fixes
+
+  * Make sure last parameter works within maps
+
+### Deprecations
+
+  * Deprecate server pushes as they are no longer supported by browsers
+
+## v1.13.6 (2022-04-14)
+
+### Bug fixes
+
+  * Fix compile-time dependencies in Plug.Builder
+
+## v1.13.5 (2022-04-11)
+
+### Enhancements
+
+  * Support `:via` in `Plug.Router.forward/2`
+
+### Bug fixes
+
+  * Fix compile-time deps in Plug.Builder
+  * Do not require routes to be compile-time binaries in `Plug.Router.forward/2`
+
+## v1.13.4 (2022-03-10)
+
+### Bug fixes
+
+  * Improve deprecation warnings
+
+## v1.13.3 (2022-02-12)
+
+### Enhancements
+
+  * [Plug.Builder] Introduce `:copy_opts_to_assign` instead of `builder_opts/0`
+  * [Plug.Router] Do not introduce compile-time dependencies in `Plug.Router`
+
+## v1.13.2 (2022-02-04)
+
+### Bug fixes
+
+  * [Plug.Router] Properly fix regression on Plug.Router helper function accidentally renamed
+
+## v1.13.1 (2022-02-03)
+
+### Bug fixes
+
+  * [Plug.Router] Fix regression on Plug.Router helper function accidentally renamed
+
+## v1.13.0 (2022-02-02)
+
+### Enhancements
+
+  * [Plug.Builder] Do not add compile-time deps to literal options in function plugs
+  * [Plug.Parsers.MULTIPART] Allow custom conversion of multipart to parameters
+  * [Plug.Router] Allow suffix matches in the router (such as `/feeds/:name.atom`)
+  * [Plug.Session] Allow a list of `:rotating_options` for rotating session cookies
+  * [Plug.Static] Allow a list of `:encodings` to be given for handling static assets
+  * [Plug.Test] Raise an error when providing path not starting with "/"
+
+### Bug fixes
+
+  * [Plug.Upload] Normalize paths coming from environment variables
+
+### Deprecations
+
+  * [Plug.Router] Mixing prefix matches with globs is deprecated
+  * [Plug.Parsers.MULTIPART] Deprecate `:include_unnamed_parts_at`
+
 ## v1.12.1 (2021-08-01)
 
 ### Bug fixes
@@ -114,7 +243,7 @@
   * [Plug.Parsers] Add option to skip utf8 validation
   * [Plug.Parsers] Make multipart support MFA for `:length` limit
   * [Plug.Static] Accept MFA for `:header` option
-  
+
 ### Notes
   * When implementing the `Plug.Exception` protocol, if the new `actions` function is not implemented, a warning will printed during compilation.
 

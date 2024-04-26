@@ -1,6 +1,6 @@
 %-
 % Copyright (c) 2012-2014 Yakaz
-% Copyright (c) 2016-2018 Jean-Sébastien Pédron <jean-sebastien.pedron@dumbbell.fr>
+% Copyright (c) 2016-2022 Jean-Sébastien Pédron <jean-sebastien.pedron@dumbbell.fr>
 % All rights reserved.
 %
 % Redistribution and use in source and binary forms, with or without
@@ -27,7 +27,7 @@
 %% @author Jean-Sébastien Pédron <jean-sebastien.pedron@dumbbell.fr>
 %% @copyright
 %% 2012-2014 Yakaz,
-%% 2016-2018 Jean-Sébastien Pédron <jean-sebastien.pedron@dumbbell.fr>
+%% 2016-2022 Jean-Sébastien Pédron <jean-sebastien.pedron@dumbbell.fr>
 %%
 %% @doc {@module} implements a YAML parser. It is not meant to be used
 %% directly. Instead, you should use {@link yamerl_constr}.
@@ -960,7 +960,20 @@ end_doc(Parser, Line, Col, Insert_At) ->
       line   = Line,
       column = Col
     },
-    queue_token(Parser2, Token, Insert_At).
+    %% We check if there is an unfinished flow collection.
+    Parser3 = case ?IN_FLOW_CTX(Parser) of
+        false ->
+            Parser2;
+        true ->
+            Error = #yamerl_parsing_error{
+              name   = unfinished_flow_collection,
+              token  = Token,
+              line   = Line,
+              column = Col
+            },
+            add_error(Parser2, Error, "Unfinished flow collection", [])
+    end,
+    queue_token(Parser3, Token, Insert_At).
 
 %% -------------------------------------------------------------------
 %% Directives.
@@ -1615,7 +1628,7 @@ parse_flow_entry([_ | Rest], Line, Col, Delta,
   #yamerl_parser{cur_coll = #fcoll{kind = Kind}} = Parser) when
   (Kind == sequence andalso ?MISSING_ENTRY(Parser)) orelse
   (Kind == mapping  andalso ?MISSING_KVPAIR(Parser)) ->
-    %% In a flow collection, the "," entry indicator immediatly follows a
+    %% In a flow collection, the "," entry indicator immediately follows a
     %% collection-start or a previous entry indicator.
     Error = #yamerl_parsing_error{
       name   = flow_collection_entry_not_allowed,
@@ -2584,30 +2597,6 @@ do_parse_block_scalar([$# | _] = Chars, Line, Col, Delta, Parser,
   when Col < Indent ->
     queue_block_scalar_token(Chars, Line, Col, Delta, Parser, Ctx);
 
-%% The next line is less indented than the block scalar, but more than
-%% the parent node: it's an error.
-do_parse_block_scalar([C | _] = Chars, Line, Col, Delta, Parser,
-  #block_scalar_ctx{indent = Indent, style = Style,
-    line = Token_Line, col = Token_Col, output = Output})
-  when C /= $\s andalso Col < Indent ->
-    Token = #yamerl_scalar{
-      style    = block,
-      substyle = Style,
-      text     = lists:reverse(Output),
-      line     = Token_Line,
-      column   = Token_Col,
-      tag      = ?BLOCK_SCALAR_DEFAULT_TAG(Token_Line, Token_Col)
-    },
-    Error  = #yamerl_parsing_error{
-      name   = invalid_block_scalar_indentation,
-      token  = Token,
-      line   = Line,
-      column = Col
-    },
-    Parser1 = add_error(Parser, Error,
-      "Invalid block scalar indentation", []),
-    return(Chars, Line, Col, Delta, Parser1);
-
 %% The next line has a directives end or document end marker: end the
 %% scalar.
 do_parse_block_scalar([C | _] = Chars, Line, 1 = Col, Delta,
@@ -2633,6 +2622,30 @@ do_parse_block_scalar([$-, $-, $-] = Chars, Line, 1 = Col, Delta,
 do_parse_block_scalar([$., $., $.] = Chars, Line, 1 = Col, Delta,
   #yamerl_parser{raw_eos = true} = Parser, Ctx) ->
     queue_block_scalar_token(Chars, Line, Col, Delta, Parser, Ctx);
+
+%% The next line is less indented than the block scalar, but more than
+%% the parent node: it's an error.
+do_parse_block_scalar([C | _] = Chars, Line, Col, Delta, Parser,
+  #block_scalar_ctx{indent = Indent, style = Style,
+    line = Token_Line, col = Token_Col, output = Output})
+  when C /= $\s andalso Col < Indent ->
+    Token = #yamerl_scalar{
+      style    = block,
+      substyle = Style,
+      text     = lists:reverse(Output),
+      line     = Token_Line,
+      column   = Token_Col,
+      tag      = ?BLOCK_SCALAR_DEFAULT_TAG(Token_Line, Token_Col)
+    },
+    Error  = #yamerl_parsing_error{
+      name   = invalid_block_scalar_indentation,
+      token  = Token,
+      line   = Line,
+      column = Col
+    },
+    Parser1 = add_error(Parser, Error,
+      "Invalid block scalar indentation", []),
+    return(Chars, Line, Col, Delta, Parser1);
 
 %%
 %% Content.
@@ -2925,7 +2938,7 @@ do_parse_flow_scalar([C | Rest], Line, Col, Delta, Parser,
 
 do_parse_flow_scalar([$# | _] = Chars, Line, Col, Delta, Parser,
   #flow_scalar_ctx{style = plain, spaces = Spaces} = Ctx) when Spaces /= [] ->
-    %% A '#' character preceeded by white spaces is a comment. The plain
+    %% A '#' character preceded by white spaces is a comment. The plain
     %% scalar terminates with the first white spaces because trailing
     %% white spaces are ignored. [130]
     queue_flow_scalar_token(Chars, Line, Col, Delta, Parser,
@@ -3955,7 +3968,7 @@ emit_tokens2(#yamerl_parser{last_token = Last} = Parser,
   [Token | Rest], Idx , Max)
   when Idx =< Max ->
     %% Run some checks:
-    %%   o  Can "Last" and "Token" be in a raw?
+    %%   o  Can "Last" and "Token" be in a row?
     %%   o  Do we need to insert an empty scalar?
     Parser1 = check_tokens_in_a_row(Parser, Last, Token),
     %% Handle properties and execute the specified callback function (or
@@ -4315,7 +4328,7 @@ invalid_option(Option) ->
         {io_blocksize, _} ->
             Error#yamerl_invalid_option{
               text = "Invalid value for option \"io_blocksize\": "
-              "it must be a positive interger, expressed in bytes"
+              "it must be a positive integer, expressed in bytes"
             };
         {token_fun, _} ->
             Error#yamerl_invalid_option{

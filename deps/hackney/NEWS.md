@@ -1,5 +1,36 @@
 # NEWS
 
+1.20.1 - 2013-10-11
+-------------------
+
+- fix multipart: handle case where Length is undefined
+
+1.20.0 - 2023-10-10
+-------------------
+
+- handle `*` in path encoding
+- Support LF separators: since rfc7230-3.5 allows for LF-only
+- fix recv stream fix fetching trailers during streaming
+- fix CI
+- Improve documentation
+
+1.19.1 - 2023-09-21
+-------------------
+
+- feature: add `no_proxy_env` option to bypass proxy environment settings
+
+1.19.0 - 2023-09-20
+-------------------
+
+- fix: recv: if expected size < BufSize fallback to old behaviour. Fix issue with negative length
+- feature: add support for proxy environment setting
+
+1.18.2 - 2023-08-29
+-------------------
+
+- security: update default CA bundles
+
+
 1.18.1 - 2022-02-03
 -------------------
 

@@ -103,8 +103,9 @@
 -export([domain_lookup/3]).
 -export([connecting/3]).
 -export([initial_tls_handshake/3]).
--export([ensure_alpn_sni/3]).
+-export([ensure_tls_opts/3]).
 -export([tls_handshake/3]).
+-export([connected_protocol_init/3]).
 -export([connected/3]).
 -export([connected_data_only/3]).
 -export([connected_no_input/3]).
@@ -236,12 +237,13 @@
 	max_concurrent_streams => non_neg_integer() | infinity,
 	max_decode_table_size => non_neg_integer(),
 	max_encode_table_size => non_neg_integer(),
+	max_fragmented_header_block_size => 16384..16#7fffffff,
 	max_frame_size_received => 16384..16777215,
 	max_frame_size_sent => 16384..16777215 | infinity,
-	max_stream_buffer_size => non_neg_integer(),
 	max_stream_window_size => 0..16#7fffffff,
 	preface_timeout => timeout(),
 	settings_timeout => timeout(),
+	stream_window_data_threshold => 0..16#7fffffff,
 	stream_window_margin_size => 0..16#7fffffff,
 	stream_window_update_threshold => 0..16#7fffffff,
 
@@ -278,6 +280,26 @@
 	user_opts => any()
 }.
 -export_type([ws_opts/0]).
+
+-type resp_headers() :: [{binary(), binary()}].
+
+-type await_result() :: {inform, 100..199, resp_headers()}
+	| {response, fin | nofin, non_neg_integer(), resp_headers()}
+	| {data, fin | nofin, binary()}
+	| {sse, cow_sse:event() | fin}
+	| {trailers, resp_headers()}
+	| {push, stream_ref(), binary(), binary(), resp_headers()}
+	| {upgrade, [binary()], resp_headers()}
+	| {ws, ws_frame()}
+	| {up, http | http2 | raw | socks}
+	| {notify, settings_changed, map()}
+	| {error, {stream_error | connection_error | down, any()} | timeout}.
+-export_type([await_result/0]).
+
+-type await_body_result() :: {ok, binary()}
+	| {ok, binary(), resp_headers()}
+	| {error, {stream_error | connection_error | down, any()} | timeout}.
+-export_type([await_body_result/0]).
 
 -record(state, {
 	owner :: pid(),
@@ -443,12 +465,12 @@ check_protocols_opt(Protocols) ->
 
 consider_tracing(ServerPid, #{trace := true}) ->
 	dbg:tracer(),
-	dbg:tpl(gun, [{'_', [], [{return_trace}]}]),
-	dbg:tpl(gun_http, [{'_', [], [{return_trace}]}]),
-	dbg:tpl(gun_http2, [{'_', [], [{return_trace}]}]),
-	dbg:tpl(gun_raw, [{'_', [], [{return_trace}]}]),
-	dbg:tpl(gun_socks, [{'_', [], [{return_trace}]}]),
-	dbg:tpl(gun_ws, [{'_', [], [{return_trace}]}]),
+	_ = dbg:tpl(gun, [{'_', [], [{return_trace}]}]),
+	_ = dbg:tpl(gun_http, [{'_', [], [{return_trace}]}]),
+	_ = dbg:tpl(gun_http2, [{'_', [], [{return_trace}]}]),
+	_ = dbg:tpl(gun_raw, [{'_', [], [{return_trace}]}]),
+	_ = dbg:tpl(gun_socks, [{'_', [], [{return_trace}]}]),
+	_ = dbg:tpl(gun_ws, [{'_', [], [{return_trace}]}]),
 	dbg:p(ServerPid, all);
 consider_tracing(_, _) ->
 	ok.
@@ -705,19 +727,6 @@ connect(ServerPid, Destination, Headers, ReqOpts) ->
 
 %% Awaiting gun messages.
 
--type resp_headers() :: [{binary(), binary()}].
--type await_result() :: {inform, 100..199, resp_headers()}
-	| {response, fin | nofin, non_neg_integer(), resp_headers()}
-	| {data, fin | nofin, binary()}
-	| {sse, cow_sse:event() | fin}
-	| {trailers, resp_headers()}
-	| {push, stream_ref(), binary(), binary(), resp_headers()}
-	| {upgrade, [binary()], resp_headers()}
-	| {ws, ws_frame()}
-	| {up, http | http2 | raw | socks}
-	| {notify, settings_changed, map()}
-	| {error, {stream_error | connection_error | down, any()} | timeout}.
-
 -spec await(pid(), stream_ref()) -> await_result().
 await(ServerPid, StreamRef) ->
 	MRef = monitor(process, ServerPid),
@@ -766,10 +775,6 @@ await(ServerPid, StreamRef, Timeout, MRef) ->
 	after Timeout ->
 		{error, timeout}
 	end.
-
--type await_body_result() :: {ok, binary()}
-	| {ok, binary(), resp_headers()}
-	| {error, {stream_error | connection_error | down, any()} | timeout}.
 
 -spec await_body(pid(), stream_ref()) -> await_body_result().
 await_body(ServerPid, StreamRef) ->
@@ -1075,8 +1080,9 @@ connecting(_, {retries, Retries, LookupInfo}, State=#state{opts=Opts,
 				socket => Socket,
 				protocol => ProtocolName
 			}, EvHandlerState1),
-			{next_state, connected, State#state{event_handler_state=EvHandlerState},
-				{next_event, internal, {connected, Socket, Protocol}}};
+			{next_state, connected_protocol_init,
+				State#state{event_handler_state=EvHandlerState},
+				{next_event, internal, {connected, Retries, Socket, Protocol}}};
 		{ok, Socket} when Transport =:= gun_tls ->
 			EvHandlerState = EvHandler:connect_end(ConnectEvent#{
 				socket => Socket
@@ -1094,19 +1100,38 @@ connecting(_, {retries, Retries, LookupInfo}, State=#state{opts=Opts,
 initial_tls_handshake(_, {retries, Retries, Socket}, State0=#state{opts=Opts, origin_host=OriginHost}) ->
 	Protocols = maps:get(protocols, Opts, [http2, http]),
 	HandshakeEvent = #{
-		tls_opts => ensure_alpn_sni(Protocols, maps:get(tls_opts, Opts, []), OriginHost),
+		tls_opts => ensure_tls_opts(Protocols, maps:get(tls_opts, Opts, []), OriginHost),
 		timeout => maps:get(tls_handshake_timeout, Opts, infinity)
 	},
 	case normal_tls_handshake(Socket, State0, HandshakeEvent, Protocols) of
 		{ok, TLSSocket, Protocol, State} ->
-			{next_state, connected, State,
-				{next_event, internal, {connected, TLSSocket, Protocol}}};
+			{next_state, connected_protocol_init, State,
+				{next_event, internal, {connected, Retries, TLSSocket, Protocol}}};
 		{error, Reason, State} ->
 			{next_state, not_connected, State,
 				{next_event, internal, {retries, Retries, Reason}}}
 	end.
 
-ensure_alpn_sni(Protocols0, TransOpts0, OriginHost) ->
+ensure_tls_opts(Protocols0, TransOpts0, OriginHost) ->
+	%% CA certificates.
+	TransOpts1 = case lists:keymember(cacerts, 1, TransOpts0) of
+		true ->
+			TransOpts0;
+		false ->
+			case lists:keymember(cacertfile, 1, TransOpts0) of
+				true ->
+					TransOpts0;
+				false ->
+					%% This function was added in OTP-25. We use it  when it is
+					%% available and keep the previous behavior when it isn't.
+					case erlang:function_exported(public_key, cacerts_get, 0) of
+						true ->
+							[{cacerts, public_key:cacerts_get()}|TransOpts0];
+						false ->
+							TransOpts0
+					end
+			end
+	end,
 	%% ALPN.
 	Protocols = lists:foldl(fun
 		(http, Acc) -> [<<"http/1.1">>|Acc];
@@ -1116,9 +1141,8 @@ ensure_alpn_sni(Protocols0, TransOpts0, OriginHost) ->
 		(_, Acc) -> Acc
 	end, [], Protocols0),
 	TransOpts = [
-		{alpn_advertised_protocols, Protocols},
-		{client_preferred_next_protocols, {client, Protocols, <<"http/1.1">>}}
-	|TransOpts0],
+		{alpn_advertised_protocols, Protocols}
+	|TransOpts1],
 	%% SNI.
 	%%
 	%% Normally only DNS hostnames are supported for SNI. However, the ssl
@@ -1159,7 +1183,7 @@ tls_handshake(internal, {tls_handshake,
 		HandshakeEvent0=#{tls_opts := TLSOpts0, timeout := TLSTimeout}, Protocols, ReplyTo},
 		State=#state{socket=Socket, transport=Transport, origin_host=OriginHost, origin_port=OriginPort,
 		event_handler=EvHandler, event_handler_state=EvHandlerState0}) ->
-	TLSOpts = ensure_alpn_sni(Protocols, TLSOpts0, OriginHost),
+	TLSOpts = ensure_tls_opts(Protocols, TLSOpts0, OriginHost),
 	HandshakeEvent = HandshakeEvent0#{
 		tls_opts => TLSOpts,
 		socket => Socket
@@ -1199,7 +1223,7 @@ tls_handshake(Type, Event, State) ->
 normal_tls_handshake(Socket, State=#state{
 		origin_host=OriginHost, event_handler=EvHandler, event_handler_state=EvHandlerState0},
 		HandshakeEvent0=#{tls_opts := TLSOpts0, timeout := TLSTimeout}, Protocols) ->
-	TLSOpts = ensure_alpn_sni(Protocols, TLSOpts0, OriginHost),
+	TLSOpts = ensure_tls_opts(Protocols, TLSOpts0, OriginHost),
 	HandshakeEvent = HandshakeEvent0#{
 		tls_opts => TLSOpts,
 		socket => Socket
@@ -1207,18 +1231,54 @@ normal_tls_handshake(Socket, State=#state{
 	EvHandlerState1 = EvHandler:tls_handshake_start(HandshakeEvent, EvHandlerState0),
 	case gun_tls:connect(Socket, TLSOpts, TLSTimeout) of
 		{ok, TLSSocket} ->
-			NewProtocol = gun_protocols:negotiated(ssl:negotiated_protocol(TLSSocket), Protocols),
-			Protocol = gun_protocols:handler(NewProtocol),
-			EvHandlerState = EvHandler:tls_handshake_end(HandshakeEvent#{
-				socket => TLSSocket,
-				protocol => Protocol:name()
-			}, EvHandlerState1),
-			{ok, TLSSocket, NewProtocol, State#state{event_handler_state=EvHandlerState}};
+			%% This call may return {error,closed} when the socket has
+			%% been closed by the peer. This should be very rare (due to
+			%% timing) but can happen for example when client certificates
+			%% were required but not sent or invalid with some servers.
+			case ssl:negotiated_protocol(TLSSocket) of
+				{error, Reason = closed} ->
+					EvHandlerState = EvHandler:tls_handshake_end(HandshakeEvent#{
+						error => Reason
+					}, EvHandlerState1),
+					{error, Reason, State#state{event_handler_state=EvHandlerState}};
+				NegotiatedProtocol ->
+					NewProtocol = gun_protocols:negotiated(NegotiatedProtocol, Protocols),
+					Protocol = gun_protocols:handler(NewProtocol),
+					EvHandlerState = EvHandler:tls_handshake_end(HandshakeEvent#{
+						socket => TLSSocket,
+						protocol => Protocol:name()
+					}, EvHandlerState1),
+					{ok, TLSSocket, NewProtocol,
+						State#state{event_handler_state=EvHandlerState}}
+			end;
 		{error, Reason} ->
 			EvHandlerState = EvHandler:tls_handshake_end(HandshakeEvent#{
 				error => Reason
 			}, EvHandlerState1),
 			{error, Reason, State#state{event_handler_state=EvHandlerState}}
+	end.
+
+connected_protocol_init(internal, {connected, Retries, Socket, NewProtocol},
+		State0=#state{owner=Owner, opts=Opts, transport=Transport}) ->
+	{Protocol, ProtoOpts} = gun_protocols:handler_and_opts(NewProtocol, Opts),
+	case Protocol:init(Owner, Socket, Transport, ProtoOpts) of
+		{error, Reason} ->
+			{next_state, not_connected, State0,
+				{next_event, internal, {retries, Retries, Reason}}};
+		{ok, StateName, ProtoState} ->
+			%% @todo Don't send gun_up and gun_down if active/1 fails here.
+			Owner ! {gun_up, self(), Protocol:name()},
+			State1 = State0#state{socket=Socket, protocol=Protocol, protocol_state=ProtoState},
+			case active(State1) of
+				{ok, State2} ->
+					State = case Protocol:has_keepalive() of
+						true -> keepalive_timeout(State2);
+						false -> State2
+					end,
+					{next_state, StateName, State};
+				Disconnect ->
+					Disconnect
+			end
 	end.
 
 connected_no_input(Type, Event, State) ->
@@ -1253,29 +1313,6 @@ connected_ws_only(cast, Msg, _)
 connected_ws_only(Type, Event, State) ->
 	handle_common_connected_no_input(Type, Event, ?FUNCTION_NAME, State).
 
-connected(internal, {connected, Socket, NewProtocol},
-		State0=#state{owner=Owner, opts=Opts, transport=Transport}) ->
-	{Protocol, ProtoOpts} = gun_protocols:handler_and_opts(NewProtocol, Opts),
-	case Protocol:init(Owner, Socket, Transport, ProtoOpts) of
-		Error={error, _} ->
-			%% @todo Don't send gun_up and gun_down if Protocol:init/4 failes here.
-			Owner ! {gun_up, self(), Protocol:name()},
-			disconnect(State0, Error);
-		{ok, StateName, ProtoState} ->
-			%% @todo Don't send gun_up and gun_down if active/1 failes here.
-			Owner ! {gun_up, self(), Protocol:name()},
-			State1 = State0#state{socket=Socket, protocol=Protocol, protocol_state=ProtoState},
-			case active(State1) of
-				{ok, State2} ->
-					State = case Protocol:has_keepalive() of
-						true -> keepalive_timeout(State2);
-						false -> State2
-					end,
-					{next_state, StateName, State};
-				Disconnect ->
-					Disconnect
-			end
-	end;
 %% Public HTTP interface.
 %%
 %% @todo It might be better, internally, to pass around a URIMap

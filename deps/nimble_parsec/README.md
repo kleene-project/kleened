@@ -7,12 +7,12 @@
 `NimbleParsec` is a simple and fast library for text-based parser
 combinators.
 
-Combinators are built during runtime and compiled into multiple
+Combinators are composed programatically and compiled into multiple
 clauses with binary matching. This provides the following benefits:
 
   * Performance: since it compiles to binary matching, it leverages
-    many Erlang VM optimizations to generate extremely fast parser
-    code with low memory usage
+    many Erlang VM optimizations to generate a fast parser code with
+    low memory usage
 
   * Composable: this library does not rely on macros for building and
     composing parsers, therefore they are fully composable. The only
@@ -60,7 +60,7 @@ defmodule MyParser do
 end
 
 MyParser.datetime("2010-04-17T14:12:34Z")
-#=> {:ok, [2010, 4, 17, 14, 12, 34, "Z"], "", %{}, 1, 21}
+#=> {:ok, [2010, 4, 17, 14, 12, 34, "Z"], "", %{}, {1, 0}, 20}
 ```
 
 If you add `debug: true` to `defparsec/3`, it will print the generated
@@ -119,20 +119,27 @@ Add `nimble_parsec` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
-  [{:nimble_parsec, "~> 0.2"}]
+  [
+    {:nimble_parsec, "~> 1.0"}
+  ]
 end
 ```
 
 ## Nimble*
 
-Other nimble libraries by Plataformatec:
+All nimble libraries by Dashbit:
 
-  * [NimbleCSV](https://github.com/plataformatec/nimble_csv) - simple and fast CSV parsing
-  * [NimbleStrftime](https://github.com/plataformatec/nimble_strftime) - simple and fast strftime-based datetime formatter
+  * [NimbleCSV](https://github.com/dashbitco/nimble_csv) - simple and fast CSV parsing
+  * [NimbleOptions](https://github.com/dashbitco/nimble_options) - tiny library for validating and documenting high-level options
+  * [NimbleParsec](https://github.com/dashbitco/nimble_parsec) - simple and fast parser combinators
+  * [NimblePool](https://github.com/dashbitco/nimble_pool) - tiny resource-pool implementation
+  * [NimblePublisher](https://github.com/dashbitco/nimble_publisher) - a minimal filesystem-based publishing engine with Markdown support and code highlighting
+  * [NimbleTOTP](https://github.com/dashbitco/nimble_totp) - tiny library for generating time-based one time passwords (TOTP)
 
 ## License
 
-Copyright 2018 Plataformatec
+Copyright 2018 Plataformatec \
+Copyright 2020 Dashbit
 
   Licensed under the Apache License, Version 2.0 (the "License");
   you may not use this file except in compliance with the License.

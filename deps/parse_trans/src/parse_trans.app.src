@@ -1,6 +1,6 @@
 {application,parse_trans,
              [{description,"Parse transform library"},
-              {vsn,"3.3.1"},
+              {vsn,"3.4.1"},
               {registered,[]},
               {applications,[kernel,stdlib,syntax_tools]},
               {env,[]},

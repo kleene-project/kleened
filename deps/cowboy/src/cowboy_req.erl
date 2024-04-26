@@ -1,4 +1,4 @@
-%% Copyright (c) 2011-2017, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) 2011-2024, Loïc Hoguin <essen@ninenines.eu>
 %% Copyright (c) 2011, Anthony Ramine <nox@dev-extend.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
@@ -521,7 +521,11 @@ read_body(Req=#{has_read_body := true}, _) ->
 read_body(Req, Opts) ->
 	Length = maps:get(length, Opts, 8000000),
 	Period = maps:get(period, Opts, 15000),
-	Timeout = maps:get(timeout, Opts, Period + 1000),
+	DefaultTimeout = case Period of
+		infinity -> infinity; %% infinity + 1000 = infinity.
+		_ -> Period + 1000
+	end,
+	Timeout = maps:get(timeout, Opts, DefaultTimeout),
 	Ref = make_ref(),
 	cast({read_body, self(), Ref, Length, Period}, Req),
 	receive
@@ -710,10 +714,13 @@ set_resp_cookie(Name, Value, Req, Opts) ->
 	RespCookies = maps:get(resp_cookies, Req, #{}),
 	Req#{resp_cookies => RespCookies#{Name => Cookie}}.
 
-%% @todo We could add has_resp_cookie and delete_resp_cookie now.
+%% @todo We could add has_resp_cookie and unset_resp_cookie now.
 
 -spec set_resp_header(binary(), iodata(), Req)
 	-> Req when Req::req().
+set_resp_header(<<"set-cookie">>, _, _) ->
+	exit({response_error, invalid_header,
+		'Response cookies must be set using cowboy_req:set_resp_cookie/3,4.'});
 set_resp_header(Name, Value, Req=#{resp_headers := RespHeaders}) ->
 	Req#{resp_headers => RespHeaders#{Name => Value}};
 set_resp_header(Name,Value, Req) ->
@@ -721,6 +728,9 @@ set_resp_header(Name,Value, Req) ->
 
 -spec set_resp_headers(cowboy:http_headers(), Req)
 	-> Req when Req::req().
+set_resp_headers(#{<<"set-cookie">> := _}, _) ->
+	exit({response_error, invalid_header,
+		'Response cookies must be set using cowboy_req:set_resp_cookie/3,4.'});
 set_resp_headers(Headers, Req=#{resp_headers := RespHeaders}) ->
 	Req#{resp_headers => maps:merge(RespHeaders, Headers)};
 set_resp_headers(Headers, Req) ->
@@ -775,7 +785,11 @@ inform(Status, Req) ->
 
 -spec inform(cowboy:http_status(), cowboy:http_headers(), req()) -> ok.
 inform(_, _, #{has_sent_resp := _}) ->
-	error(function_clause); %% @todo Better error message.
+	exit({response_error, response_already_sent,
+		'The final response has already been sent.'});
+inform(_, #{<<"set-cookie">> := _}, _) ->
+	exit({response_error, invalid_header,
+		'Response cookies must be set using cowboy_req:set_resp_cookie/3,4.'});
 inform(Status, Headers, Req) when is_integer(Status); is_binary(Status) ->
 	cast({inform, Status, Headers}, Req).
 
@@ -793,7 +807,11 @@ reply(Status, Headers, Req) ->
 -spec reply(cowboy:http_status(), cowboy:http_headers(), resp_body(), Req)
 	-> Req when Req::req().
 reply(_, _, _, #{has_sent_resp := _}) ->
-	error(function_clause); %% @todo Better error message.
+	exit({response_error, response_already_sent,
+		'The final response has already been sent.'});
+reply(_, #{<<"set-cookie">> := _}, _, _) ->
+	exit({response_error, invalid_header,
+		'Response cookies must be set using cowboy_req:set_resp_cookie/3,4.'});
 reply(Status, Headers, {sendfile, _, 0, _}, Req)
 		when is_integer(Status); is_binary(Status) ->
 	do_reply(Status, Headers#{
@@ -809,19 +827,25 @@ reply(Status, Headers, SendFile = {sendfile, _, Len, _}, Req)
 %% Neither status code must include a response body. (RFC7230 3.3)
 reply(Status, Headers, Body, Req)
 		when Status =:= 204; Status =:= 304 ->
-	0 = iolist_size(Body),
-	do_reply(Status, Headers, Body, Req);
+	do_reply_ensure_no_body(Status, Headers, Body, Req);
 reply(Status = <<"204",_/bits>>, Headers, Body, Req) ->
-	0 = iolist_size(Body),
-	do_reply(Status, Headers, Body, Req);
+	do_reply_ensure_no_body(Status, Headers, Body, Req);
 reply(Status = <<"304",_/bits>>, Headers, Body, Req) ->
-	0 = iolist_size(Body),
-	do_reply(Status, Headers, Body, Req);
+	do_reply_ensure_no_body(Status, Headers, Body, Req);
 reply(Status, Headers, Body, Req)
 		when is_integer(Status); is_binary(Status) ->
 	do_reply(Status, Headers#{
 		<<"content-length">> => integer_to_binary(iolist_size(Body))
 	}, Body, Req).
+
+do_reply_ensure_no_body(Status, Headers, Body, Req) ->
+	case iolist_size(Body) of
+		0 ->
+			do_reply(Status, Headers, Body, Req);
+		_ ->
+			exit({response_error, payload_too_large,
+				'204 and 304 responses must not include a body. (RFC7230 3.3)'})
+	end.
 
 %% Don't send any body for HEAD responses. While the protocol code is
 %% supposed to enforce this rule, we prefer to avoid copying too much
@@ -843,15 +867,18 @@ stream_reply(Status, Req) ->
 -spec stream_reply(cowboy:http_status(), cowboy:http_headers(), Req)
 	-> Req when Req::req().
 stream_reply(_, _, #{has_sent_resp := _}) ->
-	error(function_clause);
+	exit({response_error, response_already_sent,
+		'The final response has already been sent.'});
+stream_reply(_, #{<<"set-cookie">> := _}, _) ->
+	exit({response_error, invalid_header,
+		'Response cookies must be set using cowboy_req:set_resp_cookie/3,4.'});
 %% 204 and 304 responses must NOT send a body. We therefore
 %% transform the call to a full response and expect the user
 %% to NOT call stream_body/3 afterwards. (RFC7230 3.3)
-stream_reply(Status = 204, Headers=#{}, Req) ->
+stream_reply(Status, Headers=#{}, Req)
+		when Status =:= 204; Status =:= 304 ->
 	reply(Status, Headers, <<>>, Req);
 stream_reply(Status = <<"204",_/bits>>, Headers=#{}, Req) ->
-	reply(Status, Headers, <<>>, Req);
-stream_reply(Status = 304, Headers=#{}, Req) ->
 	reply(Status, Headers, <<>>, Req);
 stream_reply(Status = <<"304",_/bits>>, Headers=#{}, Req) ->
 	reply(Status, Headers, <<>>, Req);
@@ -896,6 +923,9 @@ stream_events(Events, IsFin, Req=#{has_sent_resp := headers}) ->
 	stream_body({data, self(), IsFin, cow_sse:events(Events)}, Req).
 
 -spec stream_trailers(cowboy:http_headers(), req()) -> ok.
+stream_trailers(#{<<"set-cookie">> := _}, _) ->
+	exit({response_error, invalid_header,
+		'Response cookies must be set using cowboy_req:set_resp_cookie/3,4.'});
 stream_trailers(Trailers, Req=#{has_sent_resp := headers}) ->
 	cast({trailers, Trailers}, Req).
 
@@ -907,6 +937,9 @@ push(Path, Headers, Req) ->
 %% @todo Path, Headers, Opts, everything should be in proper binary,
 %% or normalized when creating the Req object.
 -spec push(iodata(), cowboy:http_headers(), req(), push_opts()) -> ok.
+push(_, _, #{has_sent_resp := _}, _) ->
+	exit({response_error, response_already_sent,
+		'The final response has already been sent.'});
 push(Path, Headers, Req=#{scheme := Scheme0, host := Host0, port := Port0}, Opts) ->
 	Method = maps:get(method, Opts, <<"GET">>),
 	Scheme = maps:get(scheme, Opts, Scheme0),
@@ -991,7 +1024,12 @@ filter([], Map, Errors) ->
 		_ -> {error, Errors}
 	end;
 filter([{Key, Constraints}|Tail], Map, Errors) ->
-	filter_constraints(Tail, Map, Errors, Key, maps:get(Key, Map), Constraints);
+	case maps:find(Key, Map) of
+		{ok, Value} ->
+			filter_constraints(Tail, Map, Errors, Key, Value, Constraints);
+		error ->
+			filter(Tail, Map, Errors#{Key => required})
+	end;
 filter([{Key, Constraints, Default}|Tail], Map, Errors) ->
 	case maps:find(Key, Map) of
 		{ok, Value} ->

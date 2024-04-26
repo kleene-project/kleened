@@ -1,7 +1,8 @@
 defmodule OpenApiSpex.OperationBuilder do
   @moduledoc false
 
-  alias OpenApiSpex.{Operation, Parameter, Response, Reference}
+  alias OpenApiSpex.{ExternalDocumentation, Operation, Parameter, Reference, RequestBody, Response}
+  alias Plug.Conn.Status
 
   def ensure_type_and_schema_exclusive!(name, type, schema) do
     if type != nil && schema != nil do
@@ -16,6 +17,16 @@ defmodule OpenApiSpex.OperationBuilder do
         """
     end
   end
+
+  def build_external_docs(%{external_docs: _external_docs} = operation_spec, _module_spec),
+    do: build_external_docs(operation_spec)
+
+  def build_external_docs(_operation_spec, module_spec), do: build_external_docs(module_spec)
+
+  def build_external_docs(%{external_docs: external_docs}),
+    do: struct(ExternalDocumentation, external_docs)
+
+  def build_external_docs(_spec), do: nil
 
   def build_operation_id(meta, mod, name) do
     Map.get(meta, :operation_id, "#{inspect(mod)}.#{name}")
@@ -74,7 +85,7 @@ defmodule OpenApiSpex.OperationBuilder do
       {status, {description, mime, schema, opts}} ->
         {status_to_code(status), Operation.response(description, mime, schema, opts)}
 
-      {status, %Response{} = response} ->
+      {status, %struct{} = response} when struct in [Reference, Response] ->
         {status_to_code(status), response}
 
       {status, description} when is_binary(description) ->
@@ -97,25 +108,32 @@ defmodule OpenApiSpex.OperationBuilder do
   def build_responses(_), do: []
 
   defp status_to_code(:default), do: :default
-  defp status_to_code(status), do: Plug.Conn.Status.code(status)
+  defp status_to_code(status), do: Status.code(status)
 
-  def build_request_body(%{body: {name, mime, schema}}) do
-    IO.warn("Using :body key for requestBody is deprecated. Please use :request_body instead.")
-    Operation.request_body(name, mime, schema)
+  def build_request_body(%{body: {description, media_type, schema}}) do
+    Operation.request_body(description, media_type, schema)
   end
 
-  def build_request_body(%{request_body: {name, mime, schema}}) do
-    Operation.request_body(name, mime, schema)
+  def build_request_body(%{request_body: %RequestBody{} = request_body}), do: request_body
+
+  def build_request_body(%{request_body: {description, media_type, schema}}) do
+    Operation.request_body(description, media_type, schema)
   end
 
-  def build_request_body(%{request_body: {name, mime, schema, opts}}) do
-    Operation.request_body(name, mime, schema, opts)
+  def build_request_body(%{request_body: {description, media_type, schema, opts}}) do
+    Operation.request_body(description, media_type, schema, opts)
   end
 
   def build_request_body(_), do: nil
 
   def build_security(operation_spec, module_spec) do
-    Map.get(module_spec, :security, []) ++ Map.get(operation_spec, :security, [])
+    case {Map.get(module_spec, :security), Map.get(operation_spec, :security)} do
+      {nil, nil} ->
+        nil
+
+      {module_security, operation_security} ->
+        (module_security || []) ++ (operation_security || [])
+    end
   end
 
   def build_tags(operation_spec, module_spec) do

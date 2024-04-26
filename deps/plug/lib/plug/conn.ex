@@ -31,9 +31,9 @@ defmodule Plug.Conn do
 
   ## Fetchable fields
 
-  The request information in these fields is not populated until it is fetched
-  using the associated `fetch_` function. For example, the `cookies` field uses
-  `fetch_cookies/2`.
+  Fetchable fields do not populate with request information until the corresponding
+  prefixed 'fetch_' function retrieves them, e.g., the `fetch_cookies/2` function
+  retrieves the `cookies` field.
 
   If you access these fields before fetching them, they will be returned as
   `Plug.Conn.Unfetched` structs.
@@ -46,17 +46,53 @@ defmodule Plug.Conn do
        `:body_params` on top of `:query_params`
     * `req_cookies` - the request cookies (without the response ones)
 
+  ## Session vs Assigns
+
+  HTTP is stateless.
+
+  This means that a server begins each request cycle with no knowledge about
+  the client except the request itself. Its response may include one or more
+  `"Set-Cookie"` headers, asking the client to send that value back in a
+  `"Cookie"` header on subsequent requests.
+
+  This is the basis for stateful interactions with a client, so that the server
+  can remember the client's name, the contents of their shopping cart, and so on.
+
+  In `Plug`, a "session" is a place to store data that persists from one request
+  to the next. Typically, this data is stored in a cookie using `Plug.Session.COOKIE`.
+
+  A minimal approach would be to store only a user's id in the session, then
+  use that during the request cycle to look up other information (in a database
+  or elsewhere).
+
+  More can be stored in a session cookie, but be careful: this makes requests
+  and responses heavier, and clients may reject cookies beyond a certain size.
+  Also, session cookie are not shared between a user's different browsers or devices.
+
+  If the session is stored elsewhere, such as with `Plug.Session.ETS`, session
+  data lookup still needs a key, e.g., a user's id. Unlike session data, `assigns`
+  data fields only last a single request.
+
+  A typical use case would be for an authentication plug to look up a user by id
+  and keep the state of the user's credentials by storing them in `assigns`.
+  Other plugs will then also have access through the `assigns` storage. This is
+  an important point because the session data disappears on the next request.
+
+  To summarize: `assigns` is for storing data to be accessed during the current
+  request, and the session is for storing data to be accessed in subsequent
+  requests.
+
   ## Response fields
 
   These fields contain response information:
 
-    * `resp_body` - the response body, by default is an empty string. It is set
+    * `resp_body` - the response body is an empty string by default. It is set
       to nil after the response is sent, except for test connections. The response
-      charset used defaults to "utf-8".
+      charset defaults to "utf-8".
     * `resp_cookies` - the response cookies with their name and options
-    * `resp_headers` - the response headers as a list of tuples, by default `cache-control`
-      is set to `"max-age=0, private, must-revalidate"`. Note, response headers
-      are expected to have lowercase keys.
+    * `resp_headers` - the response headers as a list of tuples, `cache-control`
+      is set to `"max-age=0, private, must-revalidate"` by default.
+      Note: Use all lowercase for response headers.
     * `status` - the response status
 
   ## Connection fields
@@ -65,16 +101,16 @@ defmodule Plug.Conn do
     * `owner` - the Elixir process that owns the connection
     * `halted` - the boolean status on whether the pipeline was halted
     * `secret_key_base` - a secret key used to verify and encrypt cookies.
-      the field must be set manually whenever one of those features are used.
-      This data must be kept in the connection and never used directly, always
-      use `Plug.Crypto.KeyGenerator.generate/3` to derive keys from it
+      These features require manual field setup. Data must be kept in the
+      connection and never used directly. Always use `Plug.Crypto.KeyGenerator.generate/3`
+      to derive keys from it.
     * `state` - the connection state
 
   The connection state is used to track the connection lifecycle. It starts as
   `:unset` but is changed to `:set` (via `resp/3`) or `:set_chunked`
   (used only for `before_send` callbacks by `send_chunked/2`) or `:file`
-  (when invoked via `send_file/3`). Its final result is `:sent`, `:file` or
-  `:chunked` depending on the response model.
+  (when invoked via `send_file/3`). Its final result is `:sent`, `:file`, `:chunked`
+  or `:upgraded` depending on the response model.
 
   ## Private fields
 
@@ -85,36 +121,44 @@ defmodule Plug.Conn do
 
   ## Custom status codes
 
-  Plug allows status codes to be overridden or added in order to allow new codes
-  not directly specified by Plug or its adapters. Adding or overriding a status
-  code is done through the Mix configuration of the `:plug` application. For
-  example, to override the existing 404 reason phrase for the 404 status code
-  ("Not Found" by default) and add a new 998 status code, the following config
-  can be specified:
+  `Plug` allows status codes to be overridden or added and allow new codes not directly
+  specified by `Plug` or its adapters. The `:plug` application's Mix config can add or
+  override a status code.
+
+  For example, the config below overrides the default 404 reason phrase ("Not Found")
+  and adds a new 998 status code:
 
       config :plug, :statuses, %{
         404 => "Actually This Was Found",
         998 => "Not An RFC Status Code"
       }
 
-  As this configuration is Plug specific, Plug will need to be recompiled for
-  the changes to take place: this will not happen automatically as dependencies
-  are not automatically recompiled when their configuration changes. To recompile
-  Plug:
+  Dependency-specific config changes are not automatically recompiled. Recompile `Plug`
+  for the changes to take place. The command below recompiles `Plug`:
 
       mix deps.clean --build plug
 
-  The atoms that can be used in place of the status code in many functions are
-  inflected from the reason phrase of the status code. With the above
-  configuration, the following will all work:
+  A corresponding atom is inflected from each status code reason phrase. In many functions,
+  these atoms can stand in for the status code. For example, with the above configuration,
+  the following will work:
 
       put_status(conn, :not_found)                     # 404
       put_status(conn, :actually_this_was_found)       # 404
       put_status(conn, :not_an_rfc_status_code)        # 998
 
-  Even though 404 has been overridden, the `:not_found` atom can still be used
-  to set the status to 404 as well as the new atom `:actually_this_was_found`
-  inflected from the reason phrase "Actually This Was Found".
+  The `:not_found` atom can still be used to set the 404 status even though the 404 status code
+  reason phrase was overwritten. The new atom `:actually_this_was_found`, inflected from the
+  reason phrase "Actually This Was Found", can also be used to set the 404 status code.
+
+  ## Protocol Upgrades
+
+  `Plug.Conn.upgrade_adapter/3` provides basic support for protocol upgrades and facilitates
+  connection upgrades to protocols such as WebSockets. As the name suggests, this functionality
+  is adapter-dependent. Protocol upgrade functionality requires explicit coordination between
+  a `Plug` application and the underlying adapter.
+
+  `Plug` upgrade-related functionality only provides the possibility for the `Plug` application
+  to request protocol upgrades from the underlying adapter. See `upgrade_adapter/3` documentation.
   """
 
   @type adapter :: {module, term}
@@ -137,7 +181,7 @@ defmodule Plug.Conn do
   @type scheme :: :http | :https
   @type secret_key_base :: binary | nil
   @type segments :: [binary]
-  @type state :: :unset | :set | :set_chunked | :set_file | :file | :chunked | :sent
+  @type state :: :unset | :set | :set_chunked | :set_file | :file | :chunked | :sent | :upgraded
   @type status :: atom | int_status
 
   @type t :: %__MODULE__{
@@ -252,8 +296,8 @@ defmodule Plug.Conn do
   @doc """
   Assigns a value to a key in the connection.
 
-  The "assigns" storage is meant to be used to store values in the connection
-  so that other plugs in your plug pipeline can access them. The assigns storage
+  The `assigns` storage is meant to be used to store values in the connection
+  so that other plugs in your plug pipeline can access them. The `assigns` storage
   is a map.
 
   ## Examples
@@ -284,25 +328,20 @@ defmodule Plug.Conn do
       :world
 
   """
-  @spec merge_assigns(t, Keyword.t()) :: t
-  def merge_assigns(%Conn{assigns: assigns} = conn, keyword) when is_list(keyword) do
-    %{conn | assigns: Enum.into(keyword, assigns)}
+  @spec merge_assigns(t, Enumerable.t()) :: t
+  def merge_assigns(%Conn{assigns: assigns} = conn, new) do
+    %{conn | assigns: Enum.into(new, assigns)}
   end
 
   @doc false
-  @spec async_assign(t, atom, (() -> term)) :: t
+  @deprecated "Call assign + Task.async instead"
   def async_assign(%Conn{} = conn, key, fun) when is_atom(key) and is_function(fun, 0) do
-    IO.warn("Plug.Conn.async_assign/3 is deprecated, please call assign + Task.async instead")
     assign(conn, key, Task.async(fun))
   end
 
   @doc false
-  @spec await_assign(t, atom, timeout) :: t
+  @deprecated "Fetch the assign and call Task.await instead"
   def await_assign(%Conn{} = conn, key, timeout \\ 5000) when is_atom(key) do
-    IO.warn(
-      "Plug.Conn.await_assign/3 is deprecated, please fetch the assign and call Task.await instead"
-    )
-
     task = Map.fetch!(conn.assigns, key)
     assign(conn, key, Task.await(task, timeout))
   end
@@ -343,9 +382,9 @@ defmodule Plug.Conn do
       :world
 
   """
-  @spec merge_private(t, Keyword.t()) :: t
-  def merge_private(%Conn{private: private} = conn, keyword) when is_list(keyword) do
-    %{conn | private: Enum.into(keyword, private)}
+  @spec merge_private(t, Enumerable.t()) :: t
+  def merge_private(%Conn{private: private} = conn, new) do
+    %{conn | private: Enum.into(new, private)}
   end
 
   @doc """
@@ -355,7 +394,7 @@ defmodule Plug.Conn do
   atoms is available in `Plug.Conn.Status`.
 
   Raises a `Plug.Conn.AlreadySentError` if the connection has already been
-  `:sent` or `:chunked`.
+  `:sent`, `:chunked` or `:upgraded`.
 
   ## Examples
 
@@ -364,7 +403,10 @@ defmodule Plug.Conn do
 
   """
   @spec put_status(t, status) :: t
-  def put_status(%Conn{state: :sent}, _status), do: raise(AlreadySentError)
+  def put_status(%Conn{state: state}, _status) when state not in @unsent do
+    raise AlreadySentError
+  end
+
   def put_status(%Conn{} = conn, nil), do: %{conn | status: nil}
   def put_status(%Conn{} = conn, status), do: %{conn | status: Plug.Conn.Status.code(status)}
 
@@ -373,7 +415,7 @@ defmodule Plug.Conn do
 
   It expects the connection state to be `:set`, otherwise raises an
   `ArgumentError` for `:unset` connections or a `Plug.Conn.AlreadySentError` for
-  already `:sent` connections.
+  already `:sent`, `:chunked` or `:upgraded` connections.
 
   At the end sets the connection state to `:sent`.
 
@@ -416,7 +458,7 @@ defmodule Plug.Conn do
   If available, the file is sent directly over the socket using
   the operating system `sendfile` operation.
 
-  It expects a connection that has not been `:sent` yet and sets its
+  It expects a connection that has not been `:sent`, `:chunked` or `:upgraded` yet and sets its
   state to `:file` afterwards. Otherwise raises `Plug.Conn.AlreadySentError`.
 
   ## Examples
@@ -459,7 +501,7 @@ defmodule Plug.Conn do
   @doc """
   Sends the response headers as a chunked response.
 
-  It expects a connection that has not been `:sent` yet and sets its
+  It expects a connection that has not been `:sent` or `:upgraded` yet and sets its
   state to `:chunked` afterwards. Otherwise, raises `Plug.Conn.AlreadySentError`.
   After `send_chunked/2` is called, chunks can be sent to the client via
   the `chunk/2` function.
@@ -555,7 +597,7 @@ defmodule Plug.Conn do
   Sets the response to the given `status` and `body`.
 
   It sets the connection state to `:set` (if not already `:set`)
-  and raises `Plug.Conn.AlreadySentError` if it was already `:sent`.
+  and raises `Plug.Conn.AlreadySentError` if it was already `:sent`, `:chunked` or `:upgraded`.
 
   If you also want to send the response, use `send_resp/1` after this
   or use `send_resp/3`.
@@ -620,9 +662,15 @@ defmodule Plug.Conn do
     for {^key, value} <- headers, do: value
   end
 
-  @doc """
-  Adds a new request header (`key`) if not present, otherwise replaces the
-  previous value of that header with `value`.
+  @doc ~S"""
+  Prepends the list of headers to the connection request headers.
+
+  Similar to `put_req_header` this functions adds a new request header
+  (`key`) but rather than replacing the existing one it prepends another
+  header with the same `key`.
+
+  The "host" header will be overridden by `conn.host` and should not be set
+  with this method. Instead, do `%Plug.Conn{conn | host: value}`.
 
   Because header keys are case-insensitive in both HTTP/1.1 and HTTP/2,
   it is recommended for header keys to be in lowercase, to avoid sending
@@ -633,7 +681,87 @@ defmodule Plug.Conn do
   headers that aren't lowercase will raise a `Plug.Conn.InvalidHeaderError`.
 
   Raises a `Plug.Conn.AlreadySentError` if the connection has already been
-  `:sent` or `:chunked`.
+  `:sent`, `:chunked` or `:upgraded`.
+
+  ## Examples
+
+      Plug.Conn.prepend_req_headers(conn, [{"accept", "application/json"}])
+
+  """
+  @spec prepend_req_headers(t, headers) :: t
+  def prepend_req_headers(conn, headers)
+
+  def prepend_req_headers(%Conn{state: state}, _headers) when state not in @unsent do
+    raise AlreadySentError
+  end
+
+  def prepend_req_headers(%Conn{adapter: adapter, req_headers: req_headers} = conn, headers)
+      when is_list(headers) do
+    for {key, _value} <- headers do
+      validate_req_header!(adapter, key)
+    end
+
+    %{conn | req_headers: headers ++ req_headers}
+  end
+
+  @doc """
+  Merges a series of request headers into the connection.
+
+  The "host" header will be overridden by `conn.host` and should not be set
+  with this method. Instead, do `%Plug.Conn{conn | host: value}`.
+
+  Because header keys are case-insensitive in both HTTP/1.1 and HTTP/2,
+  it is recommended for header keys to be in lowercase, to avoid sending
+  duplicate keys in a request.
+  Additionally, requests with mixed-case headers served over HTTP/2 are not
+  considered valid by common clients, resulting in dropped requests.
+  As a convenience, when using the `Plug.Adapters.Conn.Test` adapter, any
+  headers that aren't lowercase will raise a `Plug.Conn.InvalidHeaderError`.
+
+  ## Example
+
+      Plug.Conn.merge_req_headers(conn, [{"accept", "text/plain"}, {"X-1337", "5P34K"}])
+
+  """
+  @spec merge_req_headers(t, Enum.t()) :: t
+  def merge_req_headers(conn, headers)
+
+  def merge_req_headers(%Conn{state: state}, _headers) when state not in @unsent do
+    raise AlreadySentError
+  end
+
+  def merge_req_headers(conn, headers) when headers == %{} do
+    conn
+  end
+
+  def merge_req_headers(%Conn{req_headers: current, adapter: adapter} = conn, headers) do
+    headers =
+      Enum.reduce(headers, current, fn {key, value}, acc
+                                       when is_binary(key) and is_binary(value) ->
+        validate_req_header!(adapter, key)
+        List.keystore(acc, key, 0, {key, value})
+      end)
+
+    %{conn | req_headers: headers}
+  end
+
+  @doc """
+  Adds a new request header (`key`) if not present, otherwise replaces the
+  previous value of that header with `value`.
+
+  The "host" header will be overridden by `conn.host` and should not be set
+  with this method. Instead, do `%Plug.Conn{conn | host: value}`.
+
+  Because header keys are case-insensitive in both HTTP/1.1 and HTTP/2,
+  it is recommended for header keys to be in lowercase, to avoid sending
+  duplicate keys in a request.
+  Additionally, requests with mixed-case headers served over HTTP/2 are not
+  considered valid by common clients, resulting in dropped requests.
+  As a convenience, when using the `Plug.Adapters.Conn.Test` adapter, any
+  headers that aren't lowercase will raise a `Plug.Conn.InvalidHeaderError`.
+
+  Raises a `Plug.Conn.AlreadySentError` if the connection has already been
+  `:sent`, `:chunked` or `:upgraded`.
 
   ## Examples
 
@@ -643,13 +771,13 @@ defmodule Plug.Conn do
   @spec put_req_header(t, binary, binary) :: t
   def put_req_header(conn, key, value)
 
-  def put_req_header(%Conn{state: :sent}, _key, _value) do
+  def put_req_header(%Conn{state: state}, _key, _value) when state not in @unsent do
     raise AlreadySentError
   end
 
   def put_req_header(%Conn{adapter: adapter, req_headers: headers} = conn, key, value)
       when is_binary(key) and is_binary(value) do
-    validate_header_key_if_test!(adapter, key)
+    validate_req_header!(adapter, key)
     %{conn | req_headers: List.keystore(headers, key, 0, {key, value})}
   end
 
@@ -657,7 +785,7 @@ defmodule Plug.Conn do
   Deletes a request header if present.
 
   Raises a `Plug.Conn.AlreadySentError` if the connection has already been
-  `:sent` or `:chunked`.
+  `:sent`, `:chunked` or `:upgraded`.
 
   ## Examples
 
@@ -667,11 +795,7 @@ defmodule Plug.Conn do
   @spec delete_req_header(t, binary) :: t
   def delete_req_header(conn, key)
 
-  def delete_req_header(%Conn{state: :sent}, _key) do
-    raise AlreadySentError
-  end
-
-  def delete_req_header(%Conn{state: :chunked}, _key) do
+  def delete_req_header(%Conn{state: state}, _key) when state not in @unsent do
     raise AlreadySentError
   end
 
@@ -685,7 +809,7 @@ defmodule Plug.Conn do
   value.
 
   Raises a `Plug.Conn.AlreadySentError` if the connection has already been
-  `:sent` or `:chunked`.
+  `:sent`, `:chunked` or `:upgraded`.
 
   Only the first value of the header `key` is updated if present.
 
@@ -702,11 +826,7 @@ defmodule Plug.Conn do
   @spec update_req_header(t, binary, binary, (binary -> binary)) :: t
   def update_req_header(conn, key, initial, fun)
 
-  def update_req_header(%Conn{state: :sent}, _key, _initial, _fun) do
-    raise AlreadySentError
-  end
-
-  def update_req_header(%Conn{state: :chunked}, _key, _initial, _fun) do
+  def update_req_header(%Conn{state: state}, _key, _initial, _fun) when state not in @unsent do
     raise AlreadySentError
   end
 
@@ -746,7 +866,7 @@ defmodule Plug.Conn do
   headers that aren't lowercase will raise a `Plug.Conn.InvalidHeaderError`.
 
   Raises a `Plug.Conn.AlreadySentError` if the connection has already been
-  `:sent` or `:chunked`.
+  `:sent`, `:chunked` or `:upgraded`.
 
   Raises a `Plug.Conn.InvalidHeaderError` if the header value contains control
   feed (`\r`) or newline (`\n`) characters.
@@ -757,18 +877,14 @@ defmodule Plug.Conn do
 
   """
   @spec put_resp_header(t, binary, binary) :: t
-  def put_resp_header(%Conn{state: :sent}, _key, _value) do
-    raise AlreadySentError
-  end
-
-  def put_resp_header(%Conn{state: :chunked}, _key, _value) do
+  def put_resp_header(%Conn{state: state}, _key, _value) when state not in @unsent do
     raise AlreadySentError
   end
 
   def put_resp_header(%Conn{adapter: adapter, resp_headers: headers} = conn, key, value)
       when is_binary(key) and is_binary(value) do
-    validate_header_key_if_test!(adapter, key)
-    validate_header_value!(key, value)
+    validate_header_key_normalized_if_test!(adapter, key)
+    validate_header_key_value!(key, value)
     %{conn | resp_headers: List.keystore(headers, key, 0, {key, value})}
   end
 
@@ -776,7 +892,7 @@ defmodule Plug.Conn do
   Prepends the list of headers to the connection response headers.
 
   Similar to `put_resp_header` this functions adds a new response header
-  (`key`) but rather then replacing the existing one it prepends another header
+  (`key`) but rather than replacing the existing one it prepends another header
   with the same `key`.
 
   It is recommended for header keys to be in lowercase, to avoid sending
@@ -787,7 +903,7 @@ defmodule Plug.Conn do
   headers that aren't lowercase will raise a `Plug.Conn.InvalidHeaderError`.
 
   Raises a `Plug.Conn.AlreadySentError` if the connection has already been
-  `:sent` or `:chunked`.
+  `:sent`, `:chunked` or `:upgraded`.
 
   Raises a `Plug.Conn.InvalidHeaderError` if the header value contains control
   feed (`\r`) or newline (`\n`) characters.
@@ -800,19 +916,15 @@ defmodule Plug.Conn do
   @spec prepend_resp_headers(t, headers) :: t
   def prepend_resp_headers(conn, headers)
 
-  def prepend_resp_headers(%Conn{state: :sent}, _headers) do
-    raise AlreadySentError
-  end
-
-  def prepend_resp_headers(%Conn{state: :chunked}, _headers) do
+  def prepend_resp_headers(%Conn{state: state}, _headers) when state not in @unsent do
     raise AlreadySentError
   end
 
   def prepend_resp_headers(%Conn{adapter: adapter, resp_headers: resp_headers} = conn, headers)
       when is_list(headers) do
     for {key, value} <- headers do
-      validate_header_key_if_test!(adapter, key)
-      validate_header_value!(key, value)
+      validate_header_key_normalized_if_test!(adapter, key)
+      validate_header_key_value!(key, value)
     end
 
     %{conn | resp_headers: headers ++ resp_headers}
@@ -836,11 +948,7 @@ defmodule Plug.Conn do
   @spec merge_resp_headers(t, Enum.t()) :: t
   def merge_resp_headers(conn, headers)
 
-  def merge_resp_headers(%Conn{state: :sent}, _headers) do
-    raise AlreadySentError
-  end
-
-  def merge_resp_headers(%Conn{state: :chunked}, _headers) do
+  def merge_resp_headers(%Conn{state: state}, _headers) when state not in @unsent do
     raise AlreadySentError
   end
 
@@ -852,8 +960,8 @@ defmodule Plug.Conn do
     headers =
       Enum.reduce(headers, current, fn {key, value}, acc
                                        when is_binary(key) and is_binary(value) ->
-        validate_header_key_if_test!(adapter, key)
-        validate_header_value!(key, value)
+        validate_header_key_normalized_if_test!(adapter, key)
+        validate_header_key_value!(key, value)
         List.keystore(acc, key, 0, {key, value})
       end)
 
@@ -864,7 +972,7 @@ defmodule Plug.Conn do
   Deletes a response header if present.
 
   Raises a `Plug.Conn.AlreadySentError` if the connection has already been
-  `:sent` or `:chunked`.
+  `:sent`, `:chunked` or `:upgraded`.
 
   ## Examples
 
@@ -872,11 +980,7 @@ defmodule Plug.Conn do
 
   """
   @spec delete_resp_header(t, binary) :: t
-  def delete_resp_header(%Conn{state: :sent}, _key) do
-    raise AlreadySentError
-  end
-
-  def delete_resp_header(%Conn{state: :chunked}, _key) do
+  def delete_resp_header(%Conn{state: state}, _key) when state not in @unsent do
     raise AlreadySentError
   end
 
@@ -890,7 +994,7 @@ defmodule Plug.Conn do
   value.
 
   Raises a `Plug.Conn.AlreadySentError` if the connection has already been
-  `:sent` or `:chunked`.
+  `:sent`, `:chunked` or `:upgraded`.
 
   Only the first value of the header `key` is updated if present.
 
@@ -907,11 +1011,7 @@ defmodule Plug.Conn do
   @spec update_resp_header(t, binary, binary, (binary -> binary)) :: t
   def update_resp_header(conn, key, initial, fun)
 
-  def update_resp_header(%Conn{state: :sent}, _key, _initial, _fun) do
-    raise AlreadySentError
-  end
-
-  def update_resp_header(%Conn{state: :chunked}, _key, _initial, _fun) do
+  def update_resp_header(%Conn{state: state}, _key, _initial, _fun) when state not in @unsent do
     raise AlreadySentError
   end
 
@@ -1017,7 +1117,7 @@ defmodule Plug.Conn do
   be allowed to pass for each read from the underlying socket.
 
   Because the request body can be of any size, reading the body will only
-  work once, as Plug will not cache the result of these operations. If you
+  work once, as `Plug` will not cache the result of these operations. If you
   need to access the body multiple times, it is your responsibility to store
   it. Finally keep in mind some plugs like `Plug.Parsers` may read the body,
   so the body may be unavailable after being accessed by such plugs.
@@ -1205,7 +1305,7 @@ defmodule Plug.Conn do
   end
 
   @doc """
-  Sends and informational response to the client.
+  Sends an informational response to the client.
 
   An informational response, such as an early hint, must happen prior to a response
   being sent. If an informational request is attempted after a response is sent then
@@ -1220,16 +1320,25 @@ defmodule Plug.Conn do
   `get_http_protocol/1` to retrieve the protocol and version.
   """
   @spec inform(t, status, Keyword.t()) :: t
-  def inform(%Conn{} = conn, status, headers \\ []) do
+  def inform(%Conn{adapter: {adapter, _}} = conn, status, headers \\ []) do
     status_code = Plug.Conn.Status.code(status)
-    adapter_inform(conn, status_code, headers)
-    conn
+
+    case adapter_inform(conn, status_code, headers) do
+      :ok ->
+        conn
+
+      {:ok, payload} ->
+        put_in(conn.adapter, {adapter, payload})
+
+      {:error, :not_supported} ->
+        conn
+    end
   end
 
   @doc """
   Sends an information response to a client but raises if the adapter does not support inform.
 
-  See `inform/1` for more information.
+  See `inform/3` for more information.
   """
   @spec inform!(t, status, Keyword.t()) :: t
   def inform!(%Conn{adapter: {adapter, _}} = conn, status, headers \\ []) do
@@ -1239,7 +1348,10 @@ defmodule Plug.Conn do
       :ok ->
         conn
 
-      _ ->
+      {:ok, payload} ->
+        put_in(conn.adapter, {adapter, payload})
+
+      {:error, :not_supported} ->
         raise "inform is not supported by #{inspect(adapter)}." <>
                 "You should either delete the call to `inform!/3` or switch to an " <>
                 "adapter that does support informational such as Plug.Cowboy"
@@ -1256,8 +1368,50 @@ defmodule Plug.Conn do
     raise AlreadySentError
   end
 
-  defp adapter_inform(%Conn{adapter: {adapter, payload}}, status, headers),
-    do: adapter.inform(payload, status, headers)
+  defp adapter_inform(%Conn{adapter: {adapter, payload}}, status, headers) do
+    adapter.inform(payload, status, headers)
+  end
+
+  @doc """
+  Request a protocol upgrade from the underlying adapter.
+
+  The precise semantics of an upgrade are deliberately left unspecified here in order to
+  support arbitrary upgrades, even to protocols which may not exist today. The primary intent of
+  this function is solely to allow an application to issue an upgrade request, not to manage how
+  a given protocol upgrade takes place or what APIs the application must support in order to serve
+  this updated protocol. For details in this regard, consult the documentation of the underlying
+  adapter (such a [Plug.Cowboy](https://hexdocs.pm/plug_cowboy) or [Bandit](https://hexdocs.pm/bandit)).
+
+  Takes an argument describing the requested upgrade (for example, `:websocket`), and an argument
+  which contains arbitrary data which the underlying adapter is expected to interpret in the
+  context of the requested upgrade.
+
+  If the upgrade is accepted by the adapter, the returned `Plug.Conn` will have a `state` of
+  `:upgraded`. This state is considered equivalently to a 'sent' state, and is subject to the same
+  limitation on subsequent mutating operations. Note that there is no guarantee or expectation
+  that the actual upgrade process has succeeded, or event that it is undertaken within this
+  function; it is entirely possible (likely, even) that the server will only do the actual upgrade
+  later in the connection lifecycle.
+
+  If the adapter does not support the requested protocol this function will raise an
+  `ArgumentError`. The underlying adapter may also signal errors in the provided arguments by
+  raising; consult the corresponding adapter documentation for details.
+  """
+  @spec upgrade_adapter(t, atom, term) :: t
+  def upgrade_adapter(%Conn{adapter: {adapter, payload}, state: state} = conn, protocol, args)
+      when state in @unsent do
+    case adapter.upgrade(payload, protocol, args) do
+      {:ok, payload} ->
+        %{conn | adapter: {adapter, payload}, state: :upgraded}
+
+      {:error, :not_supported} ->
+        raise ArgumentError, "upgrade to #{protocol} not supported by #{inspect(adapter)}"
+    end
+  end
+
+  def upgrade_adapter(_conn, _protocol, _args) do
+    raise AlreadySentError
+  end
 
   @doc """
   Pushes a resource to the client.
@@ -1272,6 +1426,7 @@ defmodule Plug.Conn do
   resource if your certificate is not trusted. In the case of Chrome this means
   a valid cert with a SAN. See https://www.chromestatus.com/feature/4981025180483584
   """
+  @deprecated "Most browsers and clients have removed push support"
   @spec push(t, String.t(), Keyword.t()) :: t
   def push(%Conn{} = conn, path, headers \\ []) do
     adapter_push(conn, path, headers)
@@ -1282,6 +1437,7 @@ defmodule Plug.Conn do
   Pushes a resource to the client but raises if the adapter
   does not support server push.
   """
+  @deprecated "Most browsers and clients have removed push support"
   @spec push!(t, String.t(), Keyword.t()) :: t
   def push!(%Conn{adapter: {adapter, _}} = conn, path, headers \\ []) do
     case adapter_push(conn, path, headers) do
@@ -1440,7 +1596,8 @@ defmodule Plug.Conn do
 
     * `:domain` - the domain the cookie applies to
     * `:max_age` - the cookie max-age, in seconds. Providing a value for this
-      option will set both the _max-age_ and _expires_ cookie attributes.
+      option will set both the _max-age_ and _expires_ cookie attributes. Unset
+      by default, which means the browser will default to a [session cookie](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies#define_the_lifetime_of_a_cookie).
     * `:path` - the path the cookie applies to
     * `:http_only` - when `false`, the cookie is accessible beyond HTTP
     * `:secure` - if the cookie must be sent only over https. Defaults
@@ -1539,15 +1696,17 @@ defmodule Plug.Conn do
   end
 
   @doc """
-  Returns session value for the given `key`. If `key`
-  is not set, `nil` is returned.
+  Returns session value for the given `key`.
+
+  Returns the `default` value if `key` does not exist.
+  If `default` is not provided, `nil` is used.
 
   The key can be a string or an atom, where atoms are
   automatically converted to strings.
   """
-  @spec get_session(t, String.t() | atom) :: any
-  def get_session(conn, key) when is_atom(key) or is_binary(key) do
-    conn |> get_session |> Map.get(session_key(key))
+  @spec get_session(t, String.t() | atom, any) :: any
+  def get_session(conn, key, default \\ nil) when is_atom(key) or is_binary(key) do
+    conn |> get_session |> Map.get(session_key(key), default)
   end
 
   @doc """
@@ -1661,9 +1820,9 @@ defmodule Plug.Conn do
   end
 
   @doc """
-  Halts the Plug pipeline by preventing further plugs downstream from being
+  Halts the `Plug` pipeline by preventing further plugs downstream from being
   invoked. See the docs for `Plug.Builder` for more information on halting a
-  Plug pipeline.
+  `Plug` pipeline.
   """
   @spec halt(t) :: t
   def halt(%Conn{} = conn) do
@@ -1713,11 +1872,13 @@ defmodule Plug.Conn do
   end
 
   defp verify_cookie!(cookie, _key) do
-    validate_header_value!("set-cookie", cookie)
+    validate_header_key_value!("set-cookie", cookie)
   end
 
-  defp update_cookies(%Conn{state: :sent}, _fun), do: raise(AlreadySentError)
-  defp update_cookies(%Conn{state: :chunked}, _fun), do: raise(AlreadySentError)
+  defp update_cookies(%Conn{state: state}, _fun) when state not in @unsent do
+    raise AlreadySentError
+  end
+
   defp update_cookies(%Conn{cookies: %Unfetched{}} = conn, _fun), do: conn
   defp update_cookies(%Conn{cookies: cookies} = conn, fun), do: %{conn | cookies: fun.(cookies)}
 
@@ -1733,29 +1894,48 @@ defmodule Plug.Conn do
     %{conn | private: private}
   end
 
-  defp validate_header_key_if_test!({Plug.Adapters.Test.Conn, _}, key) do
+  # host is an HTTP header, but if you store it in the main list it will be
+  # overridden by conn.host.
+  defp validate_req_header!(_adapter, "host") do
+    raise InvalidHeaderError,
+          "set the host header with %Plug.Conn{conn | host: \"example.com\"}"
+  end
+
+  defp validate_req_header!(adapter, key),
+    do: validate_header_key_normalized_if_test!(adapter, key)
+
+  defp validate_header_key_normalized_if_test!({Plug.Adapters.Test.Conn, _}, key) do
     if Application.fetch_env!(:plug, :validate_header_keys_during_test) and
-         not valid_header_key?(key) do
+         not normalized_header_key?(key) do
       raise InvalidHeaderError, "header key is not lowercase: " <> inspect(key)
     end
   end
 
-  defp validate_header_key_if_test!(_adapter, _key) do
+  defp validate_header_key_normalized_if_test!(_adapter, _key) do
     :ok
   end
 
-  # Any string containing an UPPERCASE char is not valid.
-  defp valid_header_key?(<<h, _::binary>>) when h in ?A..?Z, do: false
-  defp valid_header_key?(<<_, t::binary>>), do: valid_header_key?(t)
-  defp valid_header_key?(<<>>), do: true
-  defp valid_header_key?(_), do: false
+  # Any string containing an UPPERCASE char is not normalized.
+  defp normalized_header_key?(<<h, _::binary>>) when h in ?A..?Z, do: false
+  defp normalized_header_key?(<<_, t::binary>>), do: normalized_header_key?(t)
+  defp normalized_header_key?(<<>>), do: true
+  defp normalized_header_key?(_), do: false
 
-  defp validate_header_value!(key, value) do
-    case :binary.match(value, ["\n", "\r"]) do
+  defp validate_header_key_value!(key, value) do
+    case :binary.match(key, [":", "\n", "\r", "\x00"]) do
       {_, _} ->
         raise InvalidHeaderError,
-              "value for header #{inspect(key)} contains control feed (\\r) or newline " <>
-                "(\\n): #{inspect(value)}"
+              "header #{inspect(key)} contains a control feed (\\r), colon (:), newline (\\n) or null (\\x00)"
+
+      :nomatch ->
+        key
+    end
+
+    case :binary.match(value, ["\n", "\r", "\x00"]) do
+      {_, _} ->
+        raise InvalidHeaderError,
+              "value for header #{inspect(key)} contains control feed (\\r), newline (\\n) or null (\\x00)" <>
+                ": #{inspect(value)}"
 
       :nomatch ->
         value
@@ -1783,24 +1963,4 @@ defimpl Inspect, for: Plug.Conn do
 
   defp no_adapter_data(conn, %{limit: :infinity}), do: conn
   defp no_adapter_data(%{adapter: {adapter, _}} = conn, _), do: %{conn | adapter: {adapter, :...}}
-end
-
-defimpl Collectable, for: Plug.Conn do
-  def into(conn) do
-    IO.warn(
-      "using Enum.into/2 for conn is deprecated, use Plug.Conn.chunk/2 " <>
-        "and Enum.reduce_while/3 instead (see the Plug.Conn.chunk/2 docs for an example)"
-    )
-
-    fun = fn
-      conn, {:cont, x} ->
-        {:ok, conn} = Plug.Conn.chunk(conn, x)
-        conn
-
-      conn, _ ->
-        conn
-    end
-
-    {conn, fun}
-  end
 end

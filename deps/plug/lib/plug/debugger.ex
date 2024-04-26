@@ -187,8 +187,17 @@ defmodule Plug.Debugger do
     session = maybe_fetch_session(conn)
     params = maybe_fetch_query_params(conn)
     {title, message} = info(kind, reason)
-    style = Enum.into(opts[:style] || [], @default_style)
-    banner = banner(conn, status, kind, reason, stack, opts)
+
+    assigns = [
+      conn: conn,
+      title: title,
+      formatted: Exception.format(kind, reason, stack),
+      session: session,
+      params: params,
+      frames: frames(:md, stack, opts)
+    ]
+
+    markdown = template_markdown(assigns)
 
     if accepts_html?(get_req_header(conn, "accept")) do
       conn =
@@ -198,35 +207,25 @@ defmodule Plug.Debugger do
 
       actions = encoded_actions_for_exception(reason, conn)
       last_path = actions_redirect_path(conn)
+      style = Enum.into(opts[:style] || [], @default_style)
+      banner = banner(conn, status, kind, reason, stack, opts)
 
-      assigns = [
-        conn: conn,
-        frames: frames(stack, opts),
-        title: title,
-        message: message,
-        session: session,
-        params: params,
-        style: style,
-        banner: banner,
-        actions: actions,
-        last_path: last_path
-      ]
+      assigns =
+        Keyword.merge(assigns,
+          conn: conn,
+          message: message,
+          markdown: markdown,
+          style: style,
+          banner: banner,
+          actions: actions,
+          frames: frames(:html, stack, opts),
+          last_path: last_path
+        )
 
       send_resp(conn, status, template_html(assigns))
     else
-      {reason, stack} = Exception.blame(kind, reason, stack)
-
       conn = put_resp_content_type(conn, "text/markdown")
-
-      assigns = [
-        conn: conn,
-        title: title,
-        formatted: Exception.format(kind, reason, stack),
-        session: session,
-        params: params
-      ]
-
-      send_resp(conn, status, template_markdown(assigns))
+      send_resp(conn, status, markdown)
     end
   end
 
@@ -248,14 +247,7 @@ defmodule Plug.Debugger do
 
   @doc false
   def encoded_actions_for_exception(exception, conn) do
-    exception_implementation = Plug.Exception.impl_for(exception)
-
-    implements_actions? =
-      Code.ensure_loaded?(exception_implementation) &&
-        function_exported?(exception_implementation, :actions, 1)
-
-    # TODO: Remove implements_actions? in future Plug versions
-    if implements_actions? && conn.secret_key_base do
+    if conn.secret_key_base do
       actions = Plug.Exception.actions(exception)
 
       Enum.map(actions, fn %{label: label, handler: handler} ->
@@ -267,8 +259,16 @@ defmodule Plug.Debugger do
     end
   end
 
-  defp actions_redirect_path(%Plug.Conn{method: "GET", request_path: request_path}),
-    do: request_path
+  defp actions_redirect_path(%Plug.Conn{
+         method: "GET",
+         request_path: request_path,
+         query_string: query_string
+       }) do
+    case query_string do
+      "" -> request_path
+      query_string -> "#{request_path}?#{query_string}"
+    end
+  end
 
   defp actions_redirect_path(conn) do
     case get_req_header(conn, "referer") do
@@ -308,21 +308,21 @@ defmodule Plug.Debugger do
   defp info(:throw, thrown), do: {"unhandled throw", inspect(thrown)}
   defp info(:exit, reason), do: {"unhandled exit", Exception.format_exit(reason)}
 
-  defp frames(stacktrace, opts) do
+  defp frames(renderer, stacktrace, opts) do
     app = opts[:otp_app]
     editor = System.get_env("PLUG_EDITOR")
 
     stacktrace
-    |> Enum.map_reduce(0, &each_frame(&1, &2, app, editor))
+    |> Enum.map_reduce(0, &each_frame(&1, &2, renderer, app, editor))
     |> elem(0)
   end
 
-  defp each_frame(entry, index, root, editor) do
+  defp each_frame(entry, index, renderer, root, editor) do
     {module, info, location, app, fun, arity, args} = get_entry(entry)
     {file, line} = {to_string(location[:file] || "nofile"), location[:line]}
 
     doc = module && get_doc(module, fun, arity, app)
-    clauses = module && get_clauses(module, fun, args)
+    clauses = module && get_clauses(renderer, module, fun, args)
     source = get_source(app, module, file)
     context = get_context(root, app)
     snippet = get_snippet(source, line)
@@ -402,21 +402,21 @@ defmodule Plug.Debugger do
   defp has_doc_matcher?(name, arity) do
     &match?(
       {{kind, ^name, ^arity}, _, _, doc, _}
-      when kind in [:function, :macro] and doc != :hidden,
+      when kind in [:function, :macro] and doc != :hidden and doc != :none,
       &1
     )
   end
 
-  defp get_clauses(module, fun, args) do
+  defp get_clauses(renderer, module, fun, args) do
     with true <- is_list(args),
          {:ok, kind, clauses} <- Exception.blame_mfa(module, fun, args) do
       top_10 =
         clauses
         |> Enum.take(10)
         |> Enum.map(fn {args, guards} ->
-          args = Enum.map_join(args, ", ", &blame_match/1)
+          args = Enum.map_join(args, ", ", &blame_match(renderer, &1))
           base = "#{kind} #{fun}(#{args})"
-          Enum.reduce(guards, base, &"#{&2} when #{blame_clause(&1)}")
+          Enum.reduce(guards, base, &"#{&2} when #{blame_clause(renderer, &1)}")
         end)
 
       {length(top_10), length(clauses), top_10}
@@ -425,16 +425,19 @@ defmodule Plug.Debugger do
     end
   end
 
-  defp blame_match(%{match?: true, node: node}),
+  defp blame_match(:html, %{match?: true, node: node}),
     do: ~s(<i class="green">) <> h(Macro.to_string(node)) <> "</i>"
 
-  defp blame_match(%{match?: false, node: node}),
+  defp blame_match(:html, %{match?: false, node: node}),
     do: ~s(<i class="red">) <> h(Macro.to_string(node)) <> "</i>"
 
-  defp blame_clause({op, _, [left, right]}),
-    do: blame_clause(left) <> " #{op} " <> blame_clause(right)
+  defp blame_match(_md, %{node: node}),
+    do: h(Macro.to_string(node))
 
-  defp blame_clause(node), do: blame_match(node)
+  defp blame_clause(renderer, {op, _, [left, right]}),
+    do: blame_clause(renderer, left) <> " #{op} " <> blame_clause(renderer, right)
+
+  defp blame_clause(renderer, node), do: blame_match(renderer, node)
 
   defp get_context(app, app) when app != nil, do: :app
   defp get_context(_app1, _app2), do: :all
