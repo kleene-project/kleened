@@ -86,9 +86,6 @@ defmodule Kleened.Core.ImageCreate do
   defp create_image_using_fetch_automatically(receiver, config) do
     {"FreeBSD", version, arch} = detect_freebsd_version()
 
-    msg = "FreeBSD-#{version} #{arch} detected."
-    send_msg(receiver, {:info, msg})
-
     tag =
       case config do
         %Config{autotag: true} -> "FreeBSD-#{version}"
@@ -98,7 +95,7 @@ defmodule Kleened.Core.ImageCreate do
     url = version2url(version, arch, "base.txz")
     image = create_image_using_fetch_(receiver, %Config{config | url: url, tag: tag})
 
-    msg = "Created image from the automatically detected version: FreeBSD-#{version} #{arch}."
+    msg = "Created image from the automatically detected version: FreeBSD-#{version} #{arch}.\n"
     send_msg(receiver, {:info, msg})
     send_msg(receiver, {:ok, image})
   end
@@ -106,16 +103,13 @@ defmodule Kleened.Core.ImageCreate do
   defp create_image_using_fetch_(receiver, %Config{url: url, tag: tag} = config) do
     image_id = Utils.uuid()
     image_dataset = Const.image_dataset(image_id)
-    tar_archive = Path.join("/", [Kleened.Core.Config.get("kleene_root"), "base.txz"])
+    tar_archive = Path.join("/", Kleened.Core.Config.get("kleene_root")) |> Path.join("base.txz")
 
     # Fetch tar-archive and extract it to the new image dataset
     fetch_file_from_url(url, tar_archive, receiver)
 
-    send_msg(
-      receiver,
-      {:info, "succesfully fetched base system.\nUnpacking contents and creating image..."}
-    )
-
+    send_msg(receiver, {:info, "Succesfully fetched base system.\n"})
+    send_msg(receiver, {:info, "Unpacking contents and creating image...\n"})
     create_dataset(image_dataset, receiver)
     image_mountpoint = ZFS.mountpoint(image_dataset)
     untar_file(tar_archive, image_mountpoint, receiver)
@@ -163,10 +157,10 @@ defmodule Kleened.Core.ImageCreate do
 
     case process_tar_messages(port, receiver, 0, 0) do
       :ok ->
-        send_msg(receiver, {:info, "succesfully extracted binaries - creating image"})
+        send_msg(receiver, {:info, "Succesfully extracted binaries, creating image...\n"})
 
       :error ->
-        exit(receiver, "could not extract tar archive")
+        exit(receiver, "could not extract tar archive\n")
     end
   end
 
@@ -200,7 +194,7 @@ defmodule Kleened.Core.ImageCreate do
             )
 
           _ ->
-            send_msg(receiver, {:info, "extracted #{files_processed} files..."})
+            send_msg(receiver, {:info, "Extracted #{files_processed} files...\n"})
 
             process_tar_messages(
               port,
@@ -284,7 +278,7 @@ defmodule Kleened.Core.ImageCreate do
         copy_host_file(receiver, source, dest)
 
       {:error, :enoent} ->
-        send_msg(receiver, {:info, "/etc/localtime not found on host, skipping..."})
+        send_msg(receiver, {:info, "/etc/localtime not found on host, skipping...\n"})
     end
   end
 
