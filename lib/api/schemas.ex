@@ -475,15 +475,6 @@ defmodule Kleened.API.Schemas do
           type: :string,
           default: ""
         },
-        force: %Schema{
-          description: """
-          **`fetch-auto` method only**
-
-          Ignore any discrepancies in the output of `uname(1)` when determining the FreeBSD version.
-          """,
-          type: :boolean,
-          default: false
-        },
         autotag: %Schema{
           description: """
           **`fetch-auto` method only**

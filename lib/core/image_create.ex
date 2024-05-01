@@ -78,15 +78,16 @@ defmodule Kleened.Core.ImageCreate do
     send_msg(receiver, {:ok, image})
   end
 
-  defp create_image_using_fetch_automatically(receiver, %Config{force: force} = config) do
-    {"FreeBSD", version, arch} = detect_freebsd_version(force, receiver)
+  defp create_image_using_fetch(receiver, config) do
+    image = create_image_using_fetch_(receiver, config)
+    send_msg(receiver, {:ok, image})
+  end
 
-    send_msg(
-      receiver,
-      {:info, "FreeBSD-#{version} #{arch} detected."}
-    )
+  defp create_image_using_fetch_automatically(receiver, config) do
+    {"FreeBSD", version, arch} = detect_freebsd_version()
 
-    url = version2url(version, arch, "base.txz")
+    msg = "FreeBSD-#{version} #{arch} detected."
+    send_msg(receiver, {:info, msg})
 
     tag =
       case config do
@@ -94,10 +95,15 @@ defmodule Kleened.Core.ImageCreate do
         %Config{autotag: false} -> config.tag
       end
 
-    create_image_using_fetch(receiver, %Config{config | url: url, tag: tag})
+    url = version2url(version, arch, "base.txz")
+    image = create_image_using_fetch_(receiver, %Config{config | url: url, tag: tag})
+
+    msg = "Created image from the automatically detected version: FreeBSD-#{version} #{arch}."
+    send_msg(receiver, {:info, msg})
+    send_msg(receiver, {:ok, image})
   end
 
-  defp create_image_using_fetch(receiver, %Config{url: url, tag: tag} = config) do
+  defp create_image_using_fetch_(receiver, %Config{url: url, tag: tag} = config) do
     image_id = Utils.uuid()
     image_dataset = Const.image_dataset(image_id)
     tar_archive = Path.join("/", [Kleened.Core.Config.get("kleene_root"), "base.txz"])
@@ -119,42 +125,15 @@ defmodule Kleened.Core.ImageCreate do
     create_snapshot(image_dataset <> Const.image_snapshot(), receiver)
 
     image = create_image_metadata(image_id, image_dataset, tag)
-    send_msg(receiver, {:ok, image})
     File.rm(tar_archive)
+    image
   end
 
-  @spec detect_freebsd_version(boolean(), pid()) ::
-          {:probably_local | :probably_not_local, freebsd_version()} | {:error, String.t()}
-  defp detect_freebsd_version(force, receiver) do
+  @spec detect_freebsd_version() :: freebsd_version()
+  defp detect_freebsd_version() do
     {output, 0} = OS.cmd(["/usr/bin/uname", "-rms"])
     [operating_system, verison, architecture] = decode_uname_output(output)
-
-    detection = detect_local_build()
-
-    case {force, detection} do
-      {false, :probably_local} ->
-        exit(
-          receiver,
-          "seems like the host operating system have been builded locally from source"
-        )
-
-      _ ->
-        :ok
-    end
-
     {operating_system, verison, architecture}
-  end
-
-  @spec detect_local_build() :: :probably_local | :probably_not_local
-  defp detect_local_build() do
-    {output, 0} = OS.cmd(["/usr/bin/uname", "-v"])
-    lines = decode_uname_output(output)
-    {source_root, _} = List.pop_at(lines, -1)
-
-    case source_root do
-      <<"root@", _::binary>> -> :probably_local
-      _ -> :probably_not_local
-    end
   end
 
   defp version2url(version, arch, filename) do
