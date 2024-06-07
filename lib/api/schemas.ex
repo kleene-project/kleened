@@ -1,6 +1,63 @@
 defmodule Kleened.API.Schemas do
   require OpenApiSpex
   alias OpenApiSpex.Schema
+  alias OpenApiSpex.Reference
+
+  defmodule DeploymentConfig do
+    OpenApiSpex.schema(%{
+      summary: "Deployment specification",
+      type: :object,
+      properties: %{
+        images: %Schema{
+          description: "Deployment images.",
+          type: :array,
+          items: %Schema{
+            type: :object,
+            anyOf: [
+              %Reference{"$ref": "#/components/schemas/ImageBuildConfig"},
+              %Reference{"$ref": "#/components/schemas/ImageCreateConfig"}
+            ]
+          },
+          default: []
+        },
+        volumes: %Schema{
+          description: "Deployment volumes",
+          type: :array,
+          items: Kleened.API.Schemas.VolumeConfig,
+          default: []
+        },
+        networks: %Schema{
+          description: "Deployment networks",
+          type: :array,
+          items: Kleened.API.Schemas.NetworkConfig,
+          default: []
+        },
+        containers: %Schema{
+          description: "Deployment containers",
+          type: :array,
+          items: %Schema{
+            type: :object,
+            allOf: [
+              # A container is defined by a ContainerConfig (which includes mounpoints)
+              # + a list of endpoints (that can refer to networks defined in the network section)
+              %Reference{"$ref": "#/components/schemas/ContainerConfig"},
+              %Schema{
+                type: :object,
+                properties: %{
+                  endpoints: %Schema{
+                    description: "Network endpoints for the container.",
+                    type: :array,
+                    items: %Reference{"$ref": "#/components/schemas/EndPointConfig"}
+                  }
+                }
+              }
+            ]
+          },
+          default: []
+        }
+      }
+    })
+  end
 
   defmodule ContainerConfig do
     OpenApiSpex.schema(%{
@@ -399,7 +456,7 @@ defmodule Kleened.API.Schemas do
           default: %{},
           example: %{"USERNAME" => "Stephen", "JAIL_MGMT_ENGINE" => "kleene"}
         },
-        container_config: %OpenApiSpex.Reference{"$ref": "#/components/schemas/ContainerConfig"},
+        container_config: %Reference{"$ref": "#/components/schemas/ContainerConfig"},
         networks: %Schema{
           description:
             "List of endpoint-configs for the networks that the build container will be connected to.",
@@ -993,7 +1050,7 @@ defmodule Kleened.API.Schemas do
           Source used for the mount. Depends on `method`:
 
           - If `method` is `"volume"` then `source` should be a volume name
-          - If `method`is `"nullfs"` then `source` should be an absolute path on the host
+          - If `method` is `"nullfs"` then `source` should be an absolute path on the host
           """
         },
         read_only: %Schema{type: :boolean, description: "Whether this mountpoint is read-only."}

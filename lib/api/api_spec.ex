@@ -12,6 +12,10 @@ defmodule Kleened.API.Spec do
         version: "0.0.1"
       },
       paths: %{
+        "/deployment/diff" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :post, plug: API.Deployment.Diff, opts: []}
+          ]),
         "/containers/list" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :get, plug: API.Container.List, opts: []}

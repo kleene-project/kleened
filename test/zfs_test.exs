@@ -23,7 +23,7 @@ defmodule ZFSTest do
     create(zroot_test)
     image = MetaData.get_image("FreeBSD:testing")
 
-    assert {_, 0} = clone(image.dataset <> Const.image_snapshot(), zroot_test <> "/zfs_test")
+    assert {_, 0} = clone(Const.image_snapshot(image.dataset), zroot_test <> "/zfs_test")
     assert {_, 0} = snapshot(zroot_test <> "/zfs_test@lol")
     assert {_, 0} = destroy(zroot_test <> "/zfs_test@lol")
     assert {_, 0} = destroy(zroot_test <> "/zfs_test")

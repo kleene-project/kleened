@@ -49,7 +49,7 @@ defmodule Kleened.Core.ImageCreate do
     copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
     copy_localtime_if_enabled(receiver, image_mountpoint, config)
     freebsd_update(receiver, image_mountpoint, config)
-    create_snapshot(image_dataset <> Const.image_snapshot(), receiver)
+    create_snapshot(Const.image_snapshot(image_dataset), receiver)
     send_msg(receiver, {:ok, image})
     ZFS.destroy(snapshot_parent)
   end
@@ -74,7 +74,7 @@ defmodule Kleened.Core.ImageCreate do
     copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
     copy_localtime_if_enabled(receiver, image_mountpoint, config)
     freebsd_update(receiver, image_mountpoint, config)
-    create_snapshot(image_dataset <> Const.image_snapshot(), receiver)
+    create_snapshot(Const.image_snapshot(image_dataset), receiver)
     send_msg(receiver, {:ok, image})
   end
 
@@ -116,7 +116,7 @@ defmodule Kleened.Core.ImageCreate do
     copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
     copy_localtime_if_enabled(receiver, image_mountpoint, config)
     freebsd_update(receiver, image_mountpoint, config)
-    create_snapshot(image_dataset <> Const.image_snapshot(), receiver)
+    create_snapshot(Const.image_snapshot(image_dataset), receiver)
 
     image = create_image_metadata(image_id, image_dataset, tag)
     File.rm(tar_archive)

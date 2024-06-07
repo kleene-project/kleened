@@ -1,6 +1,14 @@
 defmodule Kleened.Core.Const do
-  def image_snapshot() do
-    "@image"
+  def image_snapshot(dataset, "") do
+    "#{dataset}@image"
+  end
+
+  def image_snapshot(dataset, snapshot) do
+    "#{dataset}#{snapshot}"
+  end
+
+  def image_snapshot(dataset) do
+    "#{dataset}@image"
   end
 
   def image_dataset(image_id) do

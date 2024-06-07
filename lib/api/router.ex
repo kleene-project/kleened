@@ -9,6 +9,9 @@ defmodule Kleened.API.Router do
   plug(:match)
   plug(:dispatch)
 
+  # Deployment:
+  post("/deployment/diff", to: API.Deployment.Diff)
+
   # Containers:
   get("/containers/list", to: API.Container.List)
   post("/containers/create", to: API.Container.Create)

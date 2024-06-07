@@ -87,6 +87,26 @@ defmodule TestHelper do
     |> Enum.map(fn image -> Image.remove(image.id) end)
   end
 
+  def deployment_diff(config) do
+    api_spec = Kleened.API.Spec.spec()
+
+    response =
+      conn(:post, "/deployment/diff", config)
+      |> put_req_header("content-type", "application/json")
+      |> Router.call(@opts)
+
+    case validate_response(api_spec, response, %{
+           201 => :json,
+           404 => "ErrorResponse"
+         }) do
+      %{message: error_msg} ->
+        {:error, error_msg}
+
+      json_output ->
+        {:ok, json_output}
+    end
+  end
+
   def container_valid_run(config) do
     {container_id, exec_config, expected_exit} = prepare_container_run(config)
 
@@ -803,7 +823,7 @@ defmodule TestHelper do
         "MAIL=/var/mail/root",
         "PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin",
         "PWD=/root",
-        "TERM=screen",
+        "TERM=xterm-256color",
         "USER=root",
         "HOME=/root",
         "SHELL=/bin/csh",
@@ -823,6 +843,9 @@ defmodule TestHelper do
     response_spec = Map.get(statuscodes_to_specs, status)
 
     cond do
+      response_spec == :json ->
+        resp_body
+
       response_spec == nil ->
         assert false
 

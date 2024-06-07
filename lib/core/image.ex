@@ -566,8 +566,7 @@ defmodule Kleened.Core.Image do
     image_dataset = Const.image_dataset(image_id)
     {_, 0} = Kleened.Core.ZFS.rename(container_dataset, image_dataset)
 
-    image_snapshot = image_dataset <> Const.image_snapshot()
-    {_, 0} = Kleened.Core.ZFS.snapshot(image_snapshot)
+    {_, 0} = Kleened.Core.ZFS.snapshot(Const.image_snapshot(image_dataset))
 
     :ok
   end
