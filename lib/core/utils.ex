@@ -26,6 +26,12 @@ defmodule Kleened.Core.Utils do
     DateTime.to_iso8601(DateTime.utc_now())
   end
 
+  def normalize_nametag(nametag) do
+    # Converts 'Name' to 'Name:latest'
+    {name, tag} = decode_tagname(nametag)
+    "#{name}:#{tag}"
+  end
+
   def decode_tagname(nametag) do
     case String.split(nametag, ":") do
       [""] ->
