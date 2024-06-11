@@ -1,17 +1,25 @@
 defmodule Kleened.Core.Deployment do
-  alias Kleened.Core.{MetaData, Utils, ZFS, Const}
+  alias Kleened.Core.{MetaData, Utils, ZFS, Const, Config}
+  alias Kleened.API.Schemas
   require Logger
 
+  @spec diff(%Schemas.DeploymentConfig{}) :: {:ok, %{}} | {:error, String.t()}
   def diff(deploy_spec) do
     Logger.debug("Creating diff on spec #{inspect(deploy_spec)}")
 
     containers = MetaData.list_containers()
+    container_result = diff_objects(:container, deploy_spec.containers, containers)
 
-    container_result =
-      diff_objects(:container, deploy_spec.containers, containers)
+    images = MetaData.list_images()
+    image_result = diff_objects(:image, deploy_spec.images, images)
+
+    networks = MetaData.list_networks()
+    network_result = diff_objects(:network, deploy_spec.networks, networks)
 
     result = %{
-      containers: container_result
+      containers: container_result,
+      images: image_result,
+      networks: network_result
     }
 
     Logger.info("Diff result: #{inspect(result)}")
@@ -61,62 +69,19 @@ defmodule Kleened.Core.Deployment do
     |> Map.new()
   end
 
-  defp diff_object(:container, {name, spec_object, host_object}) do
-    host_object = Map.from_struct(host_object)
+  defp diff_object(:container, {name, container_spec, container}) do
+    container = Map.from_struct(container)
 
-    {image_ident, spec_object} = Map.pop(spec_object, :image)
-    {image_name, potential_snapshot} = Utils.decode_snapshot(image_ident)
-
-    {spec_object, image_result} =
-      case MetaData.get_image(image_name) do
-        :not_found ->
-          Logger.debug("image '#{image_name}' not found")
-          {spec_object, %{type: :non_existing_image, image_name: image_name}}
-
-        image ->
-          case ZFS.info(Const.image_snapshot(image.dataset, potential_snapshot)) do
-            %{:exists? => true} ->
-              spec_object = Map.put(spec_object, :image_id, image.id)
-
-              spec_object =
-                case spec_object.cmd do
-                  [] -> %{spec_object | cmd: image.cmd}
-                  _ -> spec_object
-                end
-
-              spec_object =
-                case spec_object.user do
-                  "" -> %{spec_object | user: image.user}
-                  _ -> spec_object
-                end
-
-              {spec_object, []}
-
-            %{:exists? => false} ->
-              Logger.debug("image snapshot for '#{image_ident}' could not be found")
-              {spec_object, %{type: :non_existing_image_snapshot}}
-          end
-      end
-
-    # Handle endpoints
-    endpoints = MetaData.get_endpoints_from_container(host_object.id)
-    {endpoints_spec, spec_object} = Map.pop(spec_object, :endpoints)
-    ident2endpoints = endpoints |> Enum.map(&{{&1.container_id, &1.network_id}, &1}) |> Map.new()
-    endpoints_result = diff_endpoints(endpoints_spec, host_object.id, ident2endpoints, [])
+    {image_result, container_spec} = verify_container_image(container_spec)
+    {endpoints_result, container_spec} = diff_endpoints(container_spec, container)
 
     # Handle mounts
-    mountpoints = MetaData.get_mounts_from_container(host_object.id)
-    {mountpoints_spec, spec_object} = Map.pop(spec_object, :mounts)
-
-    ident2mounts =
-      mountpoints |> Enum.map(&{{"#{&1.type}:#{&1.source}", &1.destination}, &1}) |> Map.new()
-
-    mountpoints_result = diff_mountpoints(mountpoints_spec, ident2mounts, [])
+    {mountpoints_result, container_spec} = diff_mountpoints(container_spec, container)
 
     # Handle remaining properties
     result_rest =
-      Map.keys(spec_object)
-      |> Enum.map(&diff_object_property(:container, &1, spec_object[&1], host_object[&1]))
+      Map.keys(container_spec)
+      |> Enum.map(&diff_object_property(:container, &1, container_spec[&1], container[&1]))
 
     # Remove all the valid object properties
     result =
@@ -125,25 +90,128 @@ defmodule Kleened.Core.Deployment do
     {name, result}
   end
 
-  defp diff_object(object_type, {name, spec_object_config, host_object}) do
+  # Images that are created
+  defp diff_object(
+         :image,
+         {name, %{method: method, zfs_dataset: dataset_spec} = image_spec, image}
+       ) do
+    # Making a few simple checks:
+    # - If there is a origin dataset from which the image was cloned
+    # - Checking that the instructions property is empty, meaning it is a base image
+    # Consider expanding this to include env == [], user == "root" and cmd == []
+    result_instructions =
+      case image.instructions == [] do
+        true -> []
+        false -> %{type: :base_image_nonempty_instructions, image: image_spec.tag}
+      end
+
+    dataset_info = ZFS.info(image.dataset)
+
+    parent_dataset =
+      case dataset_info.parent_snapshot do
+        nil ->
+          nil
+
+        snapshot ->
+          [dataset, _snap] = String.split(snapshot, "@")
+          dataset
+      end
+
+    result_dataset =
+      case {method, parent_dataset} do
+        {"zfs-clone", ^dataset_spec} ->
+          []
+
+        {"zfs-clone", dataset_origin} ->
+          %{type: :base_image_wrong_dataset_origin, image: image_spec.tag, origin: dataset_origin}
+
+        {_, dataset_origin} when dataset_origin != nil ->
+          %{type: :base_image_wrong_dataset_origin, image: image_spec.tag, origin: dataset_origin}
+
+        _ ->
+          []
+      end
+
+    {name, List.flatten([result_instructions, result_dataset])}
+  end
+
+  # Images that are being built
+  defp diff_object(:image, {name, _spec_object, _host_object}) do
+    # There is nothing we can check, only that it is not a clone. But that doesn't really matter.
+    # Requires proper context-handling and/or that the config is saved in the image metadata
+    {name, []}
+  end
+
+  defp diff_object(object_type, {name, spec_object, host_object}) do
     host_object = Map.from_struct(host_object)
+    spec_object = Map.from_struct(spec_object)
 
     result =
-      Map.keys(spec_object_config)
-      |> Enum.map(&diff_object_property(object_type, &1, spec_object_config[&1], host_object[&1]))
+      Map.keys(spec_object)
+      |> Enum.map(&diff_object_property(object_type, &1, spec_object[&1], host_object[&1]))
+      |> List.flatten()
 
     {name, result}
   end
 
+  defp object_id(:image, %Schemas.Image{name: name, tag: tag}) do
+    "#{name}:#{tag}"
+  end
+
   defp object_id(:image, image) do
-    # FIXME: Incorrect, does not work with Image schema.
-    Logger.warning("Not implemented #{inspect(image)}")
-    image.tag
+    Utils.normalize_nametag(image.tag)
   end
 
   defp object_id(object_type, object)
        when object_type == :container or object_type == :network or object_type == :volume do
     object.name
+  end
+
+  defp verify_container_image(container_spec) do
+    {image_ident, container_spec} = Map.pop(container_spec, :image)
+    {image_name, potential_snapshot} = Utils.decode_snapshot(image_ident)
+
+    case MetaData.get_image(image_name) do
+      :not_found ->
+        Logger.debug("image '#{image_name}' not found")
+        {%{type: :non_existing_image, image_name: image_name}, container_spec}
+
+      image ->
+        case ZFS.info(Const.image_snapshot(image.dataset, potential_snapshot)) do
+          %{:exists? => true} ->
+            container_spec = Map.put(container_spec, :image_id, image.id)
+
+            container_spec =
+              case container_spec.cmd do
+                [] -> %{container_spec | cmd: image.cmd}
+                _ -> container_spec
+              end
+
+            container_spec =
+              case container_spec.user do
+                "" -> %{container_spec | user: image.user}
+                _ -> container_spec
+              end
+
+            {[], container_spec}
+
+          %{:exists? => false} ->
+            Logger.debug("image snapshot for '#{image_ident}' could not be found")
+            {%{type: :non_existing_image_snapshot}, container_spec}
+        end
+    end
+  end
+
+  defp diff_endpoints(container_spec, container) do
+    {endpoints_spec, container_spec} = Map.pop(container_spec, :endpoints)
+
+    ident2endpoints =
+      MetaData.get_endpoints_from_container(container.id)
+      |> Enum.map(&{{&1.container_id, &1.network_id}, &1})
+      |> Map.new()
+
+    result = diff_endpoints(endpoints_spec, container.id, ident2endpoints, [])
+    {result, container_spec}
   end
 
   defp diff_endpoints([endpoint_spec | rest], container_id, ident2endpoints, result) do
@@ -196,8 +264,16 @@ defmodule Kleened.Core.Deployment do
     [result | interim_results]
   end
 
-  defp diff_mountpoints([], _ident2mounts, results) do
-    List.flatten(results)
+  defp diff_mountpoints(container_spec, container) do
+    {mountpoints_spec, container_spec} = Map.pop(container_spec, :mounts)
+
+    ident2mounts =
+      MetaData.get_mounts_from_container(container.id)
+      |> Enum.map(&{{"#{&1.type}:#{&1.source}", &1.destination}, &1})
+      |> Map.new()
+
+    mountpoints_result = diff_mountpoints(mountpoints_spec, ident2mounts, [])
+    {mountpoints_result, container_spec}
   end
 
   defp diff_mountpoints([mountpoint_spec | rest], ident2mounts, results) do
@@ -238,6 +314,10 @@ defmodule Kleened.Core.Deployment do
         result = %{type: :mounted_volume_not_found, volume_name: mountpoint_spec.source}
         diff_mountpoints(rest, ident2mounts, [result | results])
     end
+  end
+
+  defp diff_mountpoints([], _ident2mounts, results) do
+    List.flatten(results)
   end
 
   defp mountpoint_with_equal_source_or_destination?(mountpoint_spec, ident2mounts) do
@@ -333,9 +413,23 @@ defmodule Kleened.Core.Deployment do
     end)
   end
 
-  defp diff_object_property(_object_type, property, value_spec, value_host) do
+  defp diff_object_property(:network, :interface, "", _value_host) do
+    []
+  end
+
+  defp diff_object_property(:network, :nat, "<host-gateway>" = value_spec, value_host) do
+    case value_host == Config.get("host_gateway") do
+      true ->
+        []
+
+      false ->
+        %{type: :not_equal, property: "nat", value_spec: value_spec, value_host: value_host}
+    end
+  end
+
+  defp diff_object_property(object_type, property, value_spec, value_host) do
     Logger.debug(
-      "Validating #{property}: spec #{inspect(value_spec)} host #{inspect(value_host)}"
+      "Validating #{object_type}.#{property}: spec #{inspect(value_spec)} host #{inspect(value_host)}"
     )
 
     case value_spec == value_host do
