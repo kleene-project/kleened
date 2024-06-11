@@ -61,17 +61,32 @@ defmodule Kleened.Core.ZFS do
   def info(filesystem_or_snapshot) do
     options = %{suppress_logging: true, suppress_warning: true}
 
-    case cmd("list -H -o mountpoint #{filesystem_or_snapshot}", options) do
-      {"none\n", 0} ->
-        %{:exists? => true, :mountpoint => nil}
+    case cmd("list -H -o mountpoint,origin #{filesystem_or_snapshot}", options) do
+      {output, 0} ->
+        [mountpoint, parent_snapshot] = parse_zfslist_line(output)
 
-      {mountpoint_n, 0} ->
-        mountpoint = String.trim(mountpoint_n)
-        %{:exists? => true, :mountpoint => mountpoint}
+        mountpoint =
+          case mountpoint == "none" do
+            true -> nil
+            false -> mountpoint
+          end
+
+        parent_snapshot =
+          case parent_snapshot == "-" do
+            true -> nil
+            false -> parent_snapshot
+          end
+
+        %{:exists? => true, :mountpoint => mountpoint, parent_snapshot: parent_snapshot}
 
       {_, 1} ->
-        %{:exists? => false, :mountpoint => nil}
+        %{:exists? => false, :mountpoint => nil, parent_snapshot: nil}
     end
+  end
+
+  defp parse_zfslist_line(line) do
+    line = String.trim(line)
+    String.split(line, "\t")
   end
 
   @spec cmd([String.t()]) :: {String.t(), integer()}
