@@ -12,17 +12,13 @@ defmodule Kleened.Core.OS do
 
     if not suppress_warning and exit_code != 0 do
       Logger.warning(
-        "'#{Enum.join(command, " ")}' executed with exit-code #{exit_code}: \"#{
-          String.trim(stdout)
-        }\""
+        "'#{Enum.join(command, " ")}' executed with exit-code #{exit_code}: \"#{String.trim(stdout)}\""
       )
     end
 
     if not suppress_logging do
       Logger.debug(
-        "'#{Enum.join(command, " ")}' executed with exit-code #{exit_code}: \"#{
-          String.trim(stdout)
-        }\""
+        "'#{Enum.join(command, " ")}' executed with exit-code #{exit_code}: \"#{String.trim(stdout)}\""
       )
     end
 
@@ -41,9 +37,13 @@ defmodule Kleened.Core.OS do
           {executable, args}
 
         true ->
-          case Application.get_env(:kleened, :env) do
-            :prod -> {"/usr/local/bin/kleened_pty", command}
-            _ -> {"priv/bin/kleened_pty", command}
+          # It is assumed that 'kleened_pty' can be found using PATH
+          case :os.find_executable(~c"kleened_pty") do
+            pty_executable when is_list(pty_executable) ->
+              {List.to_string(pty_executable), command}
+
+            _error ->
+              Logger.warning("executable kleened_pty not found. Unable to allocate pseudo-TTY.")
           end
       end
 
