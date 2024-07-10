@@ -155,9 +155,8 @@ defmodule Makeup.Lexers.ErlangLexer do
   character =
     string("$")
     |> choice([
-      escape,
-      string("\\") |> ascii_char([?\s, ?%]),
-      ascii_char(not: ?\\)
+      string("\\") |> utf8_char([]),
+      utf8_char(not: ?\\)
     ])
     |> token(:string_char)
 
@@ -247,7 +246,7 @@ defmodule Makeup.Lexers.ErlangLexer do
     |> concat(token("/", :punctuation))
     |> concat(number_integer)
 
-  # Erlang prompt 
+  # Erlang prompt
   erl_prompt =
     string("\n")
     |> optional(string("(") |> concat(atom_name) |> string(")"))

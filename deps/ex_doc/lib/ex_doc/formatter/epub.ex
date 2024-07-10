@@ -2,6 +2,7 @@ defmodule ExDoc.Formatter.EPUB do
   @moduledoc false
 
   @mimetype "application/epub+zip"
+  @assets_dir "OEBPS/assets"
   alias __MODULE__.{Assets, Templates}
   alias ExDoc.Formatter.HTML
 
@@ -30,10 +31,9 @@ defmodule ExDoc.Formatter.EPUB do
 
     config = %{config | extras: extras}
 
-    assets_dir = "OEBPS/assets"
-    static_files = HTML.generate_assets(config, assets_dir, default_assets(config))
-    HTML.generate_logo(assets_dir, config)
-    HTML.generate_cover(assets_dir, config)
+    static_files = HTML.generate_assets("OEBPS", default_assets(config), config)
+    HTML.generate_logo(@assets_dir, config)
+    HTML.generate_cover(@assets_dir, config)
 
     uuid = "urn:uuid:#{uuid4()}"
     datetime = format_datetime()
@@ -76,11 +76,10 @@ defmodule ExDoc.Formatter.EPUB do
 
   defp generate_content(config, nodes, uuid, datetime, static_files) do
     static_files =
-      static_files
-      |> Enum.filter(fn name ->
-        String.contains?(name, "OEBPS") and config.output |> Path.join(name) |> File.regular?()
-      end)
-      |> Enum.map(&Path.relative_to(&1, "OEBPS"))
+      for name <- static_files,
+          String.contains?(name, "OEBPS"),
+          media_type = Templates.media_type(Path.extname(name)),
+          do: {Path.relative_to(name, "OEBPS"), media_type}
 
     content = Templates.content_template(config, nodes, uuid, datetime, static_files)
     File.write("#{config.output}/OEBPS/content.opf", content)
