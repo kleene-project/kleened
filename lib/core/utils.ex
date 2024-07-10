@@ -1,6 +1,35 @@
 defmodule Kleened.Core.Utils do
   require Logger
 
+  defmodule CIDR do
+    defstruct first: nil,
+              last: nil,
+              mask: nil
+
+    def parse(cidr) do
+      case InetCidr.parse_cidr(cidr) do
+        {:ok, {first, last, mask}} ->
+          %CIDR{first: first, last: last, mask: mask}
+
+        {:error, _} ->
+          case InetCidr.parse_address(cidr) do
+            {:ok, ip} ->
+              mask =
+                case InetCidr.v4?(ip) do
+                  true -> 32
+                  false -> 128
+                end
+
+              %CIDR{first: ip, last: ip, mask: mask}
+
+            {:error, _} ->
+              reason = "could not parse cidr block: #{inspect(cidr)}"
+              {:error, reason}
+          end
+      end
+    end
+  end
+
   @spec get_os_pid_of_port(port()) :: String.t()
   def get_os_pid_of_port(port) do
     port |> Port.info() |> Keyword.get(:os_pid) |> Integer.to_string()

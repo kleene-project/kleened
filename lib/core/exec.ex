@@ -1,5 +1,6 @@
 defmodule Kleened.Core.Exec do
   alias Kleened.Core.{Container, Network, MetaData, OS, FreeBSD, ZFS, Utils, ExecInstances, Mount}
+  alias Utils.CIDR
   alias Kleened.API.Schemas
 
   defmodule State do

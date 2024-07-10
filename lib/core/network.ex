@@ -1,6 +1,7 @@
 defmodule Kleened.Core.Network do
   use GenServer
   alias Kleened.Core.{Config, Container, Utils, MetaData, OS, FreeBSD}
+  alias Utils.CIDR
   alias Kleened.API.Schemas
   require Logger
 

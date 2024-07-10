@@ -3,6 +3,7 @@ defmodule NetworkTest do
   alias ExUnit.CaptureLog
   require Logger
   alias Kleened.Core.{Network, MetaData, OS}
+  alias Kleened.Core.Utils.CIDR
   alias Kleened.API.Schemas
 
   @moduletag :capture_log
@@ -263,7 +264,7 @@ defmodule NetworkTest do
   end
 
   test "try to create a network with an invalid subnet" do
-    assert %{message: "invalid subnet: einval"} =
+    assert %{message: "invalid subnet: could not parse cidr block: \"172.18.0.0-16\""} =
              TestHelper.network_create(%{
                # Only CIDR-notation allowed
                name: "testnet",
@@ -334,7 +335,7 @@ defmodule NetworkTest do
              TestHelper.network_create(
                Map.merge(config_default, %{
                  name: "testnet3",
-                 subnet: "beef:beef::1/64"
+                 subnet: "beef:beef::/64"
                })
              )
 
@@ -965,7 +966,7 @@ defmodule NetworkTest do
         name: "testnet1",
         gateway: "<auto>",
         gateway6: "",
-        subnet: "10.13.37.0/16",
+        subnet: "10.13.0.0/16",
         subnet6: "",
         type: "bridge"
       },
@@ -1156,7 +1157,7 @@ defmodule NetworkTest do
         name: "testnet1",
         gateway: "<auto>",
         gateway6: "",
-        subnet: "10.13.37.0/16",
+        subnet: "10.13.0.0/16",
         subnet6: "",
         type: "bridge"
       },

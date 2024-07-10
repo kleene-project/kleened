@@ -803,7 +803,7 @@ defmodule TestHelper do
         "MAIL=/var/mail/root",
         "PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin",
         "PWD=/root",
-        "TERM=screen",
+        "TERM=xterm-256color",
         "USER=root",
         "HOME=/root",
         "SHELL=/bin/csh",
