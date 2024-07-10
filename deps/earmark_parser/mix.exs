@@ -1,15 +1,16 @@
 defmodule EarmarkParser.MixProject do
   use Mix.Project
 
-  @version "1.4.39"
+  @version "1.4.41"
   @url "https://github.com/RobertDober/earmark_parser"
 
   @deps [
-    {:dialyxir, "~> 1.4.1", only: [:dev]},
+    # {:credo, "~> 1.7.5", only: [:dev]},
+    {:dialyxir, "~> 1.4.3", only: [:dev], runtime: false},
     {:earmark_ast_dsl, "~> 0.3.7", only: [:test]},
     {:excoveralls, "~> 0.14.4", only: [:test]},
     {:extractly, "~> 0.5.3", only: [:dev]},
-    {:floki, "~> 0.32", only: [:dev, :test]}
+    {:floki, "~> 0.36", only: [:dev, :test]}
   ]
 
   def project do
@@ -17,7 +18,7 @@ defmodule EarmarkParser.MixProject do
       app: :earmark_parser,
       version: @version,
       compilers: [:leex, :yecc] ++ Mix.compilers(),
-      elixir: "~> 1.11",
+      elixir: "~> 1.13",
       elixirc_paths: elixirc_paths(Mix.env()),
       deps: @deps,
       description: "AST parser and generator for Markdown",

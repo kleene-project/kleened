@@ -1,7 +1,7 @@
 defmodule MakeupErlang.Mixfile do
   use Mix.Project
 
-  @version "0.1.5"
+  @version "1.0.0"
   @url "https://github.com/elixir-makeup/makeup_erlang"
 
   def project do
@@ -54,9 +54,10 @@ defmodule MakeupErlang.Mixfile do
       raise "cannot build docs because escript for ex_doc is not installed, run \"mix escript.install hex ex_doc\""
     end
 
+    paths = Path.join(Mix.Project.build_path(), "lib/*/ebin")
     args = ["MakeupErlang", @version, Mix.Project.compile_path()]
     opts = ~w[--main Makeup.Lexers.ErlangLexer --source-ref v#{@version} --source-url #{@url}]
-    System.cmd(ex_doc, args ++ opts)
+    System.cmd(ex_doc, args ++ ["--paths", paths] ++ opts)
     Mix.shell().info("Docs built successfully")
   end
 end

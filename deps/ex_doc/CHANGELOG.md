@@ -1,5 +1,56 @@
 # Changelog
 
+## v0.34.2 (2024-07-08)
+
+  * Enhancements
+    * Allow anchors on function and callback autolinks
+
+  * Bug fixes
+    * Make module attributes searchable without leading @
+    * Make Mod.fun pairs searchable without the arity
+    * Do not emit warnings on unary plus in typespecs
+    * Add top margin to nested module prefix in sidebar
+
+## v0.34.1 (2024-06-30)
+
+  * Enhancements
+    * Add a `v` shortcut to open/focus the version select
+    * Compatibility fixes for Elixir v1.17 and Erlang/OTP 27+
+
+  * Bug fixes
+    * Do not crash on unknown media types in assets during EPUB generation
+    * Fix slight shift on search bar input during focus
+    * Avoid unwanted showing/hiding of search bar on mobile when scrolling
+
+## v0.34.0 (2024-05-30)
+
+This release requires Elixir v1.13.
+
+  * Enhancements
+    * Allow several assets to be copied by passing a map to `:assets`
+    * Improve compatibility when hosting ExDoc on a platform that strips `.html`
+
+  * Bug fixes
+    * Link to the latest version of Erlang/OTP docs
+
+  * Deprecations
+    * Deprecate passing a binary to `:assets`
+
+## v0.33.0 (2024-05-21)
+
+  * Enhancements
+    * Keep the sidebar light in light mode
+
+## v0.32.2 (2024-05-10)
+
+  * Enhancements
+    * Allow the modal to close when we click outside the modal content
+
+  * Bug fixes
+    * Fix indentation of -spec/-type in Erlang
+    * Fix Mix task autolink for tasks with underscores
+    * Avoid conflicts between custom headers with tooltips/modals
+
 ## v0.32.1 (2024-04-12)
 
   * Bug fixes

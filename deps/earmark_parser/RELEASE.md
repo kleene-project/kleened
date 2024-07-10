@@ -5,6 +5,40 @@
 
 - [Parsing HTML]
 
+## [EarmarkParser](https://hex.pm/packages/earmark_parser) 1.4.41 2024-07-09
+
+- [Fixed bug #154 parser crashes on inline ial after escaped char](https://github.com/RobertDober/earmark_parser/issues/154) 
+
+- [Fixed GHA to catch warnings in tests](https://github.com/RobertDober/earmark_parser/pull/153)
+    Kudos to [Kian-Meng Ang](https://github.com/kianmeng)
+
+- [Fixed warnings in tests](https://github.com/RobertDober/earmark_parser/pull/152)
+    Kudos to [Kian-Meng Ang](https://github.com/kianmeng)
+
+- [Fortunately there are folks who can spell **and** type](https://github.com/RobertDober/earmark_parser/pull/151)
+    Kudos to [Kian-Meng Ang](https://github.com/kianmeng)
+
+## [EarmarkParser](https://hex.pm/packages/earmark_parser) 1.4.40 2024-07-02
+
+- **Gladly** following [`ex_doc`](https://github.com/elixir-lang/ex_doc/blob/main/mix.exs) to drop support for
+  Elixir versions < 1.13
+
+- More Github actions with fail-on-warning to avoid the need for fixes like the one below :blush:
+
+- [Fixed warning because of bad config of using dialxir](https://github.com/RobertDober/earmark_parser/pull/150)
+    Kudos to [Jan Pieper](https://github.com/janpieper)
+
+- [More typespecs and nicer formatting](https://github.com/RobertDober/earmark_parser/pull/146)
+    Kudos to [Brad Hanks](https://github.com/bradhanks)
+
+- [Pattern matching related refactoring](https://github.com/RobertDober/earmark_parser/pull/145)
+    Kudos to [Brad Hanks](https://github.com/bradhanks)
+
+## [EarmarkParser](https://hex.pm/packages/earmark_parser) 1.4.39 2023-11-25
+
+- [Optional Support for Math Syntax](https://github.com/RobertDober/earmark_parser/pull/142)
+    Kudos to [Jonatan Kłosko](https://github.com/jonatanklosko)
+
 ## [EarmarkParser](https://hex.pm/packages/earmark_parser) 1.4.38 2023-11-10
 
 - [Add metadata line to inline code spans](https://github.com/RobertDober/earmark_parser/pull/140)

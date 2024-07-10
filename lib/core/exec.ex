@@ -1,5 +1,6 @@
 defmodule Kleened.Core.Exec do
   alias Kleened.Core.{Container, Network, MetaData, OS, FreeBSD, ZFS, Utils, ExecInstances, Mount}
+  alias Utils.CIDR
   alias Kleened.API.Schemas
 
   defmodule State do
@@ -316,7 +317,7 @@ defmodule Kleened.Core.Exec do
     # jexec [-l] [-u username | -U username] jail [command ...]
     args = ~w"-l -U #{user} #{container_id} /usr/bin/env" ++ env ++ cmd
 
-    port = OS.cmd_async(['/usr/sbin/jexec' | args], use_tty)
+    port = OS.cmd_async([~c"/usr/sbin/jexec" | args], use_tty)
     port
   end
 
@@ -358,7 +359,7 @@ defmodule Kleened.Core.Exec do
         jail_param ++
         ["command=/usr/bin/env"] ++ env ++ command
 
-    port = OS.cmd_async(['/usr/sbin/jail' | args], use_tty)
+    port = OS.cmd_async([~c"/usr/sbin/jail" | args], use_tty)
     port
   end
 

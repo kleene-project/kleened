@@ -26,8 +26,11 @@ defmodule ExDoc.Language.Erlang do
   def module_data(module, docs_chunk, _config) do
     if abst_code = Source.get_abstract_code(module) do
       id = Atom.to_string(module)
-      source_basedir = Source.get_basedir(abst_code, module)
-      {source_file, source_line} = Source.get_module_location(abst_code, source_basedir, module)
+      source_basedir = Source.fetch_basedir!(abst_code, module)
+
+      {source_file, source_line} =
+        Source.fetch_module_location!(abst_code, source_basedir, module)
+
       type = module_type(module)
 
       %{
@@ -115,7 +118,7 @@ defmodule ExDoc.Language.Erlang do
           end
       end
 
-    {file, line} = Source.get_function_location(module_data, {name, arity})
+    {file, line} = Source.fetch_function_location!(module_data, {name, arity})
 
     %{
       doc_fallback: fn -> equiv_data(module_data.module, file, line, metadata) end,
@@ -164,7 +167,7 @@ defmodule ExDoc.Language.Erlang do
   def type_data(entry, module_data) do
     {{kind, name, arity}, anno, signature, _doc, metadata} = entry
 
-    case Source.get_type_from_module_data(module_data, name, arity) do
+    case Source.fetch_type!(module_data, name, arity) do
       %{} = map ->
         %{
           doc_fallback: fn ->
@@ -428,12 +431,12 @@ defmodule ExDoc.Language.Erlang do
   end
 
   defp final_url({kind, name, arity}, _config) do
-    Autolink.fragment(:ex_doc, kind, name, arity)
+    Autolink.fragment(kind, name, arity)
   end
 
   defp final_url({kind, module, name, arity}, config) do
     tool = Autolink.tool(module, config)
-    Autolink.app_module_url(tool, module, Autolink.fragment(tool, kind, name, arity), config)
+    Autolink.app_module_url(tool, module, Autolink.fragment(kind, name, arity), config)
   end
 
   @impl true
@@ -535,8 +538,8 @@ defmodule ExDoc.Language.Erlang do
             {name, _, _}, acc when name in [:<<>>, :..] ->
               {nil, acc}
 
-            # -1
-            {:-, _, [int]}, acc when is_integer(int) ->
+            # -1, +1
+            {op, _, [int]}, acc when is_integer(int) and op in [:+, :-] ->
               {nil, acc}
 
             # fun() (spec_to_quoted expands it to (... -> any())
@@ -558,7 +561,7 @@ defmodule ExDoc.Language.Erlang do
                 name == :record and acc != [] ->
                   {ast, acc}
 
-                name in [:"::", :when, :%{}, :{}, :|, :->] ->
+                name in [:"::", :when, :%{}, :{}, :|, :->, :...] ->
                   {ast, acc}
 
                 # %{required(...) => ..., optional(...) => ...}
@@ -709,7 +712,11 @@ defmodule ExDoc.Language.Erlang do
     offset = byte_size(Atom.to_string(type)) + 2
 
     options = [linewidth: 98 + offset]
-    :erl_pp.attribute(ast, options) |> IO.iodata_to_binary() |> trim_offset(offset)
+
+    :erl_pp.attribute(ast, options)
+    |> IO.chardata_to_string()
+    |> String.trim()
+    |> String.trim_leading("-#{Atom.to_string(type)} ")
   end
 
   ## Helpers
@@ -722,16 +729,5 @@ defmodule ExDoc.Language.Erlang do
       true ->
         :module
     end
-  end
-
-  # `-type t() :: atom()` becomes `t() :: atom().`
-  defp trim_offset(binary, offset) do
-    binary
-    |> String.trim()
-    |> String.split("\n")
-    |> Enum.map(fn line ->
-      binary_part(line, offset, byte_size(line) - offset)
-    end)
-    |> Enum.join("\n")
   end
 end

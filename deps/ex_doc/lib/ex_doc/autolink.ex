@@ -63,31 +63,21 @@ defmodule ExDoc.Autolink do
   ]
 
   @hexdocs "https://hexdocs.pm/"
-  @otpdocs "https://www.erlang.org/doc/man/"
   @otpappdocs "https://www.erlang.org/doc/apps/"
 
-  def app_module_url(tool, module, anchor \\ nil, config)
+  def app_module_url(tool, module, anchor \\ "#content", config)
 
-  def app_module_url(:ex_doc, module, nil, %{current_module: module} = config) do
-    app_module_url(:ex_doc, module, "#content", config)
-  end
+  def app_module_url(:no_tool, _, _, _), do: nil
 
-  def app_module_url(:ex_doc, module, anchor, %{current_module: module} = config) do
+  def app_module_url(tool, module, anchor, config) do
+    base_url =
+      case tool do
+        :ex_doc -> @hexdocs
+        :otp -> @otpappdocs
+      end
+
     path = module |> inspect() |> String.trim_leading(":")
-    ex_doc_app_url(module, config, path, config.ext, "#{anchor}")
-  end
-
-  def app_module_url(:ex_doc, module, anchor, config) do
-    path = module |> inspect() |> String.trim_leading(":")
-    ex_doc_app_url(module, config, path, config.ext, "#{anchor}")
-  end
-
-  def app_module_url(:otp, module, anchor, _config) do
-    @otpdocs <> "#{module}.html#{anchor}"
-  end
-
-  def app_module_url(:no_tool, _, _, _) do
-    nil
+    app_url(base_url, module, config, path, config.ext, "#{anchor}")
   end
 
   defp string_app_module_url(string, tool, module, anchor, config) do
@@ -109,12 +99,16 @@ defmodule ExDoc.Autolink do
 
   @doc false
   def ex_doc_app_url(module, config, path, ext, suffix) do
+    app_url(@hexdocs, module, config, path, ext, suffix)
+  end
+
+  defp app_url(base_url, module, config, path, ext, suffix) do
     if app = app(module) do
       if app in config.apps do
         path <> ext <> suffix
       else
         config.deps
-        |> Keyword.get_lazy(app, fn -> @hexdocs <> "#{app}" end)
+        |> Keyword.get_lazy(app, fn -> base_url <> "#{app}" end)
         |> String.trim_trailing("/")
         |> Kernel.<>("/" <> path <> ".html" <> suffix)
       end
@@ -250,7 +244,7 @@ defmodule ExDoc.Autolink do
 
   defp mix_task(name, string, mode, config) do
     {module, url, visibility} =
-      if name =~ ~r/^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)*$/ do
+      if name =~ ~r/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/ do
         parts = name |> String.split(".") |> Enum.map(&Macro.camelize/1)
         module = Module.concat([Mix, Tasks | parts])
 
@@ -341,8 +335,8 @@ defmodule ExDoc.Autolink do
   end
 
   defp parse_url(string, mode, config) do
-    case Regex.run(~r{^(.+)/(\d+)$}, string) do
-      [_, left, right] ->
+    case Regex.run(~r{^(.+)/(\d+)(#.*)?$}, string) do
+      [_, left, right | maybe_fragment] ->
         with {:ok, arity} <- parse_arity(right) do
           {kind, rest} = kind(left)
 
@@ -350,11 +344,13 @@ defmodule ExDoc.Autolink do
             {:local, function} ->
               kind
               |> local_url(function, arity, config, string, mode: mode)
+              |> maybe_append_nested_fragment(maybe_fragment)
               |> maybe_remove_link(mode)
 
             {:remote, module, function} ->
               {kind, module, function, arity}
               |> remote_url(config, string, mode: mode)
+              |> maybe_append_nested_fragment(maybe_fragment)
               |> maybe_remove_link(mode)
 
             :error ->
@@ -430,7 +426,7 @@ defmodule ExDoc.Autolink do
 
     case {kind, visibility} do
       {_kind, :public} ->
-        fragment(tool(module, config), kind, name, arity)
+        fragment(kind, name, arity)
 
       {:function, _visibility} ->
         case config.language.try_autoimported_function(name, arity, mode, config, original_text) do
@@ -464,20 +460,12 @@ defmodule ExDoc.Autolink do
     end
   end
 
-  def fragment(tool, kind, nil, arity) do
-    fragment(tool, kind, "nil", arity)
+  def fragment(kind, nil, arity) do
+    fragment(kind, "nil", arity)
   end
 
-  def fragment(:ex_doc, kind, name, arity) do
+  def fragment(kind, name, arity) do
     "#" <> prefix(kind) <> "#{encode_fragment_name(name)}/#{arity}"
-  end
-
-  def fragment(:otp, kind, name, arity) do
-    case kind do
-      :function -> "##{encode_fragment_name(name)}-#{arity}"
-      :callback -> "#Module:#{encode_fragment_name(name)}-#{arity}"
-      :type -> "#type-#{encode_fragment_name(name)}"
-    end
   end
 
   defp encode_fragment_name(name) when is_atom(name) do
@@ -503,10 +491,10 @@ defmodule ExDoc.Autolink do
         tool = tool(module, config)
 
         if same_module? do
-          fragment(tool, kind, name, arity)
+          fragment(kind, name, arity)
         else
           url = string_app_module_url(original_text, tool, module, nil, config)
-          url && url <> fragment(tool, kind, name, arity)
+          url && url <> fragment(kind, name, arity)
         end
 
       {:regular_link, module_visibility, :undefined}
@@ -624,6 +612,10 @@ defmodule ExDoc.Autolink do
   # for the rest, it can either be undefined or private
   def format_visibility(:undefined, _kind), do: "undefined or private"
   def format_visibility(visibility, _kind), do: "#{visibility}"
+
+  defp maybe_append_nested_fragment(nil, _), do: nil
+  defp maybe_append_nested_fragment(url, []), do: url
+  defp maybe_append_nested_fragment(url, ["#" <> fragment]), do: url <> "-" <> fragment
 
   defp append_fragment(url, nil), do: url
   defp append_fragment(url, fragment), do: url <> "#" <> fragment
