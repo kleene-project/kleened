@@ -679,16 +679,12 @@ defmodule Kleened.Core.Network do
     ip4_translation =
       for interface <- interfaces,
           do:
-            "rdr on #{interface} inet proto #{proto} from any to (#{interface}) port #{host_port} -> #{
-              ip4
-            } port #{port}"
+            "rdr on #{interface} inet proto #{proto} from any to (#{interface}) port #{host_port} -> #{ip4} port #{port}"
 
     ip6_translation =
       for interface <- interfaces,
           do:
-            "rdr on #{interface} inet6 proto #{proto} from any to (#{interface}) port #{host_port} -> #{
-              ip6
-            } port #{port}"
+            "rdr on #{interface} inet6 proto #{proto} from any to (#{interface}) port #{host_port} -> #{ip6} port #{port}"
 
     use_necessary_ip_protocols(pub_port, ip4_translation, ip6_translation)
   end
@@ -710,9 +706,7 @@ defmodule Kleened.Core.Network do
         "pass quick on #{interface} inet proto #{protocol} from any to #{ip4} port #{port}"
       end) ++
         [
-          "pass quick on $kleenet_network_interfaces inet proto tcp from any to #{ip4} port #{
-            port
-          }"
+          "pass quick on $kleenet_network_interfaces inet proto tcp from any to #{ip4} port #{port}"
         ]
 
     ip6_port_pass =
@@ -720,9 +714,7 @@ defmodule Kleened.Core.Network do
         "pass quick on #{interface} inet6 proto #{protocol} from any to #{ip6} port #{port}"
       end) ++
         [
-          "pass quick on $kleenet_network_interfaces inet6 proto tcp from any to #{ip6} port #{
-            port
-          }"
+          "pass quick on $kleenet_network_interfaces inet6 proto tcp from any to #{ip6} port #{port}"
         ]
 
     use_necessary_ip_protocols(pub_port, ip4_port_pass, ip6_port_pass)
