@@ -235,18 +235,15 @@ defmodule Kleened.Core.Container do
        ) do
     case MetaData.get_container(container_id) do
       %Schemas.Container{} = container ->
-        case update_container_object(container,
-               name: name,
-               user: user,
-               env: env,
-               cmd: cmd,
-               persist: persist,
-               restart_policy: restart,
-               jail_param: jail_param
-             ) do
-          {:ok, container} -> modify_container_if_running(container, jail_param)
-          {:warning, msg} -> {:warning, msg}
-        end
+        update_container_object(container,
+          name: name,
+          user: user,
+          env: env,
+          cmd: cmd,
+          persist: persist,
+          restart_policy: restart,
+          jail_param: jail_param
+        )
 
       :not_found ->
         {:error, :container_not_found}
@@ -257,11 +254,17 @@ defmodule Kleened.Core.Container do
     container_upd = Enum.reduce(simple_vars, container, &update_container_property/2)
 
     if container != container_upd do
-      Logger.debug("updated container #{container.id}")
-      MetaData.add_container(container_upd)
-    end
+      result = modify_container_if_running(container_upd, container_upd.jail_param)
 
-    {:ok, container_upd}
+      if result == {:ok, container_upd} do
+        Logger.debug("updated container #{container.id}")
+        MetaData.add_container(container_upd)
+      end
+
+      result
+    else
+      {:ok, container}
+    end
   end
 
   defp update_container_property({_var_name, nil}, container) do
@@ -283,9 +286,7 @@ defmodule Kleened.Core.Container do
 
           {output, nonzero_exit} ->
             {:warning,
-             "'/usr/sbin/jail' returned non-zero exitcode #{nonzero_exit} when attempting to modify the container '#{
-               output
-             }'"}
+             "'/usr/sbin/jail' returned non-zero exitcode #{nonzero_exit} when attempting to modify the container '#{output}'"}
         end
 
       false ->
