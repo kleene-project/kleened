@@ -1,0 +1,60 @@
+name: Run Kleened and Klee test suites
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Running Kleened and Klee test-suites
+    steps:
+    - uses: actions/checkout@v4
+    - name: Run tests in a FreeBSD VM
+      id: kleened-testing
+      uses: vmactions/freebsd-vm@v1.1.5
+      with:
+        usesh: true
+        run: |
+          freebsd-version
+
+          ###### Configure ZFS ######
+          kldload zfs
+          sysrc -f /boot/loader.conf zfs_load="YES"
+          sysrc zfs_enable="YES"
+          kldload pf.ko
+          kldload pflog.ko
+          sysrc pf_enable="YES"
+          sysrc pflog_enable="YES"
+          service start pf
+          service start pflog
+
+          truncate -s 10G /home/runner/zpool.disk
+          zpool create -O atime=off -f zroot /home/runner/zpool.disk
+
+          # To make all networking-tests pass:
+          sysctl net.link.bridge.pfil_bridge=1
+          sysctl net.link | grep bridge
+
+          ##### Run Kleened Tests
+          mkdir -p /usr/local/etc/kleened
+          cp example/kleened_config_dev.yaml /usr/local/etc/kleened/config.yaml
+          cp -r test/data/test_certs /usr/local/etc/kleened/certs
+          cp example/pf.conf.dev.kleene /usr/local/etc/kleened/pf.conf.kleene
+
+          pkg install -y elixir-hex git gmake
+          mix local.rebar --force
+          mix local.hex --force
+          mix test --seed 0 --trace --max-failures 1
+
+          ##### Install & Start Kleened
+          MIX_ENV=dev mix release
+          _build/dev/rel/kleened/bin/kleened daemon
+
+          ##### Run Klee-tests
+          echo "Testing with Klee from branch: ${{ github.ref_type == 'branch' && github.ref_name || 'main' }}"
+          git clone -b ${{ github.ref_type == 'branch' && github.ref_name || 'main' }} https://github.com/kleene-project/klee.git
+          pkg install -y py311-poetry
+          cd klee
+          poetry install
+          poetry run pytest -vv -x
