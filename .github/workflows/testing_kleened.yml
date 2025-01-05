@@ -41,7 +41,7 @@ jobs:
           sysctl net.link.bridge.pfil_bridge=1
           sysctl net.link | grep bridge
 
-          ##### Run Kleened Tests
+          ##### Configure and run Kleened Tests
           mkdir -p /usr/local/etc/kleened
           cp example/kleened_config_dev.yaml /usr/local/etc/kleened/config.yaml
           cp -r test/data/test_certs /usr/local/etc/kleened/certs
