@@ -390,9 +390,7 @@ defmodule Kleened.Core.Config do
 
       other_msg ->
         Logger.warning(
-          "an error occurred while trying to open config file #{@default_config_path}: #{
-            inspect(other_msg)
-          }"
+          "an error occurred while trying to open config file #{@default_config_path}: #{inspect(other_msg)}"
         )
 
         %{}

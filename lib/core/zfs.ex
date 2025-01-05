@@ -51,7 +51,7 @@ defmodule Kleened.Core.ZFS do
   def exists?(dataset) do
     options = %{suppress_logging: true, suppress_warning: true}
 
-    case OS.cmd(["/bin/sh", "-c", "zfs list -H -o name | grep #{dataset}"], options) do
+    case OS.cmd(["/bin/sh", "-c", "zfs list -H -o name #{dataset}"], options) do
       {_output, 0} -> true
       {_output, _nonzero_exit} -> false
     end
