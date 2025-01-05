@@ -39,7 +39,7 @@ jobs:
 
           # To make all networking-tests pass:
           sysctl net.link.bridge.pfil_bridge=1
-          sysctl net.link | grep bridge
+          sysctl net.link
 
           ##### Configure and run Kleened Tests
           mkdir -p /usr/local/etc/kleened
@@ -52,11 +52,10 @@ jobs:
           mix local.hex --force
           make init
           make test
-
           ##### Install & Start Kleened
           MIX_ENV=dev mix release
           _build/dev/rel/kleened/bin/kleened daemon
-
+          
           ##### Run Klee-tests
           git clone -b ${{ github.ref_type == 'branch' && github.ref_name || 'main' }} https://github.com/kleene-project/klee.git
           pkg install -y py311-poetry > /dev/null
