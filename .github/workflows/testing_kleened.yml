@@ -12,25 +12,30 @@ jobs:
     - uses: actions/checkout@v4
     - name: Run tests in a FreeBSD VM
       id: kleened-testing
+      # FreeBSD 14.1-RELEASE
       uses: vmactions/freebsd-vm@v1.1.5
       with:
         usesh: true
         run: |
-          freebsd-version
-
           ###### Configure ZFS ######
           kldload zfs
           sysrc -f /boot/loader.conf zfs_load="YES"
           sysrc zfs_enable="YES"
+          truncate -s 10G /home/runner/zpool.disk
+          zpool create -O atime=off -f zroot /home/runner/zpool.disk
+
+          ###### Configure PF ######
           kldload pf.ko
           kldload pflog.ko
           sysrc pf_enable="YES"
           sysrc pflog_enable="YES"
-          service start pf
-          service start pflog
+          service pf start
+          service pflog start
 
-          truncate -s 10G /home/runner/zpool.disk
-          zpool create -O atime=off -f zroot /home/runner/zpool.disk
+          ###### Create basejail ######
+          fetch https://download.freebsd.org/releases/amd64/14.1-RELEASE/base.txz
+          zfs create zroot/kleene_basejail
+          tar -xf base.txz -C /zroot/kleene_basejail
 
           # To make all networking-tests pass:
           sysctl net.link.bridge.pfil_bridge=1
@@ -42,19 +47,19 @@ jobs:
           cp -r test/data/test_certs /usr/local/etc/kleened/certs
           cp example/pf.conf.dev.kleene /usr/local/etc/kleened/pf.conf.kleene
 
-          pkg install -y elixir-hex git gmake
+          pkg install -y elixir-hex git gmake > /dev/null
           mix local.rebar --force
           mix local.hex --force
-          mix test --seed 0 --trace --max-failures 1
+          make init
+          make test
 
           ##### Install & Start Kleened
           MIX_ENV=dev mix release
           _build/dev/rel/kleened/bin/kleened daemon
 
           ##### Run Klee-tests
-          echo "Testing with Klee from branch: ${{ github.ref_type == 'branch' && github.ref_name || 'main' }}"
           git clone -b ${{ github.ref_type == 'branch' && github.ref_name || 'main' }} https://github.com/kleene-project/klee.git
-          pkg install -y py311-poetry
+          pkg install -y py311-poetry > /dev/null
           cd klee
           poetry install
           poetry run pytest -vv -x
