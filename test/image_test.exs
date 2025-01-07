@@ -572,7 +572,7 @@ defmodule ImageTest do
     ENV TEST1=lol
     ENV TEST2="testing test"
     ENV TEST3=test\ test
-    RUN  printenv
+    RUN /bin/sh -c printenv
     """
 
     TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)

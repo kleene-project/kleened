@@ -806,7 +806,7 @@ defmodule TestHelper do
         "TERM=xterm-256color",
         "USER=root",
         "HOME=/root",
-        "SHELL=/bin/csh",
+        "SHELL=/bin/sh",
         "MM_CHARSET=UTF-8",
         "BLOCKSIZE=K"
       ] ++ additional_envs

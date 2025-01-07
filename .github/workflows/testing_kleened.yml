@@ -28,6 +28,7 @@ jobs:
         ###### Configure PF ######
         kldload pf.ko
         kldload pflog.ko
+        kldload if_bridge
         sysrc pf_enable="YES"
         sysrc pflog_enable="YES"
         service pf start
@@ -52,7 +53,7 @@ jobs:
         cp -r test/data/test_certs /usr/local/etc/kleened/certs
         cp example/pf.conf.dev.kleene /usr/local/etc/kleened/pf.conf.kleene
 
-        pkg install -y elixir-hex git gmake > /dev/null
+        pkg install -y elixir-hex git gmake ca_root_nss > /dev/null
         mix local.rebar --force
         mix local.hex --force
         make init

@@ -2,7 +2,7 @@ defmodule ContainerTest do
   require Logger
   use Kleened.Test.ConnCase
   alias ExUnit.CaptureLog
-  alias Kleened.Core.{Container, Exec, Utils, MetaData, OS}
+  alias Kleened.Core.{Container, Exec, MetaData, OS}
   alias Kleened.API.Schemas
 
   @moduletag :capture_log

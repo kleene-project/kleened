@@ -9,7 +9,6 @@ defmodule NetworkTest do
   @moduletag :capture_log
 
   @host_interface "em0"
-  @host_ip "10.0.2.15"
 
   @cant_connect_vnet_with_loopback %{
     message: "containers using the 'vnet' network-driver can't connect to loopback networks"
@@ -1580,7 +1579,7 @@ defmodule NetworkTest do
         {false, ""} -> endpoint.ip_address
         # The only case when NAT applies:
         # Non-internal and with a specified nat-interface:
-        {false, _} -> @host_ip
+        {false, _} -> host_ip()
         {true, _} -> endpoint.ip_address
       end
 
@@ -1588,6 +1587,14 @@ defmodule NetworkTest do
     assert String.contains?(msg2, ip2check)
 
     Port.close(port)
+  end
+
+  defp host_ip() do
+    case OS.shell("ifconfig em0 | grep inet") do
+      {inet_string, 0} ->
+        [_, ip | _] = String.split(inet_string)
+        ip
+    end
   end
 
   defp listen_for_blocked_traffic() do
