@@ -16,49 +16,55 @@ jobs:
       uses: vmactions/freebsd-vm@v1.1.5
       with:
         usesh: true
-        run: |
-          ###### Configure ZFS ######
-          kldload zfs
-          sysrc -f /boot/loader.conf zfs_load="YES"
-          sysrc zfs_enable="YES"
-          truncate -s 10G /home/runner/zpool.disk
-          zpool create -O atime=off -f zroot /home/runner/zpool.disk
+    - name: Configure the FreeBSD vm
+      shell: freebsd {0}
+      run: |
+        ###### Configure ZFS ######
+        kldload zfs
+        sysrc -f /boot/loader.conf zfs_load="YES"
+        sysrc zfs_enable="YES"
+        truncate -s 10G /home/runner/zpool.disk
+        zpool create -O atime=off -f zroot /home/runner/zpool.disk
+        ###### Configure PF ######
+        kldload pf.ko
+        kldload pflog.ko
+        sysrc pf_enable="YES"
+        sysrc pflog_enable="YES"
+        service pf start
+        service pflog start
+        # To make all networking-tests pass:
+        sysctl net.link.bridge.pfil_bridge=1
+        sysctl net.link
 
-          ###### Configure PF ######
-          kldload pf.ko
-          kldload pflog.ko
-          sysrc pf_enable="YES"
-          sysrc pflog_enable="YES"
-          service pf start
-          service pflog start
+        ###### Create basejail ######
+        fetch https://download.freebsd.org/releases/amd64/14.1-RELEASE/base.txz
+        zfs create zroot/kleene_basejail
+        tar -xf base.txz -C /zroot/kleene_basejail
 
-          ###### Create basejail ######
-          fetch https://download.freebsd.org/releases/amd64/14.1-RELEASE/base.txz
-          zfs create zroot/kleene_basejail
-          tar -xf base.txz -C /zroot/kleene_basejail
 
-          # To make all networking-tests pass:
-          sysctl net.link.bridge.pfil_bridge=1
-          sysctl net.link
+    - name: Build Kleened and run its testsuite
+      shell: freebsd {0}
+      run: |
+        ##### Configure and run Kleened Tests
+        cd $GITHUB_WORKSPACE;
+        mkdir -p /usr/local/etc/kleened
+        cp example/kleened_config_dev.yaml /usr/local/etc/kleened/config.yaml
+        cp -r test/data/test_certs /usr/local/etc/kleened/certs
+        cp example/pf.conf.dev.kleene /usr/local/etc/kleened/pf.conf.kleene
 
-          ##### Configure and run Kleened Tests
-          mkdir -p /usr/local/etc/kleened
-          cp example/kleened_config_dev.yaml /usr/local/etc/kleened/config.yaml
-          cp -r test/data/test_certs /usr/local/etc/kleened/certs
-          cp example/pf.conf.dev.kleene /usr/local/etc/kleened/pf.conf.kleene
-
-          pkg install -y elixir-hex git gmake > /dev/null
-          mix local.rebar --force
-          mix local.hex --force
-          make init
-          make test
-          ##### Install & Start Kleened
-          MIX_ENV=dev mix release
-          _build/dev/rel/kleened/bin/kleened daemon
-          
-          ##### Run Klee-tests
-          git clone -b ${{ github.ref_type == 'branch' && github.ref_name || 'main' }} https://github.com/kleene-project/klee.git
-          pkg install -y py311-poetry > /dev/null
-          cd klee
-          poetry install
-          poetry run pytest -vv -x
+        pkg install -y elixir-hex git gmake > /dev/null
+        mix local.rebar --force
+        mix local.hex --force
+        make init
+        make test
+        ##### Install & Start Kleened
+        MIX_ENV=dev
+        mix release
+        _build/dev/rel/kleened/bin/kleened daemon
+        
+        ##### Run Klee-tests
+        git clone -b ${{ github.ref_type == 'branch' && github.ref_name || 'main' }} https://github.com/kleene-project/klee.git
+        pkg install -y py311-poetry > /dev/null
+        cd klee
+        poetry install
+        poetry run pytest -vv -x
