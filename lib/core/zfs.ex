@@ -48,6 +48,10 @@ defmodule Kleened.Core.ZFS do
     end
   end
 
+  def exists?(<<"/", _::binary>>) do
+    false
+  end
+
   def exists?(dataset) do
     options = %{suppress_logging: true, suppress_warning: true}
 
