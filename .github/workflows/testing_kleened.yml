@@ -57,6 +57,7 @@ jobs:
         mix local.hex --force
         make init
         make test
+        mix run -e "Kleened.Core.Image.remove(\"FreeBSD:testing\")"
         ##### Install & Start Kleened
         MIX_ENV=dev
         mix release
