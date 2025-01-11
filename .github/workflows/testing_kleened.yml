@@ -35,7 +35,6 @@ jobs:
         service pflog start
         # To make all networking-tests pass:
         sysctl net.link.bridge.pfil_bridge=1
-        sysctl net.link
 
         ###### Create basejail ######
         fetch https://download.freebsd.org/releases/amd64/14.1-RELEASE/base.txz

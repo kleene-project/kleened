@@ -8,8 +8,6 @@ defmodule NetworkTest do
 
   @moduletag :capture_log
 
-  @host_interface "em0"
-
   @cant_connect_vnet_with_loopback %{
     message: "containers using the 'vnet' network-driver can't connect to loopback networks"
   }
@@ -793,7 +791,7 @@ defmodule NetworkTest do
     container_connectivity_test(%{
       network: %{
         name: "testnet2",
-        # This is needed for bridge networks to get the @host_interface:
+        # This is needed for bridge networks to get the host_interface:
         gateway: "<auto>",
         subnet: "10.13.38.0/24",
         type: "bridge",
@@ -822,7 +820,7 @@ defmodule NetworkTest do
     container_connectivity_test(%{
       network: %{
         name: "testnet2",
-        # This is needed for bridge networks to get the @host_interface:
+        # This is needed for bridge networks to get the host_interface:
         gateway: "<auto>",
         subnet: "10.13.38.0/24",
         type: "bridge",
@@ -853,7 +851,7 @@ defmodule NetworkTest do
     container_connectivity_test(%{
       network: %{
         name: "testnet2",
-        # This is needed for bridge networks to get the @host_interface:
+        # This is needed for bridge networks to get the host_interface:
         gateway: "<auto>",
         subnet: "10.13.38.0/24",
         type: "bridge",
@@ -1590,11 +1588,14 @@ defmodule NetworkTest do
   end
 
   defp host_ip() do
-    case OS.shell("ifconfig em0 | grep inet") do
-      {inet_string, 0} ->
-        [_, ip | _] = String.split(inet_string)
-        ip
-    end
+    {:ok, interface} = Kleened.Core.FreeBSD.host_gateway_interface()
+
+    ip =
+      Kleened.Core.OS.shell!("ifconfig #{interface} | grep inet")
+      |> String.split(" ")
+      |> Enum.at(1)
+
+    ip
   end
 
   defp listen_for_blocked_traffic() do
@@ -1623,6 +1624,8 @@ defmodule NetworkTest do
   end
 
   defp listen_for_traffic() do
+    {:ok, interface} = Kleened.Core.FreeBSD.host_gateway_interface()
+
     port =
       Port.open(
         {:spawn_executable, "/bin/sh"},
@@ -1630,7 +1633,7 @@ defmodule NetworkTest do
           :stderr_to_stdout,
           :binary,
           :exit_status,
-          {:args, ["-c", "tcpdump -l -n -vv -i #{@host_interface} udp and dst 1.1.1.1"]},
+          {:args, ["-c", "tcpdump -l -n -vv -i #{interface} udp and dst 1.1.1.1"]},
           {:line, 1024}
         ]
       )

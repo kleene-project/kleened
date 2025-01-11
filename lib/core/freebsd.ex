@@ -20,6 +20,7 @@ defmodule Kleened.Core.FreeBSD do
     :ok
   end
 
+  @spec host_gateway_interface() :: {:ok, String.t()} | {:error, String.t()}
   def host_gateway_interface() do
     case get_routing_table(:ipv4) do
       {:ok, routing_table} ->

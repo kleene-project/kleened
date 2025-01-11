@@ -25,8 +25,15 @@ defmodule Kleened.Core.OS do
     return_value
   end
 
+  @spec shell([String.t()], %{}) :: {String.t(), integer()}
   def shell(command, options \\ %{suppress_warning: false}) do
     cmd(["/bin/sh", "-c", command], options)
+  end
+
+  @spec shell!([String.t()], %{}) :: String.t()
+  def shell!(command, options \\ %{suppress_warning: false}) do
+    {output, 0} = cmd(["/bin/sh", "-c", command], options)
+    output
   end
 
   def cmd_async(command, use_pty \\ false) do
