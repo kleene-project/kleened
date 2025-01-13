@@ -51,7 +51,8 @@ jobs:
         cp -r test/data/test_certs /usr/local/etc/kleened/certs
         cp example/pf.conf.dev.kleene /usr/local/etc/kleened/pf.conf.kleene
 
-        pkg install -y elixir-hex git gmake ca_root_nss > /dev/null
+        pkg install -y git gmake ca_root_nss > /dev/null
+        pkg install -y elixir-hex
         mix local.rebar --force
         mix local.hex --force
         make init
@@ -70,5 +71,6 @@ jobs:
         poetry run pytest -vv -x -k test_build_remove_and_list_images
 
     - name: Show Kleened-logs
+      if: always()
       shell: freebsd {0}
-      run: cat/var/log/kleened.log
+      run: cat /var/log/kleened.log
