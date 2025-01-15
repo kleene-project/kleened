@@ -8,9 +8,6 @@ defmodule NetworkTest do
 
   @moduletag :capture_log
 
-  @host_interface "em0"
-  @host_ip "10.0.2.15"
-
   @cant_connect_vnet_with_loopback %{
     message: "containers using the 'vnet' network-driver can't connect to loopback networks"
   }
@@ -794,7 +791,7 @@ defmodule NetworkTest do
     container_connectivity_test(%{
       network: %{
         name: "testnet2",
-        # This is needed for bridge networks to get the @host_interface:
+        # This is needed for bridge networks to get the host_interface:
         gateway: "<auto>",
         subnet: "10.13.38.0/24",
         type: "bridge",
@@ -823,7 +820,7 @@ defmodule NetworkTest do
     container_connectivity_test(%{
       network: %{
         name: "testnet2",
-        # This is needed for bridge networks to get the @host_interface:
+        # This is needed for bridge networks to get the host_interface:
         gateway: "<auto>",
         subnet: "10.13.38.0/24",
         type: "bridge",
@@ -854,7 +851,7 @@ defmodule NetworkTest do
     container_connectivity_test(%{
       network: %{
         name: "testnet2",
-        # This is needed for bridge networks to get the @host_interface:
+        # This is needed for bridge networks to get the host_interface:
         gateway: "<auto>",
         subnet: "10.13.38.0/24",
         type: "bridge",
@@ -1580,7 +1577,7 @@ defmodule NetworkTest do
         {false, ""} -> endpoint.ip_address
         # The only case when NAT applies:
         # Non-internal and with a specified nat-interface:
-        {false, _} -> @host_ip
+        {false, _} -> host_ip()
         {true, _} -> endpoint.ip_address
       end
 
@@ -1588,6 +1585,17 @@ defmodule NetworkTest do
     assert String.contains?(msg2, ip2check)
 
     Port.close(port)
+  end
+
+  defp host_ip() do
+    {:ok, interface} = Kleened.Core.FreeBSD.host_gateway_interface()
+
+    ip =
+      Kleened.Core.OS.shell!("ifconfig #{interface} | grep inet")
+      |> String.split(" ")
+      |> Enum.at(1)
+
+    ip
   end
 
   defp listen_for_blocked_traffic() do
@@ -1616,6 +1624,8 @@ defmodule NetworkTest do
   end
 
   defp listen_for_traffic() do
+    {:ok, interface} = Kleened.Core.FreeBSD.host_gateway_interface()
+
     port =
       Port.open(
         {:spawn_executable, "/bin/sh"},
@@ -1623,7 +1633,7 @@ defmodule NetworkTest do
           :stderr_to_stdout,
           :binary,
           :exit_status,
-          {:args, ["-c", "tcpdump -l -n -vv -i #{@host_interface} udp and dst 1.1.1.1"]},
+          {:args, ["-c", "tcpdump -l -n -vv -i #{interface} udp and dst 1.1.1.1"]},
           {:line, 1024}
         ]
       )
