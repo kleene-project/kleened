@@ -1,6 +1,6 @@
 PATH = PATH=$$PATH:./priv/bin
 
-package:
+release:
 	mix release --overwrite
 
 init:

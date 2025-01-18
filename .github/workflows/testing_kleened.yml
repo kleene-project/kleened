@@ -60,7 +60,9 @@ jobs:
         ##### Install & Start Kleened
         MIX_ENV=dev
         mix release
+        ln -s ./priv/bin/kleened_pty /usr/local/sbin/kleened_pty
         _build/dev/rel/kleened/bin/kleened daemon
+
         
         ##### Run Klee-tests
         git clone -b ${{ github.ref_type == 'branch' && github.ref_name || 'main' }} https://github.com/kleene-project/klee.git
