@@ -51,10 +51,7 @@ jobs:
         cp -r test/data/test_certs /usr/local/etc/kleened/certs
         cp example/pf.conf.dev.kleene /usr/local/etc/kleened/pf.conf.kleene
 
-        pkg update
-        pkg search elixir
-        pkg install -y git gmake ca_root_nss
-        pkg install -y elixir-hex
+        pkg install -y elixir git gmake ca_root_nss
         mix local.rebar --force
         mix local.hex --force
         make init
