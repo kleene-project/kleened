@@ -58,6 +58,11 @@ jobs:
         make test
         mix run -e "Kleened.Core.Image.remove(\"FreeBSD:testing\")"
 
+        ##### Create minimal test-jail
+        pkg install -y ruby > /dev/null
+        git clone https://github.com/kleene-project/mkjail.git
+        ./mkjail/mkjail -a test/data/minimal_testjail.txz /usr/bin/env /usr/local/bin/python3.11 -c "print('Hello World')"
+
         ##### Install & Start Kleened
         MIX_ENV=dev
         mix release
@@ -70,7 +75,6 @@ jobs:
         pkg install -y py311-poetry > /dev/null
         cd klee
         poetry install
-
         export KLEENED_MINIMAL_TESTJAIL="$GITHUB_WORKSPACE/test/data/minimal_testjail.txz"
         poetry run pytest -vv -x
 
