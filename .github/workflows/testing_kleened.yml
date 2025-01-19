@@ -70,6 +70,8 @@ jobs:
         pkg install -y py311-poetry > /dev/null
         cd klee
         poetry install
+
+        export KLEENED_MINIMAL_TESTJAIL="$GITHUB_WORKSPACE/test/data/minimal_testjail.txz"
         poetry run pytest -vv -x
 
     - name: Show logs from Kleened
