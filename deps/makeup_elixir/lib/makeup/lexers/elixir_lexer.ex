@@ -25,7 +25,7 @@ defmodule Makeup.Lexers.ElixirLexer do
   # TODO: check we're following this convention
   # NOTE: if Elixir had a good static type system it would help us do the right thing here.
 
-  whitespace = ascii_string([?\r, ?\s, ?\n, ?\f], min: 1) |> token(:whitespace)
+  whitespace = ascii_string([?\r, ?\s, ?\n, ?\t], min: 1) |> token(:whitespace)
 
   newlines =
     optional(ascii_string([?\s, ?\t, ?\r], min: 1))
@@ -198,7 +198,7 @@ defmodule Makeup.Lexers.ElixirLexer do
   # Inside the string we don't expect the `iex>` prompt, only the `...>` prompt.
   iex_prompt_inside_string =
     string("\n...")
-    |> optional(string("(") |> concat(digits) |> string(")"))
+    |> optional(string("(") |> ascii_string([not: ?)], min: 1) |> string(")"))
     |> string(">")
     |> optional(string(" "))
     |> token(:generic_prompt, %{selectable: false})
@@ -257,12 +257,15 @@ defmodule Makeup.Lexers.ElixirLexer do
 
   sigils_interpol =
     for {ldelim, rdelim} <- sigil_delimiters do
-      sigil(ldelim, rdelim, [?a..?z], combinators_inside_string)
+      sigil(ldelim, rdelim, utf8_string([?a..?z], 1), combinators_inside_string)
     end
 
   sigils_no_interpol =
     for {ldelim, rdelim} <- sigil_delimiters do
-      sigil(ldelim, rdelim, [?A..?Z], [escape_delim(rdelim), iex_prompt_inside_string])
+      sigil(ldelim, rdelim, ascii_string([?A..?Z], min: 1), [
+        escape_delim(rdelim),
+        iex_prompt_inside_string
+      ])
     end
 
   all_sigils = sigils_interpol ++ sigils_no_interpol
@@ -295,7 +298,7 @@ defmodule Makeup.Lexers.ElixirLexer do
   # would be extremely rare
   iex_prompt =
     choice([string("iex"), string("...")])
-    |> optional(string("(") |> concat(digits) |> string(")"))
+    |> optional(string("(") |> ascii_string([not: ?)], min: 1) |> string(")"))
     |> string(">")
     |> optional(string(" "))
     |> token(:generic_prompt, %{selectable: false})
@@ -502,6 +505,35 @@ defmodule Makeup.Lexers.ElixirLexer do
   defp postprocess_helper([{:name, attrs, "_" <> _name = text} | tokens]),
     do: [{:comment, attrs, text} | postprocess_helper(tokens)]
 
+  # Custom sigil lexers
+  defp postprocess_helper([{:string_sigil, attrs, content} | tokens]) do
+    # content is a list of the format ["~", sigil_char, separator, ... sigil_content ..., end_separator]
+    sigil =
+      content
+      |> Enum.at(1)
+      |> List.wrap()
+      |> List.to_string()
+
+    {lexer, options} = Map.get(get_sigil_lexers(), sigil, {nil, []})
+
+    if lexer do
+      ["~", _sigil, separator | content_with_end_separator] = content
+      end_separator = Enum.at(content_with_end_separator, -1)
+      content = Enum.slice(content_with_end_separator, 0..-2//1) |> List.to_string()
+
+      inner_tokens = lexer.lex(content, options)
+
+      List.flatten([
+        {:string_sigil, attrs, "~#{sigil}#{separator}"},
+        inner_tokens,
+        [{:string_sigil, attrs, end_separator}]
+        | postprocess_helper(tokens)
+      ])
+    else
+      [{:string_sigil, attrs, content} | postprocess_helper(tokens)]
+    end
+  end
+
   # Otherwise, don't do anything with the current token and go to the next token.
   defp postprocess_helper([token | tokens]), do: [token | postprocess_helper(tokens)]
 
@@ -620,5 +652,22 @@ defmodule Makeup.Lexers.ElixirLexer do
     |> remove_initial_newline()
     |> postprocess([])
     |> match_groups(group_prefix)
+  end
+
+  @doc """
+  Register a custom lexer to be used for lexing sigil contents.
+
+  ## Examples
+
+      > Makeup.Lexers.ElixirLexer.register_sigil_lexer("H", Makeup.Lexers.HEExLexer)
+
+  """
+  def register_sigil_lexer(sigil, lexer, options \\ []) do
+    lexers = get_sigil_lexers()
+    Application.put_env(:makeup_elixir, :sigil_lexers, Map.put(lexers, sigil, {lexer, options}))
+  end
+
+  defp get_sigil_lexers() do
+    Application.fetch_env!(:makeup_elixir, :sigil_lexers)
   end
 end

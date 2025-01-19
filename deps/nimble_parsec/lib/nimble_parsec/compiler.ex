@@ -28,7 +28,7 @@ defmodule NimbleParsec.Compiler do
           {:ok, [term], rest, context, line, byte_offset}
           | {:error, reason, rest, context, line, byte_offset}
         when line: {pos_integer, byte_offset},
-             byte_offset: pos_integer,
+             byte_offset: non_neg_integer,
              rest: binary,
              reason: String.t(),
              context: map
@@ -36,6 +36,17 @@ defmodule NimbleParsec.Compiler do
 
     args = quote(do: [binary, opts \\ []])
     guards = quote(do: is_binary(binary))
+
+    case =
+      quote generated: true do
+        case unquote(:"#{name}__0")(binary, [], [], context, line, byte_offset) do
+          {:ok, acc, rest, context, line, offset} ->
+            {:ok, :lists.reverse(acc), rest, context, line, offset}
+
+          {:error, _, _, _, _, _} = error ->
+            error
+        end
+      end
 
     body =
       quote do
@@ -48,13 +59,7 @@ defmodule NimbleParsec.Compiler do
             line -> {line, byte_offset}
           end
 
-        case unquote(:"#{name}__0")(binary, [], [], context, line, byte_offset) do
-          {:ok, acc, rest, context, line, offset} ->
-            {:ok, :lists.reverse(acc), rest, context, line, offset}
-
-          {:error, _, _, _, _, _} = error ->
-            error
-        end
+        unquote(case)
       end
 
     {doc, spec, {name, args, guards, body}}
@@ -430,7 +435,7 @@ defmodule NimbleParsec.Compiler do
 
       {acc, context} when acc != :error ->
         IO.warn(
-          "Returning a two-element tuple {acc, context} in pre_traverse/post_traverse is deprecated, " <>
+          "returning a two-element tuple {acc, context} in pre_traverse/post_traverse is deprecated, " <>
             "please return {rest, acc, context} instead"
         )
 
@@ -443,9 +448,19 @@ defmodule NimbleParsec.Compiler do
         # TODO: Deprecate two element tuple return that is not error
         quote generated: true do
           case unquote(quoted) do
-            {_, _, _} = res -> res
-            {:error, reason} -> {:error, reason}
-            {acc, context} -> {unquote(rest), acc, context}
+            {_, _, _} = res ->
+              res
+
+            {:error, reason} ->
+              {:error, reason}
+
+            {acc, context} ->
+              IO.warn(
+                "returning a two-element tuple {acc, context} in pre_traverse/post_traverse is deprecated, " <>
+                  "please return {rest, acc, context} instead"
+              )
+
+              {unquote(rest), acc, context}
           end
         end
     end
@@ -900,6 +915,15 @@ defmodule NimbleParsec.Compiler do
     end
   end
 
+  defp bound_combinator({:bytes, count}, metadata) do
+    %{counter: counter, offset: offset} = metadata
+    {var, counter} = build_var(counter)
+    input = quote do: unquote(var) :: binary - size(unquote(count))
+    offset = add_offset(offset, count)
+    metadata = %{metadata | counter: counter, offset: offset}
+    {:ok, [input], [], [var], metadata}
+  end
+
   defp bound_combinator(_, _) do
     :error
   end
@@ -1023,6 +1047,10 @@ defmodule NimbleParsec.Compiler do
 
   defp label({:parsec, name}) do
     Atom.to_string(name)
+  end
+
+  defp label({:bytes, count}) do
+    "#{inspect(count)} bytes"
   end
 
   ## Bin segments

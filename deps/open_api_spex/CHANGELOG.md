@@ -5,6 +5,47 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## v3.21.2 - 2024-10-02
+
+* Use latest version of SwaggerUI by default, but allow it to be configured by @jarmo in https://github.com/open-api-spex/open_api_spex/pull/628
+* Exporting to YAML preserves nil values in examples by @zorbash in f3cd32bee2a
+
+## v3.21.1 - 2024-09-17
+
+* Fix schema inspection argument error by @zorbash. https://github.com/open-api-spex/open_api_spex/issues/636
+
+## v3.21.0 - 2024-09-12
+
+* Update dev dependencies and example apps by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/624
+* Support casting decimals by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/634
+* Support decoding operations with :servers. by @loguntsov in https://github.com/open-api-spex/open_api_spex/pull/635
+
+## v3.20.1 - 2024-07-31
+
+* Support custom error messages in custom validators by @GregorGrasselli in https://github.com/open-api-spex/open_api_spex/pull/621
+* Update Schema.example/2 typespec to allow references by @zorbash in 5ec452f
+
+## v3.20.0 - 2024-07-10
+
+* Respect minLength when generating string examples by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/608
+* Accept read_write_scope from opts when calling cast functions directly by @albertored in https://github.com/open-api-spex/open_api_spex/pull/572
+* Allow Poison v6 to be used by @hkrutzer in https://github.com/open-api-spex/open_api_spex/pull/616
+* chore: Drop build matrix support for elixir 1.11, 1.12, 1.13 and OTP 22 by @mbuhot in https://github.com/open-api-spex/open_api_spex/pull/619
+* improvement: use struct spec to avoid double `%` in struct inspect by @zachdaniel in https://github.com/open-api-spex/open_api_spex/pull/613
+* Feat: add `--check` option in Mix tasks to compare the generated spec with a previously generated file by @davidebriani in https://github.com/open-api-spex/open_api_spex/pull/618
+* fix: cast numbers as floats by @David-Klemenc in https://github.com/open-api-spex/open_api_spex/pull/611
+
+## v3.19.1 - 2024-05-17
+
+* Add notice that body params are not merged into Conn.params whne using cast and validate plug by @hamir-suspect in #589
+* Set nonces on `<script>` and `<style>` elements if configured by @nathanalderson in #593
+* Ensure operation_id is always set on conn.private by @msutkowski in #606
+
+## v3.19.0 - 2024-04-30
+
+* Support response code ranges by @zorbash in 8898859da1
+
 ## v3.18.3 - 2024-03-15
 
 * Relax dependency constraint on ymlr to allow version ~> 5.0 by @egze in https://github.com/open-api-spex/open_api_spex/pull/586

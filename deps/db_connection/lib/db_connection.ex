@@ -389,9 +389,9 @@ defmodule DBConnection do
     random exponential (default: `:rand_exp`)
     * `:configure` - A function to run before every connect attempt to
     dynamically configure the options, either a 1-arity fun,
-    `{module, function, args}` with options prepended to `args` or `nil` where
-    only returned options are passed to connect callback (default: `nil`). This
-    function is called *in the connection process*.
+    `{module, function, args}` or `nil`. This function is called
+    *in the connection process*. For more details, see
+    [Connection Configuration Callback](#start_link/2-connection-configuration-callback)
     * `:after_connect` - A function to run on connect using `run/3`, either
     a 1-arity fun, `{module, function, args}` with `t:DBConnection.t/0` prepended
     to `args` or `nil` (default: `nil`)
@@ -404,7 +404,7 @@ defmodule DBConnection do
       in `GenServer.start_link/3`)
     * `:pool` - Chooses the pool to be started (default: `DBConnection.ConnectionPool`). See
       ["Connection pools"](#module-connection-pools).
-    * `:pool_size` - Chooses the size of the pool (default: `1`)
+    * `:pool_size` - Chooses the size of the pool. Must be greater or equal to 1. (default: `1`)
     * `:idle_interval` - Controls the frequency we check for idle connections
       in the pool. We then notify each idle connection to ping the database.
       In practice, the ping happens within `idle_interval <= ping < 2 * idle_interval`.
@@ -524,6 +524,33 @@ defmodule DBConnection do
   This feature is available since v2.6.0. Before this version `:connection_listeners` only
   accepted a list of listener processes.
 
+  ## Telemetry listener
+
+  DBConnection provides a connection listener that emits telemetry events upon
+  connection and disconnection, see the `DBConnection.TelemetryListener` module
+  for more info.
+
+  ## Connection Configuration Callback
+
+  The `:configure` function will be called before each individual connection to the
+  database is made. It receives all of the options provided to `start_link/2` as well
+  as an additional generated value named `:pool_index`. The returned value will be
+  passed as the options into the appropriate `:connect` callback. This provides a way
+  for the user to dynamically configure the connection options.
+
+  `:pool_index` is an integer in `1..pool_size` that represents the current connection's
+  place in the enumeration of all of the pool's connections. It can be used, for example,
+  to configure a unique database per connection when asynchronous tests cannot be performed
+  on a single database.
+
+  The allowed callbacks are:
+
+    * A 1-arity function that receives the options from `start_link/2` as well as
+      `:pool_index`
+    * `{module, function, args}` where the options from `start_link/2` as well as
+      `:pool_index` are prepended to `args` before the function is called
+    * `nil` if you do not want to modify the existing options
+
   ## Telemetry
 
   A `[:db_connection, :connection_error]` event is published whenever a
@@ -539,6 +566,8 @@ defmodule DBConnection do
 
     * `:opts` - All options given to the pool operation
 
+  See `DBConnection.TelemetryListener` for enabling `[:db_connection, :connected]`
+  and `[:db_connection, :disconnected]` events.
   """
   @spec start_link(module, [start_option()] | Keyword.t()) :: GenServer.on_start()
   def start_link(conn_mod, opts) do
@@ -1262,6 +1291,23 @@ defmodule DBConnection do
          {@connection_module_key, module} <- List.keyfind(dictionary, @connection_module_key, 0),
          do: {:ok, module},
          else: (_ -> :error)
+  end
+
+  @doc """
+  Returns connection metrics as a list in the shape of:
+
+      [%{
+        source: {:pool | :proxy, pid()},
+        ready_conn_count: non_neg_integer(),
+        checkout_queue_length: non_neg_integer()
+      }]
+
+  """
+  @spec get_connection_metrics(conn, Keyword.t()) :: [DBConnection.Pool.connection_metrics()]
+
+  def get_connection_metrics(conn, opts \\ []) do
+    pool = Keyword.get(opts, :pool, DBConnection.ConnectionPool)
+    pool.get_connection_metrics(conn)
   end
 
   defp pool_pid(%DBConnection{pool_ref: Holder.pool_ref(pool: pid)}), do: pid

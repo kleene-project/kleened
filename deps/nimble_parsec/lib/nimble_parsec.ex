@@ -237,6 +237,7 @@ defmodule NimbleParsec do
   @typep bound_combinator ::
            {:bin_segment, [inclusive_range], [exclusive_range], bin_modifier}
            | {:string, binary}
+           | {:bytes, pos_integer}
            | :eos
 
   @typep maybe_bound_combinator ::
@@ -286,7 +287,7 @@ defmodule NimbleParsec do
   itself, but even this guarantee may be broken by parsers that have
   custom validations. Keep in mind the following:
 
-    * `generate/1` is not compatible with NimbleParsec's dumped via
+    * `generate/1` is not compatible with NimbleParsecs dumped via
       `mix nimble_parsec.compile`;
 
     * `parsec/2` requires the referenced parsec to set `export_metadata: true`
@@ -380,6 +381,11 @@ defmodule NimbleParsec do
     generate(parsecs, mod, gen_times(t, Enum.random(0..max), mod, acc))
   end
 
+  defp generate([{:bytes, count} | parsecs], mod, acc) do
+    bytes = bytes_random(count)
+    generate(parsecs, mod, [bytes | acc])
+  end
+
   defp generate([], _mod, acc), do: Enum.reverse(acc)
 
   defp gen_export(mod, fun) do
@@ -437,6 +443,10 @@ defmodule NimbleParsec do
   defp weighted_random([_ | list], [weight | weights], chosen),
     do: weighted_random(list, weights, chosen - weight)
 
+  defp bytes_random(count) when is_integer(count) do
+    :crypto.strong_rand_bytes(count)
+  end
+
   @doc ~S"""
   Returns an empty combinator.
 
@@ -452,7 +462,7 @@ defmodule NimbleParsec do
   same module.
 
   Every parser defined via `defparsec/3` or `defparsecp/3` can be
-  used as combinators. However, the `defparsec/3` and `defparsecp/3`
+  used as combinator. However, the `defparsec/3` and `defparsecp/3`
   functions also define an entry-point parsing function, as implied
   by their names. If you want to define a combinator with the sole
   purpose of using it in combinator, use `defcombinatorp/3` instead.
@@ -461,7 +471,7 @@ defmodule NimbleParsec do
 
   `parsec/2` is useful to implement recursive definitions.
 
-  Note while `parsec/2` can be used to compose smaller combinators,
+  Note, while `parsec/2` can be used to compose smaller combinators,
   the preferred mechanism for doing composition is via regular functions
   and not via `parsec/2`. Let's see a practical example. Imagine
   that you have this module:
@@ -748,7 +758,7 @@ defmodule NimbleParsec do
   end
 
   @doc ~S"""
-  Defines an integer combinator with of exact length or `min` and `max`
+  Defines an integer combinator with exact length or `min` and `max`
   length.
 
   If you want an integer of unknown size, use `integer(min: 1)`.
@@ -1449,7 +1459,7 @@ defmodule NimbleParsec do
   end
 
   @doc """
-  Allow the combinator given on `to_repeat` to appear zero or more times.
+  Allows the combinator given on `to_repeat` to appear zero or more times.
 
   Beware! Since `repeat/2` allows zero entries, it cannot be used inside
   `choice/2`, because it will always succeed and may lead to unused function
@@ -1510,7 +1520,7 @@ defmodule NimbleParsec do
   **Note:** this can be potentially a very expensive operation
   as it executes the given combinator byte by byte until finding
   an eventual match or ultimately failing. For example, if you
-  are looking for an integer, it is preferrable to discard
+  are looking for an integer, it is preferable to discard
   everything that is not an integer
 
       ignore(ascii_string([not: ?0..?9]))
@@ -1743,7 +1753,7 @@ defmodule NimbleParsec do
         string("<abc>foo</abc>"),
         string("<abc>")
       ]
-  ß
+
   Since both choices can be activated for an input starting with "abc",
   NimbleParsec guarantees it will return the error from one of them, but
   not which.
@@ -1766,12 +1776,36 @@ defmodule NimbleParsec do
   @doc """
   Marks the given combinator as `optional`.
 
-  It is equivalent to `choice([optional, empty()])`.
+  It is equivalent to `choice([combinator, empty()])`.
   """
   @spec optional(t) :: t
   @spec optional(t, t) :: t
   def optional(combinator \\ empty(), optional) do
     choice(combinator, [optional, empty()])
+  end
+
+  @doc """
+  Defines a combinator to consume the next `n` bytes from the input.
+
+  ## Examples
+
+        defmodule MyParser do
+          import NimbleParsec
+
+          defparsec :three_bytes, bytes(3)
+        end
+
+        MyParser.three_bytes("abc")
+        #=> {:ok, ["abc"], "", %{}, {1, 0}, 3}
+
+        MyParser.three_bytes("ab")
+        #=> {:error, "expected 3 bytes", "ab", %{}, {1, 0}, 0}
+  """
+  @spec bytes(pos_integer) :: t
+  @spec bytes(t, pos_integer) :: t
+  def bytes(combinator \\ empty(), count)
+      when is_combinator(combinator) and is_integer(count) and count > 0 do
+    [{:bytes, count} | combinator]
   end
 
   ## Helpers

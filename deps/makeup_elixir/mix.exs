@@ -1,14 +1,14 @@
 defmodule MakeupElixir.Mixfile do
   use Mix.Project
 
-  @version "0.16.2"
+  @version "1.0.1"
   @url "https://github.com/elixir-makeup/makeup_elixir"
 
   def project do
     [
       app: :makeup_elixir,
       version: @version,
-      elixir: "~> 1.6",
+      elixir: "~> 1.12",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       package: package(),
@@ -36,7 +36,8 @@ defmodule MakeupElixir.Mixfile do
   def application do
     [
       extra_applications: [],
-      mod: {Makeup.Lexers.ElixirLexer.Application, []}
+      mod: {Makeup.Lexers.ElixirLexer.Application, []},
+      env: [sigil_lexers: %{}]
     ]
   end
 
@@ -46,7 +47,7 @@ defmodule MakeupElixir.Mixfile do
       {:makeup, "~> 1.0"},
       {:nimble_parsec, "~> 1.2.3 or ~> 1.3"},
       # Generate unicode character lists
-      {:unicode_set, "~> 1.1.0", only: :dev},
+      {:unicode_set, "~> 1.4", only: :dev},
       # Benchmarking utilities
       {:benchee, "~> 1.0", only: :dev},
       {:benchee_markdown, "~> 0.2", only: :dev}

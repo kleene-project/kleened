@@ -11,10 +11,10 @@ Add `makeup_erlang` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:makeup_erlang, "~> 0.1.0"}
+    {:makeup_erlang, "~> 1.0"}
   ]
 end
 ```
 
-The lexer will automatically register itself with `Makeup` for the languages `erlang` and `erl` 
+The lexer will automatically register itself with `Makeup` for the languages `erlang` and `erl`
 as well as the extensions `.erl`, `.hrl` and `.escript`.

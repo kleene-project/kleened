@@ -10,9 +10,13 @@ defmodule Plug.RewriteOn do
 
   The supported values are:
 
-    * `:x_forwarded_host` - to override the host based on on the "x-forwarded-host" header
-    * `:x_forwarded_port` - to override the port based on on the "x-forwarded-port" header
-    * `:x_forwarded_proto` - to override the protocol based on on the "x-forwarded-proto" header
+    * `:x_forwarded_for` - to override the remote ip based on the "x-forwarded-for" header
+    * `:x_forwarded_host` - to override the host based on the "x-forwarded-host" header
+    * `:x_forwarded_port` - to override the port based on the "x-forwarded-port" header
+    * `:x_forwarded_proto` - to override the protocol based on the "x-forwarded-proto" header
+
+  A tuple representing a Module-Function-Args can also be given as argument
+  instead of a list.
 
   Since rewriting the scheme based on `x-forwarded-*` headers can open up
   security vulnerabilities, only use this plug if:
@@ -26,9 +30,16 @@ defmodule Plug.RewriteOn do
   import Plug.Conn, only: [get_req_header: 2]
 
   @impl true
+  def init(header) when is_tuple(header), do: header
   def init(header), do: List.wrap(header)
 
   @impl true
+  def call(conn, [:x_forwarded_for | rewrite_on]) do
+    conn
+    |> put_remote_ip(get_req_header(conn, "x-forwarded-for"))
+    |> call(rewrite_on)
+  end
+
   def call(conn, [:x_forwarded_proto | rewrite_on]) do
     conn
     |> put_scheme(get_req_header(conn, "x-forwarded-proto"))
@@ -53,6 +64,10 @@ defmodule Plug.RewriteOn do
 
   def call(conn, []) do
     conn
+  end
+
+  def call(conn, {mod, fun, args}) do
+    call(conn, apply(mod, fun, args))
   end
 
   defp put_scheme(%{scheme: :http, port: 80} = conn, ["https"]),
@@ -80,6 +95,16 @@ defmodule Plug.RewriteOn do
     with [header] <- headers,
          {port, ""} <- Integer.parse(header) do
       %{conn | port: port}
+    else
+      _ -> conn
+    end
+  end
+
+  defp put_remote_ip(conn, headers) do
+    with [header] <- headers,
+         [client | _] <- :binary.split(header, ","),
+         {:ok, remote_ip} <- :inet.parse_address(String.to_charlist(client)) do
+      %{conn | remote_ip: remote_ip}
     else
       _ -> conn
     end

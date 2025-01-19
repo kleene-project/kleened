@@ -1,6 +1,6 @@
 {application,mimerl,
              [{description,"Library to handle mimetypes"},
-              {vsn,"1.2.0"},
+              {vsn,"1.3.0"},
               {registered,[]},
               {applications,[kernel,stdlib]},
               {env,[]},

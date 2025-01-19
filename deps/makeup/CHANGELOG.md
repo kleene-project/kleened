@@ -1,5 +1,13 @@
 # Changelog
 
+### 1.2.1 - 2024-11-07
+
+Allow empty middle on string_like combinators.
+
+### 1.2.0 - 2024-11-06
+
+Make reparsing at end of string configurable.
+
 ### 1.1.2 - 2024-05-11
 
 Do not attempt reparsing if surrounded by reaches end of string.

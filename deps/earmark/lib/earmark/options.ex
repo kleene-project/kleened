@@ -17,6 +17,35 @@ defmodule Earmark.Options do
   All other options are passed onto Earmark.Parser.as_ast/`2`
   """
 
+  @type t :: %__MODULE__{
+          annotations: String.t() | nil,
+          breaks: boolean(),
+          code_class_prefix: String.t() | nil,
+          compact_output: boolean(),
+          eex: boolean(),
+          escape: boolean(),
+          file: String.t() | nil,
+          footnote_offset: non_neg_integer(),
+          footnotes: boolean(),
+          gfm: boolean(),
+          gfm_tables: boolean(),
+          ignore_strings: boolean(),
+          inner_html: boolean(),
+          line: non_neg_integer(),
+          mapper: (list(any()), function() -> {:ok, list(any())} | {:error, any()}),
+          mapper_with_timeout:
+            (list(any()), function(), integer() -> {:ok, list(any())} | {:error, any()}),
+          messages: list(Earmark.Error.t()) | [],
+          pedantic: boolean(),
+          postprocessor: function() | nil,
+          pure_links: boolean(),
+          sub_sup: boolean(),
+          registered_processors: list(any()),
+          smartypants: boolean(),
+          template: boolean(),
+          timeout: integer() | nil,
+          wikilinks: boolean()
+        }
   defstruct annotations: nil,
             breaks: false,
             code_class_prefix: nil,
@@ -44,6 +73,13 @@ defmodule Earmark.Options do
             template: false,
             timeout: nil,
             wikilinks: false
+
+  @type options ::
+          t()
+          | Earmark.Parser.Options.t()
+          | map()
+          | maybe_improper_list()
+          | Keyword.t()
 
   @doc ~S"""
   Make a legal and normalized Option struct from, maps or keyword lists
@@ -86,6 +122,9 @@ defmodule Earmark.Options do
   {:error, [{:error, 0, "footnote_offset option must be numeric"}, {:error, 0, "line option must be numeric"}]}
 
   """
+  @spec make_options(options()) ::
+          {:ok, options()}
+          | {:error, [{atom(), integer(), String.t()}]}
 
   def make_options(options \\ [])
 
@@ -162,6 +201,7 @@ defmodule Earmark.Options do
   "./local.md"
 
   """
+  @spec relative_filename(options(), String.t()) :: options()
   def relative_filename(options, filename)
 
   def relative_filename(options, filename) when is_list(options) do

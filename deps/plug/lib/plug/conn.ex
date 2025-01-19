@@ -533,7 +533,7 @@ defmodule Plug.Conn do
   `send_chunked/2`. It returns `{:ok, conn}` in case of success,
   otherwise `{:error, reason}`.
 
-  To stream data use `Enum.reduce_while/3` instead of `Enum.into/2`.
+  To stream data use `Enum.reduce_while/3` instead of `Enum.reduce/2`.
   `Enum.reduce_while/3` allows aborting the execution if `chunk/2` fails to
   deliver the chunk of data.
 
@@ -1644,7 +1644,8 @@ defmodule Plug.Conn do
   end
 
   defp max_age(opts) do
-    [keys: Plug.Keys, max_age: Keyword.get(opts, :max_age, 86400)]
+    max_age = Keyword.get(opts, :max_age) || 86400
+    [keys: Plug.Keys, max_age: max_age]
   end
 
   defp maybe_secure_cookie(cookie, :https), do: Map.put_new(cookie, :secure, true)

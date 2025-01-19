@@ -42,7 +42,7 @@ defmodule Erlex do
 
   defp lex(str) do
     try do
-      {:ok, tokens, _} = :lexer.string(str)
+      {:ok, tokens, _} = :erlex_lexer.string(str)
       tokens
     rescue
       _ ->
@@ -52,7 +52,7 @@ defmodule Erlex do
 
   defp parse(tokens) do
     try do
-      {:ok, [first | _]} = :parser.parse(tokens)
+      {:ok, [first | _]} = :erlex_parser.parse(tokens)
       first
     rescue
       _ ->
@@ -70,10 +70,10 @@ defmodule Erlex do
   end
 
   @spec pretty_print_infix(infix :: String.t()) :: String.t()
-  def pretty_print_infix('=:='), do: "==="
-  def pretty_print_infix('=/='), do: "!=="
-  def pretty_print_infix('/='), do: "!="
-  def pretty_print_infix('=<'), do: "<="
+  def pretty_print_infix(~c"=:="), do: "==="
+  def pretty_print_infix(~c"=/="), do: "!=="
+  def pretty_print_infix(~c"/="), do: "!="
+  def pretty_print_infix(~c"=<"), do: "<="
   def pretty_print_infix(infix), do: to_string(infix)
 
   @spec pretty_print(str :: String.t()) :: String.t()
@@ -93,7 +93,7 @@ defmodule Erlex do
   end
 
   @spec pretty_print_pattern(pattern :: String.t()) :: String.t()
-  def pretty_print_pattern('pattern ' ++ rest) do
+  def pretty_print_pattern(~c"pattern " ++ rest) do
     pretty_print_type(rest)
   end
 
@@ -135,14 +135,7 @@ defmodule Erlex do
     else
       joiner = "Contract head:\n"
 
-      pretty =
-        Enum.map_join([head | tail], "\n\n" <> joiner, fn contract ->
-          contract
-          |> to_charlist()
-          |> do_pretty_print_contract()
-        end)
-
-      joiner <> pretty
+      joiner <> Enum.map_join([head | tail], "\n\n" <> joiner, &do_pretty_print_contract/1)
     end
   end
 
@@ -217,20 +210,14 @@ defmodule Erlex do
   end
 
   defp do_pretty_print({:assignment, {:atom, atom}, value}) do
-    name =
-      atom
-      |> deatomize()
-      |> to_string()
-      |> strip_var_version()
-
-    "#{name} = #{do_pretty_print(value)}"
+    "#{normalize_name(atom)} = #{do_pretty_print(value)}"
   end
 
   defp do_pretty_print({:atom, [:_]}) do
     "_"
   end
 
-  defp do_pretty_print({:atom, ['_']}) do
+  defp do_pretty_print({:atom, [~c"_"]}) do
     "_"
   end
 
@@ -304,7 +291,7 @@ defmodule Erlex do
          {:list, :square,
           [
             tuple: [
-              {:type_list, ['a', 't', 'o', 'm'], {:list, :paren, []}},
+              {:type_list, [~c"a", ~c"t", ~c"o", ~c"m"], {:list, :paren, []}},
               {:atom, [:_]}
             ]
           ]}
@@ -316,7 +303,7 @@ defmodule Erlex do
          {:list, :square,
           [
             tuple: [
-              {:type_list, ['a', 't', 'o', 'm'], {:list, :paren, []}},
+              {:type_list, [~c"a", ~c"t", ~c"o", ~c"m"], {:list, :paren, []}},
               t
             ]
           ]}
@@ -335,7 +322,7 @@ defmodule Erlex do
   defp do_pretty_print(
          {:map,
           [
-            {:map_entry, {:atom, '\'__struct__\''}, {:atom, [:_]}},
+            {:map_entry, {:atom, ~c"'__struct__'"}, {:atom, [:_]}},
             {:map_entry, {:atom, [:_]}, {:atom, [:_]}}
           ]}
        ) do
@@ -345,9 +332,10 @@ defmodule Erlex do
   defp do_pretty_print(
          {:map,
           [
-            {:map_entry, {:atom, '\'__struct__\''},
-             {:type_list, ['a', 't', 'o', 'm'], {:list, :paren, []}}},
-            {:map_entry, {:type_list, ['a', 't', 'o', 'm'], {:list, :paren, []}}, {:atom, [:_]}}
+            {:map_entry, {:atom, ~c"'__struct__'"},
+             {:type_list, [~c"a", ~c"t", ~c"o", ~c"m"], {:list, :paren, []}}},
+            {:map_entry, {:type_list, [~c"a", ~c"t", ~c"o", ~c"m"], {:list, :paren, []}},
+             {:atom, [:_]}}
           ]}
        ) do
     "struct()"
@@ -356,8 +344,8 @@ defmodule Erlex do
   defp do_pretty_print(
          {:map,
           [
-            {:map_entry, {:atom, '\'__struct__\''},
-             {:type_list, ['a', 't', 'o', 'm'], {:list, :paren, []}}},
+            {:map_entry, {:atom, ~c"'__struct__'"},
+             {:type_list, [~c"a", ~c"t", ~c"o", ~c"m"], {:list, :paren, []}}},
             {:map_entry, {:atom, [:_]}, {:atom, [:_]}}
           ]}
        ) do
@@ -367,8 +355,8 @@ defmodule Erlex do
   defp do_pretty_print(
          {:map,
           [
-            {:map_entry, {:atom, '\'__exception__\''}, {:atom, '\'true\''}},
-            {:map_entry, {:atom, '\'__struct__\''}, {:atom, [:_]}},
+            {:map_entry, {:atom, ~c"'__exception__'"}, {:atom, ~c"'true'"}},
+            {:map_entry, {:atom, ~c"'__struct__'"}, {:atom, [:_]}},
             {:map_entry, {:atom, [:_]}, {:atom, [:_]}}
           ]}
        ) do
@@ -376,12 +364,12 @@ defmodule Erlex do
   end
 
   defp do_pretty_print({:map, map_keys}) do
-    %{struct_name: struct_name, entries: entries} = struct_parts(map_keys)
+    case struct_parts(map_keys) do
+      %{name: name, entries: [{:map_entry, {:atom, [:_]}, {:atom, [:_]}}]} ->
+        "%#{name}{}"
 
-    if struct_name do
-      "%#{struct_name}{#{Enum.map_join(entries, ", ", &do_pretty_print/1)}}"
-    else
-      "%{#{Enum.map_join(entries, ", ", &do_pretty_print/1)}}"
+      %{name: name, entries: entries} ->
+        "%#{name}{#{Enum.map_join(entries, ", ", &do_pretty_print/1)}}"
     end
   end
 
@@ -389,13 +377,7 @@ defmodule Erlex do
        when is_tuple(named_type) and is_tuple(type) do
     case named_type do
       {:atom, name} ->
-        name =
-          name
-          |> deatomize()
-          |> to_string()
-          |> strip_var_version()
-
-        "#{name}: #{do_pretty_print(type)}"
+        "#{normalize_name(name)}: #{do_pretty_print(type)}"
 
       other ->
         "#{do_pretty_print(other)}: #{do_pretty_print(type)}"
@@ -406,13 +388,7 @@ defmodule Erlex do
        when is_tuple(named_type) and is_tuple(type) do
     case named_type do
       {:atom, name} ->
-        name =
-          name
-          |> deatomize()
-          |> to_string()
-          |> strip_var_version()
-
-        "#{name} :: #{do_pretty_print(type)}"
+        "#{normalize_name(name)} :: #{do_pretty_print(type)}"
 
       other ->
         "#{do_pretty_print(other)} :: #{do_pretty_print(type)}"
@@ -421,17 +397,11 @@ defmodule Erlex do
 
   defp do_pretty_print({:named_type, named_type, type}) when is_tuple(named_type) do
     case named_type do
-      {:atom, name = '\'Elixir' ++ _} ->
+      {:atom, name = ~c"'Elixir" ++ _} ->
         "#{atomize(name)}.#{deatomize(type)}()"
 
       {:atom, name} ->
-        name =
-          name
-          |> deatomize()
-          |> to_string()
-          |> strip_var_version()
-
-        "#{name} :: #{deatomize(type)}()"
+        "#{normalize_name(name)} :: #{deatomize(type)}()"
 
       other ->
         name = do_pretty_print(other)
@@ -448,15 +418,32 @@ defmodule Erlex do
   end
 
   defp do_pretty_print(
-         {:pipe_list, {:atom, ['f', 'a', 'l', 's', 'e']}, {:atom, ['t', 'r', 'u', 'e']}}
+         {:pipe_list, {:atom, [~c"f", ~c"a", ~c"l", ~c"s", ~c"e"]},
+          {:atom, [~c"t", ~c"r", ~c"u", ~c"e"]}}
        ) do
     "boolean()"
   end
 
   defp do_pretty_print(
-         {:pipe_list, {:atom, '\'infinity\''},
-          {:type_list, ['n', 'o', 'n', :_, 'n', 'e', 'g', :_, 'i', 'n', 't', 'e', 'g', 'e', 'r'],
-           {:list, :paren, []}}}
+         {:pipe_list, {:atom, ~c"'infinity'"},
+          {:type_list,
+           [
+             ~c"n",
+             ~c"o",
+             ~c"n",
+             :_,
+             ~c"n",
+             ~c"e",
+             ~c"g",
+             :_,
+             ~c"i",
+             ~c"n",
+             ~c"t",
+             ~c"e",
+             ~c"g",
+             ~c"e",
+             ~c"r"
+           ], {:list, :paren, []}}}
        ) do
     "timeout()"
   end
@@ -536,10 +523,16 @@ defmodule Erlex do
       end)
 
     when_names =
-      when_names
-      |> Enum.map(fn {_, v} -> v |> atomize() |> String.trim_leading(":") end)
+      Enum.map(when_names, fn {_, name} ->
+        name
+        |> atomize()
+        |> String.trim_leading(":")
+      end)
 
-    printed_whens = pretty_names |> Enum.reverse() |> Enum.join(", ")
+    printed_whens =
+      pretty_names
+      |> Enum.reverse()
+      |> Enum.join(", ")
 
     {printed_whens, when_names}
   end
@@ -572,8 +565,8 @@ defmodule Erlex do
     end
   end
 
-  defp atomize(<<atom>>) when is_number(atom) do
-    "#{atom}"
+  defp atomize(<<number>>) when is_number(number) and number != ?_ do
+    to_string(number)
   end
 
   defp atomize(atom) do
@@ -582,7 +575,10 @@ defmodule Erlex do
     if String.starts_with?(atom, "_") do
       atom
     else
-      inspect(:"#{String.trim(atom, "'")}")
+      atom
+      |> String.trim("'")
+      |> String.to_atom()
+      |> inspect()
     end
   end
 
@@ -596,26 +592,26 @@ defmodule Erlex do
   end
 
   defp struct_parts(map_keys) do
-    %{struct_name: struct_name, entries: entries} =
-      Enum.reduce(map_keys, %{struct_name: nil, entries: []}, &struct_part/2)
+    %{name: name, entries: entries} =
+      Enum.reduce(map_keys, %{name: "", entries: []}, &struct_part/2)
 
-    %{struct_name: struct_name, entries: Enum.reverse(entries)}
+    %{name: name, entries: Enum.reverse(entries)}
   end
 
-  defp struct_part({:map_entry, {:atom, '\'__struct__\''}, {:atom, struct_name}}, struct_parts) do
-    struct_name =
-      struct_name
+  defp struct_part({:map_entry, {:atom, ~c"'__struct__'"}, {:atom, name}}, struct_parts) do
+    name =
+      name
       |> atomize()
       |> String.trim("\"")
 
-    Map.put(struct_parts, :struct_name, struct_name)
+    Map.put(struct_parts, :name, name)
   end
 
   defp struct_part(entry, struct_parts = %{entries: entries}) do
     Map.put(struct_parts, :entries, [entry | entries])
   end
 
-  defp deatomize([:_, :_, '@', {:int, _}]) do
+  defp deatomize([:_, :_, ~c"@", {:int, _}]) do
     "_"
   end
 
@@ -632,4 +628,11 @@ defmodule Erlex do
   end
 
   defp deatomize_char(char), do: char
+
+  defp normalize_name(name) do
+    name
+    |> deatomize()
+    |> to_string()
+    |> strip_var_version()
+  end
 end
