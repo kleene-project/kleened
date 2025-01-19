@@ -48,7 +48,7 @@ defmodule Kleened.MixProject do
   defp deps do
     [
       {:exqlite, "0.20.0"},
-      {:jason, "~> 1.2"},
+      {:jason, "~> 1.4"},
       {:yaml_elixir, "~> 2.4"},
       {:inet_cidr, "~> 1.0.0"},
       {:cowlib, "~> 2.12", override: true},
