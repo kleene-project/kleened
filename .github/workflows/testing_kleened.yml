@@ -76,6 +76,7 @@ jobs:
         cd klee
         poetry install
         export KLEENED_MINIMAL_TESTJAIL="$GITHUB_WORKSPACE/test/data/minimal_testjail.txz"
+        echo "Running Klee test-suite"
         poetry run pytest -vv -x
 
     - name: Show logs from Kleened
