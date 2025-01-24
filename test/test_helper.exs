@@ -791,7 +791,9 @@ defmodule TestHelper do
   end
 
   def compare_environment_output(output, expected_envvars) do
-    output_envs = TestHelper.from_environment_output(output)
+    output_envs =
+      TestHelper.from_environment_output(output)
+
     expected_envs = TestHelper.jail_environment(expected_envvars)
     assert output_envs == expected_envs
   end
@@ -811,10 +813,15 @@ defmodule TestHelper do
         "BLOCKSIZE=K"
       ] ++ additional_envs
     )
+    |> remove_TERM_variable()
   end
 
   def from_environment_output(output) do
-    MapSet.new(String.split(Enum.join(output), "\n", trim: true))
+    MapSet.new(String.split(Enum.join(output), "\n", trim: true)) |> remove_TERM_variable()
+  end
+
+  def remove_TERM_variable(varlist) do
+    varlist |> Enum.filter(&(not String.starts_with?(&1, "TERM=")))
   end
 
   defp validate_response(api_spec, response, statuscodes_to_specs) do

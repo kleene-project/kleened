@@ -54,8 +54,10 @@ jobs:
         pkg install -y elixir git gmake ca_root_nss > /dev/null
         mix local.rebar --force
         mix local.hex --force
-        make init
-        make test
+        mix run --eval "Kleened.Core.Config.initialize_host(%{dry_run: false})"
+        mix compile
+        export PATH=PATH=$PATH:./priv/bin
+        mix test --seed 0 --trace --max-failures 1
         mix run -e "Kleened.Core.Image.remove(\"FreeBSD:testing\")"
 
         ##### Create minimal test-jail
@@ -74,7 +76,7 @@ jobs:
         git clone -b ${{ github.ref_type == 'branch' && github.ref_name || 'main' }} https://github.com/kleene-project/klee.git
         pkg install -y py311-poetry > /dev/null
         cd klee
-        poetry install
+        poetry -q install
         export KLEENED_MINIMAL_TESTJAIL="$GITHUB_WORKSPACE/test/data/minimal_testjail.txz"
         echo "Running Klee test-suite"
         poetry run pytest -vv -x
