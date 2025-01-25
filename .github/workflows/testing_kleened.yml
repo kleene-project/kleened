@@ -41,7 +41,7 @@ jobs:
         zfs create zroot/kleene_basejail
         tar -xf base.txz -C /zroot/kleene_basejail
 
-    - name: Build Kleened and run Kleened and Klee testsuites
+    - name: Compile Kleened and run tests
       shell: freebsd {0}
       run: |
         ##### Configure and run Kleened Tests
@@ -60,6 +60,9 @@ jobs:
         mix test --seed 0 --trace --max-failures 1
         mix run -e "Kleened.Core.Image.remove(\"FreeBSD:testing\")"
 
+    - name: Build Kleened release and run Klee-tests
+      shell: freebsd {0}
+      run: |
         ##### Create minimal test-jail
         pkg install -y ruby > /dev/null
         git clone https://github.com/kleene-project/mkjail.git
@@ -84,4 +87,12 @@ jobs:
     - name: Show logs from Kleened
       if: failure()
       shell: freebsd {0}
-      run: cat /var/log/kleened.log
+      run: |
+        zfs list
+        cat /var/log/kleened.log
+
+    - name: Show FreeBSD host information
+      if: failure()
+      shell: freebsd {0}
+      run: |
+        zfs list
