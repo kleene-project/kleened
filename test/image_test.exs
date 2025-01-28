@@ -1146,7 +1146,7 @@ defmodule ImageTest do
 
   # The mini-jail userland used for the 'fetch' and 'zfs' image creation tests
   # have been created with https://github.com/Freaky/mkjail using the command
-  # mkjail -a minimal_testjail.txz /usr/bin/env /usr/local/bin/python3.9 -c "print('lol')"
+  # mkjail -a minimal_testjail.txz /usr/bin/env /usr/local/bin/python3.11 -c "print('lol')"
   test "create base image using a method 'zfs-copy'" do
     config = %{
       method: "zfs-copy",
@@ -1421,7 +1421,7 @@ defmodule ImageTest do
     %{
       name: "base_img_create_test",
       image: image_id,
-      cmd: ["/usr/local/bin/python3.9", "-c", "print('testing minimaljail')"],
+      cmd: ["/usr/local/bin/python3.11", "-c", "print('testing minimaljail')"],
       jail_param: ["exec.system_jail_user", "mount.devfs=false", "exec.clean=false"],
       user: "root",
       attach: true
