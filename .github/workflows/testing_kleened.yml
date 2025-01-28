@@ -41,7 +41,7 @@ jobs:
         zfs create zroot/kleene_basejail
         tar -xf base.txz -C /zroot/kleene_basejail
 
-    - name: Compile Kleened and run tests
+    - name: Compile Kleened and initialize host
       shell: freebsd {0}
       run: |
         ##### Configure and run Kleened Tests
@@ -54,15 +54,35 @@ jobs:
         pkg install -y elixir git gmake ca_root_nss > /dev/null
         mix local.rebar --force
         mix local.hex --force
-        mix run --eval "Kleened.Core.Config.initialize_host(%{dry_run: false})"
         mix compile
-        export PATH=PATH=$PATH:./priv/bin
-        mix test --seed 0 --trace --max-failures 1
-        mix run -e "Kleened.Core.Image.remove(\"FreeBSD:testing\")"
+        mix run --eval "Kleened.Core.Config.initialize_host(%{dry_run: false})"
 
-    - name: Build Kleened release and run Klee-tests
+    - name: Create test-jail userland
       shell: freebsd {0}
       run: |
+        cd $GITHUB_WORKSPACE;
+        ##### Create minimal test-jail
+        pkg install -y ruby > /dev/null
+        git clone https://github.com/kleene-project/mkjail.git
+        ./mkjail/mkjail -a test/data/minimal_testjail.txz /usr/bin/env /usr/local/bin/python3.11 -c "print('Hello World')"
+
+    - name: Run Kleened-tests
+      shell: freebsd {0}
+      run: |
+        cd $GITHUB_WORKSPACE;
+        export PATH=$PATH:./priv/bin
+        mix test --seed 0 --trace --max-failures 1
+
+    - name: Remove test-image
+      shell: freebsd {0}
+      run:
+        cd $GITHUB_WORKSPACE;
+        mix run -e "Kleened.Core.Image.remove(\"FreeBSD:testing\")"
+
+    - name: Build a Kleened release
+      shell: freebsd {0}
+      run: |
+        cd $GITHUB_WORKSPACE;
         ##### Create minimal test-jail
         pkg install -y ruby > /dev/null
         git clone https://github.com/kleene-project/mkjail.git
@@ -71,6 +91,11 @@ jobs:
         ##### Install & Start Kleened
         MIX_ENV=dev
         mix release
+
+    - name: Run Klee-tests
+      shell: freebsd {0}
+      run: |
+        cd $GITHUB_WORKSPACE;
         # Make 'kleened_pty' available on PATH:
         ln -s $GITHUB_WORKSPACE/priv/bin/kleened_pty /usr/local/sbin/kleened_pty
         _build/dev/rel/kleened/bin/kleened daemon
