@@ -79,16 +79,10 @@ jobs:
         cd $GITHUB_WORKSPACE;
         mix run -e "Kleened.Core.Image.remove(\"FreeBSD:testing\")"
 
-    - name: Build a Kleened release
+    - name: Build Kleened release
       shell: freebsd {0}
       run: |
         cd $GITHUB_WORKSPACE;
-        ##### Create minimal test-jail
-        pkg install -y ruby > /dev/null
-        git clone https://github.com/kleene-project/mkjail.git
-        ./mkjail/mkjail -a test/data/minimal_testjail.txz /usr/bin/env /usr/local/bin/python3.11 -c "print('Hello World')"
-
-        ##### Install & Start Kleened
         MIX_ENV=dev
         mix release
 
