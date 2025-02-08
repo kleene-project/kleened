@@ -22,7 +22,6 @@ jobs:
       - name: Build kleened pkg-package with Poudriere
         id: kleened-pkg-build
         uses: vmactions/freebsd-vm@v1.1.5
-        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
           envs: 'POUDRIERE_JAIL'
           usesh: true
@@ -69,7 +68,6 @@ jobs:
 
       - name: Create artifact with pkg package
         uses: actions/upload-artifact@v4
-        #if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
           name: kleene_pkg
           path: ${{ steps.kleened-pkg-build.outputs.PKG_FILE }}
@@ -91,12 +89,17 @@ jobs:
         with:
           repository: kleene-project/klee
           ref: ${{ github.ref_type == 'branch' && github.ref_name || 'main' }}
+      - uses: actions/checkout@v4
+        with:
+          repository: kleene-project/kleened
+          path: kleened
+          ref: ${{ github.ref_type == 'branch' && github.ref_name || 'main' }}
+          clean: false
       - uses: actions/download-artifact@v4
         with:
           name: kleene_pkg
       - name: Test newly built kleened package
         uses: vmactions/freebsd-vm@v1.1.5
-        #if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
           usesh: true
           run: |
@@ -115,13 +118,15 @@ jobs:
 
             ##### Install Kleened
             pkg install -y kleene-daemon-*.pkg
-            sudo sysrc kleened_enable=yes
+
+            ##### Configure and start Kleened
+            cp kleened/example/kleened_config_dev.yaml /usr/local/etc/kleened/config.yaml
+            cp -r kleened/test/data/test_certs /usr/local/etc/kleened/certs
+            sysrc kleened_enable=yes
             service kleened init
             service kleened start
 
             ##### Run Klee-tests
-            #git clone -b ${{ github.ref_type == 'branch' && github.ref_name || 'main' }} https://github.com/kleene-project/klee.git
-            pkg install -y py311-poetry
-            #cd klee
-            poetry install
+            pkg install -y py311-poetry > /dev/null
+            poetry install -q
             poetry run pytest -vv -x
