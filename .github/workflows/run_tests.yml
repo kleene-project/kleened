@@ -21,20 +21,16 @@ jobs:
       run: |
         ###### Configure ZFS ######
         kldload zfs
+        kldload if_bridge
         sysrc -f /boot/loader.conf zfs_load="YES"
         sysrc zfs_enable="YES"
         truncate -s 10G /home/runner/zpool.disk
         zpool create -O atime=off -f zroot /home/runner/zpool.disk
         ###### Configure PF ######
-        kldload pf.ko
-        kldload pflog.ko
-        kldload if_bridge
-        sysrc pf_enable="YES"
-        sysrc pflog_enable="YES"
-        service pf start
-        service pflog start
-        # To make all networking-tests pass:
-        sysctl net.link.bridge.pfil_bridge=1
+        #kldload pf.ko
+        #kldload pflog.ko
+        #sysrc pf_enable="YES"
+        #sysrc pflog_enable="YES"
 
         ###### Create basejail ######
         fetch https://download.freebsd.org/releases/amd64/14.1-RELEASE/base.txz
@@ -56,6 +52,13 @@ jobs:
         mix local.hex --force
         mix compile
         mix run --eval "Kleened.Core.Config.initialize_host(%{dry_run: false})"
+
+        # Testing:
+        service pf start
+        service pflog start
+        # To make all networking-tests pass:
+        sysctl net.link.bridge.pfil_bridge=1
+
 
     - name: Create test-jail userland
       shell: freebsd {0}
