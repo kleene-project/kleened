@@ -126,6 +126,11 @@ jobs:
             service kleened init
             service kleened start
 
+            ###### Create basejail ######
+            fetch https://download.freebsd.org/releases/amd64/14.1-RELEASE/base.txz
+            zfs create zroot/kleene_basejail
+            tar -xf base.txz -C /zroot/kleene_basejail
+
             ##### Run Klee-tests
             pkg install -y py311-poetry > /dev/null
             poetry install -q
