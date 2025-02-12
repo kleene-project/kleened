@@ -130,7 +130,8 @@ jobs:
             pkg install -y py311-poetry ruby > /dev/null
             git clone https://github.com/kleene-project/mkjail.git
             ./mkjail/mkjail -a test/data/minimal_testjail.txz /usr/bin/env /usr/local/bin/python3.11 -c "print('Hello World')"
-
+            export KLEENED_MINIMAL_TESTJAIL="./test/data/minimal_testjail.txz"
+            
             ##### Run Klee-tests
             poetry install -q
             poetry run pytest -vv -x
