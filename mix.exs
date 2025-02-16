@@ -12,7 +12,7 @@ defmodule Kleened.MixProject do
   def project do
     [
       app: :kleened,
-      version: "0.1.0-rc3",
+      version: "0.1.0",
       elixir: "~> 1.9",
       compilers: Mix.compilers() ++ [:run_pty, :leex, :yecc],
       start_permanent: Mix.env() == :prod,
