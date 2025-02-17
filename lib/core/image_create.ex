@@ -92,7 +92,7 @@ defmodule Kleened.Core.ImageCreate do
         %Config{autotag: false} -> config.tag
       end
 
-    url = version2url(version, arch, "base.txz")
+    url = version2url(version, arch, "base.txz", receiver)
     image = create_image_using_fetch_(receiver, %Config{config | url: url, tag: tag})
 
     msg = "Created image from the automatically detected version: FreeBSD-#{version} #{arch}.\n"
@@ -130,12 +130,22 @@ defmodule Kleened.Core.ImageCreate do
     {operating_system, verison, architecture}
   end
 
-  defp version2url(version, arch, filename) do
+  defp version2url(version, arch, filename, receiver) do
     hostname = "https://download.freebsd.org"
 
     case String.split(version, "-") do
-      [_, "RELEASE"] -> "#{hostname}/releases/#{arch}/#{version}/#{filename}"
-      [_, "STABLE"] -> "#{hostname}/snapshots/#{arch}/#{version}/#{filename}"
+      [_, "RELEASE"] ->
+        "#{hostname}/releases/#{arch}/#{version}/#{filename}"
+
+      # E.g. '14.1-RELEASE-p7'
+      [version_number, "RELEASE", _] ->
+        "#{hostname}/releases/#{arch}/#{version_number}-RELEASE/#{filename}"
+
+      [_, "STABLE"] ->
+        "#{hostname}/snapshots/#{arch}/#{version}/#{filename}"
+
+      _ ->
+        exit(receiver, "could not deduce url from FreeBSD version #{version}")
     end
   end
 
