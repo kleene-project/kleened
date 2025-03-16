@@ -1,6 +1,7 @@
 defmodule VolumeTest do
-  use Kleened.Test.ConnCase
   require Logger
+  use Kleened.Test.ConnCase
+  alias ExUnit.CaptureLog
 
   alias Kleened.Core.{MetaData, Container, Volume, Mount}
   alias Kleened.API.Schemas
@@ -11,9 +12,11 @@ defmodule VolumeTest do
     TestHelper.cleanup()
 
     on_exit(fn ->
-      Logger.info("Cleaning up after test...")
-      TestHelper.compare_to_baseline_environment(state)
-      TestHelper.cleanup()
+      CaptureLog.capture_log(fn ->
+        Logger.info("Cleaning up after test...")
+        TestHelper.compare_to_baseline_environment(state)
+        TestHelper.cleanup()
+      end)
     end)
 
     :ok

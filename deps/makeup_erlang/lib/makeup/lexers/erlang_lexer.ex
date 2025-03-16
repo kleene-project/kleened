@@ -14,7 +14,7 @@ defmodule Makeup.Lexers.ErlangLexer do
   # Step #1: tokenize the input (into a list of tokens)
   ###################################################################
 
-  whitespace = ascii_string([?\s, ?\f, ?\n], min: 1) |> token(:whitespace)
+  whitespace = ascii_string([?\s, ?\f, ?\n, ?\t], min: 1) |> token(:whitespace)
 
   # This is the combinator that ensures that the lexer will never reject a file
   # because of invalid input syntax

@@ -12,7 +12,7 @@ defmodule Kleened.MixProject do
   def project do
     [
       app: :kleened,
-      version: "0.0.1",
+      version: "0.1.0",
       elixir: "~> 1.9",
       compilers: Mix.compilers() ++ [:run_pty, :leex, :yecc],
       start_permanent: Mix.env() == :prod,
@@ -48,8 +48,8 @@ defmodule Kleened.MixProject do
   defp deps do
     [
       {:exqlite, "0.20.0"},
-      {:jason, "~> 1.2"},
-      {:yaml_elixir, "~> 2.4"},
+      {:jason, "~> 1.4"},
+      {:yaml_elixir, "~> 2.11"},
       {:inet_cidr, "~> 1.0.0"},
       {:cowlib, "~> 2.12", override: true},
       {:plug, "~> 1.12"},

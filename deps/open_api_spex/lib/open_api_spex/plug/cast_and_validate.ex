@@ -1,6 +1,8 @@
 defmodule OpenApiSpex.Plug.CastAndValidate do
   @moduledoc """
   Module plug that will cast and validate the `Conn.params` and `Conn.body_params` according to the schemas defined for the operation.
+  Note that when using this plug, the body params are no longer merged into `Conn.params` and must be read from `Conn.body_params`
+  separately.
 
   The operation_id can be given at compile time as an argument to `init`:
 
@@ -76,6 +78,7 @@ defmodule OpenApiSpex.Plug.CastAndValidate do
       ) do
     {spec, operation_lookup} = PutApiSpec.get_spec_and_operation_lookup(conn)
     operation = operation_lookup[operation_id]
+    conn = put_operation_id(conn, operation)
 
     cast_opts = opts |> Map.take([:replace_params]) |> Map.to_list()
 
@@ -147,5 +150,15 @@ defmodule OpenApiSpex.Plug.CastAndValidate do
 
   def call(_conn, _opts) do
     raise ":open_api_spex was not found under :private. Maybe PutApiSpec was not called before?"
+  end
+
+  defp put_operation_id(conn, operation) do
+    private_data =
+      conn
+      |> Map.get(:private)
+      |> Map.get(:open_api_spex, %{})
+      |> Map.put(:operation_id, operation.operationId)
+
+    Plug.Conn.put_private(conn, :open_api_spex, private_data)
   end
 end

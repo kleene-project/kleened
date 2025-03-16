@@ -6,7 +6,11 @@ defmodule OpenApiSpex.Cast.Number do
   # TODO We need a way to distinguish numbers in (JSON) body vs in request parameters
   # so we can reject strings values for properties of `type: :number`
   @spec cast(ctx :: Cast.t()) :: {:ok, Cast.t()} | Cast.Error.t()
-  def cast(%{value: value} = ctx) when is_number(value) do
+  def cast(%{value: value} = ctx) when is_integer(value) do
+    cast(%{ctx | value: value / 1})
+  end
+
+  def cast(%{value: value} = ctx) when is_float(value) do
     case cast_number(ctx) do
       {:cast, ctx} -> cast(ctx)
       result -> result
@@ -17,6 +21,12 @@ defmodule OpenApiSpex.Cast.Number do
     case Float.parse(value) do
       {value, ""} -> cast(%{ctx | value: value})
       _ -> Cast.error(ctx, {:invalid_type, :number})
+    end
+  end
+
+  if Code.ensure_loaded?(Decimal) do
+    def cast(%{value: %Decimal{} = value} = ctx) do
+      cast(%{ctx | value: Decimal.to_string(value)})
     end
   end
 

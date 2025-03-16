@@ -2,7 +2,7 @@ defmodule Dialyxir.Mixfile do
   use Mix.Project
 
   @source_url "https://github.com/jeremyjh/dialyxir"
-  @version "1.4.3"
+  @version "1.4.5"
 
   def project do
     [
@@ -15,7 +15,7 @@ defmodule Dialyxir.Mixfile do
       deps: deps(),
       aliases: [test: "test --no-start"],
       dialyzer: [
-        plt_apps: [:dialyzer, :elixir, :kernel, :mix, :stdlib, :erlex],
+        plt_apps: [:dialyzer, :elixir, :kernel, :mix, :stdlib, :erlex, :logger],
         ignore_warnings: ".dialyzer_ignore.exs",
         flags: [:unmatched_returns, :error_handling, :underspecs]
       ],
@@ -33,7 +33,10 @@ defmodule Dialyxir.Mixfile do
   end
 
   def application do
-    [mod: {Dialyxir, []}, extra_applications: [:dialyzer, :crypto, :mix, :erts, :syntax_tools]]
+    [
+      mod: {Dialyxir, []},
+      extra_applications: [:dialyzer, :crypto, :mix, :erts, :syntax_tools, :logger]
+    ]
   end
 
   defp description do
@@ -47,7 +50,7 @@ defmodule Dialyxir.Mixfile do
 
   defp deps do
     [
-      {:erlex, ">= 0.2.6"},
+      {:erlex, ">= 0.2.7"},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ]
   end

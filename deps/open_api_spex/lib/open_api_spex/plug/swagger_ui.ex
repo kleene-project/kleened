@@ -30,6 +30,17 @@ defmodule OpenApiSpex.Plug.SwaggerUI do
         resources "/users", MyAppWeb.UserController, only: [:index, :create, :show]
         get "/openapi", OpenApiSpex.Plug.RenderSpec, :show
       end
+
+      # Use a different Swagger UI version
+      scope "/" do
+        pipe_through :browser
+
+        get "/swaggerui", OpenApiSpex.Plug.SwaggerUI,
+          path: "/api/openapi",
+          swagger_ui_js_bundle_url: "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.14.0/swagger-ui-bundle.js",
+          swagger_ui_js_standalone_preset_url: "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.14.0/swagger-ui-standalone-preset.js",
+          swagger_ui_css_url: "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.14.0/swagger-ui.css"
+      end
   """
   @behaviour Plug
 
@@ -40,10 +51,14 @@ defmodule OpenApiSpex.Plug.SwaggerUI do
     <head>
       <meta charset="UTF-8">
       <title>Swagger UI</title>
-      <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.14.0/swagger-ui.css" >
+      <link rel="stylesheet" type="text/css" href="<%= config[:swagger_ui_css_url] || "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui.css" %>" >
       <link rel="icon" type="image/png" href="./favicon-32x32.png" sizes="32x32" />
       <link rel="icon" type="image/png" href="./favicon-16x16.png" sizes="16x16" />
-      <style>
+      <%= if style_src_nonce do %>
+        <style nonce="<%= style_src_nonce %>">
+      <% else %>
+        <style>
+      <% end %>
         html
         {
           box-sizing: border-box;
@@ -66,9 +81,13 @@ defmodule OpenApiSpex.Plug.SwaggerUI do
     <body>
     <div id="swagger-ui"></div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.14.0/swagger-ui-bundle.js" charset="UTF-8"> </script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/4.14.0/swagger-ui-standalone-preset.js" charset="UTF-8"> </script>
-    <script>
+    <script src="<%= config[:swagger_ui_js_bundle_url] || "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui-bundle.js" %>" charset="UTF-8"> </script>
+    <script src="<%= config[:swagger_ui_js_standalone_preset_url] || "https://cdnjs.cloudflare.com/ajax/libs/swagger-ui/5.17.14/swagger-ui-standalone-preset.js" %>" charset="UTF-8"> </script>
+    <%= if script_src_nonce do %>
+      <script nonce="<%= script_src_nonce %>">
+    <% else %>
+      <script>
+    <% end %>
     window.onload = function() {
       // Begin Swagger UI call region
       const api_spec_url = new URL(window.location);
@@ -95,7 +114,7 @@ defmodule OpenApiSpex.Plug.SwaggerUI do
           }
           return request;
         }
-        <%= for {k, v} <- Map.drop(config, [:path, :oauth]) do %>
+        <%= for {k, v} <- Map.drop(config, [:path, :oauth, :csp_nonce_assign_key]) do %>
         , <%= camelize(k) %>: <%= encode_config(camelize(k), v) %>
         <% end %>
       })
@@ -135,6 +154,13 @@ defmodule OpenApiSpex.Plug.SwaggerUI do
 
    * `:path` - Required. The URL path to the API definition.
    * `:oauth` - Optional. Config to pass to the `SwaggerUIBundle.initOAuth()` function.
+   * `:csp_nonce_assign_key` - Optional. An assign key to find the CSP nonce value used
+     for assets. Supports either `atom()` or a map of type
+     `%{optional(:script) => atom(), optional(:style) => atom()}`. You will probably
+     want to set this on the `SwaggerUIOAuth2Redirect` plug as well.
+   * `:swagger_ui_js_bundle_url` - Optional. An URL to SwaggerUI JavaScript bundle.
+   * `:swagger_ui_js_standalone_preset_url` - Optional. An URL to SwaggerUI JavaScript Standalone Preset.
+   * `:swagger_ui_css_url` - Optional. An URL to SwaggerUI CSS bundle.
    * all other opts - forwarded to the `SwaggerUIBundle` constructor
 
   ## Example
@@ -142,7 +168,8 @@ defmodule OpenApiSpex.Plug.SwaggerUI do
       get "/swaggerui", OpenApiSpex.Plug.SwaggerUI,
         path: "/api/openapi",
         default_model_expand_depth: 3,
-        display_operation_id: true
+        display_operation_id: true,
+        csp_nonce_assign_key: %{script: :script_src_nonce, style: :style_src_nonce}
   """
   @impl Plug
   def init(opts) when is_list(opts) do
@@ -153,7 +180,14 @@ defmodule OpenApiSpex.Plug.SwaggerUI do
   def call(conn, config) do
     csrf_token = Plug.CSRFProtection.get_csrf_token()
     config = supplement_config(config, conn)
-    html = render(config, csrf_token)
+
+    html =
+      render(
+        config,
+        csrf_token,
+        get_nonce(conn, config, :style),
+        get_nonce(conn, config, :script)
+      )
 
     conn
     |> Plug.Conn.put_resp_content_type("text/html")
@@ -164,7 +198,9 @@ defmodule OpenApiSpex.Plug.SwaggerUI do
 
   EEx.function_from_string(:defp, :render, @html, [
     :config,
-    :csrf_token
+    :csrf_token,
+    :style_src_nonce,
+    :script_src_nonce
   ])
 
   defp camelize(identifier) do
@@ -202,5 +238,13 @@ defmodule OpenApiSpex.Plug.SwaggerUI do
 
   defp supplement_config(config, _conn) do
     config
+  end
+
+  def get_nonce(conn, config, type) do
+    case config[:csp_nonce_assign_key] do
+      key when is_atom(key) -> conn.assigns[key]
+      %{^type => key} when is_atom(key) -> conn.assigns[key]
+      _ -> nil
+    end
   end
 end

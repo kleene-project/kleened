@@ -1,13 +1,15 @@
 # NimbleParsec
 
-[Online Documentation](https://hexdocs.pm/nimble_parsec).
+[![CI](https://github.com/dashbitco/nimble_parsec/actions/workflows/ci.yml/badge.svg)](https://github.com/dashbitco/nimble_parsec/actions/workflows/ci.yml)
+[![Module Version](https://img.shields.io/hexpm/v/nimble_parsec.svg)](https://hex.pm/packages/nimble_parsec)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/nimble_parsec)
 
 <!-- MDOC !-->
 
 `NimbleParsec` is a simple and fast library for text-based parser
 combinators.
 
-Combinators are composed programatically and compiled into multiple
+Combinators are composed programmatically and compiled into multiple
 clauses with binary matching. This provides the following benefits:
 
   * Performance: since it compiles to binary matching, it leverages

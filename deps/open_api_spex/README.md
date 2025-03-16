@@ -24,7 +24,7 @@ The package can be installed by adding `:open_api_spex` to your list of dependen
 ```elixir
 def deps do
   [
-    {:open_api_spex, "~> 3.18"}
+    {:open_api_spex, "~> 3.21"}
   ]
 end
 ```
@@ -282,7 +282,7 @@ mix openapi.spec.yaml --spec MyAppWeb.ApiSpec
 Invoking this task starts the application by default. This can be
 disabled with the `--start-app=false` option.
 
-Please make to replace any calls to [OpenApiSpex.Server.from_endpoint](https://hexdocs.pm/open_api_spex/OpenApiSpex.Server.html#from_endpoint/1) with a `%OpenApiSpex.Server{}` struct like below:
+Please replace any calls to [OpenApiSpex.Server.from_endpoint](https://hexdocs.pm/open_api_spex/OpenApiSpex.Server.html#from_endpoint/1) with a `%OpenApiSpex.Server{}` struct like below:
 
 ```elixir
   %OpenApi{

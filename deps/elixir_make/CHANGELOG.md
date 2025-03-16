@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.9.0 (2024-11-12)
+
+  * Rely on certificate stores provided by Erlang/OTP 25+
+  * Support setting `:force_build` opts in config:
+
+    ```elixir
+    config :elixir_make, :force_build, app1: true, app2: false
+    ```
+
+## v0.8.4 (2024-06-04)
+
+  * Support configuring `make_precompiler_downloader`
+  * Support DragonFlyBSD
+  * Support non-UTF8 encoding from compilation (may happen on Windows)
+
 ## v0.8.3 (2024-03-24)
 
   * Support storing checksum of individial precompilation artefacts

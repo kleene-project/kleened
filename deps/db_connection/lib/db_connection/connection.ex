@@ -1,21 +1,3 @@
-defmodule DBConnection.ConnectionError do
-  defexception [:message, severity: :error, reason: :error]
-
-  @moduledoc """
-  A generic connection error exception.
-
-  The raised exception might include the reason which would be useful
-  to programmatically determine what was causing the error.
-  """
-
-  @doc false
-  def exception(message, reason) do
-    message
-    |> exception()
-    |> Map.replace!(:reason, reason)
-  end
-end
-
 defmodule DBConnection.Connection do
   @moduledoc false
 
@@ -343,6 +325,11 @@ defmodule DBConnection.Connection do
     end
   end
 
+  # We discard EXIT messages which may arrive if the process is trapping exits
+  def handle_event(:info, {:EXIT, _, _}, :no_state, s) do
+    handle_timeout(s)
+  end
+
   def handle_event(:info, msg, :no_state, %{mod: mod} = s) do
     Logger.info(fn ->
       [inspect(mod), ?\s, ?(, inspect(self()), ") missed message: " | inspect(msg)]
@@ -353,7 +340,7 @@ defmodule DBConnection.Connection do
 
   @doc false
   @impl :gen_statem
-  # If client is :closed then the connection was previouly disconnected
+  # If client is :closed then the connection was previously disconnected
   # and cleanup is not required.
   def terminate(_, _, %{client: :closed}), do: :ok
 

@@ -79,6 +79,7 @@ defmodule MIME do
     "application/xhtml+xml" => ["xhtml"],
     "application/xml" => ["xml"],
     "application/zip" => ["zip"],
+    "application/zstd" => ["zst"],
     "audio/3gpp" => ["3gp"],
     "audio/3gpp2" => ["3g2"],
     "audio/aac" => ["aac"],
@@ -92,11 +93,13 @@ defmodule MIME do
     "font/ttf" => ["ttf"],
     "font/woff" => ["woff"],
     "font/woff2" => ["woff2"],
+    "image/apng" => ["apng"],
     "image/avif" => ["avif"],
     "image/bmp" => ["bmp"],
     "image/gif" => ["gif"],
     "image/heic" => ["heic"],
     "image/heif" => ["heif"],
+    "image/jp2" => [".jp2"],
     "image/jpeg" => ["jpg", "jpeg"],
     "image/jxl" => ["jxl"],
     "image/png" => ["png"],
@@ -151,7 +154,8 @@ defmodule MIME do
     "gzip" => ["gz"],
     "json" => ["json"],
     "xml" => ["xml"],
-    "zip" => ["zip"]
+    "zip" => ["zip"],
+    "zstd" => ["zst"]
   }
 
   custom_suffixes = Application.compile_env(:mime, :suffixes, %{})
@@ -162,6 +166,22 @@ defmodule MIME do
   """
   def compiled_custom_types do
     unquote(Macro.escape(custom_types))
+  end
+
+  @doc """
+  Returns a mapping of all known types to their extensions,
+  including custom types compiled into the MIME module.
+  
+  ## Examples
+  
+      known_types()
+      #=> %{"application/json" => ["json"], ...}
+
+  """
+  @doc since: "2.1.0"
+  @spec known_types() :: %{required(String.t()) => [String.t()]}
+  def known_types do
+    unquote(Macro.escape(all_types))
   end
 
   @doc """

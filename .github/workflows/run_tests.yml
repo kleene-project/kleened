@@ -1,0 +1,114 @@
+name: Run Kleened and Klee test suites
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Running Kleened and Klee test-suites
+    steps:
+    - uses: actions/checkout@v4
+    - name: Run tests in a FreeBSD VM
+      id: kleened-testing
+      # FreeBSD 14.1-RELEASE
+      uses: vmactions/freebsd-vm@v1.1.5
+      with:
+        usesh: true
+    - name: Configure the FreeBSD vm
+      shell: freebsd {0}
+      run: |
+        ###### Configure ZFS ######
+        kldload zfs
+        kldload if_bridge
+        sysrc -f /boot/loader.conf zfs_load="YES"
+        sysrc zfs_enable="YES"
+        truncate -s 10G /home/runner/zpool.disk
+        zpool create -O atime=off -f zroot /home/runner/zpool.disk
+
+        ###### Create basejail ######
+        fetch https://download.freebsd.org/releases/amd64/14.1-RELEASE/base.txz
+        zfs create zroot/kleene_basejail
+        tar -xf base.txz -C /zroot/kleene_basejail
+
+    - name: Compile Kleened and initialize host
+      shell: freebsd {0}
+      run: |
+        ##### Configure and run Kleened Tests
+        cd $GITHUB_WORKSPACE;
+        mkdir -p /usr/local/etc/kleened
+        cp example/kleened_config_dev.yaml /usr/local/etc/kleened/config.yaml
+        cp -r test/data/test_certs /usr/local/etc/kleened/certs
+        cp example/pf.conf.dev.kleene /usr/local/etc/kleened/pf.conf.kleene
+
+        pkg install -y elixir git gmake ca_root_nss > /dev/null
+        mix local.rebar --force
+        mix local.hex --force
+        mix compile
+        mix run --eval "Kleened.Core.Config.initialize_host(%{dry_run: false})"
+
+        # Testing:
+        service pf start
+        service pflog start
+        # To make all networking-tests pass:
+        sysctl net.link.bridge.pfil_bridge=1
+
+    - name: Create test-jail userland
+      shell: freebsd {0}
+      run: |
+        cd $GITHUB_WORKSPACE;
+        ##### Create minimal test-jail
+        pkg install -y ruby > /dev/null
+        git clone https://github.com/kleene-project/mkjail.git
+        ./mkjail/mkjail -a test/data/minimal_testjail.txz /usr/bin/env /usr/local/bin/python3.11 -c "print('Hello World')"
+
+    - name: Run Kleened-tests
+      shell: freebsd {0}
+      run: |
+        cd $GITHUB_WORKSPACE;
+        export PATH=$PATH:./priv/bin
+        mix test --seed 0 --trace --max-failures 1
+
+    - name: Remove test-image
+      shell: freebsd {0}
+      run:
+        cd $GITHUB_WORKSPACE;
+        mix run -e "Kleened.Core.Image.remove(\"FreeBSD:testing\")"
+
+    - name: Build Kleened release
+      shell: freebsd {0}
+      run: |
+        cd $GITHUB_WORKSPACE;
+        MIX_ENV=dev
+        mix release
+
+    - name: Run Klee-tests
+      shell: freebsd {0}
+      run: |
+        cd $GITHUB_WORKSPACE;
+        # Make 'kleened_pty' available on PATH:
+        ln -s $GITHUB_WORKSPACE/priv/bin/kleened_pty /usr/local/sbin/kleened_pty
+        _build/dev/rel/kleened/bin/kleened daemon
+
+        ##### Run Klee-tests
+        git clone -b ${{ github.ref_type == 'branch' && github.ref_name || 'main' }} https://github.com/kleene-project/klee.git
+        pkg install -y py311-poetry > /dev/null
+        cd klee
+        poetry -q install
+        export KLEENED_MINIMAL_TESTJAIL="$GITHUB_WORKSPACE/test/data/minimal_testjail.txz"
+        echo "Running Klee test-suite"
+        poetry run pytest -vv -x
+
+    - name: Show logs from Kleened
+      if: failure()
+      shell: freebsd {0}
+      run: |
+        zfs list
+        cat /var/log/kleened.log
+
+    - name: Show FreeBSD host information
+      if: failure()
+      shell: freebsd {0}
+      run: |
+        zfs list
