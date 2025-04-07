@@ -530,17 +530,19 @@ defmodule Kleened.Core.Image do
          build_config: %Schemas.ImageBuildConfig{
            tag: nametag
          },
-         container: %Schemas.Container{
-           id: container_id,
-           dataset: container_dataset,
-           user: user,
-           env: env,
-           cmd: cmd
-         }
+         container:
+           container = %Schemas.Container{
+             id: container_id,
+             dataset: container_dataset,
+             user: user,
+             env: env,
+             cmd: cmd
+           }
        }) do
     {image_name, image_tag} = Kleened.Core.Utils.decode_tagname(nametag)
     Container.stop(container_id)
     Network.disconnect_all(container_id)
+    Mount.remove_mounts(container)
     :ok = container_to_image(container_dataset, container_id)
     MetaData.delete_container(container_id)
 

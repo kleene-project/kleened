@@ -65,7 +65,7 @@ defmodule Kleened.API.Schemas do
           description:
             "List of files/directories/volumes on the host filesystem that should be mounted into the container.",
           type: :array,
-          items: Kleened.API.Schemas.MountPointConfig,
+          items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/MountPointConfig"},
           nullable: true,
           default: [],
           example: [
@@ -404,7 +404,7 @@ defmodule Kleened.API.Schemas do
           description:
             "List of endpoint-configs for the networks that the build container will be connected to.",
           type: :array,
-          items: Kleened.API.Schemas.EndPointConfig,
+          items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/EndPointConfig"},
           default: []
         }
       },

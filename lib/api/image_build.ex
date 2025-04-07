@@ -1,7 +1,6 @@
 defmodule Kleened.API.ImageBuild do
   alias OpenApiSpex.{Operation, Cast}
-  alias Kleened.API.Schemas
-  alias Kleened.API.Utils
+  alias Kleened.API.{Utils, Schemas}
   alias Kleened.Core
   alias Kleened.Core.Image
   require Logger
@@ -45,19 +44,24 @@ defmodule Kleened.API.ImageBuild do
 
   # Ignore messages from the client: No interactive possibility atm.
   def websocket_handle({:text, message_raw}, %{handshaking: true} = state) do
+    Logger.debug("receiving build config: #{message_raw}")
+
     with {:json, {:ok, message}} <- {:json, Jason.decode(message_raw)},
          {:ok, config} <- Cast.cast(Schemas.ImageBuildConfig.schema(), message),
          {:ok, container_config} <-
            Cast.cast(Schemas.ContainerConfig.schema(), config.container_config),
+         {:ok, networks} <- cast_endpoints(config.networks),
+         {:ok, mounts} <- Utils.cast_mountpoints(container_config.mounts),
          buildargs = Core.Utils.map2envlist(config.buildargs),
          {:build, {:ok, image_id, _pid}} <-
            {:build,
             Image.build(%Schemas.ImageBuildConfig{
               config
-              | container_config: container_config,
+              | container_config: %Schemas.ContainerConfig{container_config | mounts: mounts},
+                networks: networks,
                 buildargs: buildargs
             })} do
-      Logger.debug("Building image. Await output.")
+      Logger.debug("image build started, awaiting output")
       {[{:text, Utils.starting_message(image_id)}], %{handshaking: false, image_id: image_id}}
     else
       {:error, [openapispex_error | _rest]} ->
@@ -135,5 +139,24 @@ defmodule Kleened.API.ImageBuild do
     Core.Container.remove(image_id)
     Image.remove(image_id)
     Core.Network.remove("buildnet_" <> image_id)
+  end
+
+  @spec cast_endpoints([%{}]) :: {:ok, [%Schemas.EndPointConfig{}]} | {:error, term()}
+  defp cast_endpoints(endpoints) do
+    cast_endpoints(endpoints, [])
+  end
+
+  defp cast_endpoints([endpoint | rest], endpoints) do
+    case Cast.cast(Schemas.EndPointConfig.schema(), endpoint) do
+      {:ok, endpoint_casted} ->
+        cast_endpoints(rest, [endpoint_casted | endpoints])
+
+      {:error, msg} ->
+        {:error, msg}
+    end
+  end
+
+  defp cast_endpoints([], endpoints) do
+    {:ok, endpoints}
   end
 end
