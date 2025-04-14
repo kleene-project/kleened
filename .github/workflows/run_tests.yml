@@ -21,7 +21,6 @@ jobs:
       run: |
         ###### Configure ZFS ######
         kldload zfs
-        kldload if_bridge
         sysrc -f /boot/loader.conf zfs_load="YES"
         sysrc zfs_enable="YES"
         truncate -s 10G /home/runner/zpool.disk
@@ -37,6 +36,7 @@ jobs:
       run: |
         ##### Configure and run Kleened Tests
         cd $GITHUB_WORKSPACE;
+
         mkdir -p /usr/local/etc/kleened
         cp example/kleened_config_dev.yaml /usr/local/etc/kleened/config.yaml
         cp -r test/data/test_certs /usr/local/etc/kleened/certs
@@ -49,6 +49,7 @@ jobs:
         mix run --eval "Kleened.Core.Config.initialize_host(%{dry_run: false})"
 
         # Testing:
+        kldload if_bridge
         service pf start
         service pflog start
         # To make all networking-tests pass:
@@ -100,15 +101,9 @@ jobs:
         echo "Running Klee test-suite"
         poetry run pytest -vv -x
 
-    - name: Show logs from Kleened
+    - name: Show Kleened host information
       if: failure()
       shell: freebsd {0}
       run: |
         zfs list
         cat /var/log/kleened.log
-
-    - name: Show FreeBSD host information
-      if: failure()
-      shell: freebsd {0}
-      run: |
-        zfs list
