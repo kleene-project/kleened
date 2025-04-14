@@ -1,5 +1,5 @@
 defmodule Kleened.API.Container do
-  alias OpenApiSpex.{Operation, Schema}
+  alias OpenApiSpex.{Operation, Schema, Cast}
   alias Kleened.Core.Container
   alias Kleened.API.Schemas
   require Logger
@@ -105,14 +105,23 @@ defmodule Kleened.API.Container do
       conn = Plug.Conn.fetch_query_params(conn)
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
-      container_config = conn.body_params
+      container_config = %{mounts: mounts} = conn.body_params
 
-      case Container.create(container_config) do
-        {:ok, %Schemas.Container{id: id}} ->
-          send_resp(conn, 201, Utils.id_response(id))
+      case Utils.cast_mountpoints(mounts) do
+        {:ok, mounts} ->
+          config = %Schemas.ContainerConfig{container_config | mounts: mounts}
 
-        {:error, reason} ->
-          send_resp(conn, 404, Utils.error_response(reason))
+          case Container.create(config) do
+            {:ok, %Schemas.Container{id: id}} ->
+              send_resp(conn, 201, Utils.id_response(id))
+
+            {:error, reason} ->
+              send_resp(conn, 404, Utils.error_response(reason))
+          end
+
+        {:error, [openapispex_error | _rest]} ->
+          error_message = Cast.Error.message(openapispex_error)
+          send_resp(conn, 404, Utils.error_response(error_message))
       end
     end
   end

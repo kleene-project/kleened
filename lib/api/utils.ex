@@ -1,4 +1,6 @@
 defmodule Kleened.API.Utils do
+  alias OpenApiSpex.Cast
+  alias Kleened.API.Schemas
   alias Kleened.API.Schemas.WebSocketMessage, as: Message
   # Remember that control-frames, such as Close frames must not exceed 125 bytes
 
@@ -79,5 +81,24 @@ defmodule Kleened.API.Utils do
     ## Endpoint-specific details
     The following specifics pertain to this endpoint:
     """
+  end
+
+  @spec cast_mountpoints([%{}]) :: {:ok, [%Schemas.MountPointConfig{}]} | {:error, term()}
+  def cast_mountpoints(mountpoints) do
+    cast_mountpoints(mountpoints, [])
+  end
+
+  def cast_mountpoints([mountpoint | rest], mountpoints) do
+    case Cast.cast(Schemas.MountPointConfig.schema(), mountpoint) do
+      {:ok, mountpoint_casted} ->
+        cast_mountpoints(rest, [mountpoint_casted | mountpoints])
+
+      {:error, msg} ->
+        {:error, msg}
+    end
+  end
+
+  def cast_mountpoints([], mountpoints) do
+    {:ok, mountpoints}
   end
 end
