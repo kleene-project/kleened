@@ -334,6 +334,7 @@ defmodule Kleened.Core.Container do
         {:ok, container}
 
       {:error, reason} ->
+        Kleened.Core.ZFS.destroy_force(container.dataset)
         {:error, reason}
     end
   end
