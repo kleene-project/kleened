@@ -12,6 +12,23 @@ defmodule Kleened.API.Spec do
         version: "0.1.0"
       },
       paths: %{
+        # websocket
+        "/deployment/build" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :get, plug: API.DeploymentBuild, opts: []}
+          ]),
+        "/deployment/create/containers" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :post, plug: API.Deployment.CreateContainers, opts: []}
+          ]),
+        "/deployment/create/networks" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :post, plug: API.Deployment.CreateNetworks, opts: []}
+          ]),
+        "/deployment/create/volumes" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :post, plug: API.Deployment.CreateVolumes, opts: []}
+          ]),
         "/deployment/diff" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :post, plug: API.Deployment.Diff, opts: []}

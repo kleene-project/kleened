@@ -57,6 +57,12 @@ defmodule Kleened.Core.Volume do
     end
   end
 
+  @spec create_volumes_if_not_exists([%Schemas.VolumeConfig{}]) :: :ok | {:error, String.t()}
+  def create_volumes_if_not_exists(volumes) do
+    volumes |> Enum.map(&create(&1.name))
+    :ok
+  end
+
   defp remove_(name) do
     case Kleened.Core.MetaData.get_volume(name) do
       :not_found ->

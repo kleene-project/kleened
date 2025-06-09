@@ -78,6 +78,32 @@ defmodule Kleened.Core.Network do
     :ok
   end
 
+  @spec create_networks_if_not_exists([%Schemas.NetworkConfig{}]) ::
+          {:ok, [%Schemas.Network{}]} | {:error, String.t()}
+  def create_networks_if_not_exists(networks) do
+    create_networks_if_not_exists(networks, [])
+  end
+
+  defp create_networks_if_not_exists([], networks) do
+    {:ok, networks}
+  end
+
+  defp create_networks_if_not_exists([config | rest], networks) do
+    case MetaData.get_network(config.name) do
+      %Schemas.Network{} = network ->
+        create_networks_if_not_exists(rest, [network | networks])
+
+      :not_found ->
+        case create(config) do
+          {:ok, network} ->
+            create_networks_if_not_exists(rest, [network | networks])
+
+          {:error, msg} ->
+            {:error, msg}
+        end
+    end
+  end
+
   defp verify_port_value(port_raw, type) do
     case {type, String.split(port_raw, ":")} do
       {_, [port]} ->

@@ -1,7 +1,106 @@
 defmodule Kleened.Core.Deployment do
-  alias Kleened.Core.{MetaData, Utils, ZFS, Const, Config}
+  alias Kleened.Core.{MetaData, Utils, ZFS, Const, Config, ImageBulkBuild, Volume, Network}
   alias Kleened.API.Schemas
   require Logger
+
+  @spec start(%Schemas.DeploymentConfig{}) :: {:ok, %{}} | {:error, String.t()}
+  def start(_deploy) do
+    # TODO
+  end
+
+  @spec stop(%Schemas.DeploymentConfig{}) :: {:ok, %{}} | {:error, String.t()}
+  def stop(_deploy) do
+    # TODO
+  end
+
+  @spec create_containers(%Schemas.DeploymentConfig{}) ::
+          {:ok, [%Schemas.Container{}]} | {:error, {[%Schemas.Container{}], String.t()}}
+  def create_containers(deploy) do
+    create_containers_(deploy.containers, [])
+  end
+
+  @spec create_volumes(%Schemas.DeploymentConfig{}) ::
+          {:ok, [%Schemas.Volume{}]} | {:error, {String.t(), [%Schemas.Volume{}]}}
+  def create_volumes(deploy) do
+    create_volumes_(deploy.volumes, [])
+  end
+
+  @spec create_networks(%Schemas.DeploymentConfig{}) ::
+          {:ok, [%Schemas.Network{}]} | {:error, {String.t(), [%Schemas.Network{}]}}
+  def create_networks(deploy) do
+    create_networks_(deploy.networks, [])
+  end
+
+  @spec remove(%Schemas.DeploymentConfig{}) :: {:ok, %{}} | {:error, String.t()}
+  def remove(_deploy) do
+    # TODO
+    # Should remove networks & containers - specify '-v' to remove volumes as well
+  end
+
+  @spec build(%Schemas.DeploymentConfig{}) :: :ok | {:error, String.t()}
+  def build(deploy) do
+    ImageBulkBuild.bulk_build(deploy.images, deploy.build_workers)
+  end
+
+  @spec create_containers_([%Schemas.ContainerConfig{}], [Container.t()]) ::
+          {:ok, [Container.t()]} | {:error, {String.t(), [Container.t()]}}
+  def create_containers_([], containers) do
+    {:ok, containers}
+  end
+
+  def create_containers_([config | rest], containers) do
+    case MetaData.get_container(config.name) do
+      :not_found ->
+        case Kleened.Core.Container.create(config) do
+          {:ok, container} ->
+            create_containers_(rest, [container | containers])
+
+          {:error, reason} ->
+            {:error, {reason, containers}}
+        end
+
+      _container ->
+        create_containers_(rest, containers)
+    end
+  end
+
+  @spec create_networks_([%Schemas.NetworkConfig{}], [%Schemas.Network{}]) ::
+          {:ok, [%Schemas.Network{}]} | {:error, {String.t(), [%Schemas.Network{}]}}
+  def create_networks_([], networks) do
+    {:ok, networks}
+  end
+
+  def create_networks_([network | rest], networks) do
+    case MetaData.get_network(network.name) do
+      :not_found ->
+        case Network.create(network) do
+          {:ok, network} -> create_networks_(rest, [network | networks])
+          {:error, msg} -> {:error, msg}
+        end
+
+      _ ->
+        create_networks_(rest, networks)
+    end
+  end
+
+  @spec create_volumes_([%Schemas.VolumeConfig{}], [%Schemas.Volume{}]) ::
+          {:ok, [%Schemas.Volume{}]} | {:error, {String.t(), [%Schemas.Volume{}]}}
+  def create_volumes_([], volumes) do
+    {:ok, volumes}
+  end
+
+  def create_volumes_([volume | rest], volumes) do
+    case MetaData.get_volume(volume.name) do
+      :not_found ->
+        case Volume.create(volume.name) do
+          %Schemas.Volume{} = volume -> create_volumes_(rest, [volume | volumes])
+          {:error, msg} -> {:error, {msg, volumes}}
+        end
+
+      _ ->
+        create_volumes_(rest, volumes)
+    end
+  end
 
   @spec diff(%Schemas.DeploymentConfig{}) :: {:ok, %{}} | {:error, String.t()}
   def diff(deploy_spec) do

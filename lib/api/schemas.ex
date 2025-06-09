@@ -1,7 +1,7 @@
 defmodule Kleened.API.Schemas do
   require OpenApiSpex
   alias OpenApiSpex.Schema
-  alias OpenApiSpex.Reference
+  # alias OpenApiSpex.Reference
 
   defmodule DeploymentConfig do
     OpenApiSpex.schema(%{
@@ -14,22 +14,30 @@ defmodule Kleened.API.Schemas do
           items: %Schema{
             type: :object,
             anyOf: [
-              %Reference{"$ref": "#/components/schemas/ImageBuildConfig"},
-              %Reference{"$ref": "#/components/schemas/ImageCreateConfig"}
+              %OpenApiSpex.Reference{"$ref": "#/components/schemas/ImageBuildConfig"},
+              %OpenApiSpex.Reference{"$ref": "#/components/schemas/ImageCreateConfig"}
             ]
           },
           default: []
         },
+        build_workers: %Schema{
+          type: :integer,
+          description: "Number of concurrent build-workers used when building images.",
+          nullable: false,
+          default: 1
+        },
         volumes: %Schema{
           description: "Deployment volumes",
           type: :array,
-          items: Kleened.API.Schemas.VolumeConfig,
+          # items: Kleened.API.Schemas.VolumeConfig,
+          items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/VolumeConfig"},
           default: []
         },
         networks: %Schema{
           description: "Deployment networks",
           type: :array,
-          items: Kleened.API.Schemas.NetworkConfig,
+          # items: Kleened.API.Schemas.NetworkConfig,
+          items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/NetworkConfig"},
           default: []
         },
         containers: %Schema{
@@ -40,14 +48,14 @@ defmodule Kleened.API.Schemas do
             allOf: [
               # A container is defined by a ContainerConfig (which includes mounpoints)
               # + a list of endpoints (that can refer to networks defined in the network section)
-              %Reference{"$ref": "#/components/schemas/ContainerConfig"},
+              %OpenApiSpex.Reference{"$ref": "#/components/schemas/ContainerConfig"},
               %Schema{
                 type: :object,
                 properties: %{
                   endpoints: %Schema{
                     description: "Network endpoints for the container.",
                     type: :array,
-                    items: %Reference{"$ref": "#/components/schemas/EndPointConfig"}
+                    items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/EndPointConfig"}
                   }
                 }
               }
@@ -122,7 +130,8 @@ defmodule Kleened.API.Schemas do
           description:
             "List of files/directories/volumes on the host filesystem that should be mounted into the container.",
           type: :array,
-          items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/MountPointConfig"},
+          # %OpenApiSpex.Reference{"$ref": "#/components/schemas/MountPointConfig"},
+          items: Kleened.API.Schemas.MountPointConfig,
           nullable: true,
           default: [],
           example: [
@@ -418,6 +427,7 @@ defmodule Kleened.API.Schemas do
       description:
         "Configuration for an image build, including container configuration for the build container.",
       type: :object,
+      required: [:context],
       properties: %{
         context: %Schema{
           type: :string,
@@ -456,7 +466,7 @@ defmodule Kleened.API.Schemas do
           default: %{},
           example: %{"USERNAME" => "Stephen", "JAIL_MGMT_ENGINE" => "kleene"}
         },
-        container_config: %Reference{"$ref": "#/components/schemas/ContainerConfig"},
+        container_config: %OpenApiSpex.Reference{"$ref": "#/components/schemas/ContainerConfig"},
         networks: %Schema{
           description:
             "List of endpoint-configs for the networks that the build container will be connected to.",
@@ -464,8 +474,7 @@ defmodule Kleened.API.Schemas do
           items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/EndPointConfig"},
           default: []
         }
-      },
-      required: [:context, :container_config]
+      }
     })
   end
 
@@ -593,6 +602,30 @@ defmodule Kleened.API.Schemas do
       description: "List of images.",
       type: :array,
       items: Kleened.API.Schemas.Image
+    })
+  end
+
+  defmodule ContainerList do
+    OpenApiSpex.schema(%{
+      description: "List of images.",
+      type: :array,
+      items: Kleened.API.Schemas.Container
+    })
+  end
+
+  defmodule NetworkList do
+    OpenApiSpex.schema(%{
+      description: "List of networks.",
+      type: :array,
+      items: Kleened.API.Schemas.Network
+    })
+  end
+
+  defmodule VolumeList do
+    OpenApiSpex.schema(%{
+      description: "List of volumes.",
+      type: :array,
+      items: Kleened.API.Schemas.Volume
     })
   end
 
@@ -761,14 +794,6 @@ defmodule Kleened.API.Schemas do
           default: true
         }
       }
-    })
-  end
-
-  defmodule NetworkList do
-    OpenApiSpex.schema(%{
-      description: "List of networks.",
-      type: :array,
-      items: Kleened.API.Schemas.Network
     })
   end
 
@@ -1015,7 +1040,8 @@ defmodule Kleened.API.Schemas do
           description: "Whether the mountpoint should be read-only.",
           default: false
         }
-      }
+      },
+      required: [:type]
     })
   end
 
@@ -1070,14 +1096,6 @@ defmodule Kleened.API.Schemas do
           items: Kleened.API.Schemas.MountPoint
         }
       }
-    })
-  end
-
-  defmodule VolumeList do
-    OpenApiSpex.schema(%{
-      description: "List of volumes.",
-      type: :array,
-      items: Kleened.API.Schemas.Volume
     })
   end
 

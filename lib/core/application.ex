@@ -18,6 +18,7 @@ defmodule Kleened.Core.Application do
       Kleened.Core.Config,
       Kleened.Core.MetaData,
       Kleened.Core.Network,
+      Kleened.Core.ImageBulkBuild,
       {Registry, keys: :unique, name: Kleened.Core.ExecInstances},
       {DynamicSupervisor, name: Kleened.Core.ExecPool, strategy: :one_for_one, max_restarts: 0}
       | api_socket_listeners(socket_configurations)

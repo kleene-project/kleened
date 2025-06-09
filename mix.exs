@@ -59,6 +59,7 @@ defmodule Kleened.MixProject do
       {:ex_doc, "~> 0.34.2", only: :dev},
       {:dialyxir, "~> 1.0", only: :dev, runtime: false},
       {:excoveralls, "~> 0.15.0", only: :test},
+      {:libgraph, "~> 0.16.0"},
       {:gun, "~> 2.0", only: :test}
     ]
   end
