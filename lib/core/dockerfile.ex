@@ -60,8 +60,8 @@ defmodule Kleened.Core.Dockerfile do
       case split(instruction_line, " ", parts: 2) do
         [instruction, args] ->
           case {instruction, args} do
-            {"FROM", args} ->
-              decode_from_args(args)
+            {"FROM", image_ref} ->
+              {:from, trim(image_ref)}
 
             {"USER", user} ->
               {:user, trim(user)}
@@ -104,16 +104,6 @@ defmodule Kleened.Core.Dockerfile do
       end
 
     {instruction_line, instr}
-  end
-
-  defp decode_from_args(args) do
-    case split(args, " AS ") do
-      [image] ->
-        {:from, image}
-
-      [image, name] ->
-        {:from, image, name}
-    end
   end
 
   defp json_decode(json) do
