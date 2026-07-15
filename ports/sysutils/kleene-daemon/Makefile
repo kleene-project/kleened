@@ -1,6 +1,6 @@
 PORTNAME=		kleene-daemon
-DISTVERSIONPREFIX=		v
-DISTVERSION=		0.1.0rc2
+DISTVERSIONPREFIX=	v
+DISTVERSION=		0.1.1
 CATEGORIES=		sysutils
 
 MAINTAINER=		lasse@philomath.dk
@@ -9,30 +9,33 @@ WWW=			https://kleene.dev
 
 LICENSE=		BSD2CLAUSE
 
-BUILD_DEPENDS=		${LOCALBASE}/lib/elixir/lib/hex/ebin:devel/elixir-hex \
-			mix:lang/elixir \
+BUILD_DEPENDS=		mix:lang/elixir \
 			rebar3:devel/rebar3
 
 USES=			gmake ssl
 USE_GITHUB=		yes
 
-GH_TUPLE=		kleene-project:kleened:6a67380:DEFAULT
+GH_TUPLE=		kleene-project:kleened:v0.1.1:DEFAULT
+
+# Vendor tarball with pre-fetched MIX_ENV=prod deps.
+# Avoids needing devel/elixir-hex at build time (its precompiled .ez is
+# incompatible with OTP 28's changed bytecode format for bs_add).
+DISTFILES=		${DISTNAME}${EXTRACT_SUFX} \
+			${PORTNAME}-${DISTVERSION}-deps${EXTRACT_SUFX}:DEPS
+MASTER_SITES+=		https://github.com/kleene-project/kleened/releases/download/v${DISTVERSION}/:DEPS
+EXTRACT_ONLY=		${DISTNAME}${EXTRACT_SUFX}
+
 USE_RC_SUBR=		kleened
 
 SUB_FILES=		pkg-message
 
 ETCDIR=			${PREFIX}/etc/kleened
 
-MIX_TARGET=		release
-ELIXIR_LOCALE=		en_US.UTF-8
-ELIXIR_APP_NAME=	${PORTNAME}
 MIX_ENV=		MIX_REBAR3=${LOCALBASE}/bin/rebar3 \
-			LANG=${ELIXIR_LOCALE} LC_ALL=${ELIXIR_LOCALE} \
-			MIX_PATH=${LOCALBASE}/lib/elixir/lib/hex/ebin \
-			MIX_HOME=mix
+			LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
+			MIX_HOME=${WRKDIR}/mix \
+			HEX_OFFLINE=true
 MIX_ENV_NAME=		prod
-MIX_COMPILE=		${SETENV} ${MIX_ENV} MIX_ENV=${MIX_ENV_NAME} mix \
-			${MIX_TARGET}
 
 RELEASE_PATH=		${WRKSRC}/_build/prod/rel/kleened
 RELEASE_BINARIES=	escript dialyzer erlexec beam.smp heart dyn_erl to_erl \
@@ -41,8 +44,11 @@ RELEASE_BINARIES=	escript dialyzer erlexec beam.smp heart dyn_erl to_erl \
 
 .include <bsd.port.pre.mk>
 
+post-extract:
+	${TAR} -xzf ${DISTDIR}/${PORTNAME}-${DISTVERSION}-deps.tar.gz -C ${WRKSRC}
+
 do-build:
-	@cd ${WRKSRC} && ${MIX_COMPILE}
+	@cd ${WRKSRC} && ${SETENV} ${MIX_ENV} MIX_ENV=${MIX_ENV_NAME} mix release
 
 do-install:
 	${MKDIR} ${STAGEDIR}${PREFIX}/etc/kleened
@@ -53,7 +59,7 @@ do-install:
 	${MKDIR} ${STAGEDIR}${PREFIX}/libexec/kleened/bin
 	${INSTALL_PROGRAM} ${WRKSRC}/priv/bin/kleened_pty \
 		${STAGEDIR}${PREFIX}/libexec/kleened/bin/kleened_pty
-	${INSTALL_SCRIPT} ${WRKSRC}/_build/prod/rel/kleened/bin/kleened \
+	${INSTALL_SCRIPT} ${RELEASE_PATH}/bin/kleened \
 		${STAGEDIR}${PREFIX}/libexec/kleened/bin/
 	cd ${RELEASE_PATH}/lib && \
 		${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/libexec/kleened/lib
@@ -62,12 +68,12 @@ do-install:
 		${CHMOD} +x ${STAGEDIR}${PREFIX}/libexec/kleened/erts-*/bin/*
 	cd ${RELEASE_PATH}/releases && \
 		${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/libexec/kleened/releases
-	cd ${RELEASE_PATH}/releases && \
-		${INSTALL_DATA} ${WRKSRC}/_build/prod/rel/kleened/releases/start_erl.data ${STAGEDIR}${PREFIX}/libexec/kleened/releases/
-	${INSTALL_SCRIPT} ${RELEASE_PATH}/releases/0.0.1/elixir \
-		${STAGEDIR}${PREFIX}/libexec/kleened/releases/0.0.1/
-	${INSTALL_SCRIPT} ${RELEASE_PATH}/releases/0.0.1/iex \
-		${STAGEDIR}${PREFIX}/libexec/kleened/releases/0.0.1/
+	${INSTALL_DATA} ${RELEASE_PATH}/releases/start_erl.data \
+		${STAGEDIR}${PREFIX}/libexec/kleened/releases/
+	${INSTALL_SCRIPT} ${RELEASE_PATH}/releases/${DISTVERSION}/elixir \
+		${STAGEDIR}${PREFIX}/libexec/kleened/releases/${DISTVERSION}/
+	${INSTALL_SCRIPT} ${RELEASE_PATH}/releases/${DISTVERSION}/iex \
+		${STAGEDIR}${PREFIX}/libexec/kleened/releases/${DISTVERSION}/
 	${STRIP_CMD} ${STAGEDIR}${PREFIX}/libexec/kleened/lib/asn1-*/priv/lib/asn1rt_nif.so
 	${STRIP_CMD} ${STAGEDIR}${PREFIX}/libexec/kleened/lib/crypto-*/priv/lib/*.so
 	${STRIP_CMD} ${STAGEDIR}${PREFIX}/libexec/kleened/lib/exqlite-0.20.0/priv/sqlite3_nif.so
