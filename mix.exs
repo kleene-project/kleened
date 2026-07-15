@@ -12,7 +12,7 @@ defmodule Kleened.MixProject do
   def project do
     [
       app: :kleened,
-      version: "0.1.0",
+      version: "0.1.1",
       elixir: "~> 1.9",
       compilers: Mix.compilers() ++ [:run_pty, :leex, :yecc],
       start_permanent: Mix.env() == :prod,
@@ -49,17 +49,16 @@ defmodule Kleened.MixProject do
     [
       {:exqlite, "0.20.0"},
       {:jason, "~> 1.4"},
-      {:yaml_elixir, "~> 2.11"},
+      {:yaml_elixir, "~> 2.12"},
       {:inet_cidr, "~> 1.0.0"},
-      {:cowlib, "~> 2.12", override: true},
-      {:plug, "~> 1.12"},
-      {:plug_cowboy, "~> 2.5"},
-      {:open_api_spex, "~> 3.10"},
-      {:earmark, "~> 1.4.4", only: :dev},
-      {:ex_doc, "~> 0.34.2", only: :dev},
-      {:dialyxir, "~> 1.0", only: :dev, runtime: false},
-      {:excoveralls, "~> 0.15.0", only: :test},
-      {:gun, "~> 2.0", only: :test}
+      {:cowlib, "~> 2.18", override: true},
+      {:plug, "~> 1.20"},
+      {:plug_cowboy, "~> 2.9"},
+      {:open_api_spex, "~> 3.22"},
+      {:ex_doc, "~> 0.40", only: :dev},
+      {:dialyxir, "~> 1.4", only: :dev, runtime: false},
+      {:excoveralls, "~> 0.18", only: :test},
+      {:gun, "~> 2.4", only: :test}
     ]
   end
 

@@ -9,7 +9,7 @@ defmodule Kleened.API.Spec do
       info: %Info{
         title: "Kleened API",
         description: "HTTP API for communicating with Kleened",
-        version: "0.1.0"
+        version: "0.1.1"
       },
       paths: %{
         "/containers/list" =>
