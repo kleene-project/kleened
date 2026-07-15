@@ -17,11 +17,7 @@ USE_GITHUB=		yes
 
 GH_TUPLE=		kleene-project:kleened:v0.1.1:DEFAULT
 
-# Vendor tarball with pre-fetched MIX_ENV=prod deps.
-# Avoids needing devel/elixir-hex at build time (its precompiled .ez is
-# incompatible with OTP 28's changed bytecode format for bs_add).
-DISTFILES=		${DISTNAME}${EXTRACT_SUFX} \
-			${PORTNAME}-${DISTVERSION}-deps${EXTRACT_SUFX}:DEPS
+DISTFILES+=		${PORTNAME}-${DISTVERSION}-deps${EXTRACT_SUFX}:DEPS
 MASTER_SITES+=		https://github.com/kleene-project/kleened/releases/download/v${DISTVERSION}/:DEPS
 EXTRACT_ONLY=		${DISTNAME}${EXTRACT_SUFX}
 
@@ -34,6 +30,7 @@ ETCDIR=			${PREFIX}/etc/kleened
 MIX_ENV=		MIX_REBAR3=${LOCALBASE}/bin/rebar3 \
 			LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 \
 			MIX_HOME=${WRKDIR}/mix \
+			MIX_PATH=${WRKSRC}/hex/ebin \
 			HEX_OFFLINE=true
 MIX_ENV_NAME=		prod
 
@@ -48,6 +45,7 @@ post-extract:
 	${TAR} -xzf ${DISTDIR}/${PORTNAME}-${DISTVERSION}-deps.tar.gz -C ${WRKSRC}
 
 do-build:
+	@${MKDIR} ${WRKDIR}/mix
 	@cd ${WRKSRC} && ${SETENV} ${MIX_ENV} MIX_ENV=${MIX_ENV_NAME} mix release
 
 do-install:
@@ -86,5 +84,7 @@ post-install:
 		${FIND} libexec/kleened/erts-* -type f -o -type l | ${SORT} >> ${TMPPLIST}
 	@cd ${STAGEDIR}${PREFIX} && \
 		${FIND} libexec/kleened/lib/* -type f -o -type l | ${SORT} >> ${TMPPLIST}
+	@cd ${STAGEDIR}${PREFIX} && \
+		${FIND} libexec/kleened/releases -type f -o -type l | ${SORT} >> ${TMPPLIST}
 
 .include <bsd.port.post.mk>

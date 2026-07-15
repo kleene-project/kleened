@@ -1,3 +1,5 @@
-TIMESTAMP = 1720628572
-SHA256 (kleene-project-kleened-v0.1.0rc2-6a67380_GH0.tar.gz) = 1b2c8f859b1453f4a86735094f67eebe3d62713c4ff1bfea4f708f525b87f1ac
-SIZE (kleene-project-kleened-v0.1.0rc2-6a67380_GH0.tar.gz) = 5048873
+TIMESTAMP = 1783989239
+SHA256 (kleene-daemon-0.1.1-deps.tar.gz) = 06889d924cc7f6d55b4cdf68b64a6ad56e613572fd543d1d6b861689f181543b
+SIZE (kleene-daemon-0.1.1-deps.tar.gz) = 5139878
+SHA256 (kleene-project-kleened-v0.1.1_GH0.tar.gz) = 4445de86a7855c30fdb0685370dfd3e3328c64a40477398f6a3f74968d38153a
+SIZE (kleene-project-kleened-v0.1.1_GH0.tar.gz) = 5079340
