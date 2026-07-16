@@ -99,7 +99,7 @@ defmodule MIME do
     "image/gif" => ["gif"],
     "image/heic" => ["heic"],
     "image/heif" => ["heif"],
-    "image/jp2" => [".jp2"],
+    "image/jp2" => ["jp2"],
     "image/jpeg" => ["jpg", "jpeg"],
     "image/jxl" => ["jxl"],
     "image/png" => ["png"],
@@ -171,9 +171,9 @@ defmodule MIME do
   @doc """
   Returns a mapping of all known types to their extensions,
   including custom types compiled into the MIME module.
-  
+
   ## Examples
-  
+
       known_types()
       #=> %{"application/json" => ["json"], ...}
 

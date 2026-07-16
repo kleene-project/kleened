@@ -3,6 +3,7 @@ defmodule DBConnection.Ownership.Manager do
   use GenServer
   require Logger
   alias DBConnection.Ownership.Proxy
+  alias DBConnection.Util
 
   @timeout 5_000
 
@@ -56,7 +57,8 @@ defmodule DBConnection.Ownership.Manager do
           :ok | {:already, :owner | :allowed} | :not_found
   def allow(manager, parent, allow, opts) do
     timeout = Keyword.get(opts, :timeout, @timeout)
-    GenServer.call(manager, {:allow, parent, allow}, timeout)
+    passed_opts = Keyword.take(opts, [:unallow_existing])
+    GenServer.call(manager, {:allow, parent, allow, passed_opts}, timeout)
   end
 
   @spec get_connection_metrics(GenServer.server()) ::
@@ -74,7 +76,13 @@ defmodule DBConnection.Ownership.Manager do
     ets =
       case Keyword.fetch(owner_opts, :name) do
         {:ok, name} when is_atom(name) ->
-          :ets.new(name, [:set, :named_table, :protected, read_concurrency: true])
+          :ets.new(name, [
+            :set,
+            :named_table,
+            :protected,
+            read_concurrency: true,
+            decentralized_counters: true
+          ])
 
         _ ->
           nil
@@ -89,6 +97,10 @@ defmodule DBConnection.Ownership.Manager do
     log = Keyword.get(pool_opts, :ownership_log, nil)
     mode = Keyword.get(pool_opts, :ownership_mode, :auto)
     checkout_opts = Keyword.take(pool_opts, [:ownership_timeout, :queue_target, :queue_interval])
+
+    if label = pool_opts[:label] do
+      Util.set_label({__MODULE__, label})
+    end
 
     {:ok,
      %{
@@ -164,15 +176,24 @@ defmodule DBConnection.Ownership.Manager do
     {:reply, reply, state}
   end
 
-  def handle_call({:allow, caller, allow}, _from, %{checkouts: checkouts} = state) do
-    if kind = already_checked_out(checkouts, allow) do
+  def handle_call({:allow, caller, allow, opts}, _from, %{checkouts: checkouts} = state) do
+    unallow_existing = Keyword.get(opts, :unallow_existing, false)
+    kind = already_checked_out(checkouts, allow)
+
+    if !unallow_existing && kind do
       {:reply, {:already, kind}, state}
     else
       case Map.get(checkouts, caller, :not_found) do
         {:owner, ref, proxy} ->
+          state =
+            if unallow_existing, do: owner_unallow(state, caller, allow, ref, proxy), else: state
+
           {:reply, :ok, owner_allow(state, caller, allow, ref, proxy)}
 
         {:allowed, ref, proxy} ->
+          state =
+            if unallow_existing, do: owner_unallow(state, caller, allow, ref, proxy), else: state
+
           {:reply, :ok, owner_allow(state, caller, allow, ref, proxy)}
 
         :not_found ->
@@ -206,7 +227,7 @@ defmodule DBConnection.Ownership.Manager do
         {:noreply, state}
 
       :not_found when mode == :manual ->
-        not_found(from)
+        not_found(from, mode)
         {:noreply, state}
 
       :not_found ->
@@ -245,11 +266,11 @@ defmodule DBConnection.Ownership.Manager do
     if log do
       Logger.log(log, fn ->
         [
-          inspect(caller),
+          Util.inspect_pid(caller),
           " checked out connection in ",
           inspect(mode),
           " mode using proxy ",
-          inspect(proxy)
+          Util.inspect_pid(proxy)
         ]
       end)
     end
@@ -289,7 +310,13 @@ defmodule DBConnection.Ownership.Manager do
   defp owner_allow(%{ets: ets, log: log} = state, caller, allow, ref, proxy) do
     if log do
       Logger.log(log, fn ->
-        [inspect(allow), " was allowed by ", inspect(caller), " on proxy ", inspect(proxy)]
+        [
+          Util.inspect_pid(allow),
+          " was allowed by ",
+          Util.inspect_pid(caller),
+          " on proxy ",
+          Util.inspect_pid(proxy)
+        ]
       end)
     end
 
@@ -304,6 +331,36 @@ defmodule DBConnection.Ownership.Manager do
     state
   end
 
+  defp owner_unallow(%{ets: ets, log: log} = state, caller, unallow, _ref, _proxy) do
+    case Map.get(state.checkouts, unallow, :not_found) do
+      {_status, old_ref, old_proxy} ->
+        if log do
+          Logger.log(log, fn ->
+            [
+              Util.inspect_pid(unallow),
+              " was unallowed by ",
+              Util.inspect_pid(caller),
+              " on proxy ",
+              Util.inspect_pid(old_proxy)
+            ]
+          end)
+        end
+
+        state = update_in(state.checkouts, &Map.delete(&1, unallow))
+
+        state =
+          update_in(state.owners[old_ref], fn {proxy, caller, allowed} ->
+            {proxy, caller, List.delete(allowed, unallow)}
+          end)
+
+        ets && :ets.delete(ets, unallow)
+        state
+
+      :not_found ->
+        state
+    end
+  end
+
   defp owner_down(%{ets: ets, log: log} = state, ref) do
     case get_and_update_in(state.owners, &Map.pop(&1, ref)) do
       {{proxy, caller, allowed}, state} ->
@@ -313,9 +370,9 @@ defmodule DBConnection.Ownership.Manager do
         if log do
           Logger.log(log, fn ->
             [
-              Enum.map_join(entries, ", ", &inspect/1),
+              Enum.map_join(entries, ", ", &Util.inspect_pid/1),
               " lost connection from proxy ",
-              inspect(proxy)
+              Util.inspect_pid(proxy)
             ]
           end)
         end
@@ -358,9 +415,15 @@ defmodule DBConnection.Ownership.Manager do
     caller
   end
 
-  defp not_found({pid, _} = from) do
+  defp not_found({pid, _} = from, mode) do
+    label = Util.pool_label(self())
+    label_info = if label, do: "(#{inspect(label)}) ", else: ""
+
     msg = """
-    cannot find ownership process for #{inspect(pid)}.
+    cannot find ownership process for #{Util.inspect_pid(pid)}
+    #{label_info}using mode #{inspect(mode)}.
+    (Note that a connection's mode reverts to :manual if its owner
+    terminates.)
 
     When using ownership, you must manage connections in one
     of the four ways:

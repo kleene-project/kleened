@@ -7,7 +7,7 @@ defmodule Erlex do
 
   ## Usage
 
-  Invoke `Erlex.pretty_print/1` wuth the input string.
+  Invoke `Erlex.pretty_print/1` with the input string.
 
   ```elixir
   iex> str = ~S"('Elixir.Plug.Conn':t(),binary() | atom(),'Elixir.Keyword':t() | map()) -> 'Elixir.Plug.Conn':t()"
@@ -62,7 +62,9 @@ defmodule Erlex do
 
   defp format(code) do
     try do
-      Code.format_string!(code)
+      code
+      |> Code.format_string!()
+      |> IO.iodata_to_binary()
     rescue
       _ ->
         throw({:error, :formatting, code})
@@ -151,7 +153,6 @@ defmodule Erlex do
     end
     """
     |> format()
-    |> Enum.join("")
     |> String.trim_leading(prefix)
     |> String.trim_trailing(suffix)
     |> String.replace("\n      ", "\n")
@@ -171,7 +172,6 @@ defmodule Erlex do
     end
     """
     |> format()
-    |> Enum.join("")
     |> String.trim_leading(prefix)
     |> String.trim_trailing(suffix)
     |> String.trim_trailing(indented_suffix)
@@ -191,7 +191,6 @@ defmodule Erlex do
     end
     """
     |> format()
-    |> Enum.join("")
     |> String.trim_leading(prefix)
     |> String.trim_trailing(suffix)
     |> String.replace("\n      ", "\n")

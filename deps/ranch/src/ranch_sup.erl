@@ -1,4 +1,5 @@
-%% Copyright (c) 2011-2018, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Jan Uhlig <juhlig@hnc-agency.org>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -22,6 +23,7 @@
 start_link() ->
 	supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
+-spec init([]) -> {ok, {supervisor:sup_flags(), [supervisor:child_spec()]}}.
 init([]) ->
 	Intensity = case application:get_env(ranch_sup_intensity) of
 		{ok, Value1} -> Value1;
@@ -31,10 +33,7 @@ init([]) ->
 		{ok, Value2} -> Value2;
 		undefined -> 5
 	end,
-	ranch_server = ets:new(ranch_server, [
-		ordered_set, public, named_table]),
 	Procs = [
-		{ranch_server, {ranch_server, start_link, []},
-			permanent, 5000, worker, [ranch_server]}
+		#{id => ranch_server, start => {ranch_server, start_link, []}}
 	],
-	{ok, {{one_for_one, Intensity, Period}, Procs}}.
+	{ok, {#{intensity => Intensity, period => Period}, Procs}}.

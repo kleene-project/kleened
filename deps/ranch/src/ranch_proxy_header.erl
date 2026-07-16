@@ -1,4 +1,4 @@
-%% Copyright (c) 2018, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -17,6 +17,7 @@
 -export([parse/1]).
 -export([header/1]).
 -export([header/2]).
+-export([to_connection_info/1]).
 
 -type proxy_info() :: #{
 	%% Mandatory part.
@@ -32,6 +33,7 @@
 	%% Extra TLV-encoded data.
 	alpn => binary(), %% US-ASCII.
 	authority => binary(), %% UTF-8.
+	unique_id => binary(), %% Opaque byte sequence of up to 128 bytes.
 	ssl => #{
 		client := [ssl | cert_conn | cert_sess],
 		verified := boolean(),
@@ -519,6 +521,12 @@ parse_tlv(<<16#3, TLVLen:16, CRC32C:32, Rest/bits>>, Len0, Info, Header) when TL
 %% PP2_TYPE_NOOP.
 parse_tlv(<<16#4, TLVLen:16, _:TLVLen/binary, Rest/bits>>, Len, Info, Header) ->
 	parse_tlv(Rest, Len - TLVLen - 3, Info, Header);
+%% PP2_TYPE_UNIQUE_ID.
+parse_tlv(<<16#5, TLVLen:16, UniqueID:TLVLen/binary, Rest/bits>>, Len, Info, Header)
+		when TLVLen =< 128 ->
+	parse_tlv(Rest, Len - TLVLen - 3, Info#{unique_id => UniqueID}, Header);
+parse_tlv(<<16#5, _/bits>>, _, _, _) ->
+	{error, 'Invalid TLV length in the PROXY protocol binary header. (PP 2.2, PP 2.2.5)'};
 %% PP2_TYPE_SSL.
 parse_tlv(<<16#20, TLVLen:16, Client, Verify:32, Rest0/bits>>, Len, Info, Header) ->
 	SubsLen = TLVLen - 5,
@@ -681,6 +689,7 @@ tlvs(ProxyInfo, Opts) ->
 	[
 		binary_tlv(ProxyInfo, alpn, 16#1),
 		binary_tlv(ProxyInfo, authority, 16#2),
+		binary_tlv(ProxyInfo, unique_id, 16#5),
 		ssl_tlv(ProxyInfo),
 		binary_tlv(ProxyInfo, netns, 16#30),
 		raw_tlvs(ProxyInfo),
@@ -830,7 +839,7 @@ v2_tlvs_test() ->
 	Test4 = Common#{ssl => #{
 		client => [ssl, cert_conn, cert_sess],
 		verified => true,
-		version => <<"TLSv1.3">>, %% Note that I'm not sure this example value is correct.
+		version => <<"TLSv1.3">>,
 		cipher => <<"ECDHE-RSA-AES128-GCM-SHA256">>,
 		sig_alg => <<"SHA256">>,
 		key_alg => <<"RSA2048">>,
@@ -848,6 +857,8 @@ v2_tlvs_test() ->
 	]},
 	Test5Out = Test5In#{raw_tlvs => lists:reverse(RawTLVs)},
 	{ok, Test5Out, <<>>} = parse(iolist_to_binary(header(Test5In))),
+	Test6 = Common#{unique_id => rand:bytes(rand:uniform(128))},
+	{ok, Test6, <<>>} = parse(iolist_to_binary(header(Test6))),
 	ok.
 
 v2_checksum_test() ->
@@ -876,5 +887,139 @@ v2_padding_test() ->
 		dest_port => 23456
 	},
 	{ok, Test, <<>>} = parse(iolist_to_binary(header(Test, #{padding => 123}))),
+	ok.
+-endif.
+
+%% Helper to convert proxy_info() to ssl:connection_info().
+%%
+%% Because there isn't a lot of fields common to both types
+%% this only ends up returning the keys protocol, selected_cipher_suite
+%% and sni_hostname *at most*.
+
+%% The type ssl:connection_info/0 is not exported. We just
+%% replicate the relevant info tuples here.
+-type ssl_connection_info() :: [
+	{sni_hostname, term()} |
+	{selected_cipher_suite, ssl:erl_cipher_suite()} |
+	{protocol, ssl:protocol_version()}
+].
+
+-spec to_connection_info(proxy_info()) -> ssl_connection_info().
+to_connection_info(ProxyInfo=#{ssl := SSL}) ->
+	ConnInfo0 = case ProxyInfo of
+		#{authority := Authority} ->
+			[{sni_hostname, Authority}];
+		_ ->
+			[]
+	end,
+	ConnInfo = case SSL of
+		#{cipher := Cipher} ->
+			case ssl:str_to_suite(binary_to_list(Cipher)) of
+				{error, {not_recognized, _}} ->
+					ConnInfo0;
+				CipherInfo ->
+					[{selected_cipher_suite, CipherInfo}|ConnInfo0]
+			end;
+		_ ->
+			ConnInfo0
+	end,
+	%% https://www.openssl.org/docs/man1.1.1/man3/SSL_get_version.html
+	case SSL of
+		#{version := <<"TLSv1.3">>} -> [{protocol, 'tlsv1.3'}|ConnInfo];
+		#{version := <<"TLSv1.2">>} -> [{protocol, 'tlsv1.2'}|ConnInfo];
+		#{version := <<"TLSv1.1">>} -> [{protocol, 'tlsv1.1'}|ConnInfo];
+		#{version := <<"TLSv1">>} -> [{protocol, tlsv1}|ConnInfo];
+		#{version := <<"SSLv3">>} -> [{protocol, sslv3}|ConnInfo];
+		#{version := <<"SSLv2">>} -> [{protocol, sslv2}|ConnInfo];
+		%% <<"unknown">>, unsupported or missing version.
+		_ -> ConnInfo
+	end;
+%% No SSL/TLS information available.
+to_connection_info(_) ->
+	[].
+
+-ifdef(TEST).
+to_connection_info_test() ->
+	Common = #{
+		version => 2,
+		command => proxy,
+		transport_family => ipv4,
+		transport_protocol => stream,
+		src_address => {127, 0, 0, 1},
+		src_port => 1234,
+		dest_address => {10, 11, 12, 13},
+		dest_port => 23456
+	},
+	%% Version 1.
+	[] = to_connection_info(#{
+		version => 1,
+		command => proxy,
+		transport_family => undefined,
+		transport_protocol => undefined
+	}),
+	[] = to_connection_info(Common#{version => 1}),
+	%% Version 2, no ssl data.
+	[] = to_connection_info(#{
+		version => 2,
+		command => local
+	}),
+	[] = to_connection_info(#{
+		version => 2,
+		command => proxy,
+		transport_family => undefined,
+		transport_protocol => undefined
+	}),
+	[] = to_connection_info(Common),
+	[] = to_connection_info(#{
+		version => 2,
+		command => proxy,
+		transport_family => unix,
+		transport_protocol => dgram,
+		src_address => <<"/run/source.sock">>,
+		dest_address => <<"/run/destination.sock">>
+	}),
+	[] = to_connection_info(Common#{netns => <<"/var/run/netns/example">>}),
+	[] = to_connection_info(Common#{raw_tlvs => [
+		{16#ff, <<1, 2, 3, 4, 5, 6, 7, 8, 9, 0>>}
+	]}),
+	%% Version 2, with ssl-related data.
+	[] = to_connection_info(Common#{alpn => <<"h2">>}),
+	%% The authority alone is not enough to deduce that this is SNI.
+	[] = to_connection_info(Common#{authority => <<"internal.example.org">>}),
+	[
+		{protocol, 'tlsv1.3'},
+		{selected_cipher_suite, #{
+			cipher := aes_128_gcm,
+			key_exchange := ecdhe_rsa,
+			mac := aead,
+			prf := sha256
+		}}
+	] = to_connection_info(Common#{ssl => #{
+		client => [ssl, cert_conn, cert_sess],
+		verified => true,
+		version => <<"TLSv1.3">>,
+		cipher => <<"ECDHE-RSA-AES128-GCM-SHA256">>,
+		sig_alg => <<"SHA256">>,
+		key_alg => <<"RSA2048">>,
+		cn => <<"example.com">>
+	}}),
+	[
+		{protocol, 'tlsv1.3'},
+		{selected_cipher_suite, #{
+			cipher := aes_128_gcm,
+			key_exchange := ecdhe_rsa,
+			mac := aead,
+			prf := sha256
+		}},
+		{sni_hostname, <<"internal.example.org">>}
+	] = to_connection_info(Common#{authority => <<"internal.example.org">>, ssl => #{
+		client => [ssl, cert_conn, cert_sess],
+		verified => true,
+		version => <<"TLSv1.3">>,
+		cipher => <<"ECDHE-RSA-AES128-GCM-SHA256">>,
+		sig_alg => <<"SHA256">>,
+		key_alg => <<"RSA2048">>,
+		cn => <<"example.com">>
+	}}),
 	ok.
 -endif.

@@ -1,4 +1,5 @@
-%% Copyright (c) 2012-2018, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Jan Uhlig <juhlig@hnc-agency.org>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -26,11 +27,15 @@
 
 -callback name() -> atom().
 -callback secure() -> boolean().
--callback messages() -> {OK::atom(), Closed::atom(), Error::atom()}.
--callback listen(opts()) -> {ok, socket()} | {error, atom()}.
+-callback messages() -> {OK::atom(), Closed::atom(), Error::atom(), Passive::atom()}.
+-callback listen(ranch:transport_opts(any())) -> {ok, socket()} | {error, atom()}.
 -callback accept(socket(), timeout())
 	-> {ok, socket()} | {error, closed | timeout | atom()}.
--callback handshake(socket(), opts(), timeout()) -> {ok, socket()} | {error, any()}.
+-callback handshake(socket(), timeout()) -> {ok, socket()} | {ok, socket(), any()} | {error, any()}.
+-callback handshake(socket(), opts(), timeout()) -> {ok, socket()} | {ok, socket(), any()} | {error, any()}.
+-callback handshake_continue(socket(), timeout()) -> {ok, socket()} | {error, any()}.
+-callback handshake_continue(socket(), opts(), timeout()) -> {ok, socket()} | {error, any()}.
+-callback handshake_cancel(socket()) -> ok.
 -callback connect(string(), inet:port_number(), opts())
 	-> {ok, socket()} | {error, atom()}.
 -callback connect(string(), inet:port_number(), opts(), timeout())
@@ -56,12 +61,17 @@
 -callback controlling_process(socket(), pid())
 	-> ok | {error, closed | not_owner | atom()}.
 -callback peername(socket())
-	-> {ok, {inet:ip_address(), inet:port_number()}} | {error, atom()}.
+	-> {ok, {inet:ip_address(), inet:port_number()} | {local, binary()}} | {error, atom()}.
 -callback sockname(socket())
-	-> {ok, {inet:ip_address(), inet:port_number()}} | {error, atom()}.
+	-> {ok, {inet:ip_address(), inet:port_number()} | {local, binary()}} | {error, atom()}.
 -callback shutdown(socket(), read | write | read_write)
 	-> ok | {error, atom()}.
 -callback close(socket()) -> ok.
+-callback cleanup(ranch:transport_opts(any())) -> ok.
+-callback format_error(term()) -> string().
+
+%% TODO: Required callback in Ranch 3.0
+-optional_callbacks([format_error/1]).
 
 %% A fallback for transports that don't have a native sendfile implementation.
 %% Note that the ordering of arguments is different from file:sendfile/5 and

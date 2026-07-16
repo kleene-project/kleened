@@ -1,4 +1,6 @@
 defmodule ExDoc.Autolink do
+  # Encapsulates all functionality related to autolinking,
+  # decoupled from language and ExDoc structs.
   @moduledoc false
 
   # * `:apps` - the apps that the docs are being generated for. When linking modules they are
@@ -55,10 +57,12 @@ defmodule ExDoc.Autolink do
     ext: ".html",
     current_kfa: nil,
     siblings: [],
-    skip_undefined_reference_warnings_on: &ExDoc.Config.skip_undefined_reference_warnings_on/1,
-    skip_code_autolink_to: &ExDoc.Config.skip_code_autolink_to/1,
+    skip_undefined_reference_warnings_on:
+      &ExDoc.Formatter.Config.skip_undefined_reference_warnings_on/1,
+    skip_code_autolink_to: &ExDoc.Formatter.Config.skip_code_autolink_to/1,
     force_module_prefix: nil,
     filtered_modules: [],
+    assets: %{},
     warnings: :emit
   ]
 
@@ -80,17 +84,9 @@ defmodule ExDoc.Autolink do
     app_url(base_url, module, config, path, config.ext, "#{anchor}")
   end
 
-  defp string_app_module_url(string, tool, module, anchor, config) do
+  defp string_app_module_url(tool, module, anchor, config) do
     if Enum.any?(config.filtered_modules, &(&1.module == module)) do
-      # TODO: Remove on Elixir v1.14
-      prefix =
-        if unquote(Version.match?(System.version(), ">= 1.14.0")) do
-          ""
-        else
-          ~s|"#{string}" |
-        end
-
-      warn(config, prefix <> "reference to a filtered module")
+      warn(config, "reference to a filtered module")
       nil
     else
       app_module_url(tool, module, anchor, config)
@@ -144,9 +140,8 @@ defmodule ExDoc.Autolink do
       :ex_doc
     else
       app = app(module)
-      apps = Enum.uniq(config.apps ++ Keyword.keys(config.deps))
 
-      if is_app_otp(app) and app not in apps do
+      if is_app_otp(app) and app not in config.apps and not Keyword.has_key?(config.deps, app) do
         :otp
       else
         :ex_doc
@@ -170,12 +165,12 @@ defmodule ExDoc.Autolink do
     end
   end
 
-  @ref_regex ~r/^`(.+)`$/
+  defp ref_regex, do: ~r/^`(.+)`$/
 
   def custom_link(attrs, config) do
     case Keyword.fetch(attrs, :href) do
       {:ok, href} ->
-        case Regex.scan(@ref_regex, href) do
+        case Regex.scan(ref_regex(), href) do
           [[_, custom_link]] ->
             custom_link
             |> url(:custom_link, config)
@@ -221,17 +216,35 @@ defmodule ExDoc.Autolink do
 
   defp build_extra_link(link, config) do
     with %{scheme: nil, host: nil, path: path} = uri <- URI.parse(link),
-         true <- is_binary(path) and path != "" and not (path =~ @ref_regex),
+         true <- is_binary(path) and path != "" and not (path =~ ref_regex()),
          true <- Path.extname(path) in @builtin_ext do
-      if file = config.extras[Path.basename(path)] do
-        append_fragment(file <> config.ext, uri.fragment)
-      else
-        maybe_warn(config, nil, nil, %{file_path: path, original_text: link})
-        nil
+      cond do
+        file = config.extras[Path.basename(path)] ->
+          append_fragment(file <> config.ext, uri.fragment)
+
+        asset_file?(path, config.assets) ->
+          nil
+
+        true ->
+          maybe_warn(config, nil, nil, %{file_path: path, original_text: link})
+          nil
       end
     else
       _ -> nil
     end
+  end
+
+  defp asset_file?(path, assets) do
+    Enum.any?(assets, fn {source_dir, target_dir} ->
+      prefix = String.trim_trailing(target_dir, "/") <> "/"
+
+      if String.starts_with?(path, prefix) do
+        path
+        |> String.trim_leading(prefix)
+        |> Path.expand(source_dir)
+        |> File.exists?()
+      end
+    end)
   end
 
   defp maybe_remove_link(nil, :custom_link) do
@@ -269,7 +282,7 @@ defmodule ExDoc.Autolink do
 
     case {mode, Refs.get_visibility(ref)} do
       {_link_type, visibility} when visibility in [:public, :limited] ->
-        string_app_module_url(string, tool(module, config), module, anchor, config)
+        string_app_module_url(tool(module, config), module, anchor, config)
 
       {:regular_link, :undefined} ->
         nil
@@ -493,7 +506,7 @@ defmodule ExDoc.Autolink do
         if same_module? do
           fragment(kind, name, arity)
         else
-          url = string_app_module_url(original_text, tool, module, nil, config)
+          url = string_app_module_url(tool, module, nil, config)
           url && url <> fragment(kind, name, arity)
         end
 
@@ -509,6 +522,18 @@ defmodule ExDoc.Autolink do
       {:regular_link, _module_visibility, :undefined}
       when not same_module? and
              (config.language != ExDoc.Language.Erlang or kind == :function) ->
+        nil
+
+      {:regular_link, :hidden, :hidden}
+      when not same_module? ->
+        if warn? do
+          maybe_warn(config, ref, :hidden, %{
+            original_text: original_text,
+            module_visibility: :hidden,
+            same_module?: false
+          })
+        end
+
         nil
 
       {_mode, _module_visibility, visibility} ->
@@ -535,10 +560,10 @@ defmodule ExDoc.Autolink do
 
     case config.warnings do
       :emit ->
-        ExDoc.Utils.warn(message, stacktrace_info)
+        ExDoc.warn(message, stacktrace_info)
 
       :raise ->
-        ExDoc.Utils.warn(message, stacktrace_info)
+        ExDoc.warn(message, stacktrace_info)
         raise "fail due to warnings"
 
       :send ->
@@ -581,6 +606,19 @@ defmodule ExDoc.Autolink do
          %{file_path: _file_path, original_text: original_text}
        ) do
     message = "documentation references file \"#{original_text}\" but it does not exist"
+
+    warn(config, message)
+  end
+
+  defp warn(
+         config,
+         {:type, module, _name, _arity},
+         :hidden,
+         %{original_text: original_text, module_visibility: :hidden, same_module?: false}
+       ) do
+    message =
+      "documentation references type \"#{original_text}\" but the module " <>
+        "#{inspect(module)} is #{format_visibility(:hidden, :module)}"
 
     warn(config, message)
   end

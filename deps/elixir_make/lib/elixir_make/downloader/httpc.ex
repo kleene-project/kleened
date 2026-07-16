@@ -12,14 +12,14 @@ defmodule ElixirMake.Downloader.Httpc do
     {:ok, _} = Application.ensure_all_started(:ssl)
     {:ok, _} = Application.ensure_all_started(:public_key)
 
-    if proxy = System.get_env("HTTP_PROXY") || System.get_env("http_proxy") do
+    if proxy = proxy_env(:http) do
       Mix.shell().info("Using HTTP_PROXY: #{proxy}")
       %{host: host, port: port} = URI.parse(proxy)
 
       :httpc.set_options([{:proxy, {{String.to_charlist(host), port}, []}}])
     end
 
-    if proxy = System.get_env("HTTPS_PROXY") || System.get_env("https_proxy") do
+    if proxy = proxy_env(:https) do
       Mix.shell().info("Using HTTPS_PROXY: #{proxy}")
       %{host: host, port: port} = URI.parse(proxy)
       :httpc.set_options([{:https_proxy, {{String.to_charlist(host), port}, []}}])
@@ -67,13 +67,21 @@ defmodule ElixirMake.Downloader.Httpc do
   end
 
   defp otp_cacerts do
-    if System.otp_release() >= "25" do
-      # cacerts_get/0 raises if no certs found
-      try do
-        :public_key.cacerts_get()
-      rescue
-        _ -> nil
-      end
+    # cacerts_get/0 raises if no certs found
+    try do
+      :public_key.cacerts_get()
+    rescue
+      _ -> nil
+    end
+  end
+
+  defp proxy_env(:http), do: get_env("HTTP_PROXY") || get_env("http_proxy")
+  defp proxy_env(:https), do: get_env("HTTPS_PROXY") || get_env("https_proxy")
+
+  defp get_env(var) do
+    case System.get_env(var) do
+      "" -> nil
+      value -> value
     end
   end
 

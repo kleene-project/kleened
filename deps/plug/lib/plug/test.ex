@@ -5,14 +5,15 @@ defmodule Plug.Test do
   This module can be used in your test cases, like this:
 
       use ExUnit.Case, async: true
-      use Plug.Test
+      import Plug.Test
+      import Plug.Conn
 
   Using this module will:
 
     * import all the functions from this module
     * import all the functions from the `Plug.Conn` module
 
-  By default, Plug tests checks for invalid header keys, e.g. header keys which
+  By default, Plug tests check for invalid header keys, e.g. header keys which
   include uppercase letters, and raises a `Plug.Conn.InvalidHeaderError` when
   it finds one. To disable it, set `:validate_header_keys_during_test` to
   false on the app config.
@@ -22,6 +23,9 @@ defmodule Plug.Test do
   """
 
   @doc false
+  @deprecated """
+  Please use `import Plug.Test` and `import Plug.Conn` directly instead.
+  """
   defmacro __using__(_) do
     quote do
       import Plug.Test
@@ -139,7 +143,7 @@ defmodule Plug.Test do
   ## Examples
 
       conn = conn(:get, "/foo", "bar=10")
-      upgrades = Plug.Test.send_upgrades(conn)
+      upgrades = Plug.Test.sent_upgrades(conn)
       assert {:websocket, [opt: :value]} in upgrades
 
   """
@@ -205,12 +209,39 @@ defmodule Plug.Test do
   end
 
   @doc """
-  Puts a request cookie.
+  Puts the sock data.
   """
-  @spec put_req_cookie(Conn.t(), binary, binary) :: Conn.t()
-  def put_req_cookie(conn, key, value) when is_binary(key) and is_binary(value) do
+  def put_sock_data(conn, sock_data) do
+    update_in(conn.adapter, fn {adapter, payload} ->
+      {adapter, Map.put(payload, :sock_data, sock_data)}
+    end)
+  end
+
+  @doc """
+  Puts the ssl data.
+  """
+  def put_ssl_data(conn, ssl_data) do
+    update_in(conn.adapter, fn {adapter, payload} ->
+      {adapter, Map.put(payload, :ssl_data, ssl_data)}
+    end)
+  end
+
+  @doc """
+  Puts a request cookie.
+
+  ## Options
+
+    * `:max_age` - the cookie max-age, in seconds. Unset by default.
+    * `:sign` - when true, signs the cookie.
+    * `:encrypt` - when true, encrypts the cookie.
+
+  """
+  @spec put_req_cookie(Conn.t(), binary, any, keyword) :: Conn.t()
+  def put_req_cookie(%Conn{} = conn, key, value, opts \\ [])
+      when is_binary(key) and is_list(opts) do
     conn = delete_req_cookie(conn, key)
-    %{conn | req_headers: [{"cookie", "#{key}=#{value}"} | conn.req_headers]}
+    {to_send_value, _opts} = Plug.Conn.Cookies.sign_or_encrypt(conn, key, value, opts)
+    %{conn | req_headers: [{"cookie", "#{key}=#{to_send_value}"} | conn.req_headers]}
   end
 
   @doc """
@@ -241,7 +272,7 @@ defmodule Plug.Test do
     req_cookies = Plug.Conn.fetch_cookies(old_conn).req_cookies
 
     resp_cookies =
-      Enum.reduce(old_conn.resp_cookies, req_cookies, fn {key, opts}, acc ->
+      Enum.reduce(Plug.Conn.get_resp_cookies(old_conn), req_cookies, fn {key, opts}, acc ->
         if value = Map.get(opts, :value) do
           Map.put(acc, key, value)
         else
@@ -260,7 +291,7 @@ defmodule Plug.Test do
   If the session has already been initialized, the new contents will be merged
   with the previous ones.
   """
-  @spec init_test_session(Conn.t(), %{optional(String.t() | atom) => any}) :: Conn.t()
+  @spec init_test_session(Conn.t(), %{optional(String.t() | atom) => any} | keyword) :: Conn.t()
   def init_test_session(conn, session) do
     conn =
       if conn.private[:plug_session_fetch] do

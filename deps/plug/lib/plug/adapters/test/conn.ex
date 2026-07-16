@@ -1,10 +1,11 @@
 defmodule Plug.Adapters.Test.Conn do
   @behaviour Plug.Conn.Adapter
+  @already_sent Plug.Conn.Adapter.already_sent()
   @moduledoc false
 
   ## Test helpers
 
-  def conn(conn, method, uri, body_or_params) do
+  def conn(%Plug.Conn{} = conn, method, uri, body_or_params) do
     maybe_flush()
     uri = URI.parse(uri)
 
@@ -33,17 +34,22 @@ defmodule Plug.Adapters.Test.Conn do
           address: {127, 0, 0, 1},
           port: 111_317,
           ssl_cert: nil
-        })
+        }),
+      sock_data:
+        get_from_adapter(conn, :get_sock_data, %{
+          address: {127, 0, 0, 1},
+          port: 111_318
+        }),
+      ssl_data: get_from_adapter(conn, :get_ssl_data, nil)
     }
 
     conn_port = if conn.port != 0, do: conn.port, else: 80
 
-    %Plug.Conn{
+    %{
       conn
       | adapter: {__MODULE__, state},
         host: uri.host || conn.host || "www.example.com",
         method: method,
-        owner: owner,
         path_info: split_path(uri.path),
         port: uri.port || conn_port,
         remote_ip: conn.remote_ip || {127, 0, 0, 1},
@@ -88,7 +94,10 @@ defmodule Plug.Adapters.Test.Conn do
     do_send(state, status, headers, data)
   end
 
-  def send_chunked(state, _status, _headers), do: {:ok, "", %{state | chunks: ""}}
+  def send_chunked(%{owner: owner} = state, _status, _headers) do
+    send(owner, @already_sent)
+    {:ok, "", %{state | chunks: ""}}
+  end
 
   def chunk(%{method: "HEAD"} = state, _body), do: {:ok, "", state}
 
@@ -98,6 +107,7 @@ defmodule Plug.Adapters.Test.Conn do
   end
 
   defp do_send(%{owner: owner, ref: ref} = state, status, headers, body) do
+    send(owner, @already_sent)
     send(owner, {ref, {status, headers, body}})
     {:ok, body, state}
   end
@@ -138,6 +148,14 @@ defmodule Plug.Adapters.Test.Conn do
 
   def get_peer_data(payload) do
     Map.fetch!(payload, :peer_data)
+  end
+
+  def get_sock_data(payload) do
+    Map.fetch!(payload, :sock_data)
+  end
+
+  def get_ssl_data(payload) do
+    Map.fetch!(payload, :ssl_data)
   end
 
   def get_http_protocol(payload) do

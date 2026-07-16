@@ -1,4 +1,4 @@
-%% Copyright (c) 2019-2023, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -57,7 +57,7 @@ init(ReplyTo, Socket, Transport, Opts) ->
 handle(Data, State=#raw_state{ref=StreamRef, reply_to=ReplyTo, flow=Flow0},
 		CookieStore, _, EvHandlerState) ->
 	%% When we take over the entire connection there is no stream reference.
-	ReplyTo ! {gun_data, self(), StreamRef, nofin, Data},
+	gun:reply(ReplyTo, {gun_data, self(), StreamRef, nofin, Data}),
 	Flow = case Flow0 of
 		infinity -> infinity;
 		_ -> Flow0 - 1

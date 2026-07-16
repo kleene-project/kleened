@@ -1,16 +1,16 @@
 defmodule EarmarkParser.MixProject do
   use Mix.Project
 
-  @version "1.4.42"
+  @version "1.4.45"
   @url "https://github.com/RobertDober/earmark_parser"
 
   @deps [
     {:benchee, "~> 1.3.1", only: [:dev]},
     # {:credo, "~> 1.7.5", only: [:dev]},
-    {:dialyxir, "~> 1.4.5", only: [:dev], runtime: false},
+    {:dialyxir, "~> 1.4.7", only: [:dev], runtime: false},
     {:earmark_ast_dsl, "~> 0.3.7", only: [:test]},
     {:excoveralls, "~> 0.18.3", only: [:test]},
-    # {:extractly, "~> 0.5.3", only: [:dev]},
+    {:extractly, "~> 0.5.3", only: [:dev]},
     {:floki, "~> 0.36", only: [:dev, :test]}
   ]
 
@@ -24,12 +24,12 @@ defmodule EarmarkParser.MixProject do
       deps: @deps,
       description: "AST parser and generator for Markdown",
       package: package(),
-      preferred_cli_env: [
-        coveralls: :test,
-        "coveralls.detail": :test,
-        "coveralls.post": :test,
-        "coveralls.html": :test
-      ],
+      # preferred_cli_env: [
+      #   coveralls: :test,
+      #   "coveralls.detail": :test,
+      #   "coveralls.post": :test,
+      #   "coveralls.html": :test
+      # ],
       test_coverage: [tool: ExCoveralls],
       aliases: [docs: &build_docs/1]
     ]
@@ -59,9 +59,17 @@ defmodule EarmarkParser.MixProject do
     ]
   end
 
-  defp elixirc_paths(:test), do: ["lib", "test/support", "dev"]
-  defp elixirc_paths(:dev), do: ["lib", "bench", "dev"]
-  defp elixirc_paths(_), do: ["lib"]
+  defp elixirc_paths(:test) do
+    ["lib", "test/support", "dev"]
+  end
+
+  defp elixirc_paths(:dev) do
+    ["lib", "bench", "dev"]
+  end
+
+  defp elixirc_paths(_) do
+    ["lib"]
+  end
 
   @module "EarmarkParser"
   defp build_docs(_) do

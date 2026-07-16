@@ -77,6 +77,10 @@ defmodule Mix.Tasks.Compile.ElixirMake do
 
     * `:make_force_build` - if build should be forced even if precompiled artefacts
       are available. Defaults to true if the app has a `-dev` version flag.
+      Users of a library can also force build by setting the following application
+      configuration:
+
+          config :elixir_make, :force_build, some_library: true
 
   See [the Precompilation guide](PRECOMPILATION_GUIDE.md) for more information.
 
@@ -104,20 +108,22 @@ defmodule Mix.Tasks.Compile.ElixirMake do
 
   Generally speaking, compilation artifacts are written to the `priv`
   directory, as that the only directory, besides `ebin`, which are
-  available to Erlang/OTP applications.
+  available to Erlang/OTP applications. Therefore, we recommend the
+  Makefile to copy any artifact to `$MIX_APP_PATH/priv` and to have
+  no top-level `priv` directory.
 
-  However, note that Mix projects supports the `:build_embedded`
-  configuration, which controls if assets in the `_build` directory
-  are symlinked (when `false`, the default) or copied (`true`).
-  In order to support both options for `:build_embedded`, it is
-  important to follow the given guidelines:
-
-    * The "priv" directory must not exist in the source code
-    * The Makefile should copy any artifact to `$MIX_APP_PATH/priv`
-      or, even better, to `$MIX_APP_PATH/priv/$MIX_TARGET`
-    * If there are static assets, the Makefile should copy them over
-      from a directory at the project root (not named "priv")
-
+  In case you create a top-level `priv` directory, it gets symlinked
+  to all build directories, in which case you should rather copy the
+  artifacts to `$MIX_APP_PATH/priv/$MIX_TARGET`. This is relevant for
+  projects like Nerves that build for several targets and may involve
+  cross-compilation, so the user ends up with one _build subdirectory
+  per target and we don't want artifacts in the symlinked `priv` to
+  override each other. The downside of shared `priv` is that creating
+  a release would copy all its contents, even with the artifacts not
+  related to the given target. So, if your compilation is expensive
+  it may be better to never create top-level `priv` and manage your
+  own `cache` directory with per-target artifacts and copy them to
+  `$MIX_APP_PATH/priv`.
   """
 
   use Mix.Task

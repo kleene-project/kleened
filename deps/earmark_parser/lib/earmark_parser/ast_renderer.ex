@@ -12,12 +12,16 @@ defmodule EarmarkParser.AstRenderer do
 
   @moduledoc false
 
+  @spec render([Block.t()], Context.t(), boolean()) :: Context.t()
   def render(blocks, context = %Context{options: %Options{}}, loose? \\ true) do
     _render(blocks, context, loose?)
   end
 
   defp _render(blocks, context, loose?)
-  defp _render([], context, _loose?), do: context
+
+  defp _render([], context, _loose?) do
+    context
+  end
 
   defp _render([block | blocks], context, loose?) do
     context1 = render_block(block, clear_value(context), loose?)
@@ -139,9 +143,11 @@ defmodule EarmarkParser.AstRenderer do
          _loose?
        ) do
     classes =
-      if language && language != "",
-        do: [code_classes(language, options.code_class_prefix)],
-        else: []
+      if language && language != "" do
+        [code_classes(language, options.code_class_prefix)]
+      else
+        []
+      end
 
     lines = render_code(block)
 
@@ -154,16 +160,16 @@ defmodule EarmarkParser.AstRenderer do
   #########
   # Lists #
   #########
-  @start_rgx ~r{\A\d+}
   defp render_block(
          %Block.List{type: type, bullet: bullet, blocks: items, attrs: attrs},
          context,
          _loose?
        ) do
+    start_rgx = ~r{\A\d+}
     context1 = render(items, clear_value(context))
 
     start_map =
-      case bullet && Regex.run(@start_rgx, bullet) do
+      case bullet && Regex.run(start_rgx, bullet) do
         nil -> %{}
         ["1"] -> %{}
         [start1] -> %{start: _normalize_start(start1)}
@@ -232,7 +238,9 @@ defmodule EarmarkParser.AstRenderer do
   # IDDef is ignored #
   ####################
 
-  defp render_block(%Block.IdDef{}, context, _loose?), do: context
+  defp render_block(%Block.IdDef{}, context, _loose?) do
+    context
+  end
 
   # Helpers
   # -------

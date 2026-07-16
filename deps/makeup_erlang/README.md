@@ -1,6 +1,8 @@
 # MakeupErlang
 
-[![Build Status](https://github.com/elixir-makeup/makeup_erlang/workflows/CI/badge.svg)](https://github.com/elixir-makeup/makeup_erlang/actions)
+[![CI](https://github.com/elixir-makeup/makeup_erlang/actions/workflows/ci.yml/badge.svg)](https://github.com/elixir-makeup/makeup_erlang/actions/workflows/ci.yml)
+[![Module Version](https://img.shields.io/hexpm/v/makeup_erlang.svg)](https://hex.pm/packages/makeup_erlang)
+[![Hex Docs](https://img.shields.io/badge/hex-docs-lightgreen.svg)](https://hexdocs.pm/makeup_erlang)
 
 A [Makeup](https://github.com/elixir-makeup/makeup/) lexer for the `Erlang` language.
 

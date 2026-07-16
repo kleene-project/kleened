@@ -1,4 +1,4 @@
-%% Copyright (c) 2015-2023, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -39,15 +39,23 @@
 -type streamid() :: pos_integer().
 -export_type([streamid/0]).
 
--type fin() :: fin | nofin.
--export_type([fin/0]).
-
 -type head_fin() :: head_fin | head_nofin.
 -export_type([head_fin/0]).
 
+%% @todo The PRIORITY mechanism in HTTP/2 is de facto deprecated.
 -type exclusive() :: exclusive | shared.
 -type weight() :: 1..256.
--type settings() :: map().
+
+-type settings() :: #{
+	enable_connect_protocol => boolean(),
+	enable_push => boolean(),
+	header_table_size => 16384..16#7fffffff,
+	initial_window_size => 0..16#7fffffff,
+	max_concurrent_streams => 0..16#ffffffff,
+	max_frame_size => 16384..16777215,
+	max_header_list_size => 16384..16#ffffffff
+}.
+-export_type([settings/0]).
 
 -type error() :: no_error
 	| protocol_error
@@ -66,9 +74,10 @@
 	| unknown_error.
 -export_type([error/0]).
 
--type frame() :: {data, streamid(), fin(), binary()}
-	| {headers, streamid(), fin(), head_fin(), binary()}
-	| {headers, streamid(), fin(), head_fin(), exclusive(), streamid(), weight(), binary()}
+-type frame() :: {data, streamid(), cow_http:fin(), binary()}
+	| {headers, streamid(), cow_http:fin(), head_fin(), binary()}
+	| {headers, streamid(), cow_http:fin(), head_fin(),
+		exclusive(), streamid(), weight(), binary()}
 	| {priority, streamid(), exclusive(), streamid(), weight()}
 	| {rst_stream, streamid(), error()}
 	| {settings, settings()}

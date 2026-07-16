@@ -2,6 +2,7 @@ defmodule ExCoveralls.Json do
   @moduledoc """
   Generate JSON output for results.
   """
+  alias ExCoveralls.Stats
 
   @file_name "excoveralls.json"
 
@@ -9,14 +10,14 @@ defmodule ExCoveralls.Json do
   Provides an entry point for the module.
   """
   def execute(stats, options \\ []) do
-    generate_json(stats, Enum.into(options, %{})) |> write_file(options[:output_dir])
+    generate_json(stats, Enum.into(options, %{})) |> write_file(options)
 
     ExCoveralls.Local.print_summary(stats)
   end
 
   def generate_json(stats, _options) do
     Jason.encode!(%{
-      source_files: stats
+      source_files: Stats.serialize(stats)
     })
   end
 
@@ -33,12 +34,23 @@ defmodule ExCoveralls.Json do
     end
   end
 
-  defp write_file(content, output_dir) do
+  defp output_name(name) do
+    if name do
+      "#{name}.json"
+    else
+      @file_name
+    end
+  end
+
+  defp write_file(content, options) do
+    output_dir = options[:output_dir]
+    name = output_name(options[:export])
+
     file_path = output_dir(output_dir)
     unless File.exists?(file_path) do
       File.mkdir_p!(file_path)
     end
-    File.write!(Path.expand(@file_name, file_path), content)
+    File.write!(Path.expand(name, file_path), content)
   end
 
 end

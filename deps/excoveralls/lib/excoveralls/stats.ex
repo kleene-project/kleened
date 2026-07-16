@@ -198,16 +198,17 @@ defmodule ExCoveralls.Stats do
     {s+sloc, h+hits, m+misses}
   end
 
-  defp get_coverage(relevant, covered) do
-    value = case relevant do
-      0 -> Settings.default_coverage_value
-      _ -> (covered / relevant) * 100
+  def get_coverage(relevant, covered) do
+    coverage_options = Settings.get_coverage_options()
+
+    approximate_fn = case coverage_options do
+      %{"floor_coverage" => false} -> &Float.round(&1, 1)
+      _ -> &Float.floor(&1, 1)
     end
 
-    if value == trunc(value) do
-      trunc(value)
-    else
-      Float.round(value, 1)
+    case relevant do
+      0 -> Settings.default_coverage_value(coverage_options)
+      _ -> approximate_fn.((covered / relevant) * 100)
     end
   end
 
@@ -223,10 +224,18 @@ defmodule ExCoveralls.Stats do
   end
 
   @doc """
+  Converts coverage stats to a map, which can be serialized to JSON
+  for posting it to Coveralls or writing to excoveralls.json.
+  """
+  def serialize(stats) do
+    Enum.map(stats, &Map.take(&1, [:name, :source, :coverage]))
+  end
+
+  @doc """
   Exit the process with a status of 1 if coverage is below the minimum.
   """
   def ensure_minimum_coverage(stats) do
-    coverage_options = ExCoveralls.Settings.get_coverage_options
+    coverage_options = Settings.get_coverage_options
     minimum_coverage = coverage_options["minimum_coverage"] || 0
     if minimum_coverage > 0, do: check_coverage_threshold(stats, minimum_coverage)
   end

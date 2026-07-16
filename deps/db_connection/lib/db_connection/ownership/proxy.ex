@@ -2,6 +2,7 @@ defmodule DBConnection.Ownership.Proxy do
   @moduledoc false
 
   alias DBConnection.Holder
+  alias DBConnection.Util
   use GenServer, restart: :temporary
 
   @time_unit 1000
@@ -58,16 +59,16 @@ defmodule DBConnection.Ownership.Proxy do
 
   @impl true
   def handle_info({:DOWN, ref, _, pid, _reason}, %{owner: {_, ref}} = state) do
-    down("owner #{inspect(pid)} exited", state)
+    shutdown("owner #{Util.inspect_pid(pid)} exited", state)
   end
 
   def handle_info({:timeout, deadline, {_ref, holder, pid, len}}, %{holder: holder} = state) do
     if Holder.handle_deadline(holder, deadline) do
       message =
-        "client #{inspect(pid)} timed out because " <>
+        "client #{Util.inspect_pid(pid)} timed out because " <>
           "it queued and checked out the connection for longer than #{len}ms"
 
-      down(message, state)
+      shutdown(message, state)
     else
       {:noreply, state}
     end
@@ -78,12 +79,12 @@ defmodule DBConnection.Ownership.Proxy do
         %{ownership_timer: timer} = state
       ) do
     message =
-      "owner #{inspect(pid)} timed out because " <>
+      "owner #{Util.inspect_pid(pid)} timed out because " <>
         "it owned the connection for longer than #{timeout}ms (set via the :ownership_timeout option)"
 
-    # We don't invoke down because this is always a disconnect, even if there is no client.
+    # We don't invoke shutdown because this is always a disconnect, even if there is no client.
     # On the other hand, those timeouts are unlikely to trigger, as it defaults to 2 mins.
-    pool_disconnect(DBConnection.ConnectionError.exception(message), state)
+    pool_disconnect(DBConnection.ConnectionError.exception(message), false, state)
   end
 
   def handle_info({:timeout, poll, time}, %{poll: poll} = state) do
@@ -144,18 +145,19 @@ defmodule DBConnection.Ownership.Proxy do
       ) do
     case msg do
       :checkin -> checkin(state)
-      :disconnect -> pool_disconnect(extra, state)
+      :disconnect -> pool_disconnect(extra, true, state)
       :stop -> pool_stop(extra, state)
     end
   end
 
   def handle_info({:"ETS-TRANSFER", holder, pid, ref}, %{holder: holder, owner: {_, ref}} = state) do
-    down("client #{inspect(pid)} exited", state)
+    shutdown("client #{Util.inspect_pid(pid)} exited", state)
   end
 
   @impl true
   def handle_cast({:stop, caller}, %{owner: {owner, _}} = state) do
-    message = "#{inspect(caller)} checked in the connection owned by #{inspect(owner)}"
+    message =
+      "#{Util.inspect_pid(caller)} checked in the connection owned by #{Util.inspect_pid(owner)}"
 
     message =
       case pruned_stacktrace(caller) do
@@ -164,11 +166,11 @@ defmodule DBConnection.Ownership.Proxy do
 
         current_stack ->
           message <>
-            "\n\n#{inspect(caller)} triggered the checkin at location:\n\n" <>
+            "\n\n#{Util.inspect_pid(caller)} triggered the checkin at location:\n\n" <>
             Exception.format_stacktrace(current_stack)
       end
 
-    down(message, state)
+    shutdown(message, state)
   end
 
   @impl true
@@ -219,18 +221,13 @@ defmodule DBConnection.Ownership.Proxy do
     :erlang.start_timer(timeout, self(), {__MODULE__, pid, timeout})
   end
 
-  # It is down but never checked out from pool
-  defp down(reason, %{holder: nil} = state) do
-    {:stop, {:shutdown, reason}, state}
-  end
-
-  # If it is down but it has no client, checkin
-  defp down(reason, %{client: nil} = state) do
+  # If shutting down but it has no client, checkin
+  defp shutdown(reason, %{client: nil} = state) do
     pool_checkin(reason, state)
   end
 
-  # If it is down but it has a client, disconnect
-  defp down(reason, %{client: {client, _, checkout_stack}} = state) do
+  # If shutting down but it has a client, disconnect
+  defp shutdown(reason, %{client: {client, _, checkout_stack}} = state) do
     reason =
       case pruned_stacktrace(client) do
         [] ->
@@ -239,34 +236,37 @@ defmodule DBConnection.Ownership.Proxy do
         current_stack ->
           reason <>
             """
-            \n\nClient #{inspect(client)} is still using a connection from owner at location:
+            \n\nClient #{Util.inspect_pid(client)} is still using a connection from owner at location:
 
             #{Exception.format_stacktrace(current_stack)}
-            The connection itself was checked out by #{inspect(client)} at location:
+            The connection itself was checked out by #{Util.inspect_pid(client)} at location:
 
             #{Exception.format_stacktrace(checkout_stack)}
             """
       end
 
     err = DBConnection.ConnectionError.exception(reason)
-    pool_disconnect(err, state)
+    pool_disconnect(err, false, state)
   end
 
   ## Helpers
 
   defp pool_checkin(reason, state) do
-    pool_done(reason, state, :checkin, fn pool_ref, _ -> Holder.checkin(pool_ref) end)
+    checkin = fn pool_ref, _ -> Holder.checkin(pool_ref) end
+    pool_done(reason, state, :checkin, false, checkin, &Holder.disconnect/2)
   end
 
-  defp pool_disconnect(err, state) do
-    pool_done(err, state, {:disconnect, err}, &Holder.disconnect/2)
+  defp pool_disconnect(err, keep_alive?, state) do
+    disconnect = &Holder.disconnect/2
+    pool_done(err, state, {:disconnect, err}, keep_alive?, disconnect, disconnect)
   end
 
   defp pool_stop(err, state) do
-    pool_done(err, state, {:stop, err}, &Holder.stop/2, &Holder.stop/2)
+    stop = &Holder.stop/2
+    pool_done(err, state, {:stop, err}, false, stop, stop)
   end
 
-  defp pool_done(err, state, op, done, stop_or_disconnect \\ &Holder.disconnect/2) do
+  defp pool_done(err, state, op, keep_alive?, done, stop_or_disconnect) do
     %{holder: holder, pool_ref: pool_ref, pre_checkin: pre_checkin, mod: original_mod} = state
 
     if holder do
@@ -276,7 +276,12 @@ defmodule DBConnection.Ownership.Proxy do
         {:ok, ^original_mod, conn_state} ->
           Holder.put_state(pool_ref, conn_state)
           done.(pool_ref, err)
-          {:stop, {:shutdown, err}, state}
+
+          if keep_alive? do
+            {:noreply, %{state | holder: nil}}
+          else
+            {:stop, {:shutdown, err}, state}
+          end
 
         {:disconnect, err, ^original_mod, conn_state} ->
           Holder.put_state(pool_ref, conn_state)

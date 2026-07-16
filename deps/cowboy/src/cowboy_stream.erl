@@ -1,4 +1,4 @@
-%% Copyright (c) 2015-2024, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -49,6 +49,7 @@
 -type reason() :: normal | switch_protocol
 	| {internal_error, timeout | {error | exit | throw, any()}, human_reason()}
 	| {socket_error, closed | atom(), human_reason()}
+	%% @todo Or cow_http3:error().
 	| {stream_error, cow_http2:error(), human_reason()}
 	| {connection_error, cow_http2:error(), human_reason()}
 	| {stop, cow_http2:frame() | {exit, any()}, human_reason()}.
@@ -159,7 +160,7 @@ make_error_log(init, [StreamID, Req, Opts], Class, Exception, Stacktrace) ->
 		"Stacktrace: ~p~n"
 		"Req: ~p~n"
 		"Opts: ~p~n",
-		[Class, Exception, StreamID, Stacktrace, Req, Opts]};
+		[Class, Exception, StreamID, Stacktrace, hide_cert(Req), Opts]};
 make_error_log(data, [StreamID, IsFin, Data, State], Class, Exception, Stacktrace) ->
 	{log, error,
 		"Unhandled exception ~p:~p in cowboy_stream:data(~p, ~p, Data, State)~n"
@@ -190,4 +191,19 @@ make_error_log(early_error, [StreamID, Reason, PartialReq, Resp, Opts],
 		"PartialReq: ~p~n"
 		"Resp: ~p~n"
 		"Opts: ~p~n",
-		[Class, Exception, StreamID, Stacktrace, Reason, PartialReq, Resp, Opts]}.
+		[Class, Exception, StreamID, Stacktrace, Reason, hide_cert(PartialReq), Resp, Opts]}.
+
+hide_cert(Req=#{cert := Cert}) when is_binary(Cert) ->
+	Req#{cert => '...'};
+hide_cert(Req) ->
+	Req.
+
+-ifdef(TEST).
+
+hide_cert_test() ->
+	#{cert := '...'} = hide_cert(#{cert => <<"cert">>}),
+	#{cert := undefined} = hide_cert(#{cert => undefined}),
+	true = #{} =:= hide_cert(#{}),
+	ok.
+
+-endif.

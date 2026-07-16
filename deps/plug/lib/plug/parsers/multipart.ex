@@ -22,10 +22,6 @@ defmodule Plug.Parsers.MULTIPART do
   Besides the options supported by `Plug.Conn.read_body/2`, the multipart parser
   also checks for:
 
-    * `:headers` - containing the same `:length`, `:read_length`
-      and `:read_timeout` options which are used explicitly for parsing multipart
-      headers
-
     * `:validate_utf8` - specifies whether multipart body parts should be validated
       as utf8 binaries. It is either a boolean or a custom exception to raise
 
@@ -35,7 +31,7 @@ defmodule Plug.Parsers.MULTIPART do
   ## Multipart to params
 
   Once all multiparts are collected, they must be converted to params and this
-  can be customize with a MFA. The default implementation of this function
+  can be customized with an MFA. The default implementation of this function
   is equivalent to:
 
       def multipart_to_params(parts, conn) do
@@ -66,7 +62,7 @@ defmodule Plug.Parsers.MULTIPART do
 
   ## Dynamic configuration
 
-  If you need to dynamically configure how `Plug.Parsers.MULTIPART` behave,
+  If you need to dynamically configure how `Plug.Parsers.MULTIPART` behaves,
   for example, based on the connection or another system parameter, one option
   is to create your own parser that wraps it:
 
@@ -102,15 +98,12 @@ defmodule Plug.Parsers.MULTIPART do
     {read_length, opts} = Keyword.pop(opts, :read_length, 1_000_000)
     opts = [length: read_length, read_length: read_length] ++ opts
 
-    # The header options are handled individually.
-    {headers_opts, opts} = Keyword.pop(opts, :headers, [])
-
     unless is_integer(limit) do
       raise ":length option for Plug.Parsers.MULTIPART must be an integer"
     end
 
     m2p = opts[:multipart_to_params] || {__MODULE__, :multipart_to_params, [opts]}
-    {m2p, limit, headers_opts, opts}
+    {m2p, limit, opts}
   end
 
   @impl true
@@ -120,7 +113,7 @@ defmodule Plug.Parsers.MULTIPART do
       parse_multipart(conn, opts_tuple)
     rescue
       # Do not ignore upload errors
-      e in [Plug.UploadError, Plug.Parsers.BadEncodingError] ->
+      e in [Plug.UploadError, Plug.Parsers.BadEncodingError, Plug.Parsers.RequestTooLargeError] ->
         reraise e, __STACKTRACE__
 
       # All others are wrapped
@@ -146,39 +139,49 @@ defmodule Plug.Parsers.MULTIPART do
 
   ## Multipart
 
-  defp parse_multipart(conn, {m2p, {module, fun, args}, header_opts, opts}) do
-    # TODO: Remove me once the deprecation is removed
-    limit = apply(module, fun, args)
-    parse_multipart(conn, {m2p, limit, header_opts, opts})
-  end
+  defp parse_multipart(conn, {m2p, limit, opts}) do
+    read_result = read_part_headers(conn, limit, opts)
 
-  defp parse_multipart(conn, {m2p, limit, headers_opts, opts}) do
-    read_result = Plug.Conn.read_part_headers(conn, headers_opts)
-    {:ok, limit, acc, conn} = parse_multipart(read_result, limit, opts, headers_opts, [])
+    case parse_multipart(read_result, limit, opts, []) do
+      {:ok, limit, acc, conn} ->
+        if limit >= 0 do
+          {mod, fun, args} = m2p
+          apply(mod, fun, [acc, conn | args])
+        else
+          {:error, :too_large, conn}
+        end
 
-    if limit > 0 do
-      {mod, fun, args} = m2p
-      apply(mod, fun, [acc, conn | args])
-    else
-      {:error, :too_large, conn}
+      {:error, :too_large, conn} ->
+        {:error, :too_large, conn}
     end
   end
 
-  defp parse_multipart({:ok, headers, conn}, limit, opts, headers_opts, acc) when limit >= 0 do
+  defp parse_multipart({:ok, headers, conn}, limit, opts, acc) when limit >= 0 do
     {conn, limit, acc} = parse_multipart_headers(headers, conn, limit, opts, acc)
-    read_result = Plug.Conn.read_part_headers(conn, headers_opts)
-    parse_multipart(read_result, limit, opts, headers_opts, acc)
+
+    if limit >= 0 do
+      read_result = read_part_headers(conn, limit, opts)
+      parse_multipart(read_result, limit, opts, acc)
+    else
+      {:ok, limit, acc, conn}
+    end
   end
 
-  defp parse_multipart({:ok, _headers, conn}, limit, _opts, _headers_opts, acc) do
+  defp parse_multipart({:error, :too_large, conn}, _limit, _opts, _acc) do
+    {:error, :too_large, conn}
+  end
+
+  defp parse_multipart({:ok, _headers, conn}, limit, _opts, acc) do
     {:ok, limit, acc, conn}
   end
 
-  defp parse_multipart({:done, conn}, limit, _opts, _headers_opts, acc) do
+  defp parse_multipart({:done, conn}, limit, _opts, acc) do
     {:ok, limit, acc, conn}
   end
 
   defp parse_multipart_headers(headers, conn, limit, opts, acc) do
+    limit = limit - headers_size(headers)
+
     case multipart_type(headers) do
       {:binary, name} ->
         {:ok, limit, body, conn} =
@@ -207,6 +210,9 @@ defmodule Plug.Parsers.MULTIPART do
         {conn, limit, [{name, headers, uploaded} | acc]}
 
       :skip ->
+        {:ok, limit, conn} =
+          parse_multipart_skip(Plug.Conn.read_part_body(conn, opts), limit, opts)
+
         {conn, limit, acc}
     end
   end
@@ -232,7 +238,7 @@ defmodule Plug.Parsers.MULTIPART do
 
   defp parse_multipart_file({:more, tail, conn}, limit, opts, file)
        when limit >= byte_size(tail) do
-    binwrite!(file, tail)
+    IO.binwrite(file, tail)
     read_result = Plug.Conn.read_part_body(conn, opts)
     parse_multipart_file(read_result, limit - byte_size(tail), opts, file)
   end
@@ -243,7 +249,7 @@ defmodule Plug.Parsers.MULTIPART do
 
   defp parse_multipart_file({:ok, tail, conn}, limit, _opts, file)
        when limit >= byte_size(tail) do
-    binwrite!(file, tail)
+    IO.binwrite(file, tail)
     {:ok, limit - byte_size(tail), conn}
   end
 
@@ -251,19 +257,26 @@ defmodule Plug.Parsers.MULTIPART do
     {:ok, limit - byte_size(tail), conn}
   end
 
-  ## Helpers
-
-  defp binwrite!(device, contents) do
-    case IO.binwrite(device, contents) do
-      :ok ->
-        :ok
-
-      {:error, reason} ->
-        raise Plug.UploadError,
-              "could not write to file #{inspect(device)} during upload " <>
-                "due to reason: #{inspect(reason)}"
-    end
+  defp parse_multipart_skip({:more, tail, conn}, limit, opts)
+       when limit >= byte_size(tail) do
+    read_result = Plug.Conn.read_part_body(conn, opts)
+    parse_multipart_skip(read_result, limit - byte_size(tail), opts)
   end
+
+  defp parse_multipart_skip({:more, tail, conn}, limit, _opts) do
+    {:ok, limit - byte_size(tail), conn}
+  end
+
+  defp parse_multipart_skip({:ok, tail, conn}, limit, _opts)
+       when limit >= byte_size(tail) do
+    {:ok, limit - byte_size(tail), conn}
+  end
+
+  defp parse_multipart_skip({:ok, tail, conn}, limit, _opts) do
+    {:ok, limit - byte_size(tail), conn}
+  end
+
+  ## Helpers
 
   defp multipart_type(headers) do
     with {_, disposition} <- List.keyfind(headers, "content-disposition", 0),
@@ -313,5 +326,16 @@ defmodule Plug.Parsers.MULTIPART do
       {^key, value} -> value
       nil -> nil
     end
+  end
+
+  defp headers_size(headers) do
+    Enum.reduce(headers, 0, fn {key, value}, acc ->
+      acc + byte_size(key) + byte_size(value)
+    end)
+  end
+
+  defp read_part_headers(conn, limit, opts) do
+    headers_length = min(limit, Keyword.fetch!(opts, :length))
+    Plug.Conn.read_part_headers(conn, Keyword.put(opts, :length, headers_length))
   end
 end

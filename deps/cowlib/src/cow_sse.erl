@@ -1,4 +1,4 @@
-%% Copyright (c) 2017-2023, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -45,6 +45,10 @@
 	retry => non_neg_integer()
 }.
 -export_type([event/0]).
+
+-ifdef(TEST).
+-include_lib("stdlib/include/assert.hrl").
+-endif.
 
 -spec init() -> state().
 init() ->
@@ -301,7 +305,8 @@ event_comment(_) ->
 	[].
 
 event_id(#{id := ID}) ->
-	nomatch = binary:match(iolist_to_binary(ID), <<"\n">>),
+	nomatch = binary:match(iolist_to_binary(ID),
+		[<<"\r\n">>, <<"\r">>, <<"\n">>]),
 	[<<"id: ">>, ID, $\n];
 event_id(_) ->
 	[].
@@ -311,7 +316,8 @@ event_name(#{event := Name0}) ->
 		is_atom(Name0) -> atom_to_binary(Name0, utf8);
 		true -> iolist_to_binary(Name0)
 	end,
-	nomatch = binary:match(Name, <<"\n">>),
+	nomatch = binary:match(Name,
+		[<<"\r\n">>, <<"\r">>, <<"\n">>]),
 	[<<"event: ">>, Name, $\n];
 event_name(_) ->
 	[].
@@ -327,7 +333,8 @@ event_retry(_) ->
 	[].
 
 prefix_lines(IoData, Prefix) ->
-	Lines = binary:split(iolist_to_binary(IoData), <<"\n">>, [global]),
+	Lines = binary:split(iolist_to_binary(IoData),
+		[<<"\r\n">>, <<"\r">>, <<"\n">>], [global]),
 	[[Prefix, <<": ">>, Line, $\n] || Line <- Lines].
 
 -ifdef(TEST).
@@ -345,5 +352,60 @@ event_test() ->
 	_ = event(#{retry => 5000}),
 	_ = event(#{event => "test", data => "test"}),
 	_ = event(#{id => "test", event => "test", data => "test"}),
+	_ = event(#{data => "test\r\ntest"}),
+	_ = event(#{data => "test\rtest\r"}),
+	_ = event(#{data => "test\ntest"}),
 	ok.
+
+event_error_test() ->
+	?assertError(_, event(#{id => "test\n"})),
+	?assertError(_, event(#{id => "test\r"})),
+	?assertError(_, event(#{id => "test\r\n"})),
+	?assertError(_, event(#{event => "test\n"})),
+	?assertError(_, event(#{event => "test\r"})),
+	?assertError(_, event(#{event => "test\r\n"})),
+	ok.
+
+identity_test_() ->
+	Tests = [
+		#{data => <<"hello">>},
+		#{event => <<"update">>, data => <<"hello">>},
+		#{id => <<"42">>, data => <<"hello">>},
+		#{data => <<"a\nb">>},
+		#{data => <<"multi\nline\ndata">>},
+		#{event => <<"update">>, data => <<"hello">>},
+		#{id => <<"abc">>, data => <<"x">>},
+		#{comment => <<"c1">>, data => <<"d1">>, event => <<"e1">>, id => <<"i1">>},
+		#{data => <<>>},
+		#{data => <<"data with trailing newline\n">>},
+		#{data => <<"\n">>},
+		#{data => <<"\n\n">>},
+		#{data => <<"">>, id => <<"1">>},
+		#{data => <<"z">>},
+		#{id => <<"17">>},
+		#{data => << <<$a>> || _ <- lists:seq(1,200) >>},
+		#{data => <<"こんにちは世界">>},
+		#{retry => 30000, data => <<"reconnect">>}
+	],
+	[{lists:flatten(io_lib:format("~0p", [V])),
+		fun() -> true = do_identity_result(V) =:= do_identity_build_parse(V) end}
+			|| V <- Tests].
+
+do_identity_build_parse(Event) ->
+	{event, Parsed, _} = parse(iolist_to_binary(event(Event)), init()),
+	case Parsed of
+		#{data := Data} -> Parsed#{data => iolist_to_binary(Data)};
+		_ -> Parsed
+	end.
+
+do_identity_result(E=#{id := ID}) when map_size(E) =:= 1 ->
+	#{
+		last_event_id => ID
+	};
+do_identity_result(Event) ->
+	#{
+		event_type => maps:get(event, Event, <<"message">>),
+		data => maps:get(data, Event, <<>>),
+		last_event_id => maps:get(id, Event, <<>>)
+	}.
 -endif.

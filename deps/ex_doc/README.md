@@ -8,11 +8,12 @@ ExDoc is a tool to generate documentation for Erlang and Elixir projects. To see
 
 ExDoc ships with many features:
 
-  * Automatically generates online- and offline-accessible HTML and EPUB documents from your API documentation.
+  * Automatically generates offline-accessible HTML, Markdown (including `llms.txt`), and EPUB documents from your API documentation.
+  * When hosted, ExDoc relies on browser's page transitions for better UX, caching, and enhanced accessibility.
   * Responsive design, covering phones and tablets.
   * Support for custom pages, guides, livebooks and cheatsheets.
   * Support for custom grouping of modules, functions, and pages in the sidebar.
-  * Customizable logo.
+  * Customizable logo and favicon.
   * A direct link back to the source code for every documented entity.
   * Full-text search.
   * Keyboard shortcuts. (Press `?` to show help.)
@@ -20,7 +21,7 @@ ExDoc ships with many features:
   * Go-to shortcut with auto-complete to take the reader to any HexDocs package documentation. (`g` keyboard shortcut.)
   * Support for night mode, activated according to the browser preference.
   * Tooltips for links to modules and functions, both for the current project and other projects.
-  * Version dropdown, automatically configured when hosted on HexDocs.
+  * Version dropdown and "Go to latest" notifications, automatically configured when hosted on HexDocs.
 
 ## Usage
 
@@ -30,12 +31,12 @@ You can use ExDoc with Mix (recommended for Elixir projects), with Rebar (recomm
 
 ### Mix
 
-ExDoc requires Elixir v1.12 or later. Then add ExDoc as a dependency:
+ExDoc requires Elixir v1.15 or later. Then add ExDoc as a dependency:
 
 ```elixir
 def deps do
   [
-    {:ex_doc, "~> 0.31", only: :dev, runtime: false},
+    {:ex_doc, "~> 0.34", only: :dev, runtime: false, warn_if_outdated: true},
   ]
 end
 ```
@@ -59,11 +60,15 @@ def project do
     name: "MyApp",
     source_url: "https://github.com/USER/PROJECT",
     homepage_url: "http://YOUR_PROJECT_HOMEPAGE",
-    docs: [
-      main: "MyApp", # The main page in the docs
-      logo: "path/to/logo.png",
-      extras: ["README.md"]
-    ]
+    docs: &docs/0
+  ]
+end
+
+defp docs do
+  [
+    main: "readme", # can be changed to a module name, if you prefer
+    logo: "path/to/logo.png",
+    extras: ["README.md"]
   ]
 end
 ```
@@ -105,9 +110,17 @@ You can use ExDoc via the command line.
    PROJECT_NAME    => Ecto
    PROJECT_VERSION => 0.1.0
    PROJECT_MODULE  => Ecto (the main module provided by the library)
-   GITHUB_USER     => elixir-lang
+   GITHUB_USER     => elixir-ecto
    GITHUB_REPO     => ecto
    ```
+
+It is also possible to specify multiple `ebin` directories in the case of _umbrella_ projects:
+
+   ```bash
+   $ ex_doc "PROJECT_NAME" "PROJECT_VERSION" _build/dev/lib/app1/ebin _build/dev/lib/app2/ebin -m "PROJECT_MODULE" -u "https://github.com/GITHUB_USER/GITHUB_REPO" -l path/to/logo.png
+   ```
+
+If multiple `ebin` directories are specified, modules are grouped by application by default. It is possible to override this behaviour by providing a custom `groups_per_modules` option.
 
 You can specify a config file via the `--config` option, both Elixir and Erlang formats are supported. Invoke `ex_doc` without arguments to learn more.
 
@@ -204,7 +217,7 @@ The following metadata is available for both modules and functions:
 
 The following metadata is available for modules:
 
-  * `tags` (list of atoms) - a list of strings to be added as tags to the module. (Not supported by EDoc.)
+  * `tags` (list of atoms) - tags to be added as module annotations. (Not supported by EDoc.)
 
 ## Auto-linking
 
@@ -214,9 +227,9 @@ ExDoc for Elixir and Erlang will automatically generate links across modules and
 
 ### Elixir
 
-ExDoc will automatically link modules, functions, types or callbacks defined in your project and its dependencies (including Erlang and Elixir). ExDoc will automatically link to it at the dependency's documentation at [hexdocs.pm](https://hexdocs.pm/). The link can be configured by setting `docs: [deps: [my_dep: "https://path/to/docs/"]]` in your `mix.exs`.
+ExDoc will automatically link modules, functions, types or callbacks defined in your project and its dependencies (including Erlang and Elixir). ExDoc will automatically link to the dependency's documentation at [hexdocs.pm](https://hexdocs.pm/). The link can be configured by setting `docs: [deps: [my_dep: "https://path/to/docs/"]]` in your `mix.exs`.
 
-ExDoc supports linking to modules (`` `MyModule` `` and `` `m:MyModule` ``), functions (`` `MyModule.function/1` ``), types (`` `t:MyModule.type/2` ``) and callbacks (`` `c:MyModule.callback/3` ``). If you want to link a function, type or callback in the current module, you may skip the module name, for example: `` `function/1` ``.
+ExDoc supports linking to modules (`` `MyModule` `` and `` `m:MyModule` ``), functions (`` `MyModule.function/1` ``), types (`` `t:MyModule.type/2` ``) and callbacks (`` `c:MyModule.callback/3` ``). If you want to link a function, type or callback in the current module, you may skip the module name, for example: `` `function/1` ``. Similarly, you can automatically link to Erlang modules (`` `m::my_module` ``), functions (`` `:my_module.function/1` ``), types (`` `t::my_module.type/2` ``) and callbacks (`` `c::my_module.callback/3` ``) (since Erlang modules in Elixir start with `:`, note the double colon in some cases).
 
 You can also use custom text, such as `` [custom text](`MyModule.function/1`) ``. Link to extra pages using the syntax `` [Up and running](Up and running.md) ``. The final link will be automatically converted to `up-and-running.html`.
 
@@ -366,6 +379,8 @@ docs: [
 ]
 ```
 
+On the JavaScript side, ExDoc emits the `"exdoc:loaded"` event. This event may be called multiple times, as you navigate across pages, so initialization that should happen only once must be conditional. We recommend external scripts to use `defer`, not `async`, as shown in the examples below.
+
 ### Rendering Math
 
 If you write TeX-style math in your Markdown, such as `$\sum_{i}^{N} x_i$`, it ends up as raw text on the generated pages. To render expressions, we recommend using [KaTeX](https://katex.org/), a JavaScript library that turns expressions into graphics. To load and trigger KaTeX on every documentation page, we can insert the following HTML:
@@ -375,15 +390,19 @@ If you write TeX-style math in your Markdown, such as `$\sum_{i}^{N} x_i$`, it e
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/katex.min.js" integrity="sha384-PwRUT/YqbnEjkZO0zZxNqcxACrXe+j766U2amXcgMg5457rve2Y7I6ZJSm2A0mS4" crossorigin="anonymous"></script>
 
 <link href="https://cdn.jsdelivr.net/npm/katex-copytex@1.0.2/dist/katex-copytex.min.css" rel="stylesheet" type="text/css">
-<script src="https://cdn.jsdelivr.net/npm/katex-copytex@1.0.2/dist/katex-copytex.min.js" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex-copytex@1.0.2/dist/katex-copytex.min.js" crossorigin="anonymous"></script>
 
-<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/contrib/auto-render.min.js" integrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"
-  onload="renderMathInElement(document.body, {
-    delimiters: [
-      {left: '$$', right: '$$', display: true},
-      {left: '$', right: '$', display: false},
-    ]
-  });"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.4/dist/contrib/auto-render.min.js" integrity="sha384-+VBxd3r6XgURycqtZ117nYw44OOcIax56Z4dCRWbxyPt0Koah1uHoK0o4+/RRE05" crossorigin="anonymous"></script>
+
+<script>
+  window.addEventListener("exdoc:loaded", () => {
+    renderMathInElement(document.body, {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '$', right: '$', display: false},
+      ]
+    })
+  })
 </script>
 ```
 
@@ -394,11 +413,11 @@ For more details and configuration options, see the [KaTeX Auto-render Extension
 Snippets are also objects you may want to render in a special manner. For example, assuming your Markdown includes Vega-Lite specification in `vega-lite` code snippets:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/vega@5.20.2"></script>
-<script src="https://cdn.jsdelivr.net/npm/vega-lite@5.1.1"></script>
-<script src="https://cdn.jsdelivr.net/npm/vega-embed@6.18.2"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/vega@5.20.2"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/vega-lite@5.1.1"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/vega-embed@6.18.2"></script>
 <script>
-  document.addEventListener("DOMContentLoaded", function () {
+  window.addEventListener("exdoc:loaded", () => {
     for (const codeEl of document.querySelectorAll("pre code.vega-lite")) {
       try {
         const preEl = codeEl.parentElement;
@@ -422,13 +441,19 @@ For more details and configuration options, see [vega/vega-embed](https://github
 Similarly to the example above, if your Markdown includes Mermaid graph specification in `mermaid` code snippets:
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/mermaid@10.2.3/dist/mermaid.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/mermaid@10.2.3/dist/mermaid.min.js"></script>
 <script>
-  document.addEventListener("DOMContentLoaded", function () {
-    mermaid.initialize({
-      startOnLoad: false,
-      theme: document.body.className.includes("dark") ? "dark" : "default"
-    });
+  let initialized = false;
+
+  window.addEventListener("exdoc:loaded", () => {
+    if (!initialized) {
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: document.body.className.includes("dark") ? "dark" : "default"
+      });
+      initialized = true;
+    }
+
     let id = 0;
     for (const codeEl of document.querySelectorAll("pre code.mermaid")) {
       const preEl = codeEl.parentElement;
@@ -454,9 +479,10 @@ The easiest way to test changes to ExDoc is to locally rebuild the app and its o
 
   1. Run `mix setup` to install all dependencies
   2. Run `mix build` to generate the docs and open up the generated `doc/index.html`
-  3. (optional) Run `npm run --prefix assets build:watch` if working on assets for automatic recompilation
-  4. Run `mix lint` to check linting and formatting (and `mix fix` to automatically fix it)
-  5. (important) Do not add the files in the `formatters/` directory to your commits, those will be handled by the maintainers
+  3. (optional) Run `erl -S httpd serve doc/` to serve the docs locally
+  4. (optional) Run `npm run --prefix assets build:watch` if working on assets for automatic recompilation
+  5. Run `mix lint` to check linting and formatting (and `mix fix` to automatically fix it)
+  6. (important) Do not add the files in the `formatters/` directory to your commits, those will be handled by the maintainers
 
 See the README in the `assets/` directory for more information on working on the assets.
 

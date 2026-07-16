@@ -2,26 +2,32 @@
 
 PROJECT = cowboy
 PROJECT_DESCRIPTION = Small, fast, modern HTTP server.
-PROJECT_VERSION = 2.12.0
+PROJECT_VERSION = 2.17.0
 PROJECT_REGISTERED = cowboy_clock
 
 # Options.
 
 PLT_APPS = public_key ssl # ct_helper gun common_test inets
 CT_OPTS += -ct_hooks cowboy_ct_hook [] # -boot start_sasl
+#CT_OPTS += +JPperf true +S 1
 
 # Dependencies.
 
 LOCAL_DEPS = crypto
 
 DEPS = cowlib ranch
-dep_cowlib = git https://github.com/ninenines/cowlib 2.13.0
-dep_ranch = git https://github.com/ninenines/ranch 1.8.0
+dep_cowlib = git https://github.com/ninenines/cowlib 2.18.0
+dep_ranch = git https://github.com/ninenines/ranch 1.8.1
+
+ifeq ($(COWBOY_QUICER),1)
+DEPS += quicer
+dep_quicer = git https://github.com/emqx/quic main
+endif
 
 DOC_DEPS = asciideck
 
 TEST_DEPS = $(if $(CI_ERLANG_MK),ci.erlang.mk) ct_helper gun
-dep_ct_helper = git https://github.com/extend/ct_helper master
+dep_ct_helper = git https://github.com/ninenines/ct_helper master
 dep_gun = git https://github.com/ninenines/gun master
 
 # CI configuration.
@@ -38,22 +44,36 @@ define HEX_TARBALL_EXTRA_METADATA
 #{
 	licenses => [<<"ISC">>],
 	links => #{
-		<<"User guide">> => <<"https://ninenines.eu/docs/en/cowboy/2.12/guide/">>,
-		<<"Function reference">> => <<"https://ninenines.eu/docs/en/cowboy/2.12/manual/">>,
+		<<"User guide">> => <<"https://ninenines.eu/docs/en/cowboy/2.17/guide/">>,
+		<<"Function reference">> => <<"https://ninenines.eu/docs/en/cowboy/2.17/manual/">>,
 		<<"GitHub">> => <<"https://github.com/ninenines/cowboy">>,
 		<<"Sponsor">> => <<"https://github.com/sponsors/essen">>
 	}
 }
 endef
 
+hex_req_ranch = >= 1.8.0 and < 3.0.0
+hex_req_cowlib = >= 2.18.0 and < 3.0.0
+
 # Standard targets.
 
 include erlang.mk
 
+# Extra files to include in Hex package.
+
+HEX_TARBALL_FILES += doc/src/guide/security_model.asciidoc \
+	doc/src/guide/security_checklist.asciidoc
+
 # Don't run the examples/autobahn test suites by default.
 
 ifndef FULL
-CT_SUITES := $(filter-out examples ws_autobahn,$(CT_SUITES))
+CT_SUITES := $(filter-out examples http_perf ws_autobahn ws_perf,$(CT_SUITES))
+endif
+
+# Don't run HTTP/3 test suites on Windows.
+
+ifeq ($(PLATFORM),msys2)
+CT_SUITES := $(filter-out rfc9114 rfc9204 rfc9220,$(CT_SUITES))
 endif
 
 # Compile options.
@@ -61,9 +81,19 @@ endif
 ERLC_OPTS += +warn_missing_spec +warn_untyped_record # +bin_opt_info
 TEST_ERLC_OPTS += +'{parse_transform, eunit_autoexport}'
 
+ifeq ($(COWBOY_QUICER),1)
+ERLC_OPTS += -D COWBOY_QUICER=1
+TEST_ERLC_OPTS += -D COWBOY_QUICER=1
+endif
+
 # Generate rebar.config on build.
 
 app:: rebar.config
+
+# Fix quicer compilation for HTTP/3.
+
+autopatch-quicer::
+	$(verbose) printf "%s\n" "all: ;" > $(DEPS_DIR)/quicer/c_src/Makefile.erlang.mk
 
 # Dialyze the tests.
 
@@ -110,9 +140,13 @@ prepare_tag:
 		grep == $$f; \
 	done
 	$(verbose) echo
+	$(verbose) echo -n "LICENSE: " ; head -n1 LICENSE
+	$(verbose) echo -n "Guide:   " ; grep Copyright doc/src/guide/introduction.asciidoc
+	$(verbose) echo
 	$(verbose) echo "Dependencies:"
 	$(verbose) grep ^DEPS Makefile || echo "DEPS ="
 	$(verbose) grep ^dep_ Makefile || true
+	$(verbose) grep ^hex_req_ Makefile || true
 	$(verbose) echo
 	$(verbose) echo "rebar.config:"
 	$(verbose) cat rebar.config || true

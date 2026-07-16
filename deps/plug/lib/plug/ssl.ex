@@ -21,7 +21,8 @@ defmodule Plug.SSL do
 
       plug Plug.SSL, rewrite_on: [:x_forwarded_host, :x_forwarded_port, :x_forwarded_proto]
 
-  For further details refer to `Plug.RewriteOn`.
+  Rewriting happens on all requests, before the SSL options are processed.
+  For further details, refer to `Plug.RewriteOn`.
 
   ## Plug Options
 
@@ -33,14 +34,14 @@ defmodule Plug.SSL do
       defaults to `false`
     * `:subdomains` - a boolean on including subdomains or not in HSTS,
       defaults to `false`
-    * `:exclude` - exclude the given hosts from redirecting to the `https`
-      scheme. Defaults to `["localhost"]`. It may be set to a list of binaries
-      or a tuple [`{module, function, args}`](#module-excluded-hosts-tuple).
+    * `:exclude` - exclude certain request from redirecting to the `https` scheme.
+      It defaults to `[hosts: ["localhost", "127.0.0.1"]]`. See the
+      ["Exclude option"](#module-exclude-option) section below
     * `:host` - a new host to redirect to if the request's scheme is `http`,
       defaults to `conn.host`. It may be set to a binary or a tuple
       `{module, function, args}` that will be invoked on demand
     * `:log` - The log level at which this plug should log its request info.
-      Default is `:info`. Can be `false` to disable logging.
+      Default is `:info`. Can be `false` to disable logging
 
   ## Port
 
@@ -49,23 +50,37 @@ defmodule Plug.SSL do
   want to redirect to HTTPS on another port, you can sneak it alongside
   the host, for example: `host: "example.com:443"`.
 
-  ## Excluded hosts tuple
+  ## Exclude option
 
-  Tuple `{module, function, args}` can be passed to be invoked each time
-  the plug is checking whether to redirect host. Provided function needs
-  to receive at least one argument (`host`).
+  There are many situations where one may want to avoid `Plug.SSL` from
+  redirecting, such as requests coming from `localhost` or `127.0.0.1`,
+  or from health check endpoints.
+
+  This can be done via the `:exclude` option, which allows you to specify
+  conditions to skip the redirect. As long as any of the conditions match,
+  the route will be excluded, it must be one of:
+
+    * `[hosts: list_of_hosts, ...]` - skips redirection if the request
+      matches any of the given hosts
+
+    * `[paths: list_of_paths, ...]` - skips redirection if the request
+      matches any of the given paths
+
+    * `[conn: {mod, fun, args}, ...]` - calls the given `mod`, `fun`,
+      and `args` with `Plug.Conn` prepended to the list of arguments.
+      The plug will be excluded if the call returns `true`
+
+  The default value is `[hosts: ["localhost", "127.0.0.1"]]`. If you pass
+  any additional value, you must explicitly preserve the above if you want
+  the hosts to remain excluded.
 
   For example, you may define it as:
 
       plug Plug.SSL,
-        rewrite_on: [:x_forwarded_proto],
-        exclude: {__MODULE__, :excluded_host?, []}
-
-  where:
-
-      def excluded_host?(host) do
-        # Custom logic
-      end
+        exclude: [
+          hosts: ["localhost", "127.0.0.1"],
+          paths: ["/health"]
+        ]
 
   """
   @behaviour Plug
@@ -74,34 +89,30 @@ defmodule Plug.SSL do
   import Plug.Conn
 
   @strong_tls_ciphers [
-    ~c"ECDHE-RSA-AES256-GCM-SHA384",
+    # TLS 1.3 Ciphersuites
+    ~c"TLS_AES_256_GCM_SHA384",
+    ~c"TLS_CHACHA20_POLY1305_SHA256",
+    ~c"TLS_AES_128_GCM_SHA256"
+  ]
+
+  @compatible_tls_ciphers [
+    # TLS 1.3 Ciphersuites
+    ~c"TLS_AES_256_GCM_SHA384",
+    ~c"TLS_CHACHA20_POLY1305_SHA256",
+    ~c"TLS_AES_128_GCM_SHA256",
+    # TLS 1.2 Ciphersuites
     ~c"ECDHE-ECDSA-AES256-GCM-SHA384",
-    ~c"ECDHE-RSA-AES128-GCM-SHA256",
+    ~c"ECDHE-RSA-AES256-GCM-SHA384",
+    ~c"ECDHE-ECDSA-CHACHA20-POLY1305",
+    ~c"ECDHE-RSA-CHACHA20-POLY1305",
     ~c"ECDHE-ECDSA-AES128-GCM-SHA256",
+    ~c"ECDHE-RSA-AES128-GCM-SHA256",
     ~c"DHE-RSA-AES256-GCM-SHA384",
     ~c"DHE-RSA-AES128-GCM-SHA256"
   ]
 
-  @compatible_tls_ciphers [
-    ~c"ECDHE-RSA-AES256-GCM-SHA384",
-    ~c"ECDHE-ECDSA-AES256-GCM-SHA384",
-    ~c"ECDHE-RSA-AES128-GCM-SHA256",
-    ~c"ECDHE-ECDSA-AES128-GCM-SHA256",
-    ~c"DHE-RSA-AES256-GCM-SHA384",
-    ~c"DHE-RSA-AES128-GCM-SHA256",
-    ~c"ECDHE-RSA-AES256-SHA384",
-    ~c"ECDHE-ECDSA-AES256-SHA384",
-    ~c"ECDHE-RSA-AES128-SHA256",
-    ~c"ECDHE-ECDSA-AES128-SHA256",
-    ~c"DHE-RSA-AES256-SHA256",
-    ~c"DHE-RSA-AES128-SHA256",
-    ~c"ECDHE-RSA-AES256-SHA",
-    ~c"ECDHE-ECDSA-AES256-SHA",
-    ~c"ECDHE-RSA-AES128-SHA",
-    ~c"ECDHE-ECDSA-AES128-SHA"
-  ]
-
   @eccs [
+    :x25519,
     :secp256r1,
     :secp384r1,
     :secp521r1
@@ -120,7 +131,7 @@ defmodule Plug.SSL do
   This function accepts all options defined
   [in Erlang/OTP `:ssl` documentation](http://erlang.org/doc/man/ssl.html).
 
-  Besides the options from `:ssl`, this function adds on extra option:
+  Besides the options from `:ssl`, this function adds one extra option:
 
     * `:cipher_suite` - it may be `:strong` or `:compatible`,
       as outlined in the following section
@@ -130,36 +141,29 @@ defmodule Plug.SSL do
     * `secure_renegotiate: true` - to avoid certain types of man-in-the-middle attacks
     * `reuse_sessions: true` - for improved handshake performance of recurring connections
 
-  For a complete guide on HTTPS and best pratices, see [our Plug HTTPS Guide](https.html).
+  For a complete guide on HTTPS and best practices, see [our Plug HTTPS Guide](https.html).
 
   ## Cipher Suites
 
   To simplify configuration of TLS defaults, this function provides two preconfigured
   options: `cipher_suite: :strong` and `cipher_suite: :compatible`. The Ciphers
-  chosen and related configuration come from the [OWASP Cipher String Cheat
-  Sheet](https://www.owasp.org/index.php/TLS_Cipher_String_Cheat_Sheet)
+  chosen and related configuration come from the [Transport Layer Security Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Transport_Layer_Security_Cheat_Sheet.html)
 
-  We've made two modifications to the suggested config from the OWASP recommendations.
-  First we include ECDSA certificates which are excluded from their configuration.
-  Second we have changed the order of the ciphers to deprioritize DHE because of
-  performance implications noted within the OWASP post itself. As the article notes
-  "...the TLS handshake with DHE hinders the CPU about 2.4 times more than ECDHE".
+  The **Strong** cipher suite supports TLSv1.3 as recommended by the Transport
+  Layer Security Cheat Sheet. General purpose web applications should default to
+  TLSv1.3 with ALL other protocols disabled.
 
-  The **Strong** cipher suite only supports tlsv1.2. Ciphers were based on the OWASP
-  Group A+ and includes support for RSA or ECDSA certificates. The intention of this
-  configuration is to provide as secure as possible defaults knowing that it will not
-  be fully compatible with older browsers and operating systems.
+  The **Compatible** cipher suite supports TLSv1.2 and TLSv1.3. This
+  suite provides strong security while maintaining compatibility with a wide
+  range of modern clients.
 
-  The **Compatible** cipher suite supports tlsv1, tlsv1.1 and tlsv1.2. Ciphers were
-  based on the OWASP Group B and includes support for RSA or ECDSA certificates. The
-  intention of this configuration is to provide as secure as possible defaults that
-  still maintain support for older browsers and Android versions 4.3 and earlier
+  Legacy protocols TLSv1.1 and TLSv1.0 are officially deprecated by
+  [RFC 8996](https://www.rfc-editor.org/rfc/rfc8996.html) and are
+  considered insecure.
 
-  For both suites we've specified certificate curves secp256r1, ecp384r1 and secp521r1.
-  Since OWASP doesn't prescribe curves we've based the selection on [Mozilla's
-  recommendations](https://wiki.mozilla.org/Security/Server_Side_TLS#Cipher_names_correspondence_table)
+  [Test your ssl configuration](https://ssl-config.mozilla.org/)
 
-  **The cipher suites were last updated on 2018-JUN-14.**
+  **The cipher suites were last updated on 2025-AUG-28.**
   """
   @spec configure([:ssl.tls_server_option()]) ::
           {:ok, [:ssl.tls_server_option()]} | {:error, String.t()}
@@ -168,9 +172,10 @@ defmodule Plug.SSL do
     |> check_for_missing_keys()
     |> validate_ciphers()
     |> normalize_ssl_files()
+    |> normalize_certs_keys_ssl_files()
     |> convert_to_charlist()
-    |> set_secure_defaults()
     |> configure_managed_tls()
+    |> set_secure_defaults()
   catch
     {:configure, message} -> {:error, message}
   else
@@ -178,24 +183,45 @@ defmodule Plug.SSL do
   end
 
   defp check_for_missing_keys(options) do
+    has_certs_keys? = List.keymember?(options, :certs_keys, 0)
     has_sni? = List.keymember?(options, :sni_hosts, 0) or List.keymember?(options, :sni_fun, 0)
     has_key? = List.keymember?(options, :key, 0) or List.keymember?(options, :keyfile, 0)
     has_cert? = List.keymember?(options, :cert, 0) or List.keymember?(options, :certfile, 0)
 
     cond do
       has_sni? -> options
-      not has_key? -> fail("missing option :key/:keyfile")
-      not has_cert? -> fail("missing option :cert/:certfile")
+      not (has_key? or has_certs_keys?) -> fail("missing option :key/:keyfile/:certs_keys")
+      not (has_cert? or has_certs_keys?) -> fail("missing option :cert/:certfile/:certs_keys")
       true -> options
     end
   end
 
   defp normalize_ssl_files(options) do
     ssl_files = [:keyfile, :certfile, :cacertfile, :dhfile]
-    Enum.reduce(ssl_files, options, &normalize_ssl_file(&1, &2))
+    Enum.reduce(ssl_files, options, &normalize_ssl_file(&1, &2, options[:otp_app]))
   end
 
-  defp normalize_ssl_file(key, options) do
+  defp normalize_certs_keys_ssl_files(options) do
+    if certs_keys = options[:certs_keys] do
+      ssl_files = [:keyfile, :certfile]
+
+      updated_certs_keys =
+        Enum.map(certs_keys, fn cert_key ->
+          Enum.reduce(
+            ssl_files,
+            Map.to_list(cert_key),
+            &normalize_ssl_file(&1, &2, options[:otp_app])
+          )
+          |> Map.new()
+        end)
+
+      List.keystore(options, :certs_keys, 0, {:certs_keys, updated_certs_keys})
+    else
+      options
+    end
+  end
+
+  defp normalize_ssl_file(key, options, otp_app) do
     value = options[key]
 
     cond do
@@ -206,7 +232,7 @@ defmodule Plug.SSL do
         put_ssl_file(options, key, value)
 
       true ->
-        put_ssl_file(options, key, Path.expand(value, otp_app(options)))
+        put_ssl_file(options, key, Path.expand(value, resolve_otp_app(otp_app)))
     end
   end
 
@@ -224,9 +250,9 @@ defmodule Plug.SSL do
     List.keystore(options, key, 0, {key, value})
   end
 
-  defp otp_app(options) do
-    if app = options[:otp_app] do
-      Application.app_dir(app)
+  defp resolve_otp_app(otp_app) do
+    if otp_app do
+      Application.app_dir(otp_app)
     else
       fail("the :otp_app option is required when setting relative SSL certfiles")
     end
@@ -278,14 +304,14 @@ defmodule Plug.SSL do
     options
     |> set_managed_tls_defaults
     |> keynew(:ciphers, 0, {:ciphers, @strong_tls_ciphers})
-    |> keynew(:versions, 0, {:versions, [:"tlsv1.2"]})
+    |> keynew(:versions, 0, {:versions, [:"tlsv1.3"]})
   end
 
   defp set_compatible_tls_defaults(options) do
     options
     |> set_managed_tls_defaults
     |> keynew(:ciphers, 0, {:ciphers, @compatible_tls_ciphers})
-    |> keynew(:versions, 0, {:versions, [:"tlsv1.2", :"tlsv1.1", :tlsv1]})
+    |> keynew(:versions, 0, {:versions, [:"tlsv1.3", :"tlsv1.2"]})
   end
 
   defp validate_ciphers(options) do
@@ -331,10 +357,50 @@ defmodule Plug.SSL do
         :ok
     end
 
-    rewrite_on = Plug.RewriteOn.init(Keyword.get(opts, :rewrite_on))
+    exclude =
+      if exclude = Keyword.get(opts, :exclude) do
+        validate_exclude!(exclude)
+      else
+        [hosts: ["localhost", "127.0.0.1"]]
+      end
+
     log = Keyword.get(opts, :log, :info)
-    exclude = Keyword.get(opts, :exclude, ["localhost"])
+    rewrite_on = Plug.RewriteOn.init(Keyword.get(opts, :rewrite_on))
     {hsts_header(opts), exclude, host, rewrite_on, log}
+  end
+
+  defp validate_exclude!(exclude) when is_list(exclude) do
+    Enum.map(exclude, fn
+      # TODO: Deprecate me on Plug v1.20
+      binary when is_binary(binary) ->
+        {:hosts, [binary]}
+
+      {:hosts, hosts} when is_list(hosts) ->
+        {:hosts, hosts}
+
+      {:paths, paths} when is_list(paths) ->
+        {:paths, Enum.map(paths, &Plug.Router.Utils.split/1)}
+
+      {:conn, {mod, fun, args}} when is_atom(mod) and is_atom(fun) and is_list(args) ->
+        {:conn, {mod, fun, args}}
+
+      other ->
+        raise ArgumentError,
+              "invalid entry in :exclude, expected host or path, got: #{inspect(other)}"
+    end)
+  end
+
+  defp validate_exclude!({m, f, a}) do
+    IO.warn(
+      "exclude: {mod, fun, args} is deprecated, " <>
+        "please use exclude: [conn: {mod, fun, args}], which will receive the whole connection instead"
+    )
+
+    {m, f, a}
+  end
+
+  defp validate_exclude!(exclude) do
+    raise ArgumentError, ":exclude must be a list, got: #{inspect(exclude)}"
   end
 
   @impl true
@@ -342,14 +408,21 @@ defmodule Plug.SSL do
     conn = Plug.RewriteOn.call(conn, rewrite_on)
 
     cond do
-      excluded?(conn.host, exclude) -> conn
+      excluded?(conn, exclude) -> conn
       conn.scheme == :https -> put_hsts_header(conn, hsts)
       true -> redirect_to_https(conn, host, log_level)
     end
   end
 
-  defp excluded?(host, list) when is_list(list), do: :lists.member(host, list)
-  defp excluded?(host, {mod, fun, args}), do: apply(mod, fun, [host | args])
+  defp excluded?(conn, list) when is_list(list) do
+    Enum.any?(list, fn
+      {:hosts, hosts} -> conn.host in hosts
+      {:paths, paths} -> conn.path_info in paths
+      {:conn, {mod, fun, args}} -> apply(mod, fun, [conn | args])
+    end)
+  end
+
+  defp excluded?(conn, {mod, fun, args}), do: apply(mod, fun, [conn.host | args])
 
   # http://tools.ietf.org/html/draft-hodges-strict-transport-sec-02
   defp hsts_header(opts) do

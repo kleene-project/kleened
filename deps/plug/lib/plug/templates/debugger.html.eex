@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <title><%= h @title %> at <%= h method(@conn) %> <%= h @conn.request_path %></title>
+    <meta name="error-status" content="<%= @conn.status %>">
     <meta name="viewport" content="width=device-width">
     <style>/*! normalize.css v4.2.0 | MIT License | github.com/necolas/normalize.css */html{font-family:sans-serif;line-height:1.15;-ms-text-size-adjust:100%;-webkit-text-size-adjust:100%}body{margin:0}article,aside,details,figcaption,figure,footer,header,main,menu,nav,section{display:block}audio,canvas,progress,video{display:inline-block}audio:not([controls]){display:none;height:0}progress{vertical-align:baseline}template,[hidden]{display:none}a{background-color:transparent;-webkit-text-decoration-skip:objects}a:active,a:hover{outline-width:0}abbr[title]{border-bottom:none;text-decoration:underline;text-decoration:underline dotted}b,strong{font-weight:inherit}b,strong{font-weight:bolder}dfn{font-style:italic}h1{font-size:2em;margin:0.67em 0}mark{background-color:#ff0;color:#000}small{font-size:80%}sub,sup{font-size:75%;line-height:0;position:relative;vertical-align:baseline}sub{bottom:-0.25em}sup{top:-0.5em}img{border-style:none}svg:not(:root){overflow:hidden}code,kbd,pre,samp{font-family:monospace, monospace;font-size:1em}figure{margin:1em 40px}hr{box-sizing:content-box;height:0;overflow:visible}button,input,optgroup,select,textarea{font:inherit;margin:0}optgroup{font-weight:bold}button,input{overflow:visible}button,select{text-transform:none}button,html [type="button"],[type="reset"],[type="submit"]{-webkit-appearance:button}button::-moz-focus-inner,[type="button"]::-moz-focus-inner,[type="reset"]::-moz-focus-inner,[type="submit"]::-moz-focus-inner{border-style:none;padding:0}button:-moz-focusring,[type="button"]:-moz-focusring,[type="reset"]:-moz-focusring,[type="submit"]:-moz-focusring{outline:1px dotted ButtonText}fieldset{border:1px solid #c0c0c0;margin:0 2px;padding:0.35em 0.625em 0.75em}legend{box-sizing:border-box;color:inherit;display:table;max-width:100%;padding:0;white-space:normal}textarea{overflow:auto}[type="checkbox"],[type="radio"]{box-sizing:border-box;padding:0}[type="number"]::-webkit-inner-spin-button,[type="number"]::-webkit-outer-spin-button{height:auto}[type="search"]{-webkit-appearance:textfield;outline-offset:-2px}[type="search"]::-webkit-search-cancel-button,[type="search"]::-webkit-search-decoration{-webkit-appearance:none}::-webkit-input-placeholder{color:inherit;opacity:0.54}::-webkit-file-upload-button{-webkit-appearance:button;font:inherit}</style>
     <style>
@@ -17,9 +18,20 @@
     html {
         font-size: 15px;
         line-height: 1.6;
-        background: #fff;
+        background: <%= @style.background %>;
         color: <%= @style.text_color %>;
+        color-scheme: light;
     }
+
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        html {
+            background: <%= @style.dark.background %>;
+            color: <%= @style.dark.text_color %>;
+            color-scheme: dark;
+        }
+    }
+    <% end %>
 
     @media (max-width: 768px) {
         html {
@@ -50,8 +62,16 @@
 
     .top-details {
         padding: 48px;
-        background: #f9f9fa;
+        background: <%= @style.top_background %>;
     }
+
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .top-details {
+            background: <%= @style.dark.top_background %>;
+        }
+    }
+    <% end %>
 
     .top-details,
     .conn-info {
@@ -97,6 +117,14 @@
         background-repeat: no-repeat;
         margin-bottom: 16px;
     }
+
+    <%= if @style[:dark] && @style[:dark][:logo] do %>
+    @media (prefers-color-scheme: dark) {
+        .exception-logo:before {
+            background-image: url("<%= @style.dark[:logo] %>");
+        }
+    }
+    <% end %>
 
     @media (max-width: 768px) {
         .exception-logo {
@@ -144,9 +172,26 @@
         font-weight: 400;
     }
 
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .exception-info > .struct {
+            color: <%= @style.dark.primary %>;
+        }
+
+        .exception-info > .struct > small {
+            color: <%= @style.dark.accent %>;
+        }
+    }
+    <% end %>
+
     .exception-info > code {
         line-height: 1.5;
+        font-size: <%= :math.pow(1.3, -1) %>em;
     }
+
+    .exception-details-text {
+        white-space: pre-wrap;
+     }
 
     /*
      * Code explorer
@@ -206,12 +251,23 @@
      */
 
     .frame-info {
-        background: white;
+        background: @style.background;
         border-radius: 4px;
         box-shadow:
             0 1px 3px rgba(80, 100, 140, .1),
             0 8px 15px rgba(80, 100, 140, .05);
     }
+
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .frame-info {
+            background: <%= @style.dark.background %>;
+            box-shadow:
+                0 1px 3px rgba(0, 0, 0, .2),
+                0 8px 15px rgba(0, 0, 0, .1);
+        }
+    }
+    <% end %>
 
     .frame-info > .meta,
     .frame-info > .file {
@@ -235,6 +291,14 @@
         color: <%= @style.text_color %>;
         font-weight: 700;
     }
+
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .frame-info > .file > a {
+            color: <%= @style.dark.text_color %>;
+        }
+    }
+    <% end %>
 
     .frame-info > .code {
         border-top: solid 1px <%= @style.line_color %>;
@@ -277,7 +341,8 @@
 
     .frame-info > details.meta > ol > li:before {
         content: counter(item) ". ";
-        color: <%= @style.accent %>;
+        color: <%= @style.primary %>;
+        filter: saturate(50%);
     }
 
     /*
@@ -296,6 +361,22 @@
         color: <%= @style.primary %>;
         text-decoration: none;
     }
+
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .frame-mfa {
+            color: <%= @style.dark.accent %>;
+        }
+
+        .frame-mfa > .app {
+            color: <%= @style.dark.accent %>;
+        }
+
+        .frame-mfa > .docs {
+            color: <%= @style.dark.primary %>;
+        }
+    }
+    <% end %>
 
     .frame-mfa .docs:hover {
         text-decoration: underline;
@@ -342,6 +423,14 @@
         animation: line-highlight 750ms linear;
     }
 
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .code-block > .line.-highlight {
+            background-color: <%= @style.dark.highlight %>;
+        }
+    }
+    <% end %>
+
     @-webkit-keyframes line-highlight {
         0% { background-color: <%= @style.highlight %>; }
         25% { background-color: <%= @style.red_highlight %>; }
@@ -349,12 +438,34 @@
         75% { background-color: <%= @style.red_highlight %>; }
     }
 
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        @-webkit-keyframes line-highlight {
+            0% { background-color: <%= @style.dark.highlight %>; }
+            25% { background-color: <%= @style.dark.red_highlight %>; }
+            50% { background-color: <%= @style.dark.highlight %>; }
+            75% { background-color: <%= @style.dark.red_highlight %>; }
+        }
+    }
+    <% end %>
+
     @keyframes line-highlight {
         0% { background-color: <%= @style.highlight %>; }
         25% { background-color: <%= @style.red_highlight %>; }
         50% { background-color: <%= @style.highlight %>; }
         75% { background-color: <%= @style.red_highlight %>; }
     }
+
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        @keyframes line-highlight {
+            0% { background-color: <%= @style.dark.highlight %>; }
+            25% { background-color: <%= @style.dark.red_highlight %>; }
+            50% { background-color: <%= @style.dark.highlight %>; }
+            75% { background-color: <%= @style.dark.red_highlight %>; }
+        }
+    }
+    <% end %>
 
     .code-block > .line > .ln {
         color: <%= @style.accent %>;
@@ -364,6 +475,14 @@
         -ms-user-select: none;
         user-select: none;
     }
+
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .code-block > .line > .ln {
+            color: <%= @style.dark.accent %>;
+        }
+    }
+    <% end %>
 
     .code-block > .line > .code {
         font-family: <%= @style.monospace_font %>;
@@ -379,6 +498,14 @@
         padding-top: 48px;
         padding-bottom: 48px;
     }
+
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .code-block-empty {
+            color: <%= @style.dark.accent %>;
+        }
+    }
+    <% end %>
 
     /*
      * Stack trace heading
@@ -421,6 +548,14 @@
         border-width: 0;
     }
 
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .stack-trace-heading .copy-markdown {
+            color: <%= @style.dark.text_color %>;
+        }
+    }
+    <% end %>
+
     .stack-trace-heading .copy-markdown:active {
         cursor: pointer;
     }
@@ -433,6 +568,7 @@
         height: 1rem;
         width: 1rem;
         margin: 0.1em 0.3rem 0;
+        fill: currentColor;
     }
 
     @media (max-width: 480px) {
@@ -490,6 +626,15 @@
         color: <%= @style.text_color %>;
     }
 
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .stack-trace-item,
+        .stack-trace-item:active {
+            color: <%= @style.dark.text_color %>;
+        }
+    }
+    <% end %>
+
     .stack-trace-item:active {
         background-color: rgba(80, 100, 140, 0.1);
     }
@@ -519,6 +664,14 @@
         background: <%= @style.primary %>;
     }
 
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .stack-trace-item.-app > .left:before {
+            background: <%= @style.dark.primary %>;
+        }
+    }
+    <% end %>
+
     .stack-trace-item.-app > .left > .app {
         display: none;
     }
@@ -533,6 +686,14 @@
         float: right;
         max-width: 45%;
     }
+
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .stack-trace-item > .info {
+            color: <%= @style.dark.accent %>;
+        }
+    }
+    <% end %>
 
     .stack-trace-item > .left,
     .stack-trace-item > .info {
@@ -549,6 +710,18 @@
     .stack-trace-item > .left > .app {
         color: <%= @style.accent %>;
     }
+
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .stack-trace-item > .left > .filename > .line {
+            color: <%= @style.dark.accent %>;
+        }
+
+        .stack-trace-item > .left > .app {
+            color: <%= @style.dark.accent %>;
+        }
+    }
+    <% end %>
 
     .stack-trace-item > .left > .app:after {
         content: '·';
@@ -574,6 +747,10 @@
         margin: 0;
     }
 
+    .code-quote > li {
+        padding: 6px 0;
+    }
+
     .code.-padded {
         padding: 0 16px 16px 16px;
     }
@@ -592,6 +769,14 @@
       border-top: solid 1px <%= @style.line_color %>;
     }
 
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .banner {
+            border-top: solid 1px <%= @style.dark.line_color %>;
+        }
+    }
+    <% end %>
+
     /*
      * Conn info
      */
@@ -599,6 +784,14 @@
     .conn-info {
         border-top: solid 1px <%= @style.line_color %>;
     }
+
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .conn-info {
+            border-top: solid 1px <%= @style.dark.line_color %>;
+        }
+    }
+    <% end %>
 
     /*
      * Conn details
@@ -641,6 +834,22 @@
         top: -1px; /* Compensate for font metrics */
     }
 
+    <%= if @style[:dark] do %>
+    @media (prefers-color-scheme: dark) {
+        .conn-details > dl {
+            border-bottom: solid 1px <%= @style.dark.line_color %>;
+        }
+
+        .conn-details > dl:first-of-type {
+            border-top: solid 1px <%= @style.dark.line_color %>;
+        }
+
+        .conn-details > dl > dt {
+            color: <%= @style.dark.accent %>;
+        }
+    }
+    <% end %>
+
     /* Definition */
     .conn-details > dl > dd {
         width: 80%;
@@ -676,7 +885,7 @@
                 <small>at <%= h method(@conn) %></small>
                 <small class="path"><%= h @conn.request_path %></small>
             </h5>
-            <code><pre><%= h @message %></pre></code>
+            <code><pre class="exception-details-text"><%= @message %></pre></code>
         </header>
 
         <%= for %{label: label, encoded_handler: encoded_handler} <- @actions do %>
@@ -849,7 +1058,7 @@
         function copyToClipboard () {
           if(navigator.clipboard) {
             // For those working on localhost or HTTPS
-            navigator.clipboard.writeText($copy.innerHTML).then(copiedClipboard).catch(() => {})
+            navigator.clipboard.writeText($copy.textContent).then(copiedClipboard).catch(() => {})
           } else {
             // For those working on HTTP
             $copy.select()

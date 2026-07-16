@@ -27,7 +27,8 @@ Usage: mix coveralls <Options>
                         and your git repo resides in "app", then the root path should be: "/home/runs/app/" (from
                         coveralls.io)
     --flagname          Job flag name which will be shown in the Coveralls UI
-    --import_cover      Directory from where '.coverdata' files should be imported and their results added to the report
+    --import-cover      Directory from where '.coverdata' files should be imported and their results added to the report.
+                        Coverdata is imported after tests are run.
 
 Usage: mix coveralls.detail [--filter file-name-pattern]
   Used to display coverage with detail
@@ -35,6 +36,9 @@ Usage: mix coveralls.detail [--filter file-name-pattern]
 
 Usage: mix coveralls.html
   Used to display coverage information at the source-code level formatted as an HTML page.
+  
+Usage: mix coveralls.cobertura
+  Used to display coverage information at the source-code level formatted as an XML cobertura file.
 
 Usage: mix coveralls.travis [--pro]
   Used to post coverage from Travis CI server.
@@ -56,6 +60,13 @@ Usage: mix coveralls.post <Options>
     -s (--sha)          Commit SHA (required when not using Travis)
     --build             Service number ('BUILDS' column at coveralls.io page)
     --parallel          coveralls.io 'parallel' option (See coveralls.io API Reference)
+
+Usage: mix coveralls.multiple
+  Used to perform multiple coveralls task at once without need of re-running tests.
+  
+  <Options>
+    --type              Coveralls task to execute (can be given multiple times)
+                        e.g. 'mix coveralls.multiple --type html --type json'
 """
   end
 end

@@ -40,7 +40,6 @@ defmodule Plug.Upload do
   @dir_table __MODULE__.Dir
   @path_table __MODULE__.Path
   @max_attempts 10
-  @temp_env_vars ~w(PLUG_TMPDIR TMPDIR TMP TEMP)s
 
   @doc """
   Requests a random file to be created in the upload directory
@@ -57,6 +56,22 @@ defmodule Plug.Upload do
 
       {:no_tmp, tmps} ->
         {:no_tmp, tmps}
+    end
+  end
+
+  @doc """
+  Deletes the given upload file.
+
+  Uploads are automatically removed when the current process terminates,
+  but you may invoke this to request the file to be removed sooner.
+  """
+  @spec delete(t | binary) :: :ok | {:error, term}
+  def delete(%__MODULE__{path: path}), do: delete(path)
+
+  def delete(path) when is_binary(path) do
+    with :ok <- :file.delete(path, [:raw]) do
+      :ets.delete_object(@path_table, {self(), path})
+      :ok
     end
   end
 
@@ -85,7 +100,7 @@ defmodule Plug.Upload do
           :ok
 
         [] ->
-          server = plug_server()
+          server = plug_server(to_pid)
           {:ok, tmp} = generate_tmp_dir()
           :ok = GenServer.call(server, {:give_away, to_pid, tmp, path})
           :ets.delete_object(@path_table, {from_pid, path})
@@ -105,7 +120,7 @@ defmodule Plug.Upload do
         {:ok, tmp}
 
       [] ->
-        server = plug_server()
+        server = plug_server(pid)
         GenServer.cast(server, {:monitor, pid})
 
         with {:ok, tmp} <- generate_tmp_dir() do
@@ -117,8 +132,8 @@ defmodule Plug.Upload do
 
   defp generate_tmp_dir() do
     {tmp_roots, suffix} = :persistent_term.get(__MODULE__)
-    {mega, _, _} = :os.timestamp()
-    subdir = "/plug-" <> i(mega) <> "-" <> suffix
+    sec = System.system_time(:second) |> div(1024 * 1024)
+    subdir = "/plug-" <> i(sec) <> "-" <> suffix
 
     if tmp = Enum.find_value(tmp_roots, &make_tmp_dir(&1 <> subdir)) do
       {:ok, tmp}
@@ -152,7 +167,7 @@ defmodule Plug.Upload do
   end
 
   defp path(prefix, tmp) do
-    sec = :os.system_time(:second)
+    sec = System.system_time(:second)
     rand = :rand.uniform(999_999_999_999)
     scheduler_id = :erlang.system_info(:scheduler_id)
     tmp <> "/" <> prefix <> "-" <> i(sec) <> "-" <> i(rand) <> "-" <> i(scheduler_id)
@@ -188,36 +203,29 @@ defmodule Plug.Upload do
     end
   end
 
-  defp plug_server do
-    Process.whereis(__MODULE__) ||
+  defp plug_server(pid) do
+    PartitionSupervisor.whereis_name({__MODULE__, pid})
+  rescue
+    ArgumentError ->
       raise Plug.UploadError,
             "could not find process Plug.Upload. Have you started the :plug application?"
   end
 
   @doc false
   def start_link(_) do
-    GenServer.start_link(__MODULE__, :ok, name: __MODULE__)
+    GenServer.start_link(__MODULE__, :ok)
   end
 
   ## Callbacks
 
   @impl true
   def init(:ok) do
-    Process.flag(:trap_exit, true)
-    tmp = Enum.find_value(@temp_env_vars, "/tmp", &System.get_env/1) |> Path.expand()
-    cwd = Path.join(File.cwd!(), "tmp")
-    # Add a tiny random component to avoid clashes between nodes
-    suffix = :crypto.strong_rand_bytes(3) |> Base.url_encode64()
-    :persistent_term.put(__MODULE__, {[tmp, cwd], suffix})
-
-    :ets.new(@dir_table, [:named_table, :public, :set])
-    :ets.new(@path_table, [:named_table, :public, :duplicate_bag])
     {:ok, %{}}
   end
 
   @impl true
   def handle_call({:give_away, pid, tmp, path}, _from, state) do
-    # Since we are writing in behalf of another process, we need to make sure
+    # Since we are writing on behalf of another process, we need to make sure
     # the monitor and writing to the tables happen within the same operation.
     Process.monitor(pid)
     :ets.insert_new(@dir_table, {pid, tmp})
@@ -255,14 +263,8 @@ defmodule Plug.Upload do
     {:noreply, state}
   end
 
-  @impl true
-  def terminate(_reason, _state) do
-    folder = fn entry, :ok -> delete_path(entry) end
-    :ets.foldl(folder, :ok, @path_table)
-  end
-
   defp delete_path({_pid, path}) do
-    :file.delete(path)
+    :file.delete(path, [:raw])
     :ok
   end
 end

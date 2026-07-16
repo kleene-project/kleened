@@ -1,4 +1,6 @@
-%% Copyright (c) 2011-2018, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Jan Uhlig <juhlig@hnc-agency.org>
+%% Copyright (c) Maria Scott <maria-12648430@hnc-agency.org>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -21,8 +23,11 @@
 -export([listen/1]).
 -export([disallowed_listen_options/0]).
 -export([accept/2]).
--export([accept_ack/2]).
+-export([handshake/2]).
 -export([handshake/3]).
+-export([handshake_continue/2]).
+-export([handshake_continue/3]).
+-export([handshake_cancel/1]).
 -export([connect/3]).
 -export([connect/4]).
 -export([recv/3]).
@@ -40,42 +45,60 @@
 -export([sockname/1]).
 -export([shutdown/2]).
 -export([close/1]).
+-export([cleanup/1]).
+-export([format_error/1]).
 
 -type ssl_opt() :: {alpn_preferred_protocols, [binary()]}
+	| {anti_replay, '10k' | '100k' | {integer(), integer(), integer()}}
 	| {beast_mitigation, one_n_minus_one | zero_n | disabled}
-	| {cacertfile, string()}
+	| {cacertfile, file:filename()}
 	| {cacerts, [public_key:der_encoded()]}
 	| {cert, public_key:der_encoded()}
-	| {certfile, string()}
-	| {ciphers, [ssl_cipher:erl_cipher_suite()]}
+	| {certs_keys, [#{cert => public_key:der_encoded(),
+			  key => ssl:key(),
+			  certfile => file:filename(),
+			  keyfile => file:filename(),
+			  key_pem_password => iodata() | fun(() -> iodata())}]}
+	| {certfile, file:filename()}
+	| {ciphers, ssl:ciphers()}
 	| {client_renegotiation, boolean()}
-	| {crl_cache, {module(), {internal | any(), list()}}}
+	| {crl_cache, [any()]}
 	| {crl_check, boolean() | peer | best_effort}
-	| {depth, 0..255}
-	| {dh, public_key:der_encoded()}
-	| {dhfile, string()}
+	| {depth, integer()}
+	| {dh, binary()}
+	| {dhfile, file:filename()}
+	| {eccs, [ssl:named_curve()]}
 	| {fail_if_no_peer_cert, boolean()}
-	| {hibernate_after, integer() | undefined}
+	| {handshake, hello | full}
+	| {hibernate_after, timeout()}
 	| {honor_cipher_order, boolean()}
-	| {key, {'RSAPrivateKey' | 'DSAPrivateKey' | 'PrivateKeyInfo', public_key:der_encoded()}}
-	| {keyfile, string()}
+	| {honor_ecc_order, boolean()}
+	| {key, ssl:key()}
+	| {key_update_at, pos_integer()}
+	| {keyfile, file:filename()}
 	| {log_alert, boolean()}
+	| {log_level, logger:level()}
+	| {max_handshake_size, integer()}
+	| {middlebox_comp_mode, boolean()}
 	| {next_protocols_advertised, [binary()]}
 	| {padding_check, boolean()}
-	| {partial_chain, fun(([public_key:der_encoded()]) -> {trusted_ca, public_key:der_encoded()} | unknown_ca)}
+	| {partial_chain, fun()}
 	| {password, string()}
+	| {protocol, tls | dtls}
 	| {psk_identity, string()}
 	| {reuse_session, fun()}
 	| {reuse_sessions, boolean()}
 	| {secure_renegotiate, boolean()}
-	| {signature_algs, [{atom(), atom()}]}
+	| {session_tickets, disabled | stateful | stateless}
+	| {signature_algs, [{ssl:hash(), ssl:sign_algo()}]}
+	| {signature_algs_cert, [ssl:sign_scheme()]}
 	| {sni_fun, fun()}
 	| {sni_hosts, [{string(), ssl_opt()}]}
+	| {supported_groups, [ssl:group()]}
 	| {user_lookup_fun, {fun(), any()}}
-	| {v2_hello_compatible, boolean()}
 	| {verify, verify_none | verify_peer}
 	| {verify_fun, {fun(), any()}}
-	| {versions, [atom()]}.
+	| {versions, [ssl:protocol_version()]}.
 -export_type([ssl_opt/0]).
 
 -type opt() :: ranch_tcp:opt() | ssl_opt().
@@ -84,63 +107,118 @@
 -type opts() :: [opt()].
 -export_type([opts/0]).
 
+-spec name() -> ssl.
 name() -> ssl.
 
 -spec secure() -> boolean().
 secure() ->
-    true.
+	true.
 
-messages() -> {ssl, ssl_closed, ssl_error}.
+-spec messages() -> {ssl, ssl_closed, ssl_error, ssl_passive}.
+messages() -> {ssl, ssl_closed, ssl_error, ssl_passive}.
 
--spec listen(opts()) -> {ok, ssl:sslsocket()} | {error, atom()}.
-listen(Opts) ->
-	case lists:keymember(cert, 1, Opts)
-			orelse lists:keymember(certfile, 1, Opts)
-			orelse lists:keymember(sni_fun, 1, Opts)
-			orelse lists:keymember(sni_hosts, 1, Opts) of
+-spec listen(ranch:transport_opts(opts())) -> {ok, ssl:sslsocket()} | {error, atom()}.
+listen(TransOpts) ->
+	ok = cleanup(TransOpts),
+	SocketOpts = maps:get(socket_opts, TransOpts, []),
+	case lists:keymember(cert, 1, SocketOpts)
+			orelse lists:keymember(certfile, 1, SocketOpts)
+			orelse lists:keymember(sni_fun, 1, SocketOpts)
+			orelse lists:keymember(sni_hosts, 1, SocketOpts)
+			orelse lists:keymember(user_lookup_fun, 1, SocketOpts)
+			orelse lists:keymember(certs_keys, 1, SocketOpts) of
 		true ->
-			do_listen(Opts);
+			Logger = maps:get(logger, TransOpts, logger),
+			do_listen(SocketOpts, Logger);
 		false ->
 			{error, no_cert}
 	end.
 
-do_listen(Opts0) ->
-	Opts1 = ranch:set_option_default(Opts0, backlog, 1024),
-	Opts2 = ranch:set_option_default(Opts1, nodelay, true),
-	Opts3 = ranch:set_option_default(Opts2, send_timeout, 30000),
-	Opts = ranch:set_option_default(Opts3, send_timeout_close, true),
+do_listen(SocketOpts0, Logger) ->
+	SocketOpts = set_default_options(SocketOpts0),
+	DisallowedOpts0 = disallowed_listen_options(),
+	DisallowedOpts = unsupported_tls_options(SocketOpts) ++ DisallowedOpts0,
 	%% We set the port to 0 because it is given in the Opts directly.
 	%% The port in the options takes precedence over the one in the
 	%% first argument.
-	ssl:listen(0, ranch:filter_options(Opts, disallowed_listen_options(),
-		[binary, {active, false}, {packet, raw}, {reuseaddr, true}])).
+	ssl:listen(0, ranch:filter_options(SocketOpts, DisallowedOpts,
+		[binary, {active, false}, {reuseaddr, true}], Logger)).
+
+set_default_options(SocketOpts0) ->
+	case proplists:get_value(protocol, SocketOpts0, tls) of
+		tls ->
+			SocketOpts1 = ranch:set_option_default(SocketOpts0, backlog, 1024),
+			SocketOpts2 = ranch:set_option_default(SocketOpts1, nodelay, true),
+			SocketOpts3 = ranch:set_option_default(SocketOpts2, send_timeout, 30000),
+			ranch:set_option_default(SocketOpts3, send_timeout_close, true);
+		dtls ->
+			SocketOpts0
+	end.
 
 %% 'binary' and 'list' are disallowed but they are handled
 %% specifically as they do not have 2-tuple equivalents.
+-spec disallowed_listen_options() -> [atom()].
 disallowed_listen_options() ->
 	[alpn_advertised_protocols, client_preferred_next_protocols,
 		fallback, server_name_indication, srp_identity
 		|ranch_tcp:disallowed_listen_options()].
+
+unsupported_tls_options(SocketOpts) ->
+	unsupported_tls_version_options(lists:usort(get_tls_versions(SocketOpts))).
+
+unsupported_tls_version_options([tlsv1|_]) ->
+	[];
+unsupported_tls_version_options(['tlsv1.1'|_]) ->
+	[beast_mitigation, padding_check];
+unsupported_tls_version_options(['tlsv1.2'|_]) ->
+	[beast_mitigation, padding_check];
+unsupported_tls_version_options(['tlsv1.3'|_]) ->
+	[beast_mitigation, client_renegotiation, next_protocols_advertised,
+		padding_check, psk_identity, reuse_session, reuse_sessions,
+		secure_renegotiate, user_lookup_fun];
+unsupported_tls_version_options(_) ->
+	[].
 
 -spec accept(ssl:sslsocket(), timeout())
 	-> {ok, ssl:sslsocket()} | {error, closed | timeout | atom()}.
 accept(LSocket, Timeout) ->
 	ssl:transport_accept(LSocket, Timeout).
 
--spec accept_ack(ssl:sslsocket(), timeout()) -> ok.
-accept_ack(CSocket, Timeout) ->
-	{ok, _} = handshake(CSocket, [], Timeout),
-	ok.
+-spec handshake(inet:socket() | ssl:sslsocket(), timeout())
+	-> {ok, ssl:sslsocket()} | {ok, ssl:sslsocket(), ssl:protocol_extensions()} | {error, any()}.
+handshake(CSocket, Timeout) ->
+	handshake(CSocket, [], Timeout).
 
 -spec handshake(inet:socket() | ssl:sslsocket(), opts(), timeout())
-	-> {ok, ssl:sslsocket()} | {error, any()}.
+	-> {ok, ssl:sslsocket()} | {ok, ssl:sslsocket(), ssl:protocol_extensions()} | {error, any()}.
 handshake(CSocket, Opts, Timeout) ->
 	case ssl:handshake(CSocket, Opts, Timeout) of
-		{ok, NewSocket} ->
-			{ok, NewSocket};
+		OK = {ok, _} ->
+			OK;
+		OK = {ok, _, _} ->
+			OK;
 		Error = {error, _} ->
 			Error
 	end.
+
+-spec handshake_continue(ssl:sslsocket(), timeout())
+	-> {ok, ssl:sslsocket()} | {error, any()}.
+handshake_continue(CSocket, Timeout) ->
+	handshake_continue(CSocket, [], Timeout).
+
+-spec handshake_continue(ssl:sslsocket(), [ssl:tls_server_option()], timeout())
+	-> {ok, ssl:sslsocket()} | {error, any()}.
+handshake_continue(CSocket, Opts, Timeout) ->
+	case ssl:handshake_continue(CSocket, Opts, Timeout) of
+		OK = {ok, _} ->
+			OK;
+		Error = {error, _} ->
+			Error
+	end.
+
+-spec handshake_cancel(ssl:sslsocket()) -> ok.
+handshake_cancel(CSocket) ->
+	ok = ssl:handshake_cancel(CSocket).
 
 %% @todo Probably filter Opts?
 -spec connect(inet:ip_address() | inet:hostname(),
@@ -148,7 +226,7 @@ handshake(CSocket, Opts, Timeout) ->
 	-> {ok, inet:socket()} | {error, atom()}.
 connect(Host, Port, Opts) when is_integer(Port) ->
 	ssl:connect(Host, Port,
-		Opts ++ [binary, {active, false}, {packet, raw}]).
+		Opts ++ [binary, {active, false}]).
 
 %% @todo Probably filter Opts?
 -spec connect(inet:ip_address() | inet:hostname(),
@@ -156,7 +234,7 @@ connect(Host, Port, Opts) when is_integer(Port) ->
 	-> {ok, inet:socket()} | {error, atom()}.
 connect(Host, Port, Opts, Timeout) when is_integer(Port) ->
 	ssl:connect(Host, Port,
-		Opts ++ [binary, {active, false}, {packet, raw}],
+		Opts ++ [binary, {active, false}],
 		Timeout).
 
 -spec recv(ssl:sslsocket(), non_neg_integer(), timeout())
@@ -174,7 +252,12 @@ recv_proxy_header(SSLSocket, Timeout) ->
 	%% nothing prevents us from retrieving the TCP socket and using
 	%% it. Since it's an undocumented interface this may however
 	%% make forward-compatibility more difficult.
-	{sslsocket, {gen_tcp, TCPSocket, _, _}, _} = SSLSocket,
+	TCPSocket = case element(2, SSLSocket) of
+		%% Before OTP-28.
+		{gen_tcp, TCPSocket0, _, _} -> TCPSocket0;
+		%% OTP-28+.
+		TCPSocket0 -> TCPSocket0
+	end,
 	ranch_tcp:recv_proxy_header(TCPSocket, Timeout).
 
 -spec send(ssl:sslsocket(), iodata()) -> ok | {error, atom()}.
@@ -224,12 +307,12 @@ controlling_process(Socket, Pid) ->
 	ssl:controlling_process(Socket, Pid).
 
 -spec peername(ssl:sslsocket())
-	-> {ok, {inet:ip_address(), inet:port_number()}} | {error, atom()}.
+	-> {ok, {inet:ip_address(), inet:port_number()} | {local, binary()}} | {error, atom()}.
 peername(Socket) ->
 	ssl:peername(Socket).
 
 -spec sockname(ssl:sslsocket())
-	-> {ok, {inet:ip_address(), inet:port_number()}} | {error, atom()}.
+	-> {ok, {inet:ip_address(), inet:port_number()} | {local, binary()}} | {error, atom()}.
 sockname(Socket) ->
 	ssl:sockname(Socket).
 
@@ -241,3 +324,44 @@ shutdown(Socket, How) ->
 -spec close(ssl:sslsocket()) -> ok.
 close(Socket) ->
 	ssl:close(Socket).
+
+-spec cleanup(ranch:transport_opts(opts())) -> ok.
+cleanup(#{socket_opts:=SocketOpts}) ->
+	case lists:keyfind(ip, 1, lists:reverse(SocketOpts)) of
+		{ip, {local, SockFile}} ->
+			_ = file:delete(SockFile),
+			ok;
+		_ ->
+			ok
+	end;
+cleanup(_) ->
+	ok.
+
+-spec format_error({error, ssl:reason()} | ssl:reason()) -> string().
+format_error(no_cert) ->
+	"no certificate provided; see cert, certfile, sni_fun or sni_hosts options";
+format_error(Reason) ->
+	ssl:format_error(Reason).
+
+get_tls_versions(SocketOpts) ->
+	%% Socket options need to be reversed for keyfind because later options
+	%% take precedence when contained multiple times, but keyfind will return
+	%% the earliest occurence.
+	case lists:keyfind(versions, 1, lists:reverse(SocketOpts)) of
+		{versions, Versions} ->
+			Versions;
+		false ->
+			get_tls_versions_env()
+	end.
+
+get_tls_versions_env() ->
+	case application:get_env(ssl, protocol_version) of
+		{ok, Versions} ->
+			Versions;
+		undefined ->
+			get_tls_versions_app()
+	end.
+
+get_tls_versions_app() ->
+	{supported, Versions} = lists:keyfind(supported, 1, ssl:versions()),
+	Versions.

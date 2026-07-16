@@ -104,7 +104,11 @@ defmodule ElixirMake.Compiler do
     opts = [
       # There is no guarantee the command will return valid UTF-8,
       # especially on Windows, so don't try to interpret the stream
-      into: IO.binstream(:stdio, :line),
+      into:
+        if(match?({:win32, _}, :os.type()),
+          do: IO.binstream(:stdio, :line),
+          else: IO.stream(:stdio, :line)
+        ),
       stderr_to_stdout: true,
       cd: cwd,
       env: env
@@ -143,7 +147,7 @@ defmodule ElixirMake.Compiler do
           true -> "nmake"
         end
 
-      {:unix, type} when type in [:freebsd, :openbsd, :netbsd, :dragonfly] ->
+      {:unix, type} when type in [:freebsd, :openbsd, :netbsd, :dragonfly, :sunos] ->
         "gmake"
 
       _ ->

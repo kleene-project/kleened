@@ -8,12 +8,11 @@ defmodule ExDoc.Language.Elixir do
 
   @impl true
   @spec module_data(atom, any, any) ::
-          :skip
+          false
           | %{
-              callback_types: [:callback, ...],
               docs: any,
               id: binary,
-              language: ExDoc.Language.Erlang,
+              language: ExDoc.Language.Elixir,
               source_line: pos_integer,
               source_file: Path.t(),
               source_basedir: Path.t(),
@@ -27,14 +26,14 @@ defmodule ExDoc.Language.Elixir do
                 specs: map
               },
               title: binary,
-              type: :behaviour | :module
+              type: :module | :behaviour | :task | :protocol | :implementation | :exception
             }
   def module_data(module, docs_chunk, config) do
     {type, skip} = module_type_and_skip(module)
 
     cond do
       skip ->
-        :skip
+        false
 
       abst_code = Source.get_abstract_code(module) ->
         title = module_title(module, type)
@@ -48,6 +47,7 @@ defmodule ExDoc.Language.Elixir do
 
         %{
           module: module,
+          default_groups: ~w(Types Callbacks Functions),
           docs: docs_chunk,
           language: __MODULE__,
           id: inspect(module),
@@ -56,7 +56,6 @@ defmodule ExDoc.Language.Elixir do
           source_line: source_line,
           source_file: source_file,
           source_basedir: source_basedir,
-          callback_types: [:callback, :macrocallback],
           nesting_info: nesting_info(title, config.nest_modules_by_prefix),
           private: %{
             abst_code: abst_code,
@@ -68,77 +67,69 @@ defmodule ExDoc.Language.Elixir do
         }
 
       true ->
-        ExDoc.Utils.warn(
+        ExDoc.warn(
           "skipping docs for module #{inspect(module)}, reason: :no_debug_info",
           []
         )
 
-        :skip
+        false
     end
   end
 
   @impl true
-  def function_data(entry, module_data) do
-    {{kind, name, arity}, anno, _signature, _doc_content, metadata} = entry
+  def doc_data(entry, %{type: type} = module_data) do
+    case entry do
+      {_key, _anno, _sig, :hidden, _metadata} ->
+        false
 
-    if doc?(entry, module_data.type) do
-      function_data(kind, name, arity, anno, metadata, module_data)
-    else
-      :skip
+      {{_kind, name, _arity}, _anno, _sig, _doc, _metadata}
+      when name in [:impl_for, :impl_for!] and type == :protocol ->
+        false
+
+      {{kind, _, _}, _anon, _sig, _doc, _metadata} when kind in [:function, :macro] ->
+        function_data(entry, module_data)
+
+      {{kind, _, _}, _anon, _sig, _doc, _metadata}
+      when kind in [:callback, :macrocallback] and type != :protocol ->
+        callback_data(entry, module_data)
+
+      {{:type, _, _}, _anon, _sig, _doc, _metadata} ->
+        type_data(entry, module_data)
+
+      _ ->
+        false
     end
   end
 
-  defp function_data(kind, name, arity, anno, metadata, module_data) do
+  defp function_data(entry, module_data) do
+    {{kind, name, arity}, anno, signature, _doc_content, metadata} = entry
+
     extra_annotations =
       case {kind, name, arity} do
         {:macro, _, _} -> ["macro"]
-        {_, :__struct__, 0} -> ["struct"]
+        {_, :__struct__, _} -> ["struct"]
         _ -> []
       end
 
     actual_def = actual_def(name, arity, kind)
 
     %{
+      id_key: "",
+      default_group: "Functions",
       doc_fallback: fn ->
         impl = Map.fetch(module_data.private.impls, actual_def)
-
-        callback_doc_ast(name, arity, impl) ||
-          delegate_doc_ast(metadata[:delegate_to])
+        callback_doc_ast(name, arity, impl) || delegate_doc_ast(metadata[:delegate_to])
       end,
       extra_annotations: extra_annotations,
+      signature: signature,
+      source_file: nil,
       source_line: find_function_line(module_data, actual_def) || Source.anno_line(anno),
-      specs: specs(kind, name, actual_def, module_data)
+      specs: specs(kind, name, actual_def, module_data),
+      type: kind
     }
   end
 
-  # We are only interested in functions and macros for now
-  defp doc?({{kind, _, _}, _, _, _, _}, _) when kind not in [:function, :macro] do
-    false
-  end
-
-  # Skip impl_for and impl_for! for protocols
-  defp doc?({{_, name, _}, _, _, _, _}, :protocol) when name in [:impl_for, :impl_for!] do
-    false
-  end
-
-  # If content is a map, then it is ok.
-  defp doc?({_, _, _, %{}, _}, _) do
-    true
-  end
-
-  # If it is none, then we need to look at underscore.
-  # TODO: We can remove this on Elixir v1.13 as all underscored are hidden.
-  defp doc?({{_, name, _}, _, _, :none, _}, _type) do
-    not match?([?_ | _], Atom.to_charlist(name))
-  end
-
-  # Everything else is hidden.
-  defp doc?({_, _, _, _, _}, _) do
-    false
-  end
-
-  @impl true
-  def callback_data(entry, module_data) do
+  defp callback_data(entry, module_data) do
     {{kind, name, arity}, anno, _signature, _doc, _metadata} = entry
     actual_def = actual_def(name, arity, kind)
 
@@ -160,16 +151,19 @@ defmodule ExDoc.Language.Elixir do
       end
 
     line = Source.anno_line(anno)
-
     quoted = Enum.map(specs, &Code.Typespec.spec_to_quoted(name, &1))
     signature = [get_typespec_signature(hd(quoted), arity)]
 
     %{
-      source_line: line,
-      source_file: nil,
+      id_key: "c:",
+      default_group: "Callbacks",
+      doc_fallback: fn -> nil end,
+      extra_annotations: extra_annotations,
       signature: signature,
+      source_file: nil,
+      source_line: line,
       specs: quoted,
-      extra_annotations: extra_annotations
+      type: kind
     }
   end
 
@@ -181,8 +175,7 @@ defmodule ExDoc.Language.Elixir do
     {:type, num, :fun, [{:type, num, :product, rest_args} | rest]}
   end
 
-  @impl true
-  def type_data(entry, module_data) do
+  defp type_data(entry, module_data) do
     {{_kind, name, arity}, _anno, _signature, _doc, _metadata} = entry
 
     %{type: type, spec: spec, source_file: source, source_line: line} =
@@ -192,19 +185,22 @@ defmodule ExDoc.Language.Elixir do
     signature = [get_typespec_signature(quoted, arity)]
 
     %{
-      type: type,
-      source_line: line,
+      id_key: "t:",
+      default_group: "Types",
+      doc_fallback: fn -> nil end,
+      extra_annotations: [],
       source_file: source,
-      spec: quoted,
+      source_line: line,
       signature: signature,
-      extra_annotations: []
+      specs: [quoted],
+      type: type
     }
   end
 
   @autoimported_modules [Kernel, Kernel.SpecialForms]
 
   @impl true
-  def try_autoimported_function(name, arity, mode, config, original_text) do
+  def try_autoimported_function(name, arity, mode, %Autolink{} = config, original_text) do
     Enum.find_value(@autoimported_modules, fn module ->
       Autolink.remote_url({:function, module, name, arity}, config, original_text,
         warn?: false,
@@ -267,17 +263,17 @@ defmodule ExDoc.Language.Elixir do
   ]
 
   @impl true
-  def try_builtin_type(name, arity, _mode, config, _original_text)
+  def try_builtin_type(name, arity, _mode, %Autolink{} = config, _original_text)
       when {name, arity} in @basic_types do
     Autolink.ex_doc_app_url(Kernel, config, "typespecs", config.ext, "#basic-types")
   end
 
-  def try_builtin_type(name, arity, _mode, config, _original_text)
+  def try_builtin_type(name, arity, _mode, %Autolink{} = config, _original_text)
       when {name, arity} in @built_in_types do
     Autolink.ex_doc_app_url(Kernel, config, "typespecs", config.ext, "#built-in-types")
   end
 
-  def try_builtin_type(_name, _arity, _mode, _config, _original_text) do
+  def try_builtin_type(_name, _arity, _mode, %Autolink{}, _original_text) do
     nil
   end
 
@@ -293,7 +289,7 @@ defmodule ExDoc.Language.Elixir do
         {:local, :..}
 
       ["//", "", ""] ->
-        {:local, :"..//"}
+        {:local, :..//}
 
       ["", ""] ->
         {:local, :.}
@@ -372,8 +368,7 @@ defmodule ExDoc.Language.Elixir do
   end
 
   @impl true
-  def autolink_doc(ast, opts) do
-    config = struct!(Autolink, opts)
+  def autolink_doc(ast, %Autolink{} = config) do
     true = config.language == __MODULE__
 
     config = %{config | force_module_prefix: false}
@@ -381,19 +376,19 @@ defmodule ExDoc.Language.Elixir do
   end
 
   @impl true
-  def autolink_spec(ast, opts) do
-    config = struct!(Autolink, opts)
+  def format_spec(ast) do
+    ast
+    |> Macro.to_string()
+    |> safe_format_string!()
+    |> ExDoc.Utils.h()
+  end
 
-    string =
-      ast
-      |> Macro.to_string()
-      |> safe_format_string!()
-      |> ExDoc.Utils.h()
-
+  @impl true
+  def autolink_spec(ast, %Autolink{} = config) do
+    string = format_spec(ast)
     name = typespec_name(ast)
     {name, rest} = split_name(string, name)
-
-    name <> do_typespec(rest, config)
+    name <> autolink_typespec(rest, config)
   end
 
   @impl true
@@ -406,10 +401,12 @@ defmodule ExDoc.Language.Elixir do
   end
 
   @impl true
-  def format_spec_attribute(%ExDoc.TypeNode{type: type}), do: "@#{type}"
-  def format_spec_attribute(%ExDoc.FunctionNode{type: :callback}), do: "@callback"
-  def format_spec_attribute(%ExDoc.FunctionNode{type: :macrocallback}), do: "@macrocallback"
-  def format_spec_attribute(%ExDoc.FunctionNode{}), do: "@spec"
+  def format_spec_attribute(%{type: :type}), do: "@type"
+  def format_spec_attribute(%{type: :opaque}), do: "@opaque"
+  def format_spec_attribute(%{type: :nominal}), do: "@nominal"
+  def format_spec_attribute(%{type: :callback}), do: "@callback"
+  def format_spec_attribute(%{type: :macrocallback}), do: "@macrocallback"
+  def format_spec_attribute(%{}), do: "@spec"
 
   ## Module Helpers
 
@@ -424,8 +421,8 @@ defmodule ExDoc.Language.Elixir do
 
   defp module_type_and_skip(module) do
     cond do
-      function_exported?(module, :__struct__, 0) and
-          match?(%{__exception__: true}, module.__struct__()) ->
+      function_exported?(module, :__info__, 1) and
+          Enum.any?(module.__info__(:struct) || [], &(&1.field == :__exception__)) ->
         {:exception, false}
 
       function_exported?(module, :__protocol__, 1) ->
@@ -562,17 +559,17 @@ defmodule ExDoc.Language.Elixir do
 
   defp to_var({:%, meta, [name, _]}, _), do: {:%, meta, [name, {:%{}, meta, []}]}
   defp to_var({:%{}, _, _}, _), do: {:map, [], nil}
+  defp to_var({:<<>>, _, _}, _), do: {:binary, [], nil}
+  defp to_var({:{}, _, _}, _), do: {:tuple, [], nil}
   defp to_var({name, meta, _}, _) when is_atom(name), do: {name, meta, nil}
 
   defp to_var({{:., meta, [_module, name]}, _, _args}, _) when is_atom(name),
     do: {name, meta, nil}
 
   defp to_var([{:->, _, _} | _], _), do: {:function, [], nil}
-  defp to_var({:<<>>, _, _}, _), do: {:binary, [], nil}
-  defp to_var({:{}, _, _}, _), do: {:tuple, [], nil}
   defp to_var({_, _}, _), do: {:tuple, [], nil}
   defp to_var(integer, _) when is_integer(integer), do: {:integer, [], nil}
-  defp to_var(float, _) when is_integer(float), do: {:float, [], nil}
+  defp to_var(float, _) when is_float(float), do: {:float, [], nil}
   defp to_var(list, _) when is_list(list), do: {:list, [], nil}
   defp to_var(atom, _) when is_atom(atom), do: {:atom, [], nil}
   defp to_var(_, position), do: {:"arg#{position}", [], nil}
@@ -667,7 +664,7 @@ defmodule ExDoc.Language.Elixir do
     end
   end
 
-  defp do_typespec(string, config) do
+  defp autolink_typespec(string, config) do
     regex = ~r{
         (                                             # <call_string>
           (?:
@@ -704,7 +701,7 @@ defmodule ExDoc.Language.Elixir do
         ~s[<a href="#{url}">#{ExDoc.Utils.h(call_string)}</a>]
       else
         call_string
-      end <> do_typespec(rest, config)
+      end <> autolink_typespec(rest, config)
     end)
   end
 

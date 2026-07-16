@@ -8,9 +8,8 @@ defmodule ExDoc.Language.Erlang do
 
   @impl true
   @spec module_data(atom, any, any) ::
-          :skip
+          false
           | %{
-              callback_types: [:callback, ...],
               docs: any,
               id: binary,
               language: ExDoc.Language.Erlang,
@@ -21,7 +20,7 @@ defmodule ExDoc.Language.Erlang do
               nesting_info: nil,
               private: %{abst_code: any, callbacks: map, optional_callbacks: any, specs: map},
               title: binary,
-              type: :behaviour | :module
+              type: :module | :behaviour
             }
   def module_data(module, docs_chunk, _config) do
     if abst_code = Source.get_abstract_code(module) do
@@ -35,6 +34,7 @@ defmodule ExDoc.Language.Erlang do
 
       %{
         module: module,
+        default_groups: ~w(Types Callbacks Functions),
         docs: docs_chunk,
         language: __MODULE__,
         id: id,
@@ -43,7 +43,6 @@ defmodule ExDoc.Language.Erlang do
         source_line: source_line,
         source_file: source_file,
         source_basedir: source_basedir,
-        callback_types: [:callback],
         nesting_info: nil,
         private: %{
           abst_code: abst_code,
@@ -53,56 +52,36 @@ defmodule ExDoc.Language.Erlang do
         }
       }
     else
-      ExDoc.Utils.warn("skipping docs for module #{inspect(module)}, reason: :no_debug_info", [])
-      :skip
+      ExDoc.warn("skipping docs for module #{inspect(module)}, reason: :no_debug_info", [])
+      false
     end
   end
 
   @impl true
-  def function_data(entry, module_data) do
-    {{kind, name, arity}, _anno, _signature, doc_content, metadata} = entry
+  def doc_data(entry, module_data) do
+    {{kind, name, arity}, anno, signature, doc_content, metadata} = entry
 
-    # TODO: Edoc on Erlang/OTP24.1+ includes private functions in
-    # the chunk, so we manually yank them out for now.
-    if kind == :function and doc_content != :hidden and
-         function_exported?(module_data.module, name, arity) do
-      function_data(name, arity, doc_content, module_data, metadata)
-    else
-      :skip
+    cond do
+      doc_content == :hidden ->
+        false
+
+      # Edoc on Erlang/OTP24.1+ includes private functions in
+      # the chunk, so we manually yank them out.
+      kind == :function and function_exported?(module_data.module, name, arity) ->
+        function_data(name, arity, signature, metadata, module_data)
+
+      kind == :callback ->
+        callback_data(name, arity, anno, signature, metadata, module_data)
+
+      kind == :type ->
+        type_data(name, arity, signature, metadata, module_data)
+
+      true ->
+        false
     end
   end
 
-  defp equiv_data(module, file, line, metadata, prefix \\ "") do
-    case metadata[:equiv] do
-      nil ->
-        nil
-
-      equiv when is_binary(equiv) ->
-        ## We try to parse the equiv in order to link to the target
-        with {:ok, toks, _} <- :erl_scan.string(:unicode.characters_to_list(equiv <> ".")),
-             {:ok, [{:call, _, {:atom, _, func}, args}]} <- :erl_parse.parse_exprs(toks) do
-          "Equivalent to [`#{equiv}`](`#{prefix}#{func}/#{length(args)}`)."
-        else
-          {:ok, [{:op, _, :/, {:atom, _, _}, {:integer, _, _}}]} ->
-            "Equivalent to `#{prefix}#{equiv}`."
-
-          _ ->
-            "Equivalent to `#{equiv}`."
-        end
-        |> ExDoc.DocAST.parse!("text/markdown")
-
-      equiv ->
-        ExDoc.Utils.warn("invalid equiv #{inspect(equiv)}",
-          file: file,
-          line: line,
-          module: module
-        )
-
-        nil
-    end
-  end
-
-  defp function_data(name, arity, _doc_content, module_data, metadata) do
+  defp function_data(name, arity, signature, metadata, module_data) do
     specs =
       case Map.fetch(module_data.private.specs, {name, arity}) do
         {:ok, spec} ->
@@ -121,18 +100,19 @@ defmodule ExDoc.Language.Erlang do
     {file, line} = Source.fetch_function_location!(module_data, {name, arity})
 
     %{
+      id_key: "",
+      default_group: "Functions",
       doc_fallback: fn -> equiv_data(module_data.module, file, line, metadata) end,
       extra_annotations: [],
-      source_line: line,
+      signature: signature,
       source_file: file,
-      specs: specs
+      source_line: line,
+      specs: specs,
+      type: :function
     }
   end
 
-  @impl true
-  def callback_data(entry, module_data) do
-    {{_kind, name, arity}, anno, signature, _doc, metadata} = entry
-
+  defp callback_data(name, arity, anno, signature, metadata, module_data) do
     extra_annotations =
       if {name, arity} in module_data.private.optional_callbacks, do: ["optional"], else: []
 
@@ -145,59 +125,77 @@ defmodule ExDoc.Language.Erlang do
           {[], anno}
       end
 
+    file = Source.anno_file(anno)
+    line = Source.anno_line(anno)
+
     %{
-      doc_fallback: fn ->
-        equiv_data(
-          module_data.module,
-          Source.anno_file(anno),
-          Source.anno_line(anno),
-          metadata,
-          "c:"
-        )
-      end,
-      source_line: Source.anno_line(anno),
-      source_file: Source.anno_file(anno),
+      id_key: "c:",
+      default_group: "Callbacks",
+      doc_fallback: fn -> equiv_data(module_data.module, file, line, metadata, "c:") end,
+      extra_annotations: extra_annotations,
       signature: signature,
+      source_file: file,
+      source_line: line,
       specs: specs,
-      extra_annotations: extra_annotations
+      type: :callback
     }
   end
 
-  @impl true
-  def type_data(entry, module_data) do
-    {{kind, name, arity}, anno, signature, _doc, metadata} = entry
+  defp type_data(name, arity, signature, metadata, module_data) do
+    %{attr: attr, source_file: file, source_line: line, type: type} =
+      Source.fetch_type!(module_data, name, arity)
 
-    case Source.fetch_type!(module_data, name, arity) do
-      %{} = map ->
-        %{
-          doc_fallback: fn ->
-            equiv_data(module_data.module, map.source_file, map.source_line, metadata, "t:")
-          end,
-          type: map.type,
-          source_line: map.source_line,
-          source_file: map.source_file,
-          spec: map.attr,
-          signature: signature,
-          extra_annotations: []
-        }
+    %{
+      id_key: "t:",
+      default_group: "Types",
+      doc_fallback: fn -> equiv_data(module_data.module, file, line, metadata, "t:") end,
+      extra_annotations: [],
+      signature: signature,
+      source_file: file,
+      source_line: line,
+      specs: [attr],
+      type: type
+    }
+  end
 
+  defp equiv_data(module, file, line, metadata, prefix \\ "") do
+    case metadata[:equiv] do
       nil ->
-        %{
-          doc_fallback: fn ->
-            equiv_data(module_data.module, nil, Source.anno_line(anno), metadata, "t:")
-          end,
-          type: kind,
-          source_line: Source.anno_line(anno),
-          spec: nil,
-          signature: signature,
-          extra_annotations: []
-        }
+        nil
+
+      equiv when is_binary(equiv) ->
+        ## We try to parse the equiv in order to link to the target
+        with {:ok, toks, _} <- :erl_scan.string(:unicode.characters_to_list(equiv <> ".")),
+             {:ok, [{:call, _, {:atom, _, func}, args}]} <- :erl_parse.parse_exprs(toks) do
+          equivalent_to(
+            {:a, [href: "`#{prefix}#{func}/#{length(args)}`"],
+             [{:code, [class: "inline"], [equiv], %{}}], %{}}
+          )
+        else
+          {:ok, [{:op, _, :/, {:atom, _, _}, {:integer, _, _}}]} ->
+            equivalent_to({:code, [class: "inline"], ["#{prefix}#{equiv}"], %{}})
+
+          _ ->
+            equivalent_to({:code, [class: "inline"], [equiv], %{}})
+        end
+
+      equiv ->
+        ExDoc.warn("invalid equiv #{inspect(equiv)}",
+          file: file,
+          line: line,
+          module: module
+        )
+
+        nil
     end
   end
 
+  defp equivalent_to(node) do
+    [{:p, [], ["Equivalent to ", node, "."], %{}}]
+  end
+
   @impl true
-  def autolink_doc(ast, opts) do
-    config = struct!(Autolink, opts)
+  def autolink_doc(ast, %Autolink{} = config) do
     true = config.language == __MODULE__
 
     config = %{config | force_module_prefix: true}
@@ -209,22 +207,7 @@ defmodule ExDoc.Language.Erlang do
     nil
   end
 
-  def autolink_spec({:attribute, _, :opaque, ast}, _opts) do
-    {name, _, args} = ast
-
-    args =
-      for arg <- args do
-        {:var, _, name} = arg
-        Atom.to_string(name)
-      end
-      |> Enum.intersperse(", ")
-
-    IO.iodata_to_binary([Atom.to_string(name), "(", args, ")"])
-  end
-
-  def autolink_spec(ast, opts) do
-    config = struct!(Autolink, opts)
-
+  def autolink_spec(ast, %Autolink{} = config) do
     {name, anno, quoted} =
       case ast do
         {:attribute, anno, kind, {mfa, ast}} when kind in [:spec, :callback] ->
@@ -236,7 +219,7 @@ defmodule ExDoc.Language.Erlang do
 
           {mn, anno, Enum.map(ast, &Code.Typespec.spec_to_quoted(name, &1))}
 
-        {:attribute, anno, :type, ast} ->
+        {:attribute, anno, kind, ast} when kind in [:type, :opaque, :nominal] ->
           {name, _, _} = ast
           {name, anno, Code.Typespec.type_to_quoted(ast)}
       end
@@ -256,9 +239,11 @@ defmodule ExDoc.Language.Erlang do
   end
 
   @impl true
-  def format_spec_attribute(%ExDoc.TypeNode{type: type}), do: "-#{type}"
-  def format_spec_attribute(%ExDoc.FunctionNode{type: :callback}), do: "-callback"
-  def format_spec_attribute(%ExDoc.FunctionNode{}), do: "-spec"
+  def format_spec_attribute(%{type: :type}), do: "-type"
+  def format_spec_attribute(%{type: :opaque}), do: "-opaque"
+  def format_spec_attribute(%{type: :nominal}), do: "-nominal"
+  def format_spec_attribute(%{type: :callback}), do: "-callback"
+  def format_spec_attribute(%{}), do: "-spec"
 
   ## Autolink
 
@@ -413,15 +398,15 @@ defmodule ExDoc.Language.Erlang do
   end
 
   defp strip_app([{:code, attrs, [code], meta}], app) do
-    [{:code, attrs, strip_app(code, app), meta}]
+    [{:code, attrs, List.wrap(strip_app(code, app)), meta}]
   end
 
   defp strip_app(code, app) when is_binary(code) do
-    String.trim_leading(code, "//#{app}/")
+    List.wrap(String.trim_leading(code, "//#{app}/"))
   end
 
   defp strip_app(other, _app) do
-    other
+    List.wrap(other)
   end
 
   defp warn_ref(href, config) do
@@ -469,7 +454,7 @@ defmodule ExDoc.Language.Erlang do
   end
 
   @impl true
-  def try_autoimported_function(name, arity, mode, config, original_text) do
+  def try_autoimported_function(name, arity, mode, %Autolink{} = config, original_text) do
     if :erl_internal.bif(name, arity) do
       Autolink.remote_url({:function, :erlang, name, arity}, config, original_text,
         warn?: false,
@@ -479,7 +464,7 @@ defmodule ExDoc.Language.Erlang do
   end
 
   @impl true
-  def try_builtin_type(name, arity, mode, config, original_text) do
+  def try_builtin_type(name, arity, mode, %Autolink{} = config, original_text) do
     if :erl_internal.is_type(name, arity) do
       Autolink.remote_url({:type, :erlang, name, arity}, config, original_text,
         warn?: false,
@@ -496,6 +481,28 @@ defmodule ExDoc.Language.Erlang do
 
       _ ->
         :error
+    end
+  end
+
+  @impl true
+  def format_spec(ast) do
+    {:attribute, _, type, _} = ast
+
+    # `-type ` => 6
+    offset = byte_size(Atom.to_string(type)) + 2
+
+    options = [linewidth: 98 + offset]
+
+    spec =
+      :erl_pp.attribute(ast, options)
+      |> IO.chardata_to_string()
+      |> String.trim()
+      |> String.trim_leading("-#{Atom.to_string(type)} ")
+
+    if type == :opaque do
+      String.replace(spec, ~r/ ::.*$/s, "")
+    else
+      spec
     end
   end
 
@@ -542,9 +549,14 @@ defmodule ExDoc.Language.Erlang do
             {op, _, [int]}, acc when is_integer(int) and op in [:+, :-] ->
               {nil, acc}
 
-            # fun() (spec_to_quoted expands it to (... -> any())
-            {:->, _, [[{name, _, _}], {:any, _, _}]}, acc when name == :... ->
-              {nil, acc}
+            # fun() (spec_to_quoted expands it to (... -> any() in Elixir v1.17 and earlier)
+            # TODO: Remove me when we require Elixir v1.18+
+            {:->, _, [[{name, _, _}], {:any, _, _}]} = node, acc when name == :... ->
+              if Version.match?(System.version(), ">= 1.18.0-rc") do
+                {node, acc}
+              else
+                {nil, acc}
+              end
 
             # record{type :: remote:type/arity}
             {:field_type, _, [name, {{:., _, [r_mod, r_type]}, _, args}]}, acc ->
@@ -558,10 +570,10 @@ defmodule ExDoc.Language.Erlang do
               arity = length(args)
 
               cond do
-                name == :record and acc != [] ->
+                name == :record and args != [] and acc != [] ->
                   {ast, acc}
 
-                name in [:"::", :when, :%{}, :{}, :|, :->, :...] ->
+                name in [:"::", :when, :%{}, :{}, :|, :->, :..., :fun] ->
                   {ast, acc}
 
                 # %{required(...) => ..., optional(...) => ...}
@@ -584,7 +596,7 @@ defmodule ExDoc.Language.Erlang do
       end
       |> Enum.concat()
 
-    put(acc)
+    put_stack(acc)
 
     # Drop and re-add type name (it, the first element in acc, is dropped there too)
     #
@@ -610,16 +622,21 @@ defmodule ExDoc.Language.Erlang do
   defp replace(formatted, acc, config) do
     String.replace(formatted, Enum.map(acc, &"#{elem(&1, 0)}("), fn string ->
       string = String.trim_trailing(string, "(")
-      {other, ref} = pop()
 
-      if string != other do
-        Autolink.maybe_warn(
-          config,
-          "internal inconsistency, please submit bug: #{inspect(string)} != #{inspect(other)}",
-          nil,
-          nil
-        )
-      end
+      ref =
+        case get_stack() do
+          [{^string, ref} | tail] ->
+            put_stack(tail)
+            ref
+
+          _ ->
+            Autolink.maybe_warn(
+              config,
+              "internal inconsistency when processing #{inspect(formatted)}",
+              nil,
+              nil
+            )
+        end
 
       what =
         case config.current_kfa do
@@ -687,15 +704,15 @@ defmodule ExDoc.Language.Erlang do
     end)
   end
 
-  defp put(items) do
+  defp put_stack(items) do
     Process.put({__MODULE__, :stack}, items)
   end
 
-  defp pop() do
-    [head | tail] = Process.get({__MODULE__, :stack})
-    put(tail)
-    head
+  defp get_stack() do
+    Process.get({__MODULE__, :stack})
   end
+
+  defp pp(:fun), do: "fun"
 
   defp pp(name) when is_atom(name) do
     :io_lib.format("~p", [name]) |> IO.iodata_to_binary()
@@ -703,20 +720,6 @@ defmodule ExDoc.Language.Erlang do
 
   defp pp({module, name}) when is_atom(module) and is_atom(name) do
     :io_lib.format("~p:~p", [module, name]) |> IO.iodata_to_binary()
-  end
-
-  defp format_spec(ast) do
-    {:attribute, _, type, _} = ast
-
-    # `-type ` => 6
-    offset = byte_size(Atom.to_string(type)) + 2
-
-    options = [linewidth: 98 + offset]
-
-    :erl_pp.attribute(ast, options)
-    |> IO.chardata_to_string()
-    |> String.trim()
-    |> String.trim_leading("-#{Atom.to_string(type)} ")
   end
 
   ## Helpers

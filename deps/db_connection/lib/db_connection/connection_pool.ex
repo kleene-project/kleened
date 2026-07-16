@@ -10,22 +10,19 @@ defmodule DBConnection.ConnectionPool do
 
   use GenServer
   alias DBConnection.Holder
+  alias DBConnection.Util
 
   @behaviour DBConnection.Pool
 
   @queue_target 50
-  @queue_interval 1000
+  @queue_interval 2000
   @idle_interval 1000
   @time_unit 1000
+  @watcher_ref {__MODULE__, :watcher_ref}
 
   @doc false
   def start_link({mod, opts}) do
     GenServer.start_link(__MODULE__, {mod, opts}, start_opts(opts))
-  end
-
-  @doc false
-  def child_spec(opts) do
-    super(opts)
   end
 
   @doc false
@@ -50,11 +47,27 @@ defmodule DBConnection.ConnectionPool do
 
   @impl GenServer
   def init({mod, opts}) do
+    Process.flag(:trap_exit, true)
     DBConnection.register_as_pool(mod)
 
-    queue = :ets.new(__MODULE__.Queue, [:protected, :ordered_set])
-    ts = {System.monotonic_time(), 0}
-    {:ok, _} = DBConnection.ConnectionPool.Pool.start_supervised(queue, mod, opts)
+    queue = :ets.new(__MODULE__.Queue, [:protected, :ordered_set, decentralized_counters: true])
+
+    max_lifetime =
+      case Keyword.fetch(opts, :max_lifetime) do
+        {:ok, %Range{first: first, last: last, step: 1}} when first >= 0 and last >= first ->
+          {System.convert_time_unit(first, :millisecond, :native), last - first}
+
+        {:ok, invalid} ->
+          raise ArgumentError,
+                "invalid value for :max_lifetime, expected a non-negative step-1 range, got: #{inspect(invalid)}"
+
+        :error ->
+          nil
+      end
+
+    ts = {nil, max_lifetime}
+    {:ok, watcher_ref} = DBConnection.ConnectionPool.Pool.start_supervised(queue, mod, opts)
+    Process.put(@watcher_ref, watcher_ref)
     target = Keyword.get(opts, :queue_target, @queue_target)
     interval = Keyword.get(opts, :queue_interval, @queue_interval)
     idle_interval = Keyword.get(opts, :idle_interval, @idle_interval)
@@ -98,8 +111,9 @@ defmodule DBConnection.ConnectionPool do
     {:reply, [metrics], state}
   end
 
-  def handle_call({:disconnect_all, interval}, _from, {type, queue, codel, _ts}) do
-    ts = {System.monotonic_time(), interval}
+  def handle_call({:disconnect_all, interval}, _from, {type, queue, codel, ts}) do
+    {_, max_lifetime} = ts
+    ts = {{System.monotonic_time(), interval}, max_lifetime}
     {:reply, :ok, {type, queue, codel, ts}}
   end
 
@@ -136,7 +150,7 @@ defmodule DBConnection.ConnectionPool do
   end
 
   def handle_info({:"ETS-TRANSFER", holder, pid, queue}, {_, queue, _, _} = data) do
-    message = "client #{inspect(pid)} exited"
+    message = "client #{Util.inspect_pid(pid)} exited"
     err = DBConnection.ConnectionError.exception(message: message, severity: :info)
     Holder.handle_disconnect(holder, err)
     {:noreply, data}
@@ -149,9 +163,9 @@ defmodule DBConnection.ConnectionPool do
 
         case :ets.info(holder, :owner) do
           ^owner ->
-            {time, interval} = ts
+            {interval, max_lifetime} = ts
 
-            if Holder.maybe_disconnect(holder, time, interval) do
+            if Holder.maybe_disconnect(holder, interval, max_lifetime) do
               {:noreply, data}
             else
               handle_checkin(holder, extra, data)
@@ -175,14 +189,14 @@ defmodule DBConnection.ConnectionPool do
     # Check that timeout refers to current holder (and not previous)
     if Holder.handle_deadline(holder, deadline) do
       message =
-        "client #{inspect(pid)} timed out because " <>
+        "client #{Util.inspect_pid(pid)} timed out because " <>
           "it queued and checked out the connection for longer than #{len}ms"
 
       exc =
         case Process.info(pid, :current_stacktrace) do
           {:current_stacktrace, stacktrace} ->
             message <>
-              "\n\n#{inspect(pid)} was at location:\n\n" <>
+              "\n\n#{Util.inspect_pid(pid)} was at location:\n\n" <>
               Exception.format_stacktrace(stacktrace)
 
           _ ->
@@ -218,12 +232,26 @@ defmodule DBConnection.ConnectionPool do
     drop_idle(past_in_native, limit, status, queue, codel, ts)
   end
 
+  def handle_info({:EXIT, _pid, reason}, state) do
+    {:stop, reason, state}
+  end
+
+  @impl GenServer
+  def terminate(_reason, _state) do
+    if watcher_ref = Process.get(@watcher_ref) do
+      DBConnection.ConnectionPool.Pool.stop_supervised(watcher_ref)
+    end
+
+    :ok
+  end
+
   defp drop_idle(past_in_native, limit, status, queue, codel, ts) do
     with true <- status == :ready and limit > 0,
          {queued_in_native, holder} = key when queued_in_native <= past_in_native <-
            :ets.first(queue) do
       :ets.delete(queue, key)
-      Holder.maybe_disconnect(holder, elem(ts, 0), 0) or Holder.handle_ping(holder)
+      {interval, max_lifetime} = ts
+      Holder.maybe_disconnect(holder, interval, max_lifetime) or Holder.handle_ping(holder)
       drop_idle(past_in_native, limit - 1, status, queue, codel, ts)
     else
       _ ->
@@ -351,7 +379,7 @@ defmodule DBConnection.ConnectionPool do
 
   defp drop(delay, from) do
     message = """
-    connection not available and request was dropped from queue after #{delay}ms. \
+    [#{ancestor()}] connection not available and request was dropped from queue after #{delay}ms. \
     This means requests are coming in and your connection pool cannot serve them fast enough. \
     You can address this by:
 
@@ -366,6 +394,10 @@ defmodule DBConnection.ConnectionPool do
     err = DBConnection.ConnectionError.exception(message, :queue_timeout)
 
     Holder.reply_error(from, err)
+  end
+
+  defp ancestor do
+    Process.get(:"$ancestors", []) |> Enum.find(&is_atom/1)
   end
 
   defp start_opts(opts) do

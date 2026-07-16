@@ -1,5 +1,202 @@
 # Changelog
 
+## v0.40.3 (2026-05-21)
+
+  * Enhancements
+    * Add autolinking for Erlang/OTP 29 native records
+
+## v0.40.2 (2026-05-08)
+
+  * Bug fixes
+    * Add `rel="nofollow"` to external links in HTML output
+    * Use blockquote in `llms.txt` description
+    * Void elements in `epub`, such `wbr`, must be terminated by the matching end-tag
+    * Fix content container scrolling in older versions of Safari
+    * Skip HTML comments when computing synopsis
+    * Fix markdown backend code fence language and opaque type display
+    * Fix false positive warning when linking to asset files
+    * Prevent `#search` selector from impacting user content
+    * Raise on extras that conflict with reserved filenames
+    * Fix styling of admonition blocks
+
+## v0.40.1 (2026-01-31)
+
+  * Enhancements
+    * Remove link to source from generated .md files
+    * Improve word-breaking of module names and sizing of main page titles
+    * Include description in llms.txt
+
+  * Bug fixes
+    * Fix headers in custom groups
+
+## v0.40.0 (2026-01-20)
+
+  * Enhancements
+    * Introduce Markdown formatter (thanks to Yordis Prietro)
+    * Generate a `llms.txt` document by default and add a "Copy Markdown" button to the top of every page
+    * Run retriever only once per formatter
+    * Support anchors on redirects
+
+  * Bug fixes
+    * Copy button on `erl` and `iex` snippets now include prompts
+    * Fix headers having wrong selectors due to whitespace minification
+    * Only include `.html` links on Swup
+
+  * Breaking changes
+    * Revamp the ExDoc entrypoint and formatter API. While those have never been made public, others may have relied on it. We have now changed and documented them on the path to standardization
+    * The previously deprecated :assets option will raise if given a string, pass a map instead
+
+## v0.39.3 (2025-12-09)
+
+  * Enhancements
+    * Add the option to trim down the footer
+
+## v0.39.2 (2025-12-04)
+
+  * Bug fixes
+    * Do not strip hrefs on summaries
+    * Show go to latest for prereleases
+    * Prevent fake italic in autocomplete text
+    * Rename "Search Hexdocs" link to "Go to package docs"
+
+## v0.39.1 (2025-10-23)
+
+  * Bug fixes
+    * Improve box-shadow around autocompletion
+    * Trim search engine selector on small screens
+    * Fix admonition titles on small screens
+
+## v0.39.0 (2025-10-23)
+
+  * Enhancements
+    * Allow custom search engines to be configured with support for `https://hexdocs.pm`
+    * Improve admonition blocks so they better integrate with the page flow
+  * Bug fixes
+    * Add .cheatmd to EPUB to avoid broken links
+  * Backwards incompatible changes
+    * Validate :extras fields: if you were previously setting them to unexpected values, you may now get an exception
+    * Setting `exdoc:full-text-search-url` metadata is no longer supported, using the new search engines configuration
+
+## v0.38.4 (2025-09-09)
+
+  * Bug fixes
+    * Fix escaping of links when they have ampersand in them
+    * Increase spacing of footers in pages
+    * Align stale icon positioning
+
+## v0.38.3 (2025-08-17)
+
+  * Enhancements
+    * Allow configuring autocomplete limit, and default it to 10 instead of 8
+    * Display description text in docs groups
+    * Load discovered makeup apps for CLI
+
+## v0.38.2 (2025-05-27)
+
+  * Bug fixes
+    * Render documents with hardcoded `<h2>`/`<h3>` entries correctly
+    * Fix padding on external links
+
+## v0.38.1 (2025-05-12)
+
+  * Bug fixes
+    * Ensure stripping apps for Erlang sources emit valid AST
+
+## v0.38.0 (2025-05-09)
+
+  * Enhancements
+    * Allow listing outside URLs in extras
+
+  * Bug fixes
+    * Ensure some cases where `<`, `>`, `&` and in headers would appear as entities in the sidebar
+    * Fix outline caused by swup.js on Webkit based browsers
+    * Fix bugs when computing synopsis
+    * Automatically close the sidebar when navigating sections on mobile
+
+## v0.37.3 (2025-03-06)
+
+  * Bug fixes
+    * Handle `http-equiv=refresh` during Swup.js navigation
+    * Include full error description when syntax highlighting fails
+
+## v0.37.2 (2025-02-19)
+
+  * Bug fixes
+    * Fix code highlighting for languages with non-alphanumeric characters
+
+## v0.37.1 (2025-02-10)
+
+  * Enhancements
+    * Support umbrella projects via the CLI
+
+  * Bug fixes
+    * Make sure docs are rendered inside iframes
+
+## v0.37.0 (2025-02-05)
+
+Thanks to @liamcmitchell and @hichemfantar for the extensive contributions in this new release.
+
+  * Enhancements
+    * Optimize and parallelize module retriever, often leading to 20x-30x faster docs generation
+    * Considerably improve page loading times in the browser
+    * Allow customizing `search_data` for extra pages
+    * Use native style for scroll bars
+    * Enhance links between extras/pages/guides with padding and hover effects
+    * Go to latest goes to the same page if it exists, root otherwise
+    * Apply new style and layout for tabs
+    * Increase font-weight on sidebar on Apple machines/devices
+    * Improve accessibility across deprecation, links, and summaries
+    * Add compatibility to Erlang/OTP 28+
+    * Rely on the operating system monospace font for unified experience and better load times
+    * Introduce `"exdoc:loaded"` window event to track navigation
+    * Support for favicons
+
+  * Bug fixes
+    * Move action links out from heading tags
+
+## v0.36.1 (2024-12-24)
+
+  * Enhancements
+    * Show a progress bar if navigation takes more than 300ms
+
+  * Bug fixes
+    * Fix dark mode styling on cheatsheets
+    * Ensure the sidebar closes on hosting navigation in mobile
+
+## v0.36.0 (2024-12-24)
+
+  * Enhancements
+    * Use swup.js for navigation on hosted sites
+    * Support `:group` in documentation metadata for grouping in the sidebar
+    * Support `:default_group_for_doc` in configuration to set the default group for functions, callbacks, and types
+    * Add `--warnings-as-errors` flag to `mix docs`
+
+  * Bug fixes
+    * Fix typespec with `(...) -> any()`
+    * Do not trap `tab` commands in the search bar
+
+## v0.35.1 (2024-11-21)
+
+  * Bug fixes
+    * Make sure symlinks are copied from assets directory
+    * Discard private functions documented by EDoc
+
+## v0.35.0 (2024-11-19)
+
+  * Enhancements
+    * Store `proglang` in `searchdata.js`
+    * Allow searching for atoms inside backticks
+    * Add support for nominal types from Erlang/OTP 28
+    * Support a new `:redirects` option which allows configuring redirects in the sidebar
+    * Improve warning when referencing type from a private module
+    * Rename "Search HexDocs package" modal to "Go to package docs"
+    * Support built-in Erlang/OTP apps in "Go to package docs"
+
+  * Bug fixes
+    * Switch anchor `title` to `aria-label`
+    * Convert admonition blockquotes to sections for screen reader users
+    * Fix code copy buttons within tabsets
+
 ## v0.34.2 (2024-07-08)
 
   * Enhancements
@@ -147,7 +344,7 @@ This release requires Elixir v1.13.
 ## v0.30.6 (2023-08-25)
 
   * Enhancements
-    * Extract title from Markdown file when preceeded with comments
+    * Extract title from Markdown file when preceded with comments
     * Improve focus navigation in notebooks
 
 ## v0.30.5 (2023-08-12)
@@ -290,7 +487,7 @@ This release requires Elixir v1.13.
 
 ## v0.28.3 (2022-03-23)
 
-  * Enhacements
+  * Enhancements
     * Include page titles in autocomplete suggestions
     * Allow theme to be set to "System" version
     * Remove "Specs" heading and render full typespecs

@@ -1,5 +1,177 @@
 # Changelog
 
+## v1.20.3 (2026-07-09)
+
+### Security
+
+  * [Plug.Parsers.MULTIPART] Count files and skipped multipart parts towards the length limit (CVE-2026-56814)
+  * [Plug.Conn.Cookies] Raise if `;` is present in cookie attributes (CVE-2026-56813)
+
+## v1.20.2 (2026-06-30)
+
+### Bug fixes
+
+  * [Plug.Conn] Set state to `:set_upgrade` and status to 101 when running `before_send` callbacks for upgrades
+
+## v1.20.1 (2026-06-23)
+
+### Bug fixes
+
+  * [Plug.Conn] Fix `inform`/`inform!` when atoms are given as header keys
+
+## v1.20.0 (2026-06-23)
+
+This release requires Elixir v1.15+.
+
+### Enhancements
+
+  * [Plug.RequestId] Make request ID generation configurable
+  * [Plug.Test] Support `:sign` and `:encrypt` options in `put_req_cookie/4`
+
+### Bug fixes
+
+  * [Plug.Conn] Run `before_send` callbacks before `upgrade_adapter/3`
+  * [Plug.Debugger] Raise if Elixir is compiled without source information
+  * [Plug.RewriteOn] Rewrite the protocol to HTTPS when `x-forwarded-proto` is `wss`
+  * [Plug.Static] Return 416 for invalid range requests
+  * [Plug.Static] Fix `:raise_on_missing_only` raising on non-matching paths with colons
+
+### Optimizations
+
+  * [Plug.Conn.Cookies] Optimize cookie parsing
+  * [Plug.Conn.Cookies] Optimize cookie encoding
+  * [Plug.Conn.Utils] Optimize `validate_utf8!/3`
+  * [Plug.Conn.Utils] Optimize splitting by semicolons
+  * [Plug.Router] Optimize host matching
+
+## v1.19.3 (2026-06-23)
+
+### Security
+
+  * [Plug.Conn.Query] Force a maximum depth when decoding queries (CVE-2026-54892)
+
+### Bug fixes
+
+  * [Plug.Conn] Validate headers on `inform`
+  * [Plug.Static] Enforce size on range requests
+
+## v1.19.2 (2026-05-14)
+
+### Security
+
+  * [Plug.Parsers.MULTIPART] Consider overall length when decoding multipart headers
+
+## v1.19.1 (2025-12-09)
+
+### Bug fixes
+
+  * [Plug.SSL] Fix `cypher_suite: :strong` compatibility
+
+## v1.19.0 (2025-12-08)
+
+This release requires Elixir v1.14+ and it bumps the recommended :strong and :compatible SSL/TLS ciphers suite to align with modern security standards, prioritizing TLS 1.3 and 1.2. Support for the insecure TLS 1.0 and 1.1 protocols are removed in accordance with RFC 8996.
+
+### Enhancements
+
+  * [Plug.Router] Allow colon for named segments to be escaped
+  * [Plug.SSL] Prioritize TLS 1.3 and 1.2 ciphers
+  * [Plug.SSL] Allow excluding redirects based on hosts, paths, or the connection
+  * [Plug.Static] Add `:raise_on_missing_only`
+  * [Plug.Upload] Partition the uploader to improve performance
+  * [Plug.Upload] Add API for deleting files
+
+### Deprecations
+
+  * [Plug.Conn.Adapter] Deprecate `:owner` field
+
+## v1.18.3 (2026-06-23)
+
+### Security
+
+  * [Plug.Conn.Query] Force a maximum depth when decoding queries (CVE-2026-54892)
+
+### Bug fixes
+
+  * [Plug.Conn] Validate headers on `inform`
+  * [Plug.Static] Enforce size on range requests
+
+## v1.18.2 (2026-05-14)
+
+### Security
+
+  * [Plug.Parsers.MULTIPART] Consider overall length when decoding multipart headers
+
+## v1.18.1 (2025-07-01)
+
+### Enhancements
+
+  * [Plug.Debugger] Do not include code snippets in rendered markdown
+  * [Plug.RewriteOn] Add support to rewrite nonstandard headers
+
+## v1.18.0 (2025-05-28)
+
+### Enhancements
+
+  * [Plug.Conn] Define optional `get_sock_data/1` and `get_ssl_data/1` callbacks
+  * [Plug.RequestID] Allow metadata key to be customizable
+  * [Plug.Router] Allow match to dispatch to function plugs
+
+## v1.17.2 (2026-06-23)
+
+### Security
+
+  * [Plug.Conn.Query] Force a maximum depth when decoding queries (CVE-2026-54892)
+
+### Bug fixes
+
+  * [Plug.Conn] Validate headers on `inform`
+  * [Plug.Static] Enforce size on range requests
+
+## v1.17.1 (2026-05-14)
+
+### Security
+
+  * [Plug.Parsers.MULTIPART] Consider overall length when decoding multipart headers
+
+## v1.17.0 (2025-03-14)
+
+### Enhancements
+
+  * [Plug.Debugger] Add dark mode and other UI improvements
+  * [Plug.Debugger] Link `Module.function/arity` to hexdocs in exception messages
+  * [Plug.Debugger] Support `__RELATIVEFILE__` to `PLUG_EDITOR` replacements
+  * [Plug.SSL] Add SSL validation support for `certs_keys`
+
+### Deprecations
+
+  * [Plug.Conn.Adapter] Make `push` an optional callback as it is no longer supported by browsers
+  * [Plug.Conn] Deprecate `req_cookies`, `cookies`, and `resp_cookies` fields in favor of functions
+  * [Plug.Conn] Deprecate `owner` field. Tracking responses is now part of adapters
+  * [Plug.Test] Deprecate `use Plug.Test` in favor of imports
+
+## v1.16.4 (2026-06-23)
+
+### Security
+
+  * [Plug.Conn.Query] Force a maximum depth when decoding queries (CVE-2026-54892)
+
+### Bug fixes
+
+  * [Plug.Conn] Validate headers on `inform`
+  * [Plug.Static] Enforce size on range requests
+
+## v1.16.3 (2026-05-14)
+
+### Security
+
+  * [Plug.Parsers.MULTIPART] Consider overall length when decoding multipart headers
+
+## v1.16.2 (2025-03-14)
+
+### Bug fixes
+
+  * Avoid XSS injection in the debug error page
+
 ## v1.16.1 (2024-06-20)
 
 ### Enhancements
@@ -20,6 +192,23 @@
   * Fix bug with discarded connection state in `Plug.Debugger`
   * Parse media types with underscores in them
   * Do not crash on `max_age` set to nil (for consistency)
+
+## v1.15.5 (2026-06-23)
+
+### Security
+
+  * [Plug.Conn.Query] Force a maximum depth when decoding queries (CVE-2026-54892)
+
+### Bug fixes
+
+  * [Plug.Conn] Validate headers on `inform`
+  * [Plug.Static] Enforce size on range requests
+
+## v1.15.4 (2026-05-14)
+
+### Security
+
+  * [Plug.Parsers.MULTIPART] Consider overall length when decoding multipart headers
 
 ## v1.15.3 (2024-01-16)
 
@@ -295,7 +484,7 @@ Require Elixir v1.10+.
 ### Enhancements
 
   * [Plug.Conn] Add `get_session/1` for retrieving the whole session
-  * [Plug.CSRFProtection] Add `Plug.CSRFPRotection.load_state/2` and `Plug.CSRFPRotection.dump_state/0` to allow tokens to be generated in other processes
+  * [Plug.CSRFProtection] Add `Plug.CSRFProtection.load_state/2` and `Plug.CSRFProtection.dump_state/0` to allow tokens to be generated in other processes
   * [Plug.Parsers] Allow unnamed parts in multipart parser via `:include_unnamed_parts_at`
   * [Plug.Router] Wrap router dispatch in a connection checkpoint to avoid losing information attached to the connection in error cases
   * [Plug.Telemetry] Add `Plug.Telemetry` to facilitate with telemetry integration

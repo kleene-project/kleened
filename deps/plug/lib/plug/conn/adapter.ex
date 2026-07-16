@@ -1,6 +1,13 @@
 defmodule Plug.Conn.Adapter do
   @moduledoc """
   Specification of the connection adapter API implemented by webservers.
+
+  ## Implementation recommendations
+
+  The `owner` field of `Plug.Conn` is deprecated and no longer needs to
+  be set by adapters. If you don't set the `owner` field, it is the
+  responsibility of the adapters to track the owner and send the
+  `already_sent/0` message below on any of the `send_*` callbacks.
   """
   alias Plug.Conn
 
@@ -11,6 +18,18 @@ defmodule Plug.Conn.Adapter do
           port: :inet.port_number(),
           ssl_cert: binary | nil
         }
+  @type sock_data :: %{
+          address: :inet.ip_address(),
+          port: :inet.port_number()
+        }
+  @type ssl_data :: :ssl.connection_info() | nil
+
+  @doc """
+  The message to send to the request process on send callbacks.
+  """
+  def already_sent do
+    {:plug_conn, :sent}
+  end
 
   @doc """
   Function used by adapters to create a new connection.
@@ -22,7 +41,6 @@ defmodule Plug.Conn.Adapter do
       adapter: adapter,
       host: host,
       method: method,
-      owner: self(),
       path_info: split_path(path),
       port: port,
       remote_ip: remote_ip,
@@ -49,6 +67,9 @@ defmodule Plug.Conn.Adapter do
   as the body can no longer be manipulated. However, the
   test implementation returns the actual body so it can
   be used during testing.
+
+  Webservers must send a `{:plug_conn, :sent}` message to the
+  process that called `Plug.Conn.Adapter.conn/5`.
   """
   @callback send_resp(
               payload,
@@ -69,6 +90,9 @@ defmodule Plug.Conn.Adapter do
   as the body can no longer be manipulated. However, the
   test implementation returns the actual body so it can
   be used during testing.
+
+  Webservers must send a `{:plug_conn, :sent}` message to the
+  process that called `Plug.Conn.Adapter.conn/5`.
   """
   @callback send_file(
               payload,
@@ -81,7 +105,12 @@ defmodule Plug.Conn.Adapter do
 
   @doc """
   Sends the given status, headers as the beginning of
-  a chunked response to the client.
+  a chunked response to the client. If the connection uses a
+  protocol (such as HTTP/2) which does not support chunked encoding,
+  the response should be sent in a streaming manner using the
+  protocol's framing method. Likewise if the passed headers include
+  a `content-length` header, the response should be streamed using
+  content length framing.
 
   Webservers are advised to return `nil` as the sent_body,
   since this function does not actually produce a body.
@@ -89,6 +118,9 @@ defmodule Plug.Conn.Adapter do
   as the body in order to be consistent with the built-up
   body returned by subsequent calls to the test implementation's
   `chunk/2` function
+
+  Webservers must send a `{:plug_conn, :sent}` message to the
+  process that called `Plug.Conn.Adapter.conn/5`.
   """
   @callback send_chunked(payload, status :: Conn.status(), headers :: Conn.headers()) ::
               {:ok, sent_body :: binary | nil, payload}
@@ -124,6 +156,8 @@ defmodule Plug.Conn.Adapter do
 
   If the adapter does not support server push then `{:error, :not_supported}`
   should be returned.
+
+  This callback no longer needs to be implemented, as browsers no longer support server push.
   """
   @callback push(payload, path :: String.t(), headers :: Keyword.t()) :: :ok | {:error, term}
 
@@ -139,7 +173,7 @@ defmodule Plug.Conn.Adapter do
   @doc """
   Attempt to upgrade the connection with the client.
 
-  If the adapter does not support the indicated upgrade, then `{:error, :not_supported}` should be
+  If the adapter does not support the indicated upgrade, then `{:error, :not_supported}` should
   be returned.
 
   If the adapter supports the indicated upgrade but is unable to proceed with it (due to
@@ -156,7 +190,20 @@ defmodule Plug.Conn.Adapter do
   @callback get_peer_data(payload) :: peer_data()
 
   @doc """
+  Returns sock (local-side) information such as the address and port.
+  """
+  @callback get_sock_data(payload) :: sock_data()
+
+  @doc """
+  Returns details of the negotiated SSL connection, if present. If the connection is not SSL,
+  returns nil
+  """
+  @callback get_ssl_data(payload) :: ssl_data()
+
+  @doc """
   Returns the HTTP protocol and its version.
   """
   @callback get_http_protocol(payload) :: http_protocol
+
+  @optional_callbacks push: 3, get_sock_data: 1, get_ssl_data: 1
 end

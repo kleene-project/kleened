@@ -1,4 +1,4 @@
-%% Copyright (c) 2020-2023, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -24,10 +24,11 @@
 -export([closing/4]).
 -export([close/4]).
 -export([keepalive/3]).
+-export([ping/4]).
 -export([headers/12]).
 -export([request/13]).
 -export([data/7]).
--export([connect/9]).
+-export([connect/10]).
 -export([cancel/5]).
 -export([timeout/3]).
 -export([stream_info/2]).
@@ -41,7 +42,7 @@
 	%% We accept 'undefined' only to simplify the init code.
 	socket = undefined :: #{
 		gun_pid := pid(),
-		reply_to := pid(),
+		reply_to := gun:reply_to(),
 		stream_ref := gun:stream_ref(),
 		handle_continue_stream_ref := gun:stream_ref()
 	} | pid() | undefined,
@@ -125,7 +126,7 @@ init(ReplyTo, OriginSocket, OriginTransport, Opts=#{stream_ref := StreamRef, tun
 					_ = case TunnelProtocol of
 						http -> ok;
 						socks -> ok;
-						_ -> ReplyTo ! {gun_tunnel_up, self(), StreamRef, Proto:name()}
+						_ -> gun:reply(ReplyTo, {gun_tunnel_up, self(), StreamRef, Proto:name()})
 					end,
 					{tunnel, State#tunnel_state{socket=OriginSocket, transport=OriginTransport,
 						protocol=Proto, protocol_state=ProtoState},
@@ -202,7 +203,7 @@ handle_continue(ContinueStreamRef, {gun_tls_proxy, ProxyPid, {ok, Negotiated},
 	case Proto:init(ReplyTo, OriginSocket, gun_tcp_proxy,
 			ProtoOpts#{stream_ref => StreamRef, tunnel_transport => tls}) of
 		{ok, _, ProtoState} ->
-			ReplyTo ! {gun_tunnel_up, self(), StreamRef, Proto:name()},
+			gun:reply(ReplyTo, {gun_tunnel_up, self(), StreamRef, Proto:name()}),
 			{{state, State#tunnel_state{protocol=Proto, protocol_state=ProtoState}},
 				CookieStore, EvHandlerState};
 		Error={error, _} ->
@@ -285,6 +286,19 @@ keepalive(_State, _EvHandler, EvHandlerState) ->
 	%% @todo Need to figure out how to handle keepalive for tunnels.
 	{[], EvHandlerState}.
 
+ping(State=#tunnel_state{protocol=Proto, protocol_state=ProtoState0},
+		TunnelRef0, ReplyTo, PingRef) ->
+	TunnelRef = case maybe_dereference(State, TunnelRef0) of
+		[] -> undefined;
+		TunnelRef1 -> TunnelRef1
+	end,
+	case Proto:ping(ProtoState0, TunnelRef, ReplyTo, PingRef) of
+		{state, ProtoState} ->
+			{state, State#tunnel_state{protocol_state=ProtoState}};
+		Error = {error, _} ->
+			Error
+	end.
+
 %% We pass the headers forward and optionally dereference StreamRef.
 headers(State=#tunnel_state{protocol=Proto, protocol_state=ProtoState0},
 		StreamRef0, ReplyTo, Method, Host, Port, Path, Headers,
@@ -344,13 +358,13 @@ data(State=#tunnel_state{socket=Socket, transport=Transport,
 connect(State=#tunnel_state{info=#{origin_host := Host, origin_port := Port},
 		protocol=Proto, protocol_state=ProtoState0},
 		StreamRef0, ReplyTo, Destination, _, Headers, InitialFlow,
-		EvHandler, EvHandlerState0) ->
+		CookieStore0, EvHandler, EvHandlerState0) ->
 	StreamRef = maybe_dereference(State, StreamRef0),
-	{Commands, EvHandlerState1} = Proto:connect(ProtoState0, StreamRef,
+	{Commands, CookieStore, EvHandlerState1} = Proto:connect(ProtoState0, StreamRef,
 		ReplyTo, Destination, #{host => Host, port => Port}, Headers, InitialFlow,
-		EvHandler, EvHandlerState0),
+		CookieStore0, EvHandler, EvHandlerState0),
 	{ResCommands, EvHandlerState} = commands(Commands, State, EvHandler, EvHandlerState1),
-	{ResCommands, EvHandlerState}.
+	{ResCommands, CookieStore, EvHandlerState}.
 
 cancel(State=#tunnel_state{protocol=Proto, protocol_state=ProtoState0},
 		StreamRef0, ReplyTo, EvHandler, EvHandlerState0) ->
@@ -492,7 +506,7 @@ commands([Origin={origin, Scheme, Host, Port, Type}|Tail],
 		origin_port => Port
 	}, EvHandlerState0),
 	commands(Tail, State#tunnel_state{protocol_origin=Origin}, EvHandler, EvHandlerState);
-commands([{switch_protocol, NewProtocol, ReplyTo}|Tail],
+commands([{switch_protocol, NewProtocol, ReplyTo, <<>>}|Tail],
 		State=#tunnel_state{socket=Socket, transport=Transport, opts=Opts,
 		protocol_origin=undefined},
 		EvHandler, EvHandlerState0) ->
@@ -510,7 +524,7 @@ commands([{switch_protocol, NewProtocol, ReplyTo}|Tail],
 		Error={error, _} ->
 			{Error, EvHandlerState0}
 	end;
-commands([{switch_protocol, NewProtocol, ReplyTo}|Tail],
+commands([{switch_protocol, NewProtocol, ReplyTo, <<>>}|Tail],
 		State=#tunnel_state{transport=Transport, stream_ref=TunnelStreamRef,
 		info=#{origin_host := Host, origin_port := Port}, opts=Opts, protocol=CurrentProto,
 		protocol_origin={origin, _Scheme, OriginHost, OriginPort, Type}},

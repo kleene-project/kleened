@@ -1,4 +1,4 @@
-%% Copyright (c) 2020-2023, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -34,6 +34,8 @@ handler(http) -> gun_http;
 handler({http, _}) -> gun_http;
 handler(http2) -> gun_http2;
 handler({http2, _}) -> gun_http2;
+handler(http3) -> gun_http3;
+handler({http3, _}) -> gun_http3;
 handler(raw) -> gun_raw;
 handler({raw, _}) -> gun_raw;
 handler(socks) -> gun_socks;

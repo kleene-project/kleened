@@ -41,7 +41,7 @@ mix dialyzer
   * `--no-check`                    - do not perform (quick) check to see if PLT needs to be updated.
   * `--ignore-exit-status`          - display warnings but do not halt the VM or return an exit status code.
   * `--list-unused-filters`         - list unused ignore filters useful for CI. do not use with `mix do`.
-  * `--plt` - only build the requir ed PLT(s) and exit.
+  * `--plt`                         - only build the required PLT(s) and exit.
   * `--format <name>`               - Specify the format for the warnings, can be specified multiple times to print warnings multiple times in different output formats. Defaults to `dialyxir`.
     * `--format short`              - format the warnings in a compact format, suitable for ignore file using Elixir term format.
     * `--format raw`                - format the warnings in format returned before Dialyzer formatting.
@@ -174,7 +174,13 @@ Dialyxir supports formatting the errors in several different ways:
 
 ### Flags
 
-Dialyzer supports a number of warning flags used to enable or disable certain kinds of analysis features. Until version 0.4, `dialyxir` used by default the additional warning flags shown in the example below. However some of these create warnings that are often more confusing than helpful, particularly to new users of Dialyzer. As of 0.4, there are no longer any flags used by default. To get the old behavior, specify them in your Mix project file. For compatibility reasons you can use either the `-Wwarning` convention of the dialyzer CLI, or (preferred) the `WarnOpts` atoms supported by the [API](http://erlang.org/doc/man/dialyzer.html#gui-1).  e.g.
+Dialyzer supports a number of warning flags used to enable or disable certain kinds of analysis features.
+
+Until version 0.4, `dialyxir` used by default the additional warning flags shown in the example below. However some of these create warnings that are often more confusing than helpful, particularly to new users of Dialyzer.
+
+As of 0.4, there are no longer any flags used by default except for `:unknown` (See [Dialyxir Defaults](#dialyxir-defaults)).
+
+To get the old behavior, specify them in your Mix project file. For compatibility reasons you can use either the `-Wwarning` convention of the dialyzer CLI, or (preferred) the `WarnOpts` atoms supported by the [API](http://erlang.org/doc/man/dialyzer.html#gui-1). E.g.
 
 ```elixir
 def project do

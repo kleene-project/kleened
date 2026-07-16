@@ -1,4 +1,4 @@
-%% Copyright (c) 2015-2024, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -17,6 +17,7 @@
 -export([init/6]).
 -export([init/10]).
 -export([init/12]).
+-export([loop/2]).
 
 -export([system_continue/3]).
 -export([system_terminate/4]).
@@ -24,21 +25,28 @@
 
 -type opts() :: #{
 	active_n => pos_integer(),
+	alpn_default_protocol => http | http2,
 	compress_buffering => boolean(),
 	compress_threshold => non_neg_integer(),
 	connection_type => worker | supervisor,
 	connection_window_margin_size => 0..16#7fffffff,
 	connection_window_update_threshold => 0..16#7fffffff,
+	dynamic_buffer => false | {pos_integer(), pos_integer()},
+	dynamic_buffer_initial_average => non_neg_integer(),
+	dynamic_buffer_initial_size => pos_integer(),
 	enable_connect_protocol => boolean(),
 	env => cowboy_middleware:env(),
 	goaway_initial_timeout => timeout(),
 	goaway_complete_timeout => timeout(),
+	hibernate => boolean(),
 	idle_timeout => timeout(),
 	inactivity_timeout => timeout(),
 	initial_connection_window_size => 65535..16#7fffffff,
 	initial_stream_window_size => 0..16#7fffffff,
 	linger_timeout => timeout(),
 	logger => module(),
+	max_authority_length => non_neg_integer(),
+	max_cancel_stream_rate => {pos_integer(), timeout()},
 	max_concurrent_streams => non_neg_integer() | infinity,
 	max_connection_buffer_size => non_neg_integer(),
 	max_connection_window_size => 0..16#7fffffff,
@@ -47,9 +55,9 @@
 	max_fragmented_header_block_size => 16384..16#7fffffff,
 	max_frame_size_received => 16384..16777215,
 	max_frame_size_sent => 16384..16777215 | infinity,
+	max_headers => non_neg_integer(),
 	max_received_frame_rate => {pos_integer(), timeout()},
 	max_reset_stream_rate => {pos_integer(), timeout()},
-	max_cancel_stream_rate => {pos_integer(), timeout()},
 	max_stream_buffer_size => non_neg_integer(),
 	max_stream_window_size => 0..16#7fffffff,
 	metrics_callback => cowboy_metrics_h:metrics_callback(),
@@ -57,6 +65,7 @@
 	metrics_resp_headers_filter => fun((cowboy:http_headers()) -> cowboy:http_headers()),
 	middlewares => [module()],
 	preface_timeout => timeout(),
+	protocols => [http | http2],
 	proxy_header => boolean(),
 	reset_idle_timeout_on_send => boolean(),
 	sendfile => boolean(),
@@ -75,8 +84,13 @@
 -export_type([opts/0]).
 
 -record(stream, {
-	%% Whether the stream is currently stopping.
-	status = running :: running | stopping,
+	%% Whether the stream is currently in a special state.
+	%%
+	%% - The running state is the normal state of a stream.
+	%% - The relaying state is used by extended CONNECT protocols to
+	%%   use a 'relay' data_delivery method.
+	%% - The stopping state indicates the stream used the 'stop' command.
+	status = running :: running | {relaying, non_neg_integer(), pid()} | stopping,
 
 	%% Flow requested for this stream.
 	flow = 0 :: non_neg_integer(),
@@ -84,6 +98,14 @@
 	%% Stream state.
 	state :: {module, any()}
 }).
+
+%% We don't want to reset the idle timeout too often,
+%% so we don't reset it on data. Instead we reset the
+%% number of ticks we have observed. We divide the
+%% timeout value by a value and that value becomes
+%% the number of ticks at which point we can drop
+%% the connection. This value is the number of ticks.
+-define(IDLE_TIMEOUT_TICKS, 10).
 
 -record(state, {
 	parent = undefined :: pid(),
@@ -95,6 +117,7 @@
 
 	%% Timer for idle_timeout; also used for goaway timers.
 	timer = undefined :: undefined | reference(),
+	idle_timeout_num = 0 :: 0..?IDLE_TIMEOUT_TICKS,
 
 	%% Remote address and port for the connection.
 	peer = undefined :: {inet:ip_address(), inet:port_number()},
@@ -124,6 +147,10 @@
 	%% Flow requested for all streams.
 	flow = 0 :: non_neg_integer(),
 
+	%% Dynamic buffer moving average and current buffer size.
+	dynamic_buffer_size :: pos_integer() | false,
+	dynamic_buffer_moving_average :: float(),
+
 	%% Currently active HTTP/2 streams. Streams may be initiated either
 	%% by the client or by the server through PUSH_PROMISE frames.
 	streams = #{} :: #{cow_http2:streamid() => #stream{}},
@@ -134,7 +161,8 @@
 }).
 
 -spec init(pid(), ranch:ref(), inet:socket(), module(),
-	ranch_proxy_header:proxy_info() | undefined, cowboy:opts()) -> ok.
+	ranch_proxy_header:proxy_info() | undefined, cowboy:opts()) -> no_return().
+
 init(Parent, Ref, Socket, Transport, ProxyHeader, Opts) ->
 	{ok, Peer} = maybe_socket_error(undefined, Transport:peername(Socket),
 		'A socket error occurred when retrieving the peer name.'),
@@ -158,18 +186,22 @@ init(Parent, Ref, Socket, Transport, ProxyHeader, Opts) ->
 -spec init(pid(), ranch:ref(), inet:socket(), module(),
 	ranch_proxy_header:proxy_info() | undefined, cowboy:opts(),
 	{inet:ip_address(), inet:port_number()}, {inet:ip_address(), inet:port_number()},
-	binary() | undefined, binary()) -> ok.
+	binary() | undefined, binary()) -> no_return().
+
 init(Parent, Ref, Socket, Transport, ProxyHeader, Opts, Peer, Sock, Cert, Buffer) ->
+	DynamicBuffer = init_dynamic_buffer_size(Opts),
 	{ok, Preface, HTTP2Machine} = cow_http2_machine:init(server, Opts),
 	%% Send the preface before doing all the init in case we get a socket error.
 	ok = maybe_socket_error(undefined, Transport:send(Socket, Preface)),
 	State = set_idle_timeout(init_rate_limiting(#state{parent=Parent, ref=Ref, socket=Socket,
 		transport=Transport, proxy_header=ProxyHeader,
 		opts=Opts, peer=Peer, sock=Sock, cert=Cert,
-		http2_status=sequence, http2_machine=HTTP2Machine})),
+		dynamic_buffer_size=DynamicBuffer,
+		dynamic_buffer_moving_average=maps:get(dynamic_buffer_initial_average, Opts, 0.0),
+		http2_status=sequence, http2_machine=HTTP2Machine}), 0),
 	safe_setopts_active(State),
 	case Buffer of
-		<<>> -> loop(State, Buffer);
+		<<>> -> before_loop(State, Buffer);
 		_ -> parse(State, Buffer)
 	end.
 
@@ -204,15 +236,19 @@ add_period(Time, Period) -> Time + Period.
 -spec init(pid(), ranch:ref(), inet:socket(), module(),
 	ranch_proxy_header:proxy_info() | undefined, cowboy:opts(),
 	{inet:ip_address(), inet:port_number()}, {inet:ip_address(), inet:port_number()},
-	binary() | undefined, binary(), map() | undefined, cowboy_req:req()) -> ok.
+	binary() | undefined, binary(), map() | undefined, cowboy_req:req()) -> no_return().
+
 init(Parent, Ref, Socket, Transport, ProxyHeader, Opts, Peer, Sock, Cert, Buffer,
 		_Settings, Req=#{method := Method}) ->
+	DynamicBuffer = init_dynamic_buffer_size(Opts),
 	{ok, Preface, HTTP2Machine0} = cow_http2_machine:init(server, Opts),
 	{ok, StreamID, HTTP2Machine}
 		= cow_http2_machine:init_upgrade_stream(Method, HTTP2Machine0),
 	State0 = #state{parent=Parent, ref=Ref, socket=Socket,
 		transport=Transport, proxy_header=ProxyHeader,
 		opts=Opts, peer=Peer, sock=Sock, cert=Cert,
+		dynamic_buffer_size=DynamicBuffer,
+		dynamic_buffer_moving_average=maps:get(dynamic_buffer_initial_average, Opts, 0.0),
 		http2_status=upgrade, http2_machine=HTTP2Machine},
 	State1 = headers_frame(State0#state{
 		http2_machine=HTTP2Machine}, StreamID, Req),
@@ -222,25 +258,35 @@ init(Parent, Ref, Socket, Transport, ProxyHeader, Opts, Peer, Sock, Cert, Buffer
 		<<"connection">> => <<"Upgrade">>,
 		<<"upgrade">> => <<"h2c">>
 	}, ?MODULE, undefined}), %% @todo undefined or #{}?
-	State = set_idle_timeout(init_rate_limiting(State2#state{http2_status=sequence})),
+	State = set_idle_timeout(init_rate_limiting(State2#state{http2_status=sequence}), 0),
 	%% In the case of HTTP/1.1 Upgrade we cannot send the Preface
 	%% until we send the 101 response.
 	ok = maybe_socket_error(State, Transport:send(Socket, Preface)),
 	safe_setopts_active(State),
 	case Buffer of
-		<<>> -> loop(State, Buffer);
+		<<>> -> before_loop(State, Buffer);
 		_ -> parse(State, Buffer)
 	end.
+
+-include("cowboy_dynamic_buffer.hrl").
 
 %% Because HTTP/2 has flow control and Cowboy has other rate limiting
 %% mechanisms implemented, a very large active_n value should be fine,
 %% as long as the stream handlers do their work in a timely manner.
+%% However large active_n values reduce the impact of dynamic_buffer.
 setopts_active(#state{socket=Socket, transport=Transport, opts=Opts}) ->
-	N = maps:get(active_n, Opts, 100),
+	N = maps:get(active_n, Opts, 1),
 	Transport:setopts(Socket, [{active, N}]).
 
 safe_setopts_active(State) ->
 	ok = maybe_socket_error(State, setopts_active(State)).
+
+before_loop(State=#state{opts=#{hibernate := true}}, Buffer) ->
+	proc_lib:hibernate(?MODULE, loop, [State, Buffer]);
+before_loop(State, Buffer) ->
+	loop(State, Buffer).
+
+-spec loop(#state{}, binary()) -> no_return().
 
 loop(State=#state{parent=Parent, socket=Socket, transport=Transport,
 		opts=Opts, timer=TimerRef, children=Children}, Buffer) ->
@@ -249,7 +295,8 @@ loop(State=#state{parent=Parent, socket=Socket, transport=Transport,
 	receive
 		%% Socket messages.
 		{OK, Socket, Data} when OK =:= element(1, Messages) ->
-			parse(set_idle_timeout(State), << Buffer/binary, Data/binary >>);
+			State1 = maybe_resize_buffer(State, Data),
+			parse(State1#state{idle_timeout_num=0}, << Buffer/binary, Data/binary >>);
 		{Closed, Socket} when Closed =:= element(2, Messages) ->
 			Reason = case State#state.http2_status of
 				closing -> {stop, closed, 'The client is going away.'};
@@ -262,52 +309,65 @@ loop(State=#state{parent=Parent, socket=Socket, transport=Transport,
 				%% Hardcoded for compatibility with Ranch 1.x.
 				Passive =:= tcp_passive; Passive =:= ssl_passive ->
 			safe_setopts_active(State),
-			loop(State, Buffer);
+			before_loop(State, Buffer);
 		%% System messages.
 		{'EXIT', Parent, shutdown} ->
 			Reason = {stop, {exit, shutdown}, 'Parent process requested shutdown.'},
-			loop(initiate_closing(State, Reason), Buffer);
+			before_loop(initiate_closing(State, Reason), Buffer);
 		{'EXIT', Parent, Reason} ->
 			terminate(State, {stop, {exit, Reason}, 'Parent process terminated.'});
 		{system, From, Request} ->
 			sys:handle_system_msg(Request, From, Parent, ?MODULE, [], {State, Buffer});
 		%% Timeouts.
 		{timeout, TimerRef, idle_timeout} ->
-			terminate(State, {stop, timeout,
-				'Connection idle longer than configuration allows.'});
+			tick_idle_timeout(State, Buffer);
 		{timeout, Ref, {shutdown, Pid}} ->
 			cowboy_children:shutdown_timeout(Children, Ref, Pid),
-			loop(State, Buffer);
+			before_loop(State, Buffer);
 		{timeout, TRef, {cow_http2_machine, Name}} ->
-			loop(timeout(State, Name, TRef), Buffer);
+			before_loop(timeout(State, Name, TRef), Buffer);
 		{timeout, TimerRef, {goaway_initial_timeout, Reason}} ->
-			loop(closing(State, Reason), Buffer);
+			before_loop(closing(State, Reason), Buffer);
 		{timeout, TimerRef, {goaway_complete_timeout, Reason}} ->
 			terminate(State, {stop, stop_reason(Reason),
 				'Graceful shutdown timed out.'});
 		%% Messages pertaining to a stream.
 		{{Pid, StreamID}, Msg} when Pid =:= self() ->
-			loop(info(State, StreamID, Msg), Buffer);
+			before_loop(info(State, StreamID, Msg), Buffer);
+		{'$cowboy_relay_command', {Pid, StreamID}, RelayCommand} when Pid =:= self() ->
+			before_loop(relay_command(State, StreamID, RelayCommand), Buffer);
 		%% Exit signal from children.
 		Msg = {'EXIT', Pid, _} ->
-			loop(down(State, Pid, Msg), Buffer);
+			before_loop(down(State, Pid, Msg), Buffer);
 		%% Calls from supervisor module.
 		{'$gen_call', From, Call} ->
 			cowboy_children:handle_supervisor_call(Call, From, Children, ?MODULE),
-			loop(State, Buffer);
+			before_loop(State, Buffer);
 		Msg ->
 			cowboy:log(warning, "Received stray message ~p.", [Msg], Opts),
-			loop(State, Buffer)
+			before_loop(State, Buffer)
 	after InactivityTimeout ->
 		terminate(State, {internal_error, timeout, 'No message or data received before timeout.'})
 	end.
 
-set_idle_timeout(State=#state{http2_status=Status, timer=TimerRef})
+tick_idle_timeout(State=#state{idle_timeout_num=?IDLE_TIMEOUT_TICKS}, _) ->
+	terminate(State, {stop, timeout,
+		'Connection idle longer than configuration allows.'});
+tick_idle_timeout(State=#state{idle_timeout_num=TimeoutNum}, Buffer) ->
+	before_loop(set_idle_timeout(State, TimeoutNum + 1), Buffer).
+
+set_idle_timeout(State=#state{http2_status=Status, timer=TimerRef}, _)
 		when Status =:= closing_initiated orelse Status =:= closing,
 			TimerRef =/= undefined ->
 	State;
-set_idle_timeout(State=#state{opts=Opts}) ->
-	set_timeout(State, maps:get(idle_timeout, Opts, 60000), idle_timeout).
+set_idle_timeout(State=#state{opts=Opts}, TimeoutNum) ->
+	case maps:get(idle_timeout, Opts, 60000) of
+		infinity ->
+			State#state{timer=undefined};
+		Timeout ->
+			set_timeout(State#state{idle_timeout_num=TimeoutNum},
+				Timeout div ?IDLE_TIMEOUT_TICKS, idle_timeout)
+	end.
 
 set_timeout(State=#state{timer=TimerRef0}, Timeout, Message) ->
 	ok = case TimerRef0 of
@@ -323,7 +383,7 @@ set_timeout(State=#state{timer=TimerRef0}, Timeout, Message) ->
 maybe_reset_idle_timeout(State=#state{opts=Opts}) ->
 	case maps:get(reset_idle_timeout_on_send, Opts, false) of
 		true ->
-			set_idle_timeout(State);
+			State#state{idle_timeout_num=0};
 		false ->
 			State
 	end.
@@ -335,7 +395,7 @@ parse(State=#state{http2_status=sequence}, Data) ->
 		{ok, Rest} ->
 			parse(State#state{http2_status=settings}, Rest);
 		more ->
-			loop(State, Data);
+			before_loop(State, Data);
 		Error = {connection_error, _, _} ->
 			terminate(State, Error)
 	end;
@@ -354,7 +414,7 @@ parse(State=#state{http2_status=Status, http2_machine=HTTP2Machine, streams=Stre
 		more when Status =:= closing, Streams =:= #{} ->
 			terminate(State, {stop, normal, 'The connection is going away.'});
 		more ->
-			loop(State, Data)
+			before_loop(State, Data)
 	end.
 
 %% Frame rate flood protection.
@@ -469,6 +529,14 @@ data_frame(State0=#state{opts=Opts, flow=Flow0, streams=Streams}, StreamID, IsFi
 				reset_stream(State0, StreamID, {internal_error, {Class, Exception},
 					'Unhandled exception in cowboy_stream:data/4.'})
 			end;
+		%% Stream handlers are not used for the data when relaying.
+		#{StreamID := #stream{status={relaying, _, RelayPid}}} ->
+			RelayPid ! {'$cowboy_relay_data', {self(), StreamID}, IsFin, Data},
+			%% We keep a steady flow using the configured flow value.
+			%% Because we do not change the 'flow' value the update_window/2
+			%% function will always maintain this value (of course with
+			%% thresholds applying).
+			update_window(State0, StreamID);
 		%% We ignore DATA frames for streams that are stopping.
 		#{} ->
 			State0
@@ -494,7 +562,16 @@ headers_frame(State, StreamID, IsFin, Headers, PseudoHeaders, BodyLen) ->
 				'Requests translated from HTTP/1.1 must include a host header. (RFC7540 8.1.2.3, RFC7230 5.4)'})
 	end.
 
-headers_frame_parse_host(State=#state{ref=Ref, peer=Peer, sock=Sock, cert=Cert, proxy_header=ProxyHeader},
+headers_frame_parse_host(State=#state{opts=Opts}, StreamID, IsFin, Headers, PseudoHeaders, BodyLen, Authority) ->
+	case byte_size(Authority) > maps:get(max_authority_length, Opts, 255) of
+		true ->
+			reset_stream(State, StreamID, {stream_error, protocol_error,
+				'The request authority is longer than configuration allows. (RFC7540 8.1.2.3)'});
+		false ->
+			headers_frame_parse_host1(State, StreamID, IsFin, Headers, PseudoHeaders, BodyLen, Authority)
+	end.
+
+headers_frame_parse_host1(State=#state{ref=Ref, peer=Peer, sock=Sock, cert=Cert, proxy_header=ProxyHeader},
 		StreamID, IsFin, Headers, PseudoHeaders=#{method := Method, scheme := Scheme, path := PathWithQs},
 		BodyLen, Authority) ->
 	try cow_http_hd:parse_host(Authority) of
@@ -592,10 +669,18 @@ early_error(State0=#state{ref=Ref, opts=Opts, peer=Peer},
 		method => Method,
 		headers => headers_to_map(Headers, #{})
 	},
-	Resp = {response, StatusCode0, RespHeaders0=#{<<"content-length">> => <<"0">>}, <<>>},
+	RespHeaders0 = #{<<"content-length">> => <<"0">>},
+	Resp = {response, StatusCode0, RespHeaders0, <<>>},
 	try cowboy_stream:early_error(StreamID, Reason, PartialReq, Resp, Opts) of
 		{response, StatusCode, RespHeaders, RespBody} ->
-			send_response(State0, StreamID, StatusCode, RespHeaders, RespBody)
+			case maybe_invalid_response_headers(RespHeaders, State0) of
+				error_terminate ->
+					reset_stream(State0, StreamID,
+						{internal_error, invalid_response_header,
+							'An invalid response header was detected.'});
+				ok ->
+					send_response(State0, StreamID, StatusCode, RespHeaders, RespBody)
+			end
 	catch Class:Exception:Stacktrace ->
 		cowboy:log(cowboy_stream:make_error_log(early_error,
 			[StreamID, Reason, PartialReq, Resp, Opts],
@@ -715,19 +800,40 @@ commands(State=#state{http2_machine=HTTP2Machine}, StreamID,
 	end;
 %% Send an informational response.
 commands(State0, StreamID, [{inform, StatusCode, Headers}|Tail]) ->
-	State1 = send_headers(State0, StreamID, idle, StatusCode, Headers),
-	State = maybe_reset_idle_timeout(State1),
-	commands(State, StreamID, Tail);
+	case maybe_invalid_response_headers(Headers, State0) of
+		error_terminate ->
+			reset_stream(State0, StreamID,
+				{internal_error, invalid_response_header,
+					'An invalid response header was detected in an informational response.'});
+		ok ->
+			State1 = send_headers(State0, StreamID, idle, StatusCode, Headers),
+			State = maybe_reset_idle_timeout(State1),
+			commands(State, StreamID, Tail)
+	end;
 %% Send response headers.
 commands(State0, StreamID, [{response, StatusCode, Headers, Body}|Tail]) ->
-	State1 = send_response(State0, StreamID, StatusCode, Headers, Body),
-	State = maybe_reset_idle_timeout(State1),
-	commands(State, StreamID, Tail);
+	case maybe_invalid_response_headers(Headers, State0) of
+		error_terminate ->
+			reset_stream(State0, StreamID,
+				{internal_error, invalid_response_header,
+					'An invalid response header was detected.'});
+		ok ->
+			State1 = send_response(State0, StreamID, StatusCode, Headers, Body),
+			State = maybe_reset_idle_timeout(State1),
+			commands(State, StreamID, Tail)
+	end;
 %% Send response headers.
 commands(State0, StreamID, [{headers, StatusCode, Headers}|Tail]) ->
-	State1 = send_headers(State0, StreamID, nofin, StatusCode, Headers),
-	State = maybe_reset_idle_timeout(State1),
-	commands(State, StreamID, Tail);
+	case maybe_invalid_response_headers(Headers, State0) of
+		error_terminate ->
+			reset_stream(State0, StreamID,
+				{internal_error, invalid_response_header,
+					'An invalid response header was detected.'});
+		ok ->
+			State1 = send_headers(State0, StreamID, nofin, StatusCode, Headers),
+			State = maybe_reset_idle_timeout(State1),
+			commands(State, StreamID, Tail)
+	end;
 %% Send a response body chunk.
 commands(State0, StreamID, [{data, IsFin, Data}|Tail]) ->
 	State = case maybe_send_data(State0, StreamID, IsFin, Data, []) of
@@ -739,14 +845,21 @@ commands(State0, StreamID, [{data, IsFin, Data}|Tail]) ->
 	commands(State, StreamID, Tail);
 %% Send trailers.
 commands(State0, StreamID, [{trailers, Trailers}|Tail]) ->
-	State = case maybe_send_data(State0, StreamID, fin,
-			{trailers, maps:to_list(Trailers)}, []) of
-		{data_sent, State1} ->
-			maybe_reset_idle_timeout(State1);
-		{no_data_sent, State1} ->
-			State1
-	end,
-	commands(State, StreamID, Tail);
+	case maybe_invalid_response_headers(Trailers, State0) of
+		error_terminate ->
+			reset_stream(State0, StreamID,
+				{internal_error, invalid_response_header,
+					'An invalid response header was detected in trailers.'});
+		ok ->
+			State = case maybe_send_data(State0, StreamID, fin,
+					{trailers, maps:to_list(Trailers)}, []) of
+				{data_sent, State1} ->
+					maybe_reset_idle_timeout(State1);
+				{no_data_sent, State1} ->
+					State1
+			end,
+			commands(State, StreamID, Tail)
+	end;
 %% Send a push promise.
 %%
 %% @todo Responses sent as a result of a push_promise request
@@ -756,36 +869,43 @@ commands(State0, StreamID, [{trailers, Trailers}|Tail]) ->
 %% in the closing http2_status.
 commands(State0=#state{socket=Socket, transport=Transport, http2_machine=HTTP2Machine0},
 		StreamID, [{push, Method, Scheme, Host, Port, Path, Qs, Headers0}|Tail]) ->
-	Authority = case {Scheme, Port} of
-		{<<"http">>, 80} -> Host;
-		{<<"https">>, 443} -> Host;
-		_ -> iolist_to_binary([Host, $:, integer_to_binary(Port)])
-	end,
-	PathWithQs = iolist_to_binary(case Qs of
-		<<>> -> Path;
-		_ -> [Path, $?, Qs]
-	end),
-	PseudoHeaders = #{
-		method => Method,
-		scheme => Scheme,
-		authority => Authority,
-		path => PathWithQs
-	},
-	%% We need to make sure the header value is binary before we can
-	%% create the Req object, as it expects them to be flat.
-	Headers = maps:to_list(maps:map(fun(_, V) -> iolist_to_binary(V) end, Headers0)),
-	State = case cow_http2_machine:prepare_push_promise(StreamID, HTTP2Machine0,
-			PseudoHeaders, Headers) of
-		{ok, PromisedStreamID, HeaderBlock, HTTP2Machine} ->
-			State1 = State0#state{http2_machine=HTTP2Machine},
-			ok = maybe_socket_error(State1, Transport:send(Socket,
-				cow_http2:push_promise(StreamID, PromisedStreamID, HeaderBlock))),
-			State2 = maybe_reset_idle_timeout(State1),
-			headers_frame(State2, PromisedStreamID, fin, Headers, PseudoHeaders, 0);
-		{error, no_push} ->
-			State0
-	end,
-	commands(State, StreamID, Tail);
+	case maybe_invalid_response_headers(Headers0, State0) of
+		error_terminate ->
+			reset_stream(State0, StreamID,
+				{internal_error, invalid_response_header,
+					'An invalid response header was detected in push promise.'});
+		ok ->
+			Authority = case {Scheme, Port} of
+				{<<"http">>, 80} -> Host;
+				{<<"https">>, 443} -> Host;
+				_ -> iolist_to_binary([Host, $:, integer_to_binary(Port)])
+			end,
+			PathWithQs = iolist_to_binary(case Qs of
+				<<>> -> Path;
+				_ -> [Path, $?, Qs]
+			end),
+			PseudoHeaders = #{
+				method => Method,
+				scheme => Scheme,
+				authority => Authority,
+				path => PathWithQs
+			},
+			%% We need to make sure the header value is binary before we can
+			%% create the Req object, as it expects them to be flat.
+			Headers = maps:to_list(maps:map(fun(_, V) -> iolist_to_binary(V) end, Headers0)),
+			State = case cow_http2_machine:prepare_push_promise(StreamID, HTTP2Machine0,
+					PseudoHeaders, Headers) of
+				{ok, PromisedStreamID, HeaderBlock, HTTP2Machine} ->
+					State1 = State0#state{http2_machine=HTTP2Machine},
+					ok = maybe_socket_error(State1, Transport:send(Socket,
+						cow_http2:push_promise(StreamID, PromisedStreamID, HeaderBlock))),
+					State2 = maybe_reset_idle_timeout(State1),
+					headers_frame(State2, PromisedStreamID, fin, Headers, PseudoHeaders, 0);
+				{error, no_push} ->
+					State0
+			end,
+			commands(State, StreamID, Tail)
+	end;
 %% Read the request body.
 commands(State0=#state{flow=Flow, streams=Streams}, StreamID, [{flow, Size}|Tail]) ->
 	#{StreamID := Stream=#stream{flow=StreamFlow}} = Streams,
@@ -809,15 +929,56 @@ commands(State, StreamID, [Error = {internal_error, _, _}|_Tail]) ->
 %% hasn't been set yet. This is called from init/12.
 commands(State=#state{socket=Socket, transport=Transport, http2_status=upgrade},
 		StreamID, [{switch_protocol, Headers, ?MODULE, _}|Tail]) ->
-	%% @todo This 101 response needs to be passed through stream handlers.
-	ok = maybe_socket_error(State, Transport:send(Socket,
-		cow_http:response(101, 'HTTP/1.1', maps:to_list(Headers)))),
-	commands(State, StreamID, Tail);
+	case maybe_invalid_response_headers(Headers, State) of
+		error_terminate ->
+			reset_stream(State, StreamID,
+				{internal_error, invalid_response_header,
+					'An invalid response header was detected when upgrading to HTTP/2.'});
+		ok ->
+			%% @todo This 101 response needs to be passed through stream handlers.
+			ok = maybe_socket_error(State, Transport:send(Socket,
+				cow_http:response(101, 'HTTP/1.1', maps:to_list(Headers)))),
+			commands(State, StreamID, Tail)
+	end;
 %% Use a different protocol within the stream (CONNECT :protocol).
 %% @todo Make sure we error out when the feature is disabled.
+%% There are two data_delivery: stream_handlers and relay.
+%% The former just has the data go through stream handlers
+%% like normal requests. The latter relays data directly.
+%%
+%% @todo When relaying there might be some data that is
+%%       in stream handlers and that need to be received,
+%%       depending on whether the protocol sends data
+%%       before processing the response.
+commands(State0=#state{flow=Flow, streams=Streams}, StreamID,
+		[{switch_protocol, Headers, _Mod, ModState=#{data_delivery := relay}}|Tail]) ->
+	case maybe_invalid_response_headers(Headers, State0) of
+		error_terminate ->
+			reset_stream(State0, StreamID,
+				{internal_error, invalid_response_header,
+					'An invalid response header was detected when switching protocols.'});
+		ok ->
+			State1 = info(State0, StreamID, {headers, 200, Headers}),
+			#{StreamID := Stream} = Streams,
+			#{data_delivery_pid := RelayPid} = ModState,
+			%% WINDOW_UPDATE frames updating the window will be sent after
+			%% the first DATA frame has been received.
+			RelayFlow = maps:get(data_delivery_flow, ModState, 131072),
+			State = State1#state{flow=Flow + RelayFlow, streams=Streams#{StreamID => Stream#stream{
+				status={relaying, RelayFlow, RelayPid},
+				flow=RelayFlow}}},
+			commands(State, StreamID, Tail)
+	end;
 commands(State0, StreamID, [{switch_protocol, Headers, _Mod, _ModState}|Tail]) ->
-	State = info(State0, StreamID, {headers, 200, Headers}),
-	commands(State, StreamID, Tail);
+	case maybe_invalid_response_headers(Headers, State0) of
+		error_terminate ->
+			reset_stream(State0, StreamID,
+				{internal_error, invalid_response_header,
+					'An invalid response header was detected when switching protocols.'});
+		ok ->
+			State = info(State0, StreamID, {headers, 200, Headers}),
+			commands(State, StreamID, Tail)
+	end;
 %% Set options dynamically.
 commands(State, StreamID, [{set_options, _Opts}|Tail]) ->
 	commands(State, StreamID, Tail);
@@ -829,6 +990,26 @@ commands(State, StreamID, [stop|_Tail]) ->
 commands(State=#state{opts=Opts}, StreamID, [Log={log, _, _, _}|Tail]) ->
 	cowboy:log(Log, Opts),
 	commands(State, StreamID, Tail).
+
+%% Relay data delivery commands.
+
+relay_command(State, StreamID, DataCmd = {data, _, _}) ->
+	commands(State, StreamID, [DataCmd]);
+%% When going active mode again we set the RelayFlow again
+%% and update the window if necessary.
+relay_command(State=#state{flow=Flow, streams=Streams}, StreamID, active) ->
+	#{StreamID := Stream} = Streams,
+	#stream{status={relaying, RelayFlow, _}} = Stream,
+	update_window(State#state{flow=Flow + RelayFlow,
+		streams=Streams#{StreamID => Stream#stream{flow=RelayFlow}}},
+		StreamID);
+%% When going passive mode we don't update the window
+%% since we have not incremented it.
+relay_command(State=#state{flow=Flow, streams=Streams}, StreamID, passive) ->
+	#{StreamID := Stream} = Streams,
+	#stream{flow=StreamFlow} = Stream,
+	State#state{flow=Flow - StreamFlow,
+		streams=Streams#{StreamID => Stream#stream{flow=0}}}.
 
 %% Tentatively update the window after the flow was updated.
 
@@ -899,6 +1080,9 @@ headers_to_list(Headers0=#{<<"set-cookie">> := SetCookies}) ->
 	Headers ++ [{<<"set-cookie">>, Value} || Value <- SetCookies];
 headers_to_list(Headers) ->
 	maps:to_list(Headers).
+
+maybe_invalid_response_headers(Headers, #state{opts=Opts}) ->
+	cowboy_http:validate_response_headers(Headers, Opts).
 
 maybe_send_data(State0=#state{socket=Socket, transport=Transport,
 		http2_machine=HTTP2Machine0}, StreamID, IsFin, Data0, Prefix) ->
@@ -1086,7 +1270,9 @@ goaway_streams(State, [Stream|Tail], LastStreamID, Reason, Acc) ->
 %% in-flight stream creation (at least one round-trip time), the server can send
 %% another GOAWAY frame with an updated last stream identifier. This ensures
 %% that a connection can be cleanly shut down without losing requests.
+
 -spec initiate_closing(#state{}, _) -> #state{}.
+
 initiate_closing(State=#state{http2_status=connected, socket=Socket,
 		transport=Transport, opts=Opts}, Reason) ->
 	ok = maybe_socket_error(State, Transport:send(Socket,
@@ -1103,7 +1289,9 @@ initiate_closing(State, Reason) ->
 	terminate(State, {stop, stop_reason(Reason), 'The connection is going away.'}).
 
 %% Switch to 'closing' state and stop accepting new streams.
+
 -spec closing(#state{}, Reason :: term()) -> #state{}.
+
 closing(State=#state{streams=Streams}, Reason) when Streams =:= #{} ->
 	terminate(State, Reason);
 closing(State0=#state{http2_status=closing_initiated,
@@ -1139,7 +1327,8 @@ maybe_socket_error(_, Result = {ok, _}, _) ->
 maybe_socket_error(State, {error, Reason}, Human) ->
 	terminate(State, {socket_error, Reason, Human}).
 
--spec terminate(#state{}, _) -> no_return().
+-spec terminate(#state{} | undefined, _) -> no_return().
+
 terminate(undefined, Reason) ->
 	exit({shutdown, Reason});
 terminate(State=#state{socket=Socket, transport=Transport, http2_status=Status,
@@ -1340,15 +1529,18 @@ terminate_stream_handler(#state{opts=Opts}, StreamID, Reason, StreamState) ->
 
 %% System callbacks.
 
--spec system_continue(_, _, {#state{}, binary()}) -> ok.
+-spec system_continue(_, _, {#state{}, binary()}) -> no_return().
+
 system_continue(_, _, {State, Buffer}) ->
-	loop(State, Buffer).
+	before_loop(State, Buffer).
 
 -spec system_terminate(any(), _, _, {#state{}, binary()}) -> no_return().
+
 system_terminate(Reason0, _, _, {State, Buffer}) ->
 	Reason = {stop, {exit, Reason0}, 'sys:terminate/2,3 was called.'},
-	loop(initiate_closing(State, Reason), Buffer).
+	before_loop(initiate_closing(State, Reason), Buffer).
 
 -spec system_code_change(Misc, _, _, _) -> {ok, Misc} when Misc::{#state{}, binary()}.
+
 system_code_change(Misc, _, _, _) ->
 	{ok, Misc}.

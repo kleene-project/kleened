@@ -1,4 +1,4 @@
-%% Copyright (c) 2014-2024, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -17,6 +17,7 @@
 -export([validate/2]).
 -export([reverse/2]).
 -export([format_error/1]).
+-export([from_fun/1]).
 
 -type constraint() :: int | nonempty | fun().
 -export_type([constraint/0]).
@@ -57,7 +58,7 @@ apply_constraint(Type, Value, int) ->
 	int(Type, Value);
 apply_constraint(Type, Value, nonempty) ->
 	nonempty(Type, Value);
-apply_constraint(Type, Value, F) when is_function(F) ->
+apply_constraint(Type, Value, F) when is_function(F, 2) ->
 	F(Type, Value).
 
 %% Constraint functions.
@@ -169,6 +170,62 @@ fun_format_error_test() ->
 	end,
 	{error, Reason} = validate(<<"value">>, F),
 	formatted = format_error(Reason),
+	ok.
+
+-endif.
+
+%% Constraint generator.
+
+-spec from_fun(fun((any()) -> any())) -> fun().
+
+from_fun(Fun) when is_function(Fun, 1) ->
+	fun
+		(forward, Value) ->
+			try
+				{ok, Fun(Value)}
+			catch _:_ ->
+				{error, not_valid}
+			end;
+		(reverse, _) ->
+			{error, not_implemented};
+		(format_error, {not_valid, Value}) ->
+			io_lib:format("The value ~0p is not valid.", [Value]);
+		(format_error, {not_implemented, _}) ->
+			<<"The reverse operation is not implemented.">>
+	end.
+
+%% @todo Constraint generators with support for reverse
+%%       or custom error formatting.
+
+-ifdef(TEST).
+
+from_fun_forward_test() ->
+	Constraint = from_fun(fun cow_http:ensure_token/1),
+	%% Value, Result.
+	Tests = [
+		{<<>>, error},
+		{<<"value">>, <<"value">>},
+		{<<"some-weird-token^">>, <<"some-weird-token^">>},
+		{123, error},
+		{<<"invalid\r\ntoken">>, error}
+	],
+	[{lists:flatten(io_lib:format("~p", [V])), fun() ->
+		case R of
+			error -> {error, {Constraint, not_valid, V}} = validate(V, Constraint);
+			_ -> {ok, R} = validate(V, Constraint)
+		end
+	end} || {V, R} <- Tests].
+
+from_fun_reverse_test() ->
+	Constraint = from_fun(fun cow_http:ensure_token/1),
+	{error, {Constraint, not_implemented, <<"value">>}}
+		= reverse(<<"value">>, [Constraint]),
+	ok.
+
+from_fun_format_error_test() ->
+	Constraint = from_fun(fun cow_http:ensure_token/1),
+	[_|_] = format_error({Constraint, not_valid, <<"value">>}),
+	<<_/bits>> = format_error({Constraint, not_implemented, <<"value">>}),
 	ok.
 
 -endif.

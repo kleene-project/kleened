@@ -1,17 +1,18 @@
 defmodule ElixirMake.Mixfile do
   use Mix.Project
 
-  @version "0.9.0"
+  @version "0.10.0"
   def project do
     [
       app: :elixir_make,
       version: @version,
-      elixir: "~> 1.9",
+      elixir: "~> 1.14",
       description: "A Make compiler for Mix",
       package: package(),
       docs: docs(),
       deps: deps(),
-      xref: [exclude: [Mix, :crypto, :ssl, :public_key, :httpc]]
+      elixirc_options: [no_warn_undefined: [Mix, :crypto, :ssl, :public_key, :httpc]],
+      test_ignore_filters: [~r|^test\/fixtures\/|]
     ]
   end
 

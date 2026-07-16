@@ -1,7 +1,7 @@
 defmodule MakeupErlang.Mixfile do
   use Mix.Project
 
-  @version "1.0.1"
+  @version "1.1.0"
   @url "https://github.com/elixir-makeup/makeup_erlang"
 
   def project do
@@ -56,7 +56,7 @@ defmodule MakeupErlang.Mixfile do
 
     paths = Path.join(Mix.Project.build_path(), "lib/*/ebin")
     args = ["MakeupErlang", @version, Mix.Project.compile_path()]
-    opts = ~w[--main Makeup.Lexers.ErlangLexer --source-ref v#{@version} --source-url #{@url}]
+    opts = ~w[--source-ref v#{@version} --source-url #{@url} --config .ex_doc.exs]
     System.cmd(ex_doc, args ++ ["--paths", paths] ++ opts)
     Mix.shell().info("Docs built successfully")
   end
