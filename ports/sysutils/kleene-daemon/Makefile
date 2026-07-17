@@ -36,10 +36,6 @@ ETCDIR=		${PREFIX}/etc/kleened
 SUB_FILES=	pkg-message
 PLIST_SUB=	DISTVERSION=${DISTVERSION}
 
-# Hex is vendored as a precompiled .ez from builds.hex.pm. Use the OTP-specific
-# build (hex-<ver>-otp-<rel>.ez under the installs/<elixir>/ path); the legacy
-# non-OTP .ez fails to load under OTP 28 (Hex.State bytecode). Bump _HEXPM_OTP
-# and the installs/<elixir> path in MASTER_SITES when the Erlang runtime changes.
 _HEXPM_VERSION=		2.5.1
 _HEXPM_OTP=		28
 _HEX_DIR=		${WRKDIR}/.mix/archives/hex-${_HEXPM_VERSION}
