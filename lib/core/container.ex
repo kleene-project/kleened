@@ -11,13 +11,11 @@ defmodule Kleened.Core.Container do
   alias Kleened.Core.{Config, Const, MetaData, Mount, Network, Utils, OS, FreeBSD, ZFS}
   alias Kleened.API.Schemas
 
-  @type t() :: %Schemas.Container{}
+  @type t() :: Schemas.Container.t()
 
-  @type container_config() :: %Schemas.ContainerConfig{}
+  @type container_config() :: Schemas.ContainerConfig.t()
 
-  @type list_containers_opts :: [
-          {:all, boolean()}
-        ]
+  @type list_containers_opt() :: {:all, boolean()}
 
   @type container_id() :: String.t()
 
@@ -67,7 +65,7 @@ defmodule Kleened.Core.Container do
     end
   end
 
-  @spec inspect_(String.t()) :: {:ok, %Schemas.ContainerInspect{}} | {:error, String.t()}
+  @spec inspect_(id_or_name()) :: {:ok, Schemas.ContainerInspect.t()} | {:error, String.t()}
   def inspect_(idname) do
     case MetaData.get_container(idname) do
       :not_found ->
@@ -88,7 +86,7 @@ defmodule Kleened.Core.Container do
     end
   end
 
-  @spec list([list_containers_opts()]) :: [%{}]
+  @spec list([list_containers_opt()]) :: [map()]
   def list(options \\ []) do
     list_(options)
   end
@@ -367,7 +365,7 @@ defmodule Kleened.Core.Container do
     end
   end
 
-  @spec stop_container(%Schemas.Container{}) :: {:ok, String.t()} | {:error, String.t()}
+  @spec stop_container(t()) :: {:ok, String.t()} | {:error, String.t()}
   defp stop_container(container) do
     case Utils.is_container_running?(container.id) do
       true ->
@@ -395,6 +393,11 @@ defmodule Kleened.Core.Container do
     end
   end
 
+  @doc """
+  Tear down the host-side resources a stopped container leaves behind: ip
+  aliases or epair interfaces, its mounts, and the devfs mount.
+  """
+  @spec cleanup_container(t()) :: [OS.cmd_result()]
   def cleanup_container(container) do
     # Remove all system componenents that are not required when the container is stopped:
     # - 'ipnet': All ip-addresses of the container
@@ -433,7 +436,7 @@ defmodule Kleened.Core.Container do
     FreeBSD.clear_devfs(mountpoint)
   end
 
-  @spec list_([list_containers_opts()]) :: [%{}]
+  @spec list_([list_containers_opt()]) :: [map()]
   defp list_(options) do
     active_jails = Map.new(FreeBSD.running_jails())
 
@@ -459,6 +462,7 @@ defmodule Kleened.Core.Container do
     end
   end
 
+  @spec is_running?(container_id()) :: boolean()
   def is_running?(container_id) do
     output = System.cmd("jls", ["--libxo=json", "-j", container_id], stderr_to_stdout: true)
 

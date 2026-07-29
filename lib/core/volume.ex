@@ -4,11 +4,9 @@ defmodule Kleened.Core.Volume do
   require Config
   require Logger
 
-  alias __MODULE__, as: Volume
+  @type t() :: Schemas.Volume.t()
 
-  @type t() :: %Schemas.Volume{}
-
-  @spec create(String.t()) :: Volume.t()
+  @spec create(String.t()) :: t()
   def create(name) do
     case MetaData.get_volume(name) do
       :not_found ->
@@ -45,7 +43,7 @@ defmodule Kleened.Core.Volume do
     {:ok, pruned_volumes}
   end
 
-  @spec inspect_(String.t()) :: {:ok, %Schemas.VolumeInspect{}} | {:error, String.t()}
+  @spec inspect_(String.t()) :: {:ok, Schemas.VolumeInspect.t()} | {:error, String.t()}
   def inspect_(name) do
     case MetaData.get_volume(name) do
       :not_found ->

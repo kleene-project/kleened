@@ -64,7 +64,23 @@ defmodule Kleened.Core.MetaData do
   INNER JOIN images ON json_extract(containers.container, '$.image_id') = images.id;
   """
 
-  @type db_conn() :: Sqlitex.connection()
+  @type db_conn() :: Exqlite.Connection.t()
+
+  @typedoc """
+  A single decoded database row.
+
+  Which shape comes back is decided by the columns of the query, see
+  `transform_row/2`.
+  """
+  @type row() ::
+          Schemas.Container.t()
+          | Schemas.Network.t()
+          | Schemas.Image.t()
+          | Schemas.Volume.t()
+          | Schemas.MountPoint.t()
+          | Schemas.EndPoint.t()
+          | String.t()
+          | map()
 
   @spec start_link([]) :: Agent.on_start()
   def start_link([]) do
@@ -83,24 +99,25 @@ defmodule Kleened.Core.MetaData do
     end
   end
 
+  @spec stop() :: :ok
   def stop() do
     Agent.stop(__MODULE__)
   end
 
-  @spec add_network(%Schemas.Network{}) :: :ok
+  @spec add_network(Network.t()) :: :ok
   def add_network(network) do
     {id, json} = to_db(network)
     [] = sql("INSERT OR REPLACE INTO networks(id, network) VALUES (?, ?)", [id, json])
     :ok
   end
 
-  @spec remove_network(String.t()) :: :ok
+  @spec remove_network(Network.network_id()) :: :ok
   def remove_network(network_id) do
     [] = sql("DELETE FROM networks WHERE id = ?", [network_id])
     :ok
   end
 
-  @spec get_network(String.t()) :: %Schemas.Network{} | :not_found
+  @spec get_network(String.t()) :: Network.t() | :not_found
   def get_network(name_or_id) do
     query = """
     SELECT id, network FROM networks WHERE substr(id, 1, ?) = ?
@@ -114,11 +131,12 @@ defmodule Kleened.Core.MetaData do
     end
   end
 
-  @spec list_networks() :: [%Schemas.Network{}]
+  @spec list_networks() :: [Network.t()]
   def list_networks() do
     sql("SELECT id, network FROM networks ORDER BY json_extract(network, '$.name')")
   end
 
+  @spec list_unused_networks() :: [Network.network_id()]
   def list_unused_networks() do
     sql("""
     SELECT
@@ -133,7 +151,7 @@ defmodule Kleened.Core.MetaData do
   @spec add_endpoint(
           Container.container_id(),
           Network.network_id(),
-          %Schemas.EndPoint{}
+          Schemas.EndPoint.t()
         ) :: :ok
   def add_endpoint(container_id, network_id, endpoint_config) do
     sql(
@@ -145,7 +163,7 @@ defmodule Kleened.Core.MetaData do
   end
 
   @spec get_endpoint(Container.container_id(), Network.network_id()) ::
-          %Schemas.EndPoint{} | :not_found
+          Schemas.EndPoint.t() | :not_found
   def get_endpoint(container_id, network_id) do
     reply =
       sql(
@@ -159,7 +177,7 @@ defmodule Kleened.Core.MetaData do
     end
   end
 
-  @spec get_endpoints_from_network(Network.network_id()) :: [%Schemas.EndPoint{}]
+  @spec get_endpoints_from_network(Network.network_id()) :: [Schemas.EndPoint.t()]
   def get_endpoints_from_network(network_id) do
     sql(
       "SELECT config FROM endpoint_configs WHERE network_id = ?",
@@ -167,7 +185,7 @@ defmodule Kleened.Core.MetaData do
     )
   end
 
-  @spec get_endpoints_from_container(Container.container_id()) :: [%Schemas.EndPoint{}]
+  @spec get_endpoints_from_container(Container.container_id()) :: [Schemas.EndPoint.t()]
   def get_endpoints_from_container(container_id) do
     sql(
       "SELECT config FROM endpoint_configs WHERE container_id = ?",
@@ -205,7 +223,7 @@ defmodule Kleened.Core.MetaData do
     Agent.get(__MODULE__, fn db -> add_image_transaction(db, image) end)
   end
 
-  @spec get_image(String.t()) :: %Schemas.Image{} | :not_found
+  @spec get_image(String.t()) :: Image.t() | :not_found
   def get_image(id_or_nametag) do
     {name, tag} = Kleened.Core.Utils.decode_tagname(id_or_nametag)
 
@@ -259,12 +277,12 @@ defmodule Kleened.Core.MetaData do
     end
   end
 
-  @spec list_containers() :: [%{}]
+  @spec list_containers() :: [Schemas.Container.t()]
   def list_containers() do
     sql("SELECT id, container FROM containers ORDER BY container -> '$.created'")
   end
 
-  @spec container_listing() :: [%{}]
+  @spec container_listing() :: [map()]
   def container_listing() do
     sql("SELECT * FROM api_list_containers ORDER BY container_ext -> '$.created' DESC")
   end
@@ -307,33 +325,35 @@ defmodule Kleened.Core.MetaData do
     """)
   end
 
-  @spec get_mounts_from_container(Container.container_id()) :: [%Schemas.MountPoint{}]
+  @spec get_mounts_from_container(Container.container_id()) :: [Schemas.MountPoint.t()]
   def get_mounts_from_container(container_id) do
     sql("SELECT mount FROM mounts WHERE json_extract(mount,'$.container_id') = ?", [container_id])
   end
 
-  @spec add_mount(%Schemas.MountPoint{}) :: :ok
+  @spec add_mount(Schemas.MountPoint.t()) :: :ok
   def add_mount(mount) do
     sql("INSERT OR REPLACE INTO mounts VALUES (?)", [to_db(mount)])
     :ok
   end
 
-  @spec remove_mounts(Container.t() | Volume.t()) :: :ok | :not_found
+  @spec remove_mounts(Container.t() | Volume.t()) :: [Schemas.MountPoint.t()]
   def remove_mounts(container_or_volume) do
     Agent.get(__MODULE__, fn db -> remove_mounts_transaction(db, container_or_volume) end)
   end
 
-  @spec list_mounts(Volume.t()) :: [%Schemas.MountPoint{}]
+  @spec list_mounts(Volume.t()) :: [Schemas.MountPoint.t()]
   def list_mounts(%Schemas.Volume{name: name}) do
     sql("SELECT mount FROM mounts WHERE json_extract(mount, '$.source') = ?", [name])
   end
 
-  @spec list_mounts_by_container(String.t()) :: [%Schemas.MountPoint{}] | :not_found
+  @spec list_mounts_by_container(Container.container_id()) :: [Schemas.MountPoint.t()]
   def list_mounts_by_container(container_id) do
     sql("SELECT mount FROM mounts WHERE json_extract(mount, '$.container_id') = ?", [container_id])
   end
 
-  @spec list_image_datasets() :: [%{}]
+  @spec list_image_datasets() :: [
+          %{id: String.t(), name: String.t(), tag: String.t(), dataset: String.t()}
+        ]
   def list_image_datasets() do
     sql("""
     SELECT images.id AS id,
@@ -356,7 +376,7 @@ defmodule Kleened.Core.MetaData do
     from_db(result)
   end
 
-  @spec add_image_transaction(db_conn(), Image.t()) :: [term()]
+  @spec add_image_transaction(db_conn(), Image.t()) :: :ok
   defp add_image_transaction(db, %Schemas.Image{name: new_name, tag: new_tag} = image) do
     query = """
     SELECT id, image FROM images
@@ -383,7 +403,7 @@ defmodule Kleened.Core.MetaData do
   @spec remove_mounts_transaction(
           db_conn(),
           Volume.t() | Container.t()
-        ) :: :ok
+        ) :: [Schemas.MountPoint.t()]
   def remove_mounts_transaction(db, %Schemas.Container{id: id}) do
     sql = "SELECT mount FROM mounts WHERE json_extract(mount, '$.container_id') = ?"
     result = execute_sql(db, sql, [id])
@@ -407,11 +427,12 @@ defmodule Kleened.Core.MetaData do
 
   @spec to_db(
           Schemas.Image.t()
+          | Schemas.Network.t()
           | Schemas.Container.t()
-          | %Schemas.Volume{}
-          | %Schemas.MountPoint{}
-        ) ::
-          String.t()
+          | Schemas.Volume.t()
+          | Schemas.MountPoint.t()
+          | Schemas.EndPoint.t()
+        ) :: {String.t(), String.t()} | String.t()
   defp to_db(struct) do
     map = Map.from_struct(struct)
 
@@ -442,7 +463,7 @@ defmodule Kleened.Core.MetaData do
     end
   end
 
-  @spec from_db(%Exqlite.Result{}) :: [%Schemas.Image{}]
+  @spec from_db(Exqlite.Result.t()) :: [row()]
   defp from_db(%Exqlite.Result{columns: columns, rows: rows}) do
     rows |> Enum.map(&transform_row(&1, columns))
   end
@@ -508,22 +529,28 @@ defmodule Kleened.Core.MetaData do
     Jason.decode!(obj, [{:keys, :atoms}])
   end
 
+  @spec pid2str(pid() | String.t()) :: String.t()
   def pid2str(""), do: ""
   def pid2str(pid), do: List.to_string(:erlang.pid_to_list(pid))
 
+  @spec str2pid(String.t()) :: pid() | String.t()
   def str2pid(""), do: ""
   def str2pid(pidstr), do: :erlang.list_to_pid(String.to_charlist(pidstr))
 
+  @spec drop_tables(db_conn()) :: :ok
   def drop_tables(db) do
-    {:ok, []} = Basic.exec(db, "DROP VIEW api_list_containers")
-    {:ok, []} = Basic.exec(db, "DROP TABLE images")
-    {:ok, []} = Basic.exec(db, "DROP TABLE containers")
-    {:ok, []} = Basic.exec(db, "DROP TABLE volumes")
-    {:ok, []} = Basic.exec(db, "DROP TABLE mounts")
-    {:ok, []} = Basic.exec(db, "DROP TABLE networks")
-    {:ok, []} = Basic.exec(db, "DROP TABLE endpoint_configs")
+    {:ok, _, _, _} = Basic.exec(db, "DROP VIEW api_list_containers")
+    {:ok, _, _, _} = Basic.exec(db, "DROP TABLE images")
+    {:ok, _, _, _} = Basic.exec(db, "DROP TABLE containers")
+    {:ok, _, _, _} = Basic.exec(db, "DROP TABLE volumes")
+    {:ok, _, _, _} = Basic.exec(db, "DROP TABLE mounts")
+    {:ok, _, _, _} = Basic.exec(db, "DROP TABLE networks")
+    {:ok, _, _, _} = Basic.exec(db, "DROP TABLE endpoint_configs")
+    :ok
   end
 
+  @spec create_tables(db_conn()) ::
+          {:ok, Exqlite.Query.t(), Exqlite.Result.t(), db_conn()}
   def create_tables(conn) do
     {:ok, _, _, _} = Basic.exec(conn, @table_network)
     {:ok, _, _, _} = Basic.exec(conn, @table_endpoint_configs)

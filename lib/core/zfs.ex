@@ -2,41 +2,47 @@ defmodule Kleened.Core.ZFS do
   require Logger
   alias Kleened.Core.OS
 
-  @spec create(String.t()) :: {String.t(), integer()}
+  @typedoc "A ZFS dataset name, e.g. `zroot/kleene/container/<id>`."
+  @type dataset() :: String.t()
+
+  @typedoc "A ZFS snapshot name, e.g. `zroot/kleene/image/<id>@image`."
+  @type snapshot() :: String.t()
+
+  @spec create(dataset()) :: OS.cmd_result()
   def create(dataset) do
     # zfs create [-pu] [-o property=value]... filesystem
     cmd("create #{dataset}")
   end
 
-  @spec destroy(String.t()) :: {String.t(), integer()}
+  @spec destroy(dataset() | snapshot()) :: OS.cmd_result()
   def destroy(dataset) do
     # zfs destroy [-dnpRrv] snapshot[%snapname][,...]
     # zfs destroy [-fnpRrv] filesystem|volume
     cmd("destroy -f #{dataset}")
   end
 
-  @spec destroy_force(String.t()) :: {String.t(), integer()}
+  @spec destroy_force(dataset() | snapshot()) :: OS.cmd_result()
   def destroy_force(dataset) do
     cmd("destroy -rf #{dataset}")
   end
 
-  @spec snapshot(String.t()) :: {String.t(), integer()}
+  @spec snapshot(snapshot()) :: OS.cmd_result()
   def snapshot(name) do
     # zfs snapshot|snap [-r] [-o property=value]
     cmd("snapshot #{name}")
   end
 
-  @spec clone(String.t(), String.t()) :: {String.t(), integer()}
+  @spec clone(snapshot(), dataset()) :: OS.cmd_result()
   def clone(snapshot, clonename) do
     cmd("clone #{snapshot} #{clonename}")
   end
 
-  @spec rename(String.t(), String.t()) :: {String.t(), integer()}
+  @spec rename(dataset(), dataset()) :: OS.cmd_result()
   def rename(dataset, new_dataset) do
     cmd("rename -f #{dataset} #{new_dataset}")
   end
 
-  @spec mountpoint(String.t()) :: String.t() | nil
+  @spec mountpoint(dataset()) :: String.t()
   def mountpoint(dataset) do
     case info(dataset) do
       %{mountpoint: nil} ->
@@ -48,6 +54,7 @@ defmodule Kleened.Core.ZFS do
     end
   end
 
+  @spec exists?(dataset()) :: boolean()
   def exists?(<<"/", _::binary>>) do
     false
   end
@@ -61,7 +68,7 @@ defmodule Kleened.Core.ZFS do
     end
   end
 
-  @spec info(String.t()) :: %{:exists? => boolean(), :mountpoint => String.t() | nil}
+  @spec info(dataset() | snapshot()) :: %{exists?: boolean(), mountpoint: String.t() | nil}
   def info(filesystem_or_snapshot) do
     options = %{suppress_logging: true, suppress_warning: true}
 
@@ -78,7 +85,7 @@ defmodule Kleened.Core.ZFS do
     end
   end
 
-  @spec cmd([String.t()]) :: {String.t(), integer()}
+  @spec cmd(String.t(), OS.cmd_options()) :: OS.cmd_result()
   def cmd(cmd, options \\ %{}) do
     OS.cmd(["/sbin/zfs" | String.split(cmd, " ")], options)
   end

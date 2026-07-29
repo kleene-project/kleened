@@ -7,12 +7,15 @@ defmodule Kleened.Core.Network do
 
   alias __MODULE__, as: Network
 
-  @type t() :: %Schemas.Network{}
+  @type t() :: Schemas.Network.t()
   @type network_id() :: String.t()
-  @type network_config() :: %Schemas.NetworkConfig{}
-  @type endpoint() :: %Schemas.EndPoint{}
-  @type protocol() :: String.t()
+  @type network_config() :: Schemas.NetworkConfig.t()
+  @type endpoint() :: Schemas.EndPoint.t()
 
+  @typedoc "Defined by `Kleened.Core.FreeBSD`; re-exported here for convenience."
+  @type protocol() :: FreeBSD.protocol()
+
+  @spec start_link([]) :: GenServer.on_start()
   def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
@@ -24,7 +27,7 @@ defmodule Kleened.Core.Network do
     GenServer.call(__MODULE__, {:create, config})
   end
 
-  @spec connect(%Schemas.EndPointConfig{}) ::
+  @spec connect(Schemas.EndPointConfig.t()) ::
           {:ok, endpoint()} | {:error, String.t()}
   def connect(config) do
     GenServer.call(__MODULE__, {:connect, config}, 30_000)
@@ -55,16 +58,18 @@ defmodule Kleened.Core.Network do
     GenServer.call(__MODULE__, :prune, 30_000)
   end
 
-  @spec inspect_(String.t()) :: {:ok, %Schemas.NetworkInspect{}} | {:error, String.t()}
+  @spec inspect_(String.t()) :: {:ok, Schemas.NetworkInspect.t()} | {:error, String.t()}
   def inspect_(network_idname) do
     GenServer.call(__MODULE__, {:inspect, network_idname})
   end
 
+  @spec inspect_endpoint(Container.container_id(), network_id()) ::
+          {:ok, endpoint()} | {:error, String.t()}
   def inspect_endpoint(container_id, network_id) do
     GenServer.call(__MODULE__, {:inspect_endpoint, container_id, network_id})
   end
 
-  @spec validate_pubports([%Schemas.PublishedPort{}]) :: :ok | {:error, String.t()}
+  @spec validate_pubports([Schemas.PublishedPort.t()]) :: :ok | {:error, String.t()}
   def validate_pubports([pub_port | rest]) do
     with :ok <- verify_port_value(pub_port.host_port, :source),
          :ok <- verify_port_value(pub_port.container_port, :dest) do
@@ -236,6 +241,7 @@ defmodule Kleened.Core.Network do
   ##########################
   ### Internal functions ###
   ##########################
+  @spec validate_create_config(network_config()) :: :ok | {:error, String.t()}
   def validate_create_config(%Schemas.NetworkConfig{
         name: name,
         subnet: subnet,
@@ -267,6 +273,7 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec setup_network(t()) :: :ok | OS.cmd_result() | {:error, String.t()}
   def setup_network(network) do
     case network.type do
       "loopback" ->
@@ -299,6 +306,7 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec create_interface(String.t(), FreeBSD.interface()) :: OS.cmd_result()
   def create_interface(if_type, interface) do
     if interface_exists(interface) do
       destroy_interface(interface)
@@ -390,6 +398,7 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec _remove_metadata_and_pf(t()) :: :ok | {:error, String.t()}
   def _remove_metadata_and_pf(%Schemas.Network{id: id}) do
     container_ids = MetaData.connected_containers(id)
     Enum.map(container_ids, &disconnect_(&1, id))
@@ -455,6 +464,7 @@ defmodule Kleened.Core.Network do
     {:error, "unknown error"}
   end
 
+  @spec disconnect_(String.t(), String.t()) :: :ok | {:error, String.t()}
   def disconnect_(con_ident, net_ident) do
     with {:container, container = %Schemas.Container{}} <-
            {:container, MetaData.get_container(con_ident)},
@@ -491,7 +501,7 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  @spec allocate_ip_address(String.t(), %Schemas.Network{}, protocol()) ::
+  @spec allocate_ip_address(String.t(), t(), protocol()) ::
           {:ok, String.t()} | {:error, String.t()}
   defp allocate_ip_address("", _network, _protocol) do
     {:ok, ""}
@@ -538,7 +548,7 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  @spec add_container_ipnet_alias(String.t(), %Schemas.Container{}, %Schemas.Network{}, protocol) ::
+  @spec add_container_ipnet_alias(String.t(), Schemas.Container.t(), t(), protocol()) ::
           :ok | {:error, String.t()}
   defp add_container_ipnet_alias("", _container, _network, _protocol) do
     :ok
@@ -555,6 +565,8 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec decode_ip(String.t(), protocol()) ::
+          {:ok, :inet.ip_address()} | {:error, :einval}
   def decode_ip(ip, protocol) do
     ip_charlist = String.to_charlist(ip)
 
@@ -581,6 +593,7 @@ defmodule Kleened.Core.Network do
     Enum.map(lines, remove_if_member)
   end
 
+  @spec configure_pf() :: :ok | {:error, String.t()}
   def configure_pf() do
     case create_pf_config() do
       {:ok, pf_config} ->
@@ -739,6 +752,10 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @doc """
+  First non-empty address of the given family among `endpoints`, or `""`.
+  """
+  @spec extract_ip([endpoint()], protocol()) :: String.t()
   def extract_ip([endpoint | rest], ip_type) do
     case select_ip(endpoint, ip_type) do
       non_ip when is_nil(non_ip) or non_ip == "" ->
@@ -1010,10 +1027,12 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec enable_pf() :: OS.cmd_result()
   def enable_pf() do
     OS.cmd(~w"/sbin/pfctl -e", %{suppress_warning: true})
   end
 
+  @spec load_pf_config(String.t()) :: :ok | {:error, String.t()}
   def load_pf_config(config) do
     # For debugging purposes:
     # Logger.debug("PF Config:\n#{config}")
@@ -1057,12 +1076,14 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec destroy_interface(FreeBSD.interface()) :: OS.cmd_result() | nil
   def destroy_interface(kleene_if) do
     if interface_exists(kleene_if) do
       {"", _exitcode} = System.cmd("ifconfig", [kleene_if, "destroy"])
     end
   end
 
+  @spec interface_exists(FreeBSD.interface()) :: boolean()
   def interface_exists(kleene_if) do
     case FreeBSD.get_interface_addresses(kleene_if) do
       [] -> false
@@ -1098,11 +1119,13 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec add_jail_ip(Container.container_id(), String.t()) :: :ok | {:error, String.t()}
   def add_jail_ip(container_id, ip) do
     ips = get_jail_ips(container_id)
     jail_modify_ips(container_id, [ip | ips])
   end
 
+  @spec remove_jail_ips(Container.container_id(), String.t()) :: :ok | {:error, String.t()}
   def remove_jail_ips(container_id, ip) do
     ips = MapSet.new([ip])
     ips_old = MapSet.new(get_jail_ips(container_id))
@@ -1123,6 +1146,7 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec jail_modify_ips(String.t(), [String.t()]) :: :ok | {:error, String.t()}
   def jail_modify_ips(jail_name, ips) do
     ips = Enum.join(ips, ",")
 
@@ -1144,6 +1168,8 @@ defmodule Kleened.Core.Network do
     FreeBSD.ifconfig_subnet_alias(ip, mask, interface, protocol)
   end
 
+  @spec ifconfig_alias_remove(String.t(), FreeBSD.interface(), protocol()) ::
+          :ok | {:error, String.t()}
   def ifconfig_alias_remove("", _interface, _protocol) do
     :ok
   end
@@ -1181,11 +1207,13 @@ defmodule Kleened.Core.Network do
     generate_ip(first_ip, last_ip, ips_in_use, protocol)
   end
 
+  @spec first_ip_address(String.t(), protocol()) :: String.t()
   def first_ip_address(subnet, protocol) do
     %CIDR{:first => first_ip} = CIDR.parse(subnet)
     first_ip |> ip2int(protocol) |> (&(&1 + 1)).() |> int2ip(protocol)
   end
 
+  @spec ips_from_endpoints(network_id(), protocol()) :: [String.t()]
   def ips_from_endpoints(network_id, protocol) do
     configs = MetaData.get_endpoints_from_network(network_id)
 

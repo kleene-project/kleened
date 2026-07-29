@@ -14,13 +14,18 @@ defmodule Kleened.Core.Exec do
   require Logger
   use GenServer, restart: :transient
 
-  @type execution_config() :: %Schemas.ExecConfig{}
+  @type execution_config() :: Schemas.ExecConfig.t()
   @type start_options() :: %{:attach => boolean(), :start_container => boolean()}
   @type stop_options() :: %{:force_stop => boolean(), :stop_container => boolean()}
-  @type container() :: %Schemas.Container{}
+  @type container() :: Schemas.Container.t()
 
   @type exec_id() :: String.t()
-  @type container_id() :: String.t()
+
+  @typedoc "Defined by `Kleened.Core.Container`; re-exported here for convenience."
+  @type container_id() :: Container.container_id()
+
+  @typedoc "Internal state of one `Kleened.Core.Exec` GenServer."
+  @type state() :: %State{}
 
   @spec create(execution_config() | container_id()) :: {:ok, exec_id()} | {:error, String.t()}
   def create(container_id) when is_binary(container_id) do
@@ -60,7 +65,7 @@ defmodule Kleened.Core.Exec do
     call(exec_id, {:start, opts})
   end
 
-  @spec stop(exec_id(), stop_options) :: {:ok, String.t()} | {:error, String.t()}
+  @spec stop(exec_id(), stop_options()) :: {:ok, String.t()} | {:error, String.t()}
   def stop(exec_id, opts) do
     call(exec_id, {:stop, opts})
   end
@@ -76,7 +81,7 @@ defmodule Kleened.Core.Exec do
     end
   end
 
-  @spec inspect_(exec_id()) :: {:ok, %State{}} | {:error, String.t()}
+  @spec inspect_(exec_id()) :: {:ok, state()} | {:error, String.t()}
   def inspect_(exec_id) do
     call(exec_id, :inspect)
   end
@@ -199,7 +204,7 @@ defmodule Kleened.Core.Exec do
     {:noreply, state}
   end
 
-  @spec stop_executable(%State{}, stop_options()) :: {:ok, String.t()} | {:error, String.t()}
+  @spec stop_executable(state(), stop_options()) :: {:ok, String.t()} | {:error, String.t()}
   defp stop_executable(state, opts) do
     case Utils.get_os_pid_of_port(state.port) do
       nil ->
@@ -379,6 +384,7 @@ defmodule Kleened.Core.Exec do
     end)
   end
 
+  @spec setup_networking(container(), state()) :: :ok | [term()]
   def setup_networking(container, state) do
     endpoints = MetaData.get_endpoints_from_container(container.id)
 
@@ -607,6 +613,7 @@ defmodule Kleened.Core.Exec do
     Enum.reverse(config)
   end
 
+  @spec extract_ip(container_id(), Network.network_id(), FreeBSD.protocol()) :: String.t()
   def extract_ip(container_id, network_id, "inet") do
     config = MetaData.get_endpoint(container_id, network_id)
     config.ip_address

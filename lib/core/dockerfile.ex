@@ -2,6 +2,29 @@ defmodule Kleened.Core.Dockerfile do
   import String, only: [replace: 3, split: 2, split: 3, trim: 1]
   require Logger
 
+  @typedoc """
+  A single decoded Dockerfile instruction.
+
+  `{:env, ...}` and `{:arg, ...}` carry a `{:error, msg}` payload when the
+  variable name is not POSIX-compliant; `verify_instructions/1` turns those into
+  a parse failure.
+  """
+  @type instruction() ::
+          {:from, String.t()}
+          | {:from, String.t(), String.t()}
+          | {:user, String.t()}
+          | {:env, {String.t(), String.t()} | {:error, String.t()}}
+          | {:arg, {String.t(), String.t()} | {:error, String.t()}}
+          | {:workdir, String.t()}
+          | {:run, [String.t()]}
+          | {:cmd, [String.t()]}
+          | {:copy, [String.t()]}
+          | {:error, String.t()}
+
+  @typedoc "A decoded instruction paired with the source line it came from."
+  @type line_and_instruction() :: {String.t(), instruction()}
+
+  @spec parse(String.t()) :: {:ok, [line_and_instruction()]} | {:error, String.t()}
   def parse(dockerfile) do
     instructions = decode_file(dockerfile)
 
@@ -36,6 +59,7 @@ defmodule Kleened.Core.Dockerfile do
     verify_instructions(rest)
   end
 
+  @spec decode_file(String.t()) :: [line_and_instruction()]
   def decode_file(dockerfile) do
     dockerfile
     # Remove escaped newlines

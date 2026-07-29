@@ -4,10 +4,10 @@ defmodule Kleened.Core.ImageCreate do
   alias Schemas.ImageCreateConfig, as: Config
   require Logger
 
-  @type create_config() :: %Schemas.ImageCreateConfig{}
+  @type create_config() :: Schemas.ImageCreateConfig.t()
   @type freebsd_version() :: {String.t(), String.t(), String.t()}
 
-  @spec start_image_creation(create_config()) :: {:ok, %Schemas.Image{}} | {:error, String.t()}
+  @spec start_image_creation(create_config()) :: pid()
   def start_image_creation(%Config{method: "fetch-auto"} = config) do
     receiver = self()
     Process.spawn(fn -> create_image_using_fetch_automatically(receiver, config) end, [:link])

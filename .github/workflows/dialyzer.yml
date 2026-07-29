@@ -1,0 +1,55 @@
+name: Dialyzer
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  dialyzer:
+    runs-on: ubuntu-latest
+    name: Type-check Kleened with dialyzer
+    # Static analysis only -- no jails, ZFS or pf involved, so this does not
+    # need the FreeBSD VM the test-suite runs in.
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: erlef/setup-beam@v1
+      id: beam
+      with:
+        # Keep in sync with .tool-versions
+        otp-version: '29'
+        elixir-version: '1.20.2'
+
+    - name: Restore deps and build
+      uses: actions/cache@v4
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-mix-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('mix.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-mix-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
+
+    # The PLT is cached separately: it only depends on the dependency set, so
+    # it survives source changes and is restored even when mix.lock moves.
+    - name: Restore PLT cache
+      uses: actions/cache@v4
+      with:
+        path: priv/plts
+        key: ${{ runner.os }}-plt-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('mix.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-plt-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-
+
+    - name: Install dependencies
+      run: mix deps.get
+
+    - name: Compile
+      run: mix compile
+
+    - name: Build PLT
+      run: mix dialyzer --plt
+
+    # Fails on any warning that is not listed in config/dialyzer.ignore.exs, and
+    # also on any entry there that no longer matches (list_unused_filters).
+    - name: Run dialyzer
+      run: mix dialyzer --format github

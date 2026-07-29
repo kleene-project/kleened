@@ -2,6 +2,15 @@ defmodule Kleened.Core.FreeBSD do
   alias Kleened.Core.OS
   require Logger
 
+  @typedoc "Address family as it is spelled on ifconfig's command line."
+  @type protocol() :: String.t()
+
+  @typedoc "An interface name, e.g. `kleene0` or an epair such as `epair0`."
+  @type interface() :: String.t()
+
+  @typedoc "A JSON object decoded from a `--libxo json` invocation."
+  @type libxo_object() :: map()
+
   @spec enable_ip_forwarding() :: :ok
   def enable_ip_forwarding() do
     case OS.cmd(~w"/sbin/sysctl net.inet.ip.forwarding") do
@@ -61,12 +70,14 @@ defmodule Kleened.Core.FreeBSD do
     end
   end
 
+  @spec get_interface_addresses(interface()) :: [libxo_object()]
   def get_interface_addresses(interface_name) do
     {output_json, 0} = OS.cmd(~w"/usr/bin/netstat --libxo json -I #{interface_name} -n")
     %{"statistics" => %{"interface" => addresses}} = Jason.decode!(output_json)
     addresses
   end
 
+  @spec create_epair() :: {:ok, interface()} | {:error, String.t()}
   def create_epair() do
     case OS.cmd(~w"/sbin/ifconfig epair create") do
       # Slicing off the 'a\n' characters of epair_a
@@ -75,6 +86,8 @@ defmodule Kleened.Core.FreeBSD do
     end
   end
 
+  @spec ifconfig_subnet_alias(String.t(), String.t() | integer(), interface(), protocol()) ::
+          :ok | {:error, String.t()}
   def ifconfig_subnet_alias(ip, mask, interface, protocol) do
     ip_address = "#{ip}/#{mask}"
 
@@ -87,6 +100,7 @@ defmodule Kleened.Core.FreeBSD do
     end
   end
 
+  @spec ifconfig_alias(String.t(), interface(), protocol()) :: :ok | {:error, String.t()}
   def ifconfig_alias(ip_address, interface, protocol) do
     mask =
       case protocol do
@@ -103,10 +117,8 @@ defmodule Kleened.Core.FreeBSD do
     end
   end
 
-  @spec(
-    destroy_bridged_vnet_epair(String.t(), String.t(), String.t()) :: :ok,
-    {:error, String.t()}
-  )
+  @spec destroy_bridged_vnet_epair(interface(), interface(), String.t()) ::
+          :ok | {:error, String.t()}
   def destroy_bridged_vnet_epair(epair, bridge, container_id) do
     case OS.cmd(~w"/sbin/ifconfig #{epair}b -vnet #{container_id}") do
       {_, 0} ->
@@ -121,10 +133,7 @@ defmodule Kleened.Core.FreeBSD do
     end
   end
 
-  @spec(
-    destroy_bridged_epair(String.t(), String.t()) :: :ok,
-    {:error, String.t()}
-  )
+  @spec destroy_bridged_epair(interface(), interface()) :: :ok | {:error, String.t()}
   def destroy_bridged_epair(epair, bridge) do
     case OS.cmd(~w"ifconfig #{bridge} deletem #{epair}a") do
       {_, 0} ->
@@ -144,6 +153,7 @@ defmodule Kleened.Core.FreeBSD do
     end
   end
 
+  @spec clear_devfs(String.t()) :: [{String.t(), integer()}]
   def clear_devfs(mountpoint) do
     devfs_mountpoint = "#{mountpoint}/dev"
     {output_json, 0} = OS.cmd(~w"mount --libxo json -t devfs")
@@ -155,12 +165,14 @@ defmodule Kleened.Core.FreeBSD do
     |> Enum.map(&OS.cmd(["/sbin/umount", &1]))
   end
 
+  @spec mounts() :: [libxo_object()]
   def mounts() do
     {output_json, 0} = OS.cmd(~w"mount --libxo json")
     %{"mount" => %{"mounted" => mounts}} = Jason.decode!(output_json)
     mounts
   end
 
+  @spec running_jails() :: [{String.t(), integer()}]
   def running_jails() do
     {jails_json, 0} = System.cmd("jls", ["-v", "--libxo=json"], stderr_to_stdout: true)
     {:ok, jails} = Jason.decode(jails_json)

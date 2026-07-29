@@ -1,4 +1,7 @@
-PATH = PATH=$$PATH:./priv/bin
+# Prefix for targets that need the compiled 'kleened_pty' helper on PATH.
+# NB: do not name this variable PATH -- GNU make exports it and the recipes
+# then lose the real PATH, so 'mix' cannot be found.
+PTY_PATH = PATH=$$PATH:./priv/bin
 
 release:
 	mix release --overwrite
@@ -10,17 +13,25 @@ dryinit:
 	mix run --eval "Kleened.Core.Config.initialize_host(%{dry_run: true})"
 
 test:
-	${PATH} mix test --seed 0 --trace --max-failures 1
+	${PTY_PATH} mix test --seed 0 --trace --max-failures 1
 
 shell:
-	${PATH} MIX_ENV=test iex -S mix
+	${PTY_PATH} MIX_ENV=test iex -S mix
 
 test-shell:
 	MIX_ENV=test mix run -e "Kleened.Test.Utils.create_test_base_image()"
-	${PATH} MIX_ENV=test iex -S mix
+	${PTY_PATH} MIX_ENV=test iex -S mix
 
 codecov:
-	${PATH} MIX_ENV=test mix coveralls.html -o ./coveralls --max-failures 5
+	${PTY_PATH} MIX_ENV=test mix coveralls.html -o ./coveralls --max-failures 5
+
+# Build the persistent lookup table. Slow (minutes), but only needed once and
+# whenever mix.lock changes.
+dialyzer-plt:
+	mix dialyzer --plt
+
+dialyzer:
+	mix dialyzer
 
 runpty: c_src/runpty.c
 	$(CC) -o priv/bin/kleened_pty $(CFLAGS) $(LDFLAGS) $<
@@ -28,4 +39,4 @@ runpty: c_src/runpty.c
 clean-runpty:
 	rm -rf priv/bin/runpty
 
-.PHONY: test
+.PHONY: test dialyzer dialyzer-plt

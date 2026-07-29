@@ -6,6 +6,13 @@ defmodule Kleened.Core.Utils do
               last: nil,
               mask: nil
 
+    @type t() :: %__MODULE__{
+            first: :inet.ip_address(),
+            last: :inet.ip_address(),
+            mask: non_neg_integer()
+          }
+
+    @spec parse(String.t()) :: t() | {:error, String.t()}
     def parse(cidr) do
       case InetCidr.parse_cidr(cidr) do
         {:ok, {first, last, mask}} ->
@@ -35,6 +42,7 @@ defmodule Kleened.Core.Utils do
     port |> Port.info() |> Keyword.get(:os_pid) |> Integer.to_string()
   end
 
+  @spec is_container_running?(String.t()) :: boolean()
   def is_container_running?(container_id) do
     output = System.cmd("jls", ["--libxo=json", "-j", container_id], stderr_to_stdout: true)
 
@@ -44,6 +52,7 @@ defmodule Kleened.Core.Utils do
     end
   end
 
+  @spec touch(Path.t()) :: boolean()
   def touch(path) do
     case System.cmd("/usr/bin/touch", [path], stderr_to_stdout: true) do
       {"", 0} -> true
@@ -51,10 +60,15 @@ defmodule Kleened.Core.Utils do
     end
   end
 
+  @spec timestamp_now() :: String.t()
   def timestamp_now() do
     DateTime.to_iso8601(DateTime.utc_now())
   end
 
+  @doc """
+  Split a `name:tag` reference, defaulting the tag to `latest`.
+  """
+  @spec decode_tagname(String.t()) :: {String.t(), String.t()}
   def decode_tagname(nametag) do
     case String.split(nametag, ":") do
       [""] ->
@@ -68,6 +82,11 @@ defmodule Kleened.Core.Utils do
     end
   end
 
+  @doc """
+  Split a `name:tag@snapshot` reference. The snapshot keeps its leading `@`,
+  or is `""` when the reference has none.
+  """
+  @spec decode_snapshot(String.t()) :: {String.t(), String.t()}
   def decode_snapshot(nametagsnapshot) do
     case String.split(nametagsnapshot, "@") do
       [nametag] -> {nametag, ""}
@@ -75,6 +94,7 @@ defmodule Kleened.Core.Utils do
     end
   end
 
+  @spec merge_environment_variable_lists([String.t()], [String.t()]) :: [String.t()]
   def merge_environment_variable_lists(envlist1, envlist2) do
     # list2 overwrites environment varibles from list1
     map1 = envlist2map(envlist1)
@@ -82,6 +102,7 @@ defmodule Kleened.Core.Utils do
     Map.merge(map1, map2) |> map2envlist()
   end
 
+  @spec envlist2map([String.t()]) :: %{optional(String.t()) => String.t()}
   def envlist2map(envs) do
     convert = fn envvar ->
       List.to_tuple(String.split(envvar, "=", parts: 2))
@@ -90,10 +111,16 @@ defmodule Kleened.Core.Utils do
     Map.new(Enum.map(envs, convert))
   end
 
+  @spec map2envlist(%{optional(String.t()) => String.t()}) :: [String.t()]
   def map2envlist(env_map) do
     Map.to_list(env_map) |> Enum.map(fn {name, value} -> Enum.join([name, value], "=") end)
   end
 
+  @doc """
+  A 12-character identifier that can never be parsed as an integer, so that
+  `/usr/sbin/jail` cannot mistake it for a jid.
+  """
+  @spec uuid() :: String.t()
   def uuid() do
     uuid_all = uuid4()
     <<uuid::binary-size(12), _rest::binary>> = uuid_all
@@ -105,6 +132,7 @@ defmodule Kleened.Core.Utils do
     end
   end
 
+  @spec human_duration(String.t()) :: String.t()
   def human_duration("") do
     ""
   end
@@ -116,6 +144,7 @@ defmodule Kleened.Core.Utils do
     duration_to_human_string(now, from)
   end
 
+  @spec duration_to_human_string(integer(), integer()) :: String.t()
   def duration_to_human_string(now, from) do
     duration_seconds = now - from
     duration_minutes = round(duration_seconds / 60)
@@ -162,6 +191,7 @@ defmodule Kleened.Core.Utils do
   @variant10 2
   # UUID v4 identifier.
   @uuid_v4 4
+  @spec uuid4() :: String.t()
   def uuid4() do
     <<u0::48, _::4, u1::12, _::2, u2::62>> = :crypto.strong_rand_bytes(16)
 

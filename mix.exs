@@ -21,9 +21,14 @@ defmodule Kleened.MixProject do
         kleened: [include_executables_for: [:unix]]
       ],
       dialyzer: [
-        # plt_ignore_apps: [:amnesia],
-        ignore_warnings: "config/dialyzer.ignore",
-        plt_add_deps: :apps_direct
+        ignore_warnings: "config/dialyzer.ignore.exs",
+        list_unused_filters: true,
+        # :app_tree rather than :apps_direct so transitive runtime deps
+        # (telemetry, ranch, ...) land in the PLT too -- otherwise dialyzer
+        # reports unknown functions inside plug/cowboy.
+        plt_add_deps: :app_tree,
+        plt_core_path: "priv/plts",
+        plt_local_path: "priv/plts"
       ],
       test_coverage: [tool: ExCoveralls],
       preferred_cli_env: [

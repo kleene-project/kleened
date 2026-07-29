@@ -83,7 +83,7 @@ defmodule Kleened.API.Utils do
     """
   end
 
-  @spec cast_mountpoints([%{}]) :: {:ok, [%Schemas.MountPointConfig{}]} | {:error, term()}
+  @spec cast_mountpoints([map()]) :: {:ok, [Schemas.MountPointConfig.t()]} | {:error, term()}
   def cast_mountpoints(mountpoints) do
     cast_mountpoints(mountpoints, [])
   end
