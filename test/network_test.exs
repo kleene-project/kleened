@@ -1588,9 +1588,7 @@ defmodule NetworkTest do
   end
 
   # The host's gateway interface, used where a test needs a 'custom' network bound to a
-  # real NIC. This used to be hardcoded as "em0", which is the VirtualBox/Vagrant NIC name;
-  # the QEMU/libvirt VM uses virtio and calls it "vtnet0", so the hardcoded tests failed
-  # with 'Expected truthy, got false' on interface_exists?/1.
+  # real NIC. Detected rather than hardcoded: the NIC name differs per hypervisor.
   defp gateway_interface() do
     {:ok, interface} = Kleened.Core.FreeBSD.host_gateway_interface()
     interface
@@ -1641,10 +1639,6 @@ defmodule NetworkTest do
     await_tcpdump_listening(port, interface)
   end
 
-  # Block until tcpdump has printed its "listening on ..." banner. This is a barrier,
-  # not just an assertion: returning before tcpdump is actually capturing races with
-  # the traffic the caller is about to generate, which is the main source of
-  # flakiness in the connectivity tests.
   defp await_tcpdump_listening(port, interface) do
     receive do
       {^port, {:data, {:eol, <<"tcpdump: listening on", _::binary>>}}} ->
@@ -1671,9 +1665,6 @@ defmodule NetworkTest do
         read_tcpdump(port)
     after
       1_000 ->
-        # Previously this returned the literal string "tcpdump timeout", which then
-        # flowed into String.contains?/2 and failed as a confusing content mismatch
-        # rather than as the timeout it actually was.
         flunk("timed out after 1s waiting for a packet from tcpdump")
     end
   end
