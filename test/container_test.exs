@@ -132,7 +132,9 @@ defmodule ContainerTest do
         start_container: false
       })
 
-    assert String.contains?(process_output, "freebsd.org has address 96.47.72.84")
+    # Assert the shape of the answer rather than freebsd.org's current A record,
+    # which changes independently of Kleene.
+    assert process_output =~ ~r/freebsd\.org has address \d{1,3}(\.\d{1,3}){3}/
 
     {:ok, exec_id} = Exec.create(%Schemas.ExecConfig{container_id: container_id2, cmd: cmd})
 
@@ -143,7 +145,9 @@ defmodule ContainerTest do
         start_container: false
       })
 
-    assert String.contains?(process_output, "freebsd.org has address 96.47.72.84")
+    # Assert the shape of the answer rather than freebsd.org's current A record,
+    # which changes independently of Kleene.
+    assert process_output =~ ~r/freebsd\.org has address \d{1,3}(\.\d{1,3}){3}/
 
     Container.stop(container_id1)
     Container.stop(container_id2)

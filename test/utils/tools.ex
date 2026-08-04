@@ -17,14 +17,6 @@ defmodule Kleened.Test.Utils do
     :ok
   end
 
-  def clear() do
-    MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
-
-    MetaData.list_images()
-    |> Enum.filter(fn %Schemas.Image{id: id} -> id != "base" end)
-    |> Enum.map(fn %Schemas.Image{id: id} -> Image.remove(id) end)
-  end
-
   def get_host_state() do
     %Schemas.Image{dataset: test_image_dataset} = MetaData.get_image("FreeBSD:testing")
 

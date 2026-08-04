@@ -431,13 +431,13 @@ defmodule NetworkTest do
     network =
       create_network(%{
         name: "custom_net",
-        interface: "em0",
+        interface: gateway_interface(),
         subnet: "172.19.3.0/24",
         gateway: "",
         type: "custom",
-        # NAT needs to be disabled when using 'em0' as the custom interface
-        # since it is also the GW interface. Otherwise, it will NAT traffic on
-        # 'em0' to itself which breaks connectivity to the vagrant box.
+        # NAT needs to be disabled when the custom interface is also the gateway
+        # interface. Otherwise it NATs traffic on that interface to itself, which
+        # breaks connectivity to the dev VM.
         nat: ""
       })
 
@@ -476,7 +476,7 @@ defmodule NetworkTest do
     network =
       create_network(%{
         name: "custom_net",
-        interface: "em0",
+        interface: gateway_interface(),
         subnet: "172.19.3.0/24",
         gateway: "",
         nat: "",
@@ -899,7 +899,7 @@ defmodule NetworkTest do
       network: %{
         name: "testnet3",
         subnet: "172.20.1.0/24",
-        interface: "em0",
+        interface: gateway_interface(),
         nat: "",
         type: "custom"
       },
@@ -1587,6 +1587,13 @@ defmodule NetworkTest do
     Port.close(port)
   end
 
+  # The host's gateway interface, used where a test needs a 'custom' network bound to a
+  # real NIC. Detected rather than hardcoded: the NIC name differs per hypervisor.
+  defp gateway_interface() do
+    {:ok, interface} = Kleened.Core.FreeBSD.host_gateway_interface()
+    interface
+  end
+
   defp host_ip() do
     {:ok, interface} = Kleened.Core.FreeBSD.host_gateway_interface()
 
@@ -1611,16 +1618,7 @@ defmodule NetworkTest do
         ]
       )
 
-    msg =
-      receive do
-        {^port, msg} -> msg
-      after
-        2_000 ->
-          Logger.warning("tcpdump not responding")
-      end
-
-    assert {:data, {:eol, <<"tcpdump: listening on", _::binary>>}} = msg
-    port
+    await_tcpdump_listening(port, "pflog0")
   end
 
   defp listen_for_traffic() do
@@ -1638,16 +1636,20 @@ defmodule NetworkTest do
         ]
       )
 
-    msg =
-      receive do
-        {^port, msg} -> msg
-      after
-        2_000 ->
-          Logger.warning("tcpdump not responding")
-      end
+    await_tcpdump_listening(port, interface)
+  end
 
-    assert {:data, {:eol, <<"tcpdump: listening on", _::binary>>}} = msg
-    port
+  defp await_tcpdump_listening(port, interface) do
+    receive do
+      {^port, {:data, {:eol, <<"tcpdump: listening on", _::binary>>}}} ->
+        port
+
+      {^port, {:data, {:eol, other}}} ->
+        flunk("tcpdump on #{interface} failed to start: #{other}")
+    after
+      2_000 ->
+        flunk("tcpdump on #{interface} did not start listening within 2s")
+    end
   end
 
   defp read_tcpdump(port) do
@@ -1663,8 +1665,7 @@ defmodule NetworkTest do
         read_tcpdump(port)
     after
       1_000 ->
-        Logger.warning("Timed out while reading from tcp-dump")
-        "tcpdump timeout"
+        flunk("timed out after 1s waiting for a packet from tcpdump")
     end
   end
 
