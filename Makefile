@@ -33,10 +33,22 @@ dialyzer-plt:
 dialyzer:
 	mix dialyzer
 
-runpty: c_src/runpty.c
-	$(CC) -o priv/bin/kleened_pty $(CFLAGS) $(LDFLAGS) $<
+# The rule is on the built file, not on the 'runpty' alias. Naming the target
+# 'runpty' meant no such file ever existed, so make rebuilt the helper on *every*
+# invocation -- and mix.exs registers a :run_pty compiler that calls this on every
+# 'mix compile'. In the dev VM the repo is a 9P share that root cannot write to, so
+# a root-side compile truncated priv/bin/kleened_pty and then failed, leaving no
+# helper at all and every jail-based test failing with exit-code 8.
+# NB: the source is named literally rather than via '$<'. BSD make (FreeBSD's
+# make) only defines '$<' for inference rules, so in an explicit rule it expands
+# to nothing and the compile fails with "no input files".
+priv/bin/kleened_pty: c_src/runpty.c
+	mkdir -p priv/bin
+	$(CC) -o $@ $(CFLAGS) $(LDFLAGS) c_src/runpty.c
+
+runpty: priv/bin/kleened_pty
 
 clean-runpty:
-	rm -rf priv/bin/runpty
+	rm -f priv/bin/kleened_pty
 
-.PHONY: test dialyzer dialyzer-plt
+.PHONY: test dialyzer dialyzer-plt runpty clean-runpty
