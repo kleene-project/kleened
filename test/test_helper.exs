@@ -56,11 +56,6 @@ defmodule TestHelper do
     assert before_datasets == after_datasets
   end
 
-  def ignore_test_images(test_images, datasets) do
-    test_images = MapSet.new(test_images)
-    MapSet.difference(datasets, test_images)
-  end
-
   def cleanup() do
     runnning_containers = Container.list(all: false)
 
@@ -936,17 +931,6 @@ defmodule TestHelper do
   def now() do
     :timer.sleep(10)
     DateTime.to_iso8601(DateTime.utc_now())
-  end
-
-  def devfs_mounted(%Schemas.Container{dataset: dataset}) do
-    :timer.sleep(500)
-    mountpoint = ZFS.mountpoint(dataset)
-    devfs_path = Path.join(mountpoint, "dev")
-
-    case System.cmd("sh", ["-c", "mount | grep \"devfs on #{devfs_path}\""]) do
-      {"", 1} -> false
-      {_output, 0} -> true
-    end
   end
 
   def create_tmp_dockerfile(content, dockerfile, context \\ "./") do
