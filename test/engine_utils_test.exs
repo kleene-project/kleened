@@ -3,6 +3,8 @@ defmodule CoreUtilsTest do
   alias Kleened.Core.Utils
 
   @moduletag :capture_log
+  # Pure functions: no jails, ZFS, pf or daemon. Part of the fast 'unit' tier.
+  @moduletag :unit
 
   test "test duration_to_human_string(now, from)" do
     assert "Less than a second" == Utils.duration_to_human_string(10, 10)

@@ -15,6 +15,13 @@ dryinit:
 test:
 	${PTY_PATH} mix test --seed 0 --trace --max-failures 1
 
+# The fast tier: tests tagged :unit, which are pure functions over their inputs.
+# '--no-start' keeps the OTP application down, so no config file, ZFS pool, pf or
+# daemon socket is needed. test_helper.exs skips creating the base image when it
+# sees the run is unit-only.
+test-unit:
+	mix test --no-start --only unit
+
 shell:
 	${PTY_PATH} MIX_ENV=test iex -S mix
 

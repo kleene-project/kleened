@@ -3,6 +3,8 @@ defmodule DockerfileTest do
   use ExUnit.Case
 
   @moduletag :capture_log
+  # Pure functions: no jails, ZFS, pf or daemon. Part of the fast 'unit' tier.
+  @moduletag :unit
 
   test "from instruction" do
     test1 = parse("# Testing\nFROM lol\n# One more comment")

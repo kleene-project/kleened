@@ -17,7 +17,13 @@ ExUnit.configure(
   max_failures: 1
 )
 
-Kleened.Test.Utils.create_test_base_image()
+# Creating the base image needs the running application, and hence ZFS and root.
+# Keyed off whether the supervision tree is actually up rather than off a flag:
+# 'mix test --no-start' leaves it down, which is how the fast :unit tier runs on an
+# unprivileged, unprovisioned checkout.
+if Process.whereis(Kleened.Core.Config) != nil do
+  Kleened.Test.Utils.create_test_base_image()
+end
 
 defmodule TestHelper do
   import ExUnit.Assertions
