@@ -17,8 +17,7 @@ test:
 
 # The fast tier: tests tagged :unit, which are pure functions over their inputs.
 # '--no-start' keeps the OTP application down, so no config file, ZFS pool, pf or
-# daemon socket is needed -- this runs on an unprivileged, unprovisioned checkout
-# in a couple of seconds. test_helper.exs skips creating the base image when it
+# daemon socket is needed. test_helper.exs skips creating the base image when it
 # sees the run is unit-only.
 test-unit:
 	mix test --no-start --only unit
