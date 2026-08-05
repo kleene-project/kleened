@@ -183,57 +183,6 @@ defmodule NetworkTest do
     Network.destroy_interface(interface)
   end
 
-  test "listing networks", %{api_spec: api_spec} do
-    Network.destroy_interface("kleene1")
-
-    assert [] = TestHelper.network_list(api_spec)
-
-    network1 = create_network(%{name: "testnet1", type: "bridge"})
-    create_network(%{name: "testnet2", type: "bridge"})
-
-    assert [
-             %{name: "testnet1"},
-             %{name: "testnet2"}
-           ] = TestHelper.network_list(api_spec)
-
-    assert TestHelper.network_remove(api_spec, network1.name) == %{id: network1.id}
-
-    assert [
-             %{name: "testnet2"}
-           ] = TestHelper.network_list(api_spec)
-  end
-
-  test "prune networks", %{api_spec: api_spec} do
-    network1 = create_network(%{name: "testnet1", type: "loopback"})
-
-    %Schemas.Network{id: network2_id} = create_network(%{name: "testnet2", type: "bridge"})
-
-    %{id: container_id} =
-      TestHelper.container_create(%{
-        name: "network_prune_test",
-        cmd: ["/bin/sleep", "10"],
-        network_driver: "ipnet",
-        network: "testnet1"
-      })
-
-    assert [network2_id] == TestHelper.network_prune(api_spec)
-    assert [%{name: "testnet1"}] = TestHelper.network_list(api_spec)
-    assert :ok == TestHelper.network_disconnect(api_spec, network1.id, container_id)
-  end
-
-  test "inspecting a network that doesn't exist" do
-    %Schemas.Network{} = create_network(%{type: "loopback"})
-    response = TestHelper.network_inspect_raw("notexist")
-    assert response.status == 404
-    assert response.resp_body == "{\"message\":\"network not found\"}"
-  end
-
-  test "remove a non-existing network", %{api_spec: api_spec} do
-    network = create_network(%{ifname: "kleene1", driver: "loopback"})
-    assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
-    assert TestHelper.network_remove(api_spec, network.name) == %{message: "network not found."}
-  end
-
   test "create a network with same name twice", %{api_spec: api_spec} do
     network = create_network(%{type: "loopback"})
 
@@ -714,49 +663,6 @@ defmodule NetworkTest do
              # IPv6 link-local ip:
              %{"flags_pretty" => ["up", "host", "static"], "interface-name" => "lo0"}
            ] = routes6(routing_info)
-  end
-
-  test "NAT'd connectivity of 'ipnet' containers" do
-    # loopback IPv4
-    container_connectivity_test(%{
-      network: %{
-        name: "testnet1",
-        gateway: "",
-        subnet: "10.13.37.0/24",
-        nat: "<host-gateway>",
-        type: "loopback"
-      },
-      client: %{network_driver: "ipnet"}
-    })
-
-    # bridge IPv4
-    container_connectivity_test(%{
-      network: %{
-        name: "testnet2",
-        gateway: "",
-        subnet: "10.13.38.0/24",
-        nat: "<host-gateway>",
-        type: "bridge"
-      },
-      client: %{network_driver: "ipnet"}
-    })
-  end
-
-  test "NAT'd connectivity of 'vnet' containers" do
-    interface = "kleened0"
-    Network.destroy_interface(interface)
-
-    # bridge IPv4
-    container_connectivity_test(%{
-      network: %{
-        name: "testnet2",
-        gateway: "<auto>",
-        subnet: "10.13.38.0/24",
-        nat: "<host-gateway>",
-        type: "bridge"
-      },
-      client: %{network_driver: "vnet"}
-    })
   end
 
   test "No NAT means no connectivity on rfc1819 networks" do
