@@ -642,9 +642,7 @@ defmodule Kleened.Core.Network do
   @doc """
   Render the complete pf.conf body from explicit inputs.
 
-  Pure: touches no MetaData, no Config and no filesystem. This is the seam that
-  makes the generated ruleset assertable directly, rather than only by observing
-  its effect on traffic.
+  Pure: touches no MetaData, no Config and no filesystem.
   """
   @spec build_pf_config(%{
           networks: [Schemas.Network.t()],
