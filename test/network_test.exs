@@ -1,6 +1,5 @@
 defmodule NetworkTest do
   use Kleened.Test.ConnCase
-  alias ExUnit.CaptureLog
   require Logger
   alias Kleened.Core.{Network, MetaData, OS}
   alias Kleened.Core.Utils.CIDR
@@ -22,18 +21,6 @@ defmodule NetworkTest do
   @cant_connect_disabled_with_any %{
     message: "containers with the 'disabled' network-driver cannot connect to networks."
   }
-  setup do
-    TestHelper.cleanup()
-
-    on_exit(fn ->
-      CaptureLog.capture_log(fn ->
-        TestHelper.cleanup()
-      end)
-    end)
-
-    :ok
-  end
-
   test "create, inspect, connect, and remove a 'loopback' network with custom interface name", %{
     api_spec: api_spec
   } do
