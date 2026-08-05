@@ -1076,16 +1076,19 @@ defmodule Kleened.Core.Network do
     "#{prefix}_all_interfaces=\"{#{all_interfaces}}\""
   end
 
+  # Always defined, even with no networks. The filter rules generated for a
+  # container's published ports reference this macro unconditionally, and pf
+  # rejects the *entire* ruleset if a referenced macro is undefined -- so a
+  # container publishing a port while no network exists used to produce a config
+  # that would not load at all.
+  defp network_interfaces_macro([]) do
+    ["kleenet_network_interfaces=\"{lo0}\""]
+  end
+
   defp network_interfaces_macro(networks) do
-    case length(networks) do
-      0 ->
-        []
+    interfaces = Enum.map(networks, & &1.interface) |> Enum.join(",")
 
-      _ ->
-        interfaces = Enum.map(networks, & &1.interface) |> Enum.join(",")
-
-        ["kleenet_network_interfaces=\"{lo0, #{interfaces}}\""]
-    end
+    ["kleenet_network_interfaces=\"{lo0, #{interfaces}}\""]
   end
 
   defp host_gw_macro(host_gateway) do

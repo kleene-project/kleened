@@ -1,77 +1,12 @@
 defmodule PfConfigTest do
   use ExUnit.Case
 
-  alias Kleened.Core.Network
-  alias Kleened.API.Schemas
+  import Kleened.Test.PfFixtures
 
   @moduletag :capture_log
   # Pure: Network.build_pf_config/1 takes all of its inputs explicitly, so no
   # MetaData, no Config, no filesystem and no running host. Part of the fast tier.
   @moduletag :unit
-
-  # Mirrors example/pf.conf.kleene. Kept inline so the test does not depend on a
-  # file that a developer may have edited.
-  @template """
-  ### KLEENED MACROS START ###
-  <%= kleene_macros %>
-  ### KLEENED MACROS END #####
-
-  ### KLEENED TRANSLATION RULES START ###
-  <%= kleene_translation %>
-  ### KLEENED TRANSLATION RULES END #####
-
-  ### KLEENED FILTERING RULES START #####
-  <%= kleene_filtering %>
-  ### KLEENED FILTERING RULES END #######
-  """
-
-  defp build(opts \\ []) do
-    Network.build_pf_config(%{
-      networks: Keyword.get(opts, :networks, []),
-      network_endpoints: Keyword.get(opts, :network_endpoints, %{}),
-      containers: Keyword.get(opts, :containers, []),
-      host_gateway: Keyword.get(opts, :host_gateway, "em0"),
-      host_gw: Keyword.get(opts, :host_gw, "em0"),
-      template: @template
-    })
-  end
-
-  defp network(attrs \\ []) do
-    struct!(
-      %Schemas.Network{
-        id: "netid",
-        name: "testnet",
-        type: "loopback",
-        interface: "kleene0",
-        subnet: "10.13.37.0/24",
-        subnet6: "",
-        gateway: "",
-        gateway6: "",
-        nat: "",
-        icc: true,
-        internal: false
-      },
-      attrs
-    )
-  end
-
-  defp container_with_ports(pub_ports) do
-    %Schemas.Container{id: "conid", name: "testcon", public_ports: pub_ports}
-  end
-
-  defp published_port(attrs \\ []) do
-    struct!(
-      %Schemas.PublishedPort{
-        interfaces: ["em0"],
-        host_port: "8080",
-        container_port: "80",
-        protocol: "tcp",
-        ip_address: "10.13.37.2",
-        ip_address6: ""
-      },
-      attrs
-    )
-  end
 
   describe "macros" do
     test "the host gateway interface becomes a macro" do
@@ -94,8 +29,10 @@ defmodule PfConfigTest do
       assert config =~ ~s(kleenet_network_interfaces="{lo0, kleene0,kleene1}")
     end
 
-    test "no interfaces macro when there are no networks" do
-      refute build(networks: []) =~ "kleenet_network_interfaces="
+    test "the interfaces macro is defined even with no networks" do
+      # The published-port filter rules reference this macro unconditionally, and
+      # pf rejects the whole ruleset when a referenced macro is undefined.
+      assert build(networks: []) =~ ~s(kleenet_network_interfaces="{lo0}")
     end
   end
 
@@ -189,16 +126,59 @@ defmodule PfConfigTest do
   end
 
   describe "network isolation" do
-    test "icc: false blocks traffic between containers on the network" do
-      open = build(networks: [network(icc: true)])
-      closed = build(networks: [network(icc: false)])
-      refute section(open, "FILTERING") == section(closed, "FILTERING")
+    # The two flags are orthogonal and each contributes exactly one thing:
+    #   icc       -> whether subnet-to-subnet traffic is passed
+    #   internal  -> whether egress off the network is blocked
+    # Asserting the rules directly is what makes it possible to reason about the
+    # combinations without booting a container for each cell.
+    defp filtering(internal, icc) do
+      build(
+        networks: [network(interface: "kleene0", internal: internal, icc: icc, nat: "em0")],
+        host_gw: "em0"
+      )
+      |> section("FILTERING")
     end
 
-    test "internal: true changes the filtering rules" do
-      external = build(networks: [network(internal: false)])
-      internal = build(networks: [network(internal: true)])
-      refute section(external, "FILTERING") == section(internal, "FILTERING")
+    @icc_pass "pass quick on $kleenet_netid_all_interfaces " <>
+                "from $kleenet_netid_subnet to $kleenet_netid_subnet"
+    @egress_block "block out quick log on $kleenet_network_interfaces " <>
+                    "from $kleenet_netid_subnet"
+    @nat_egress_block "block out quick log on $kleenet_netid_nat_if " <>
+                        "from $kleenet_netid_subnet"
+
+    test "incoming traffic to the subnet is always blocked by default" do
+      for internal <- [true, false], icc <- [true, false] do
+        assert filtering(internal, icc) =~ "block in log from any to $kleenet_netid_subnet"
+      end
+    end
+
+    test "icc: true passes traffic between containers on the network" do
+      assert filtering(false, true) =~ @icc_pass
+    end
+
+    test "icc: false omits the inter-container pass rule" do
+      refute filtering(false, false) =~ @icc_pass
+    end
+
+    test "internal: true blocks egress, both generally and via the NAT interface" do
+      rules = filtering(true, true)
+      assert rules =~ @egress_block
+      assert rules =~ @nat_egress_block
+    end
+
+    test "internal: false does not block egress" do
+      rules = filtering(false, true)
+      refute rules =~ @egress_block
+      refute rules =~ @nat_egress_block
+    end
+
+    test "the two flags are independent" do
+      # internal governs egress, icc governs inter-container traffic; neither
+      # should disturb the other.
+      assert filtering(true, false) =~ @egress_block
+      refute filtering(true, false) =~ @icc_pass
+      assert filtering(true, true) =~ @egress_block
+      assert filtering(true, true) =~ @icc_pass
     end
 
     test "a NAT'ed network produces a nat rule for its subnet" do
@@ -224,12 +204,5 @@ defmodule PfConfigTest do
       opts = [networks: [network()], containers: [container_with_ports([published_port()])]]
       assert build(opts) == build(opts)
     end
-  end
-
-  # Extract the body between a section's START and END markers.
-  defp section(config, name) do
-    [_before, rest] = String.split(config, "### KLEENED #{name}", parts: 2)
-    [body, _after] = String.split(rest, "### KLEENED #{name}", parts: 2)
-    body |> String.split("\n", parts: 2) |> List.last()
   end
 end
