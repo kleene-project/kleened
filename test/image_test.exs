@@ -1,26 +1,10 @@
 defmodule ImageTest do
   use Kleened.Test.ConnCase
-  alias ExUnit.CaptureLog
   alias Kleened.Core.{Config, MetaData, ZFS, OS, Container, FreeBSD}
   alias Kleened.API.Schemas
   alias Schemas.WebSocketMessage, as: Message
 
-  require Logger
   @moduletag :capture_log
-
-  setup %{host_state: state} do
-    TestHelper.cleanup()
-
-    on_exit(fn ->
-      CaptureLog.capture_log(fn ->
-        Logger.info("Cleaning up after test...")
-        TestHelper.cleanup()
-        TestHelper.compare_to_baseline_environment(state)
-      end)
-    end)
-
-    :ok
-  end
 
   @tmp_dockerfile "tmp_dockerfile"
   @tmp_context "./"
