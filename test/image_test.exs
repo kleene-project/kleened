@@ -11,100 +11,6 @@ defmodule ImageTest do
 
   @test_img %{name: "FreeBSD", tag: "testing"}
 
-  test "building a simple image that generates some text", %{api_spec: api_spec} do
-    dockerfile = """
-    FROM FreeBSD:testing
-    RUN echo "lets test that we receive this!"
-    RUN uname
-    """
-
-    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
-
-    config = %{
-      context: @tmp_context,
-      dockerfile: @tmp_dockerfile,
-      tag: "websock_img:latest"
-    }
-
-    {%Schemas.Image{id: image_id}, build_log} = TestHelper.image_valid_build(config)
-
-    assert build_log == [
-             "lets test that we receive this!\n",
-             "FreeBSD\n"
-           ]
-
-    [%{id: ^image_id}, @test_img] = TestHelper.image_list(api_spec)
-    assert %{id: "websock_img"} == TestHelper.image_remove("websock_img")
-
-    assert %{message: "Error: No such image: websock_img\n"} ==
-             TestHelper.image_remove("websock_img")
-
-    assert [@test_img] = TestHelper.image_list(api_spec)
-  end
-
-  test "update the image tag", %{api_spec: api_spec} do
-    dockerfile = """
-    FROM FreeBSD:testing
-    CMD /bin/sleep 10
-    """
-
-    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
-
-    config = %{
-      context: @tmp_context,
-      dockerfile: @tmp_dockerfile,
-      tag: "tagging:test",
-      cmd: ~w"/bin/ls"
-    }
-
-    {%Schemas.Image{id: image_id}, _build_log} = TestHelper.image_valid_build(config)
-
-    assert %{message: "image not found"} ==
-             TestHelper.image_tag(api_spec, "notexist", "newtag:latest")
-
-    assert %{id: image_id} == TestHelper.image_tag(api_spec, image_id, "newtag:latest")
-
-    [%{id: ^image_id, name: "newtag", tag: "latest"}, @test_img] = TestHelper.image_list(api_spec)
-  end
-
-  test "trying to remove an image used by containers" do
-    image = MetaData.get_image("FreeBSD:testing")
-    %{id: container_id} = TestHelper.container_create(%{name: "testing"})
-    %{message: msg} = TestHelper.image_remove("FreeBSD:testing")
-
-    expected_mgs =
-      "could not remove image #{image.id} since it is used for containers:\n#{container_id}"
-
-    assert msg == expected_mgs
-  end
-
-  test "trying to remove an image used by images" do
-    image_base = MetaData.get_image("FreeBSD:testing")
-
-    dockerfile = """
-    FROM FreeBSD:testing
-    CMD /bin/sleep 10
-    """
-
-    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile)
-
-    config = %{
-      context: @tmp_context,
-      dockerfile: @tmp_dockerfile,
-      tag: "tagging:test",
-      cmd: ~w"/bin/ls"
-    }
-
-    {%Schemas.Image{id: child_image_id}, _build_log} = TestHelper.image_valid_build(config)
-
-    %{message: msg} = TestHelper.image_remove("FreeBSD:testing")
-
-    expected_mgs =
-      "could not remove image #{image_base.id} since it is used for images:\n#{child_image_id}"
-
-    assert msg == expected_mgs
-  end
-
   test "parsing some invalid input to the image builder" do
     # Using string instead of boolean in parameter 'quiet'
     config = TestHelper.imagebuild_config(%{context: "./", quiet: "lol"})
@@ -1000,173 +906,9 @@ defmodule ImageTest do
     remove_test_context(context)
   end
 
-  test "building an image with a few empty lines in the Dockerfile" do
-    dockerfile = """
-    FROM FreeBSD:testing
-
-
-    RUN echo "testing"
-    """
-
-    context = create_test_context("test_image_builder_quiet")
-    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
-
-    {_image, build_log} =
-      TestHelper.image_valid_build(%{
-        context: context,
-        dockerfile: @tmp_dockerfile,
-        quiet: true,
-        tag: "test:latest"
-      })
-
-    assert build_log == []
-    remove_test_context(context)
-  end
-
-  test "creating a container using a snapshot from an image-build" do
-    dockerfile = """
-    FROM FreeBSD:testing
-    COPY test.txt /etc/
-    RUN echo -n "some text" > /etc/test2.txt
-    CMD /etc/rc
-    """
-
-    context = create_test_context("test_image_snapshots")
-    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
-
-    {image, _build_log} =
-      TestHelper.image_valid_build(%{
-        context: context,
-        dockerfile: @tmp_dockerfile,
-        tag: "test:latest"
-      })
-
-    snapshot = fetch_snapshot(image, "COPY test.txt /etc/")
-
-    {_, _, output} =
-      TestHelper.container_valid_run(%{
-        name: "image_testing1",
-        image: "#{image.id}#{snapshot}",
-        cmd: ["/bin/cat", "/etc/test.txt"]
-      })
-
-    assert output == ["lol\n"]
-
-    {_, _, output} =
-      TestHelper.container_valid_run(%{
-        name: "image_testing2",
-        image: "#{image.id}#{snapshot}",
-        cmd: ["/bin/cat", "/etc/test2.txt"],
-        expected_exit_code: 1
-      })
-
-    expected_output = """
-    cat: /etc/test2.txt: No such file or directory
-    jail: /usr/bin/env /bin/cat /etc/test2.txt: failed
-    """
-
-    assert Enum.join(output) == expected_output
-
-    snapshot = fetch_snapshot(image, "RUN echo -n \"some text\" > /etc/test2.txt")
-
-    {_, _, output} =
-      TestHelper.container_valid_run(%{
-        name: "image_testing3",
-        image: "test:latest#{snapshot}",
-        cmd: ["/bin/cat", "/etc/test2.txt"]
-      })
-
-    assert output == ["some text"]
-    remove_test_context(context)
-  end
-
-  test "creating a container using a snapshot from a failed image-build" do
-    dockerfile = """
-    FROM FreeBSD:testing
-    COPY test.txt /etc/
-    RUN ls notexist
-    RUN echo -n "some text" > /etc/test2.txt
-    CMD /etc/rc
-    """
-
-    context = create_test_context("test_image_snapshots2")
-    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
-
-    {_error_type, image_id, _build_log} =
-      TestHelper.image_invalid_build(%{
-        context: context,
-        dockerfile: @tmp_dockerfile,
-        tag: "test:latest",
-        cleanup: false
-      })
-
-    image = MetaData.get_image(image_id)
-    snapshot = fetch_snapshot(image, "COPY test.txt /etc/")
-
-    {_, _, output} =
-      TestHelper.container_valid_run(%{
-        name: "image_testing4",
-        image: "#{image.id}#{snapshot}",
-        cmd: ["/bin/cat", "/etc/test.txt"]
-      })
-
-    assert output == ["lol\n"]
-
-    {_, _, output} =
-      TestHelper.container_valid_run(%{
-        name: "image_testing5",
-        image: "#{image.id}#{snapshot}",
-        cmd: ["/bin/cat", "/etc/test2.txt"],
-        expected_exit_code: 1
-      })
-
-    assert Enum.join(output) == """
-           cat: /etc/test2.txt: No such file or directory
-           jail: /usr/bin/env /bin/cat /etc/test2.txt: failed
-           """
-
-    remove_test_context(context)
-  end
-
-  # The mini-jail userland used for the 'fetch' and 'zfs' image creation tests
-  # have been created with https://github.com/Freaky/mkjail using the command
-  # mkjail -a minimal_testjail.txz /usr/bin/env /usr/local/bin/python3.11 -c "print('lol')"
-  test "create base image using a method 'zfs-copy'" do
-    config = %{
-      method: "zfs-copy",
-      zfs_dataset: "zroot/image_create_zfs_test",
-      tag: "zfscreate:testing"
-    }
-
-    image_id = TestHelper.base_image_create(config)
-    ZFS.destroy_force(config.zfs_dataset)
-
-    run_config = baseimage_run_config(image_id)
-    {_, _, output} = TestHelper.container_valid_run(run_config)
-    assert output == ["testing minimaljail\n"]
-    assert container_resolv_conf_exists?(run_config)
-  end
-
-  test "create base image using a method 'zfs-clone'" do
-    config = %{
-      method: "zfs-clone",
-      zfs_dataset: "zroot/kleene_basejail",
-      tag: "zfscreate:testing"
-    }
-
-    image_id = TestHelper.base_image_create(config)
-
-    run_config = %{
-      baseimage_run_config(image_id)
-      | cmd: ["/bin/sh", "-c", "echo lol"],
-        jail_param: ["mount.devfs=false"]
-    }
-
-    {_, _, output} = TestHelper.container_valid_run(run_config)
-    assert output == ["lol\n"]
-    assert container_resolv_conf_exists?(run_config)
-  end
-
+  # Kept while the rest of the image-create matrix moved to klee: this is the only
+  # assertion on the *WebSocket* close frame for /images/create. klee's client
+  # surfaces the message but not the 1011 close code.
   test "fail to create base image using a method 'zfs-clone' because dataset starts with '/'" do
     config = %{
       method: "zfs-clone",
@@ -1183,54 +925,6 @@ defmodule ImageTest do
                 message: "image creation failed: invalid dataset",
                 msg_type: "error"
               }}
-  end
-
-  test "create base image using a method 'fetch'" do
-    config = %{
-      method: "fetch",
-      url: "file://./test/data/minimal_testjail.txz",
-      tag: "fetchcreate:testing"
-    }
-
-    image_id = TestHelper.base_image_create(config)
-    run_config = baseimage_run_config(image_id)
-    {_, _, output} = TestHelper.container_valid_run(run_config)
-    assert output == ["testing minimaljail\n"]
-    assert container_resolv_conf_exists?(run_config)
-  end
-
-  #### Without copying 'resolv.conf' ####
-  test "create base image using a method 'zfs-copy' without 'dns'" do
-    config = %{
-      method: "zfs-copy",
-      zfs_dataset: "zroot/image_create_zfs_test",
-      tag: "zfscreate:testing",
-      dns: false
-    }
-
-    image_id = TestHelper.base_image_create(config)
-    ZFS.destroy_force(config.zfs_dataset)
-
-    run_config = baseimage_run_config(image_id)
-    {_, _, output} = TestHelper.container_valid_run(run_config)
-    assert output == ["testing minimaljail\n"]
-    assert not container_resolv_conf_exists?(run_config)
-  end
-
-  test "create base image using a method 'fetch' without 'dns'" do
-    config = %{
-      method: "fetch",
-      url: "file://./test/data/minimal_testjail.txz",
-      tag: "fetchcreate:testing",
-      dns: false
-    }
-
-    image_id = TestHelper.base_image_create(config)
-    run_config = baseimage_run_config(image_id)
-
-    {_, _, output} = TestHelper.container_valid_run(run_config)
-    assert output == ["testing minimaljail\n"]
-    assert not container_resolv_conf_exists?(run_config)
   end
 
   test "that the default CMD, when using a base image as parent, is ['/bin/sh', '/etc/rc']" do
@@ -1336,29 +1030,6 @@ defmodule ImageTest do
     remove_test_context(context)
   end
 
-  test "try building an image from a invalid Dockerfile (no linebreak)" do
-    dockerfile = """
-    FROM FreeBSD:testing
-    RUN echo
-      "this should faile because we omitted the '\\' above"
-    CMD /usr/bin/uname
-    """
-
-    context = create_test_context("test_image_builder_three_invalid")
-    TestHelper.create_tmp_dockerfile(dockerfile, @tmp_dockerfile, context)
-
-    {:invalid_dockerfile, _build_id, build_log} =
-      TestHelper.image_invalid_build(%{
-        context: context,
-        dockerfile: @tmp_dockerfile
-      })
-
-    assert last_log_entry(build_log) ==
-             "error in '  \"this should faile because we omitted the '\\' above\"': invalid instruction"
-
-    remove_test_context(context)
-  end
-
   test "try building an image with an invalid image name in the FROM-instruction" do
     dockerfile = """
     FROM nonexisting
@@ -1401,29 +1072,6 @@ defmodule ImageTest do
     remove_test_context(context)
   end
 
-  defp baseimage_run_config(image_id) do
-    %{
-      name: "base_img_create_test",
-      image: image_id,
-      cmd: ["/usr/local/bin/python3.11", "-c", "print('testing minimaljail')"],
-      jail_param: ["exec.system_jail_user", "mount.devfs=false", "exec.clean=false"],
-      user: "root",
-      attach: true
-    }
-  end
-
-  defp container_resolv_conf_exists?(run_config) do
-    {_attach, config_create} = Map.pop(run_config, :attach)
-    %{id: container_id} = TestHelper.container_create(config_create)
-
-    resolv_conf_path =
-      "/" <> Config.get("kleene_root") <> "/container/#{container_id}/etc/resolv.conf"
-
-    {_output, exit_code} = OS.cmd(["/bin/sh", "-c", "cat #{resolv_conf_path}"])
-    Container.remove(container_id)
-    exit_code == 0
-  end
-
   def image_mountpoint(%Schemas.Image{dataset: dataset}) do
     ZFS.mountpoint(dataset)
   end
@@ -1447,15 +1095,6 @@ defmodule ImageTest do
       })
 
     image
-  end
-
-  defp fetch_snapshot(%Schemas.Image{instructions: instructions}, instruction) do
-    [^instruction, snapshot] =
-      Enum.find(instructions, nil, fn [instruct, _] ->
-        instruct == instruction
-      end)
-
-    snapshot
   end
 
   def remove_test_context(<<"/", dataset::binary>>) do

@@ -560,25 +560,6 @@ defmodule TestHelper do
     end
   end
 
-  def base_image_create(%{method: method} = config) do
-    case method do
-      "zfs-copy" ->
-        dataset = config.zfs_dataset
-        ZFS.create(dataset)
-
-        {_, 0} =
-          OS.cmd(["/usr/bin/tar", "-xf", "./test/data/minimal_testjail.txz", "-C", "/#{dataset}"])
-
-      _ ->
-        :ok
-    end
-
-    frames = TestHelper.image_create(config)
-    {{1000, closing_msg}, _rest} = List.pop_at(frames, -1)
-    assert %Msg{data: _, message: "image created", msg_type: "closing"} = closing_msg
-    closing_msg.data
-  end
-
   def image_list(api_spec) do
     response =
       conn(:get, "/images/list")
