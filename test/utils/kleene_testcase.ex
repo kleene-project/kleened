@@ -11,8 +11,6 @@ defmodule Kleened.Test.ConnCase do
   leaked jail, an interface that was never destroyed, a devfs mount left behind
   -- so the test that caused the leak is the one that fails, rather than some
   unrelated test later in the run.
-
-  `network_test.exs` and `exec_test.exs` pass with the baseline check enabled.
   """
   use ExUnit.CaseTemplate
 
