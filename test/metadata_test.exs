@@ -1,5 +1,4 @@
 defmodule MetaDataTest do
-  require Logger
   use Kleened.Test.ConnCase
   alias Kleened.Core.Config
   alias Kleened.API.Schemas
@@ -7,18 +6,6 @@ defmodule MetaDataTest do
   import TestHelper, only: [now: 0]
 
   @moduletag :capture_log
-
-  setup %{host_state: state} do
-    TestHelper.cleanup()
-
-    on_exit(fn ->
-      Logger.info("Cleaning up after test...")
-      TestHelper.cleanup()
-      TestHelper.compare_to_baseline_environment(state)
-    end)
-
-    :ok
-  end
 
   test "adding, listing and removing networks" do
     assert [] == list_networks()

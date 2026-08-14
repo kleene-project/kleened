@@ -1,5 +1,6 @@
 defmodule Kleened.Test.Utils do
-  alias Kleened.Core.{Config, MetaData, Container, Image, ImageCreate, OS, ZFS}
+  import ExUnit.Assertions
+  alias Kleened.Core.{Config, MetaData, Container, Image, ImageCreate, Network, OS, Volume, ZFS}
   alias Kleened.API.Schemas
   require Logger
 
@@ -37,6 +38,75 @@ defmodule Kleened.Test.Utils do
       datasets: datasets,
       test_image_dataset: test_image_dataset
     }
+  end
+
+  @doc """
+  Remove everything Kleene owns, except the `FreeBSD:testing` base image.
+
+  Lives here rather than in `TestHelper` so that `Kleened.Test.ConnCase` -- which
+  is compiled, unlike `test_helper.exs` -- can call it without a compile-time
+  warning about an undefined module.
+  """
+  def cleanup() do
+    runnning_containers = Container.list(all: false)
+
+    case length(runnning_containers) do
+      0 ->
+        :ok
+
+      _ ->
+        runnning_containers |> Enum.map(fn %{id: id} -> Container.stop(id) end)
+
+        :timer.sleep(500)
+    end
+
+    MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
+
+    MetaData.list_volumes() |> Enum.map(&Volume.remove(&1.name))
+
+    MetaData.list_networks() |> Enum.map(fn %{id: id} -> Network.remove(id) end)
+
+    MetaData.list_images()
+    |> Enum.filter(fn image ->
+      not (image.name == "FreeBSD" and image.tag == "testing")
+    end)
+    |> Enum.map(fn image -> Image.remove(image.id) end)
+  end
+
+  @doc """
+  Assert that the host is back to the state captured by `get_host_state/0`.
+
+  Run *after* `cleanup/0`, so what it catches is the residue cleanup cannot
+  remove: a leaked jail, an interface that was never destroyed, a devfs mount
+  left behind. Those would otherwise surface as an unrelated failure much later
+  in the run.
+  """
+  def compare_to_baseline_environment(%{
+        addresses: before_addresses,
+        mount_devfs: before_mount_devfs
+      }) do
+    %{
+      addresses: after_addresses,
+      mount_devfs: after_mount_devfs,
+      datasets: after_datasets
+    } = get_host_state()
+
+    %Schemas.Image{dataset: test_dataset} = MetaData.get_image("FreeBSD:testing")
+
+    before_datasets =
+      MapSet.new([
+        test_dataset,
+        "",
+        "zroot/kleene",
+        "zroot/kleene/container",
+        "zroot/kleene/image",
+        "zroot/kleene/volumes"
+      ])
+
+    assert before_addresses == after_addresses
+    assert before_mount_devfs == after_mount_devfs
+
+    assert before_datasets == after_datasets
   end
 
   defp list_host_addresses() do

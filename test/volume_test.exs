@@ -1,26 +1,10 @@
 defmodule VolumeTest do
-  require Logger
   use Kleened.Test.ConnCase
-  alias ExUnit.CaptureLog
 
   alias Kleened.Core.{MetaData, Container, Volume, Mount}
   alias Kleened.API.Schemas
 
   @moduletag :capture_log
-
-  setup %{host_state: state} do
-    TestHelper.cleanup()
-
-    on_exit(fn ->
-      CaptureLog.capture_log(fn ->
-        Logger.info("Cleaning up after test...")
-        TestHelper.compare_to_baseline_environment(state)
-        TestHelper.cleanup()
-      end)
-    end)
-
-    :ok
-  end
 
   test "test filesystem operations when creating and deleting volumes", %{
     api_spec: api_spec

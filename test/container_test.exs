@@ -1,25 +1,9 @@
 defmodule ContainerTest do
-  require Logger
   use Kleened.Test.ConnCase
-  alias ExUnit.CaptureLog
   alias Kleened.Core.{Container, Exec, MetaData, OS}
   alias Kleened.API.Schemas
 
   @moduletag :capture_log
-
-  setup %{host_state: state} do
-    TestHelper.cleanup()
-
-    on_exit(fn ->
-      CaptureLog.capture_log(fn ->
-        Logger.info("Cleaning up after test...")
-        TestHelper.cleanup()
-        TestHelper.compare_to_baseline_environment(state)
-      end)
-    end)
-
-    :ok
-  end
 
   test "start a container with environment variables" do
     dockerfile = """

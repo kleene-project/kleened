@@ -34,59 +34,10 @@ defmodule TestHelper do
   @kleened_host "/var/run/kleened.sock"
   @opts Router.init([])
 
-  def compare_to_baseline_environment(%{
-        addresses: before_addresses,
-        mount_devfs: before_mount_devfs
-      }) do
-    %{
-      addresses: after_addresses,
-      mount_devfs: after_mount_devfs,
-      datasets: after_datasets
-    } = Kleened.Test.Utils.get_host_state()
-
-    %Schemas.Image{dataset: test_dataset} = MetaData.get_image("FreeBSD:testing")
-
-    before_datasets =
-      MapSet.new([
-        test_dataset,
-        "",
-        "zroot/kleene",
-        "zroot/kleene/container",
-        "zroot/kleene/image",
-        "zroot/kleene/volumes"
-      ])
-
-    assert before_addresses == after_addresses
-    assert before_mount_devfs == after_mount_devfs
-
-    assert before_datasets == after_datasets
-  end
-
-  def cleanup() do
-    runnning_containers = Container.list(all: false)
-
-    case length(runnning_containers) do
-      0 ->
-        :ok
-
-      _ ->
-        runnning_containers |> Enum.map(fn %{id: id} -> Container.stop(id) end)
-
-        :timer.sleep(500)
-    end
-
-    MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
-
-    MetaData.list_volumes() |> Enum.map(&Volume.remove(&1.name))
-
-    MetaData.list_networks() |> Enum.map(fn %{id: id} -> Network.remove(id) end)
-
-    MetaData.list_images()
-    |> Enum.filter(fn image ->
-      not (image.name == "FreeBSD" and image.tag == "testing")
-    end)
-    |> Enum.map(fn image -> Image.remove(image.id) end)
-  end
+  # 'cleanup/0' and 'compare_to_baseline_environment/1' moved to
+  # 'Kleened.Test.Utils', where 'Kleened.Test.ConnCase' can reach them. Tests do
+  # not call them directly any more -- ConnCase does it for every test.
+  defdelegate cleanup(), to: Kleened.Test.Utils
 
   def container_valid_run(config) do
     {container_id, exec_config, expected_exit} = prepare_container_run(config)
