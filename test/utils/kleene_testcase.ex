@@ -12,8 +12,7 @@ defmodule Kleened.Test.ConnCase do
   -- so the test that caused the leak is the one that fails, rather than some
   unrelated test later in the run.
 
-  `network_test.exs` and `exec_test.exs` used to skip the baseline check because
-  their hand-written setup blocks never had it; they pass with it enabled.
+  `network_test.exs` and `exec_test.exs` pass with the baseline check enabled.
   """
   use ExUnit.CaseTemplate
 
