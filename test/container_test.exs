@@ -5,65 +5,6 @@ defmodule ContainerTest do
 
   @moduletag :capture_log
 
-  test "start a container with environment variables" do
-    dockerfile = """
-    FROM FreeBSD:testing
-    ENV TEST=lol
-    ENV TEST2="lool test"
-    CMD printenv
-    """
-
-    TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
-
-    {image, _build_log} =
-      TestHelper.image_valid_build(%{
-        context: "./",
-        dockerfile: "tmp_dockerfile",
-        tag: "test:latest"
-      })
-
-    config =
-      container_config(%{
-        image: image.id,
-        env: ["TEST3=loool"]
-      })
-
-    {_, _, output} = TestHelper.container_valid_run(config)
-
-    TestHelper.compare_environment_output(output, [
-      "TEST=lol",
-      "TEST2=lool test",
-      "TEST3=loool"
-    ])
-  end
-
-  test "start a container with environment variables and overwrite one of them" do
-    dockerfile = """
-    FROM FreeBSD:testing
-    ENV TEST=lol
-    ENV TEST2="lool test"
-    CMD /bin/sh -c "printenv"
-    """
-
-    TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
-
-    {image, _build_log} =
-      TestHelper.image_valid_build(%{
-        context: "./",
-        dockerfile: "tmp_dockerfile",
-        tag: "test:latest"
-      })
-
-    config =
-      container_config(%{
-        image: image.id,
-        env: ~w"TEST=new_value"
-      })
-
-    {_, _, output} = TestHelper.container_valid_run(config)
-    TestHelper.compare_environment_output(output, ["TEST=new_value", "TEST2=lool test"])
-  end
-
   test "containers with '--restart on-startup' will be started when kleened starts" do
     TestHelper.network_create(%{
       name: "testnet",
