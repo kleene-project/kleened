@@ -2,108 +2,91 @@ name: Run Kleened and Klee test suites
 
 on:
   push:
+    branches:
+      - main
+  pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
     runs-on: ubuntu-latest
     name: Running Kleened and Klee test-suites
+    timeout-minutes: 45
     steps:
-    - uses: actions/checkout@v4
-    - name: Run tests in a FreeBSD VM
+    - uses: actions/checkout@v7
+
+    # The klee suite is tested against the klee branch with the same name as
+    # this kleened branch when one exists, and against klee's main otherwise
+    # (with a visible warning). Kleened-only branches still get full CI.
+    - name: Probe for a klee twin branch
+      id: klee_ref
+      run: |
+        if [ "${{ github.event_name }}" = "pull_request" ]; then
+          branch="${{ github.head_ref }}"
+        elif [ "${{ github.ref_type }}" = "branch" ]; then
+          branch="${{ github.ref_name }}"
+        else
+          branch=""
+        fi
+        if [ -n "$branch" ] \
+           && git ls-remote --heads https://github.com/kleene-project/klee.git "$branch" | grep -q .; then
+          echo "ref=$branch" >> "$GITHUB_OUTPUT"
+          echo "::notice::klee twin branch '$branch' found; testing klee at it."
+        else
+          echo "ref=main" >> "$GITHUB_OUTPUT"
+          echo "::warning title=no klee twin branch::Branch '$branch' has no klee twin; running klee suite at main."
+        fi
+
+    - name: Export klee ref for the VM
+      run: echo "KLEE_REF=${{ steps.klee_ref.outputs.ref }}" >> "$GITHUB_ENV"
+
+    # Boots the VM and runs prepare inside it. cache-after-prepare bakes the
+    # prepared image (packages, zroot pool, basejail, test-jail tarball) into
+    # the cache; the key hashes the one-line prepare text below. When changing
+    # what vm-prepare-tests.sh leaves in the image, bump the '# v1' comment.
+    # copyback is off: this workflow produces no host-side artifacts, and the
+    # per-step pull-back would drag _build/ to the runner after every step.
+    - name: Boot FreeBSD 15.1 VM and prepare it
       id: kleened-testing
-      # FreeBSD 14.1-RELEASE
-      uses: vmactions/freebsd-vm@v1.1.5
+      uses: vmactions/freebsd-vm@v1
       with:
-        usesh: true
-    - name: Configure the FreeBSD vm
+        release: '15.1'
+        envs: 'KLEE_REF'
+        copyback: false
+        cache-after-prepare: true
+        prepare: sh .github/scripts/vm-prepare-tests.sh # v1
+
+    - name: Reset kleene state and configure host
       shell: freebsd {0}
-      run: |
-        ###### Configure ZFS ######
-        kldload zfs
-        sysrc -f /boot/loader.conf zfs_load="YES"
-        sysrc zfs_enable="YES"
-        truncate -s 10G /home/runner/zpool.disk
-        zpool create -O atime=off -f zroot /home/runner/zpool.disk
-
-        ###### Create basejail ######
-        fetch https://download.freebsd.org/releases/amd64/14.1-RELEASE/base.txz
-        zfs create zroot/kleene_basejail
-        tar -xf base.txz -C /zroot/kleene_basejail
-
-    - name: Compile Kleened and initialize host
-      shell: freebsd {0}
-      run: |
-        ##### Configure and run Kleened Tests
-        cd $GITHUB_WORKSPACE;
-
-        mkdir -p /usr/local/etc/kleened
-        cp example/kleened_config_dev.yaml /usr/local/etc/kleened/config.yaml
-        cp -r test/data/test_certs /usr/local/etc/kleened/certs
-        cp example/pf.conf.dev.kleene /usr/local/etc/kleened/pf.conf.kleene
-
-        pkg install -y elixir git gmake ca_root_nss > /dev/null
-        mix local.rebar --force
-        mix local.hex --force
-        mix compile
-        mix run --eval "Kleened.Core.Config.initialize_host(%{dry_run: false})"
-
-        # Testing:
-        kldload if_bridge
-        service pf start
-        service pflog start
-        # To make all networking-tests pass:
-        sysctl net.link.bridge.pfil_bridge=1
-
-    - name: Create test-jail userland
-      shell: freebsd {0}
-      run: |
-        cd $GITHUB_WORKSPACE;
-        ##### Create minimal test-jail
-        pkg install -y ruby > /dev/null
-        git clone https://github.com/kleene-project/mkjail.git
-        ./mkjail/mkjail -a test/data/minimal_testjail.txz /usr/bin/env /usr/local/bin/python3.11 -c "print('Hello World')"
+      run: set -eu; sh .github/scripts/vm-reset-kleene.sh
 
     - name: Run Kleened-tests
       shell: freebsd {0}
-      run: |
-        cd $GITHUB_WORKSPACE;
-        export PATH=$PATH:./priv/bin
-        mix test --seed 0 --trace --max-failures 1
+      run: set -eu; sh .github/scripts/vm-kleened-suite.sh
 
-    - name: Remove test-image
+    # Back to a pristine state before the klee suite: it asserts on ZFS
+    # dataset totals, so images left by the ExUnit run fail unrelated tests.
+    # Destroying the datasets also clears kleened's SQLite metadata.
+    - name: Reset kleene state for the klee suite
       shell: freebsd {0}
-      run:
-        cd $GITHUB_WORKSPACE;
-        mix run -e "Kleened.Core.Image.remove(\"FreeBSD:testing\")"
+      run: set -eu; sh .github/scripts/vm-reset-kleene.sh
 
-    - name: Build Kleened release
+    - name: Build Kleened release and start daemon
       shell: freebsd {0}
-      run: |
-        cd $GITHUB_WORKSPACE;
-        MIX_ENV=dev
-        mix release
+      run: set -eu; sh .github/scripts/vm-start-daemon.sh
 
     - name: Run Klee-tests
       shell: freebsd {0}
-      run: |
-        cd $GITHUB_WORKSPACE;
-        # Make 'kleened_pty' available on PATH:
-        ln -s $GITHUB_WORKSPACE/priv/bin/kleened_pty /usr/local/sbin/kleened_pty
-        _build/dev/rel/kleened/bin/kleened daemon
-
-        ##### Run Klee-tests
-        git clone -b ${{ github.ref_type == 'branch' && github.ref_name || 'main' }} https://github.com/kleene-project/klee.git
-        pkg install -y py311-poetry > /dev/null
-        cd klee
-        poetry -q install
-        export KLEENED_MINIMAL_TESTJAIL="$GITHUB_WORKSPACE/test/data/minimal_testjail.txz"
-        echo "Running Klee test-suite"
-        poetry run pytest -vv -x
+      run: set -eu; sh .github/scripts/vm-klee-suite.sh
 
     - name: Show Kleened host information
       if: failure()
       shell: freebsd {0}
-      run: |
-        zfs list
-        cat /var/log/kleened.log
+      run: set -eu; sh .github/scripts/vm-diagnostics.sh

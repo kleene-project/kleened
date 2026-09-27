@@ -1,133 +1,121 @@
-name: Build pkg-package and create release
+name: Build pkg-packages and create release
 
 on:
   push:
-    branches-ignore:
-      - '*'
     tags:
       - 'v*'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
-    name: Build and publish a pkg package of Kleened
-    env:
-      POUDRIERE_JAIL : "14.1-RELEASE"
-    #permissions:
-      # Needed when creating releases
-    #  contents: write
+    name: Build pkgs for FreeBSD 14.5 and 15.1 with Poudriere
+    timeout-minutes: 60
+    # Needed when creating releases.
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - name: Build kleened pkg-package with Poudriere
+      - uses: actions/checkout@v7
+
+      # cache-after-prepare bakes poudriere, both build jails and the ports
+      # tree into the cached image, so the slow setup below runs once. The
+      # cache key hashes the one-line prepare text; bump '# v1' when changing
+      # what poudriere-prepare.sh leaves in the image.
+      - name: Build pkgs with Poudriere
         id: kleened-pkg-build
-        uses: vmactions/freebsd-vm@v1.1.5
+        uses: vmactions/freebsd-vm@v1
         with:
-          envs: 'POUDRIERE_JAIL'
-          usesh: true
-          run: |
-            ###### Configure ZFS ######
-            kldload zfs
-            sysrc -f /boot/loader.conf zfs_load="YES"
-            sysrc zfs_enable="YES"
+          release: '15.1'
+          cache-after-prepare: true
+          prepare: sh .github/scripts/poudriere-prepare.sh # v1
+          run: sh .github/scripts/poudriere-build.sh
 
-            truncate -s 10G /home/runner/zpool.disk
-            zpool create -O atime=off -f zroot /home/runner/zpool.disk
-
-            ###### Install & configure Poudriere ######
-            echo "ZPOOL=zroot" > /usr/local/etc/poudriere.conf
-            echo "BASEFS=/usr/local/poudriere" >> /usr/local/etc/poudriere.conf
-            echo "DISTFILES_CACHE=/usr/ports/distfiles" >> /usr/local/etc/poudriere.conf
-            echo "RESOLV_CONF=/etc/resolv.conf" >> /usr/local/etc/poudriere.conf
-            pkg install -y poudriere git
-            mkdir -p /usr/ports/distfiles
-            poudriere jail -c -j port-tester -v $POUDRIERE_JAIL
-            poudriere ports -c -p development
-
-            ####### Build Kleened #######
-            cp -r ports/sysutils/kleene-daemon /usr/local/poudriere/ports/development/sysutils/
-            poudriere testport -j port-tester -p development -o sysutils/kleene-daemon
-            poudriere bulk -j port-tester -p development sysutils/kleene-daemon
-
-            cp /usr/local/poudriere/data/packages/port-tester-development/All/kleene-daemon-*.pkg .
-
-            ### used for testing:
-            # fetch https://github.com/kleene-project/kleened/releases/download/v0.1.0-rc.1/kleened-0.1.0rc1_FreeBSD14-amd64.pkg -o kleene-daemon-0.1.0.r2.pkg
-
-            ###### Copy package into workdir and save filename #######
-            PKG_FILE=$(ls kleene-daemon-*)
-            PKG_FILE_TRIM=${PKG_FILE%.pkg}
-            NEW_PKG_FILE=${PKG_FILE_TRIM}-freebsd14.pkg
-            mv ${PKG_FILE} ${NEW_PKG_FILE}
-            echo "PKG_FILE=${NEW_PKG_FILE}" >> "$GITHUB_ENV"
-            echo "PKG_FILE=${NEW_PKG_FILE}" >> "$GITHUB_OUTPUT"
-
-      - name: Create artifact with pkg package
-        uses: actions/upload-artifact@v4
+      - name: Upload pkg artifacts
+        uses: actions/upload-artifact@v7
         with:
-          name: kleene_pkg
-          path: ${{ steps.kleened-pkg-build.outputs.PKG_FILE }}
+          name: kleened_pkgs
+          path: pkg_out/*.pkg
 
-      - name: Make a new release of Kleened with the builded pkg-package as an asset
-        uses: softprops/action-gh-release@v2
+      - name: Attach pkgs to the Kleened release
+        uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: ${{ steps.kleened-pkg-build.outputs.PKG_FILE }}
+          files: pkg_out/*.pkg
+
   test:
     runs-on: ubuntu-latest
     needs: build
     name: Test kleened pkg package
-    permissions:
-      # Needed when creating releases
-      contents: write
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      # The klee suite is tested against the klee branch with the same name as
+      # the kleened branch under test when one exists, and against klee's main
+      # otherwise (with a visible warning).
+      - name: Probe for a klee twin branch
+        id: klee_ref
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            branch="${{ github.head_ref }}"
+          elif [ "${{ github.ref_type }}" = "branch" ]; then
+            branch="${{ github.ref_name }}"
+          else
+            branch=""
+          fi
+          if [ -n "$branch" ] \
+             && git ls-remote --heads https://github.com/kleene-project/klee.git "$branch" | grep -q .; then
+            echo "ref=$branch" >> "$GITHUB_OUTPUT"
+            echo "::notice::klee twin branch '$branch' found; testing klee at it."
+          else
+            echo "ref=main" >> "$GITHUB_OUTPUT"
+            echo "::warning title=no klee twin branch::Branch '$branch' has no klee twin; running klee suite at main."
+          fi
+
+      - name: Export klee ref for the VM
+        run: echo "KLEE_REF=${{ steps.klee_ref.outputs.ref }}" >> "$GITHUB_ENV"
+
+      - uses: actions/download-artifact@v8
         with:
-          repository: kleene-project/klee
-          ref: ${{ github.ref_type == 'branch' && github.ref_name || 'main' }}
-      - uses: actions/checkout@v4
+          name: kleened_pkgs
+
+      # Same prepared image as run_tests.yml (identical one-line prepare text
+      # means the same cache key): toolchain, zroot pool, basejail and the
+      # test-jail tarball.
+      - name: Test the built package in a FreeBSD VM
+        uses: vmactions/freebsd-vm@v1
         with:
-          repository: kleene-project/kleened
-          path: kleened
-          ref: ${{ github.ref_type == 'branch' && github.ref_name || 'main' }}
-          clean: false
-      - uses: actions/download-artifact@v4
-        with:
-          name: kleene_pkg
-      - name: Test newly built kleened package
-        uses: vmactions/freebsd-vm@v1.1.5
-        with:
-          usesh: true
+          release: '15.1'
+          envs: 'KLEE_REF'
+          cache-after-prepare: true
+          prepare: sh .github/scripts/vm-prepare-tests.sh # v1
           run: |
-            ###### Configure ZFS ######
-            kldload zfs
-            sysrc -f /boot/loader.conf zfs_load="YES"
-            sysrc zfs_enable="YES"
+            set -eu
+            # The pkg ABI major must match the 15.1 VM; the freebsd14 build is
+            # validated by its own in-jail poudriere testport/bulk above.
+            pkg install -y ./kleened-*-freebsd15-amd64.pkg
 
-            truncate -s 10G /home/runner/zpool.disk
-            zpool create -O atime=off -f zroot /home/runner/zpool.disk
+            sh .github/scripts/vm-reset-kleene.sh
 
-            ##### Install Kleened
-            pkg install -y kleene-daemon-*.pkg
-
-            ##### Configure and start Kleened
-            cp kleened/example/kleened_config_dev.yaml /usr/local/etc/kleened/config.yaml
-            cp -r kleened/test/data/test_certs /usr/local/etc/kleened/certs
             sysrc kleened_enable=yes
+            # Exercises the rc script shipped in the pkg.
             service kleened init
             service kleened start
 
-            ###### Create basejail ######
-            fetch https://download.freebsd.org/releases/amd64/14.1-RELEASE/base.txz
-            zfs create zroot/kleene_basejail
-            tar -xf base.txz -C /zroot/kleene_basejail
+            n=0
+            until sockstat -l | grep -q /var/run/kleened.sock; do
+              n=$((n + 1))
+              if [ "$n" -gt 60 ]; then
+                echo "kleened did not listen on /var/run/kleened.sock within 60s"
+                tail -50 /var/log/kleened.log
+                exit 1
+              fi
+              sleep 1
+            done
 
-            ##### Create minimal test-jail
-            pkg install -y py311-poetry ruby > /dev/null
-            git clone https://github.com/kleene-project/mkjail.git
-            ./mkjail/mkjail -a test/data/minimal_testjail.txz /usr/bin/env /usr/local/bin/python3.11 -c "print('Hello World')"
-            export KLEENED_MINIMAL_TESTJAIL="./test/data/minimal_testjail.txz"
-            
-            ##### Run Klee-tests
-            poetry install -q
-            poetry run pytest -vv -x
+            sh .github/scripts/vm-klee-suite.sh
