@@ -23,10 +23,12 @@ VENV=$(poetry env info --path)
 
 # The suite writes Dockerfile/klee_config.yaml into os.getcwd(), so run it from
 # a scratch dir. PATH must include the venv: a few tests shell out to the 'klee'
-# binary (the three config-precedence tests in root_test and the nullfs-mount
-# image build).
+# binary (the config-precedence tests in root_test and the nullfs-mount image
+# build), and the venv's bin is the only place it is installed.
 mkdir -p /tmp/klee-run
 cd /tmp/klee-run
+PATH="$PATH:$VENV/bin"
+export PATH
 
 # Test debt -- the six known failures recorded in the workspace's
 # docs/TESTING-BASELINE.md (2026-08-04 run on the 15.1 dev VM). The exact
