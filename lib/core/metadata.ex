@@ -475,47 +475,47 @@ defmodule Kleened.Core.MetaData do
     columns = MapSet.new(columns)
 
     cond do
-      columns == MapSet.new(["container", "id"]) ->
+      MapSet.equal?(columns, MapSet.new(["container", "id"])) ->
         container = Map.put(from_json(row["container"]), :id, row["id"])
         container = struct(Schemas.Container, container)
         pub_ports = Enum.map(container.public_ports, &struct(Schemas.PublishedPort, &1))
         %Schemas.Container{container | public_ports: pub_ports}
 
       # view api_list_containers for container_listing
-      columns == MapSet.new(["container_ext"]) ->
+      MapSet.equal?(columns, MapSet.new(["container_ext"])) ->
         from_json(row["container_ext"])
 
-      columns == MapSet.new(["id", "name", "tag", "dataset"]) ->
+      MapSet.equal?(columns, MapSet.new(["id", "name", "tag", "dataset"])) ->
         row
         |> Map.to_list()
         |> Enum.map(fn {key, val} -> {String.to_atom(key), val} end)
         |> Map.new()
 
-      columns == MapSet.new(["network", "id"]) ->
+      MapSet.equal?(columns, MapSet.new(["network", "id"])) ->
         network = Map.put(from_json(row["network"]), :id, row["id"])
         struct(Schemas.Network, network)
 
-      columns == MapSet.new(["image", "id"]) ->
+      MapSet.equal?(columns, MapSet.new(["image", "id"])) ->
         image = Map.put(from_json(row["image"]), :id, row["id"])
         struct(Schemas.Image, image)
 
-      columns == MapSet.new(["volume", "name"]) ->
+      MapSet.equal?(columns, MapSet.new(["volume", "name"])) ->
         image = Map.put(from_json(row["volume"]), :name, row["name"])
         struct(Schemas.Volume, image)
 
-      columns == MapSet.new(["mount"]) ->
+      MapSet.equal?(columns, MapSet.new(["mount"])) ->
         struct(Schemas.MountPoint, from_json(row["mount"]))
 
-      columns == MapSet.new(["config"]) ->
+      MapSet.equal?(columns, MapSet.new(["config"])) ->
         struct(Schemas.EndPoint, from_json(row["config"]))
 
-      columns == MapSet.new(["volume_name"]) ->
+      MapSet.equal?(columns, MapSet.new(["volume_name"])) ->
         row["volume_name"]
 
-      columns == MapSet.new(["container_id"]) ->
+      MapSet.equal?(columns, MapSet.new(["container_id"])) ->
         row["container_id"]
 
-      columns == MapSet.new(["endpoint", "network_id"]) ->
+      MapSet.equal?(columns, MapSet.new(["endpoint", "network_id"])) ->
         row["network_id"]
 
       true ->

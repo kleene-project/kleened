@@ -1,12 +1,12 @@
 #!/bin/sh
 # Baked into the cached VM image (cache-after-prepare) for the package-build
-# workflow. Installs poudriere, creates the zroot pool, two build jails
+# workflow. Installs poudriere, provides the zroot pool, two build jails
 # (14.5-RELEASE and 15.1-RELEASE) and the ports tree. When changing what this
 # script leaves in the image, bump the '# vN' comment at the call site -- the
 # cache key hashes the one-line prepare text only.
 #
-# Everything lives on the 20G zpool: two poudriere jails plus the ports tree
-# plus distfiles do not fit on 10G.
+# Everything lives on the zroot pool: two poudriere jails plus the ports tree
+# plus distfiles do not fit on a small boot disk.
 set -eu
 
 pkg install -y poudriere git
@@ -14,8 +14,14 @@ pkg install -y poudriere git
 kldload zfs 2>/dev/null || true
 sysrc -f /boot/loader.conf zfs_load="YES"
 sysrc zfs_enable="YES"
-truncate -s 20G /home/runner/zpool.disk
-zpool create -O atime=off -f zroot /home/runner/zpool.disk
+# The 15.1 anyvm image boots from a ZFS pool already named 'zroot' (its boot
+# disk is a sparse 206 GiB qcow2, room enough for the poudriere datasets);
+# older images booted from UFS and needed a dedicated pool created here.
+# poudriere.conf names the pool below, so it must stay 'zroot' either way.
+if ! zpool list -H -o name zroot >/dev/null 2>&1; then
+  truncate -s 20G /home/runner/zpool.disk
+  zpool create -O atime=off -f zroot /home/runner/zpool.disk
+fi
 
 {
   echo "ZPOOL=zroot"

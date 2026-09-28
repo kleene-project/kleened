@@ -26,7 +26,7 @@ jobs:
 
       # cache-after-prepare bakes poudriere, both build jails and the ports
       # tree into the cached image, so the slow setup below runs once. The
-      # cache key hashes the one-line prepare text; bump '# v1' when changing
+      # cache key hashes the one-line prepare text; bump '# v2' when changing
       # what poudriere-prepare.sh leaves in the image.
       - name: Build pkgs with Poudriere
         id: kleened-pkg-build
@@ -34,7 +34,7 @@ jobs:
         with:
           release: '15.1'
           cache-after-prepare: true
-          prepare: sh .github/scripts/poudriere-prepare.sh # v1
+          prepare: sh .github/scripts/poudriere-prepare.sh # v2
           run: sh .github/scripts/poudriere-build.sh
 
       - name: Upload pkg artifacts
@@ -93,7 +93,7 @@ jobs:
           release: '15.1'
           envs: 'KLEE_REF'
           cache-after-prepare: true
-          prepare: sh .github/scripts/vm-prepare-tests.sh # v1
+          prepare: sh .github/scripts/vm-prepare-tests.sh # v2
           run: |
             set -eu
             # The pkg ABI major must match the 15.1 VM; the freebsd14 build is

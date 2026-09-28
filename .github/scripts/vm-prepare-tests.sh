@@ -5,7 +5,7 @@
 # in the image, bump the '# vN' comment at both call sites -- the cache key
 # hashes the one-line prepare text only.
 #
-# Installs the toolchain superset for both workflows, creates the zroot pool,
+# Installs the toolchain superset for both workflows, provides the zroot pool,
 # the basejail dataset, and the minimal test-jail tarball. Everything that must
 # survive a cache-hit reboot lives outside $GITHUB_WORKSPACE (the action wipes
 # and re-syncs the workspace on every boot); /root does.
@@ -19,8 +19,15 @@ pkg install -y elixir erlang gmake ca_root_nss git ruby python py312-poetry
 kldload zfs 2>/dev/null || true
 sysrc -f /boot/loader.conf zfs_load="YES"
 sysrc zfs_enable="YES"
-truncate -s 20G /home/runner/zpool.disk
-zpool create -O atime=off -f zroot /home/runner/zpool.disk
+# The 15.1 anyvm image boots from a ZFS pool already named 'zroot' (its boot
+# disk is a sparse 206 GiB qcow2, so there is ample room for the kleene datasets
+# on it). Older images booted from UFS and needed a dedicated pool created
+# here. kleened/klee hardcode zroot/... dataset paths, so the pool must be
+# named 'zroot' either way.
+if ! zpool list -H -o name zroot >/dev/null 2>&1; then
+  truncate -s 20G /home/runner/zpool.disk
+  zpool create -O atime=off -f zroot /home/runner/zpool.disk
+fi
 
 ###### Basejail (userland must match the 15.1 kernel) ######
 zfs list zroot/kleene_basejail >/dev/null 2>&1 || zfs create zroot/kleene_basejail

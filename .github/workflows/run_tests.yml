@@ -50,7 +50,7 @@ jobs:
     # Boots the VM and runs prepare inside it. cache-after-prepare bakes the
     # prepared image (packages, zroot pool, basejail, test-jail tarball) into
     # the cache; the key hashes the one-line prepare text below. When changing
-    # what vm-prepare-tests.sh leaves in the image, bump the '# v1' comment.
+    # what vm-prepare-tests.sh leaves in the image, bump the '# v2' comment.
     # copyback is off: this workflow produces no host-side artifacts, and the
     # per-step pull-back would drag _build/ to the runner after every step.
     - name: Boot FreeBSD 15.1 VM and prepare it
@@ -61,7 +61,7 @@ jobs:
         envs: 'KLEE_REF'
         copyback: false
         cache-after-prepare: true
-        prepare: sh .github/scripts/vm-prepare-tests.sh # v1
+        prepare: sh .github/scripts/vm-prepare-tests.sh # v2
 
     - name: Reset kleene state and configure host
       shell: freebsd {0}
