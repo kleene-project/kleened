@@ -27,6 +27,14 @@ sysrc zfs_enable="YES"
 if ! zpool list -H -o name zroot >/dev/null 2>&1; then
   truncate -s 20G /home/runner/zpool.disk
   zpool create -O atime=off -f zroot /home/runner/zpool.disk
+else
+  # The cloud image's zroot dataset has mountpoint=none (the boot environment
+  # zroot/ROOT/default carries the real /), so datasets created below would
+  # inherit 'none' and never mount. Give the pool root the mountpoint a fresh
+  # 'zpool create zroot' has, so zroot/<name> mounts at /zroot/<name> as
+  # kleened and the tests expect. The system datasets have their own explicit
+  # mountpoints (/usr, /var, ...) and are not affected.
+  zfs set mountpoint=/zroot zroot
 fi
 
 ###### Basejail (userland must match the 15.1 kernel) ######
