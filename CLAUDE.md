@@ -236,7 +236,8 @@ with Jason (see `Core.FreeBSD`) rather than screen-scraped.
 - `ports/sysutils/kleene-daemon/` is the FreeBSD port. Its `DISTVERSION` and the `version` in
   `mix.exs` must move together, `distinfo` must match the GitHub tarball, and `pkg-plist`
   tracks the release layout.
-- `.tool-versions` (Elixir 1.20.2 / OTP 29) is mirrored by hand in
+- `.tool-versions` (Elixir 1.19.5 / OTP 28 — aligned with FreeBSD ports and the dev VM, so
+  CI checks the toolchain the shipped port actually builds with) is mirrored by hand in
   `.github/workflows/dialyzer.yml`; keep the two in sync.
 - `openapi.json` is gitignored here. The pretty-printed copy consumed by `klee` and the docs
   lives in the parent `kleene_dev` repo as `kleened_openapi.json`.

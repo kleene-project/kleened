@@ -61,7 +61,7 @@ defmodule Kleened.MixProject do
       {:plug_cowboy, "~> 2.9"},
       {:open_api_spex, "~> 3.22"},
       {:ex_doc, "~> 0.40", only: :dev},
-      {:dialyxir, "~> 1.4", only: :dev, runtime: false},
+      {:dialyxir, "~> 1.4.8", only: :dev, runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:gun, "~> 2.4", only: :test}
     ]

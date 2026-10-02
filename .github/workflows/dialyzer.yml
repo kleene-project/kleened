@@ -2,26 +2,39 @@ name: Dialyzer
 
 on:
   push:
+    branches:
+      - main
+  pull_request:
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   dialyzer:
     runs-on: ubuntu-latest
     name: Type-check Kleened with dialyzer
+    timeout-minutes: 15
     # Static analysis only -- no jails, ZFS or pf involved, so this does not
     # need the FreeBSD VM the test-suite runs in.
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - uses: erlef/setup-beam@v1
       id: beam
       with:
-        # Keep in sync with .tool-versions
-        otp-version: '29'
-        elixir-version: '1.20.2'
+        # Keep in sync with .tool-versions. Aligned with FreeBSD ports
+        # (lang/elixir, lang/erlang) and the dev VM, so CI checks the
+        # toolchain the shipped port actually builds with.
+        otp-version: '28'
+        elixir-version: '1.19.5'
 
     - name: Restore deps and build
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: |
           deps
@@ -33,7 +46,7 @@ jobs:
     # The PLT is cached separately: it only depends on the dependency set, so
     # it survives source changes and is restored even when mix.lock moves.
     - name: Restore PLT cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: priv/plts
         key: ${{ runner.os }}-plt-${{ steps.beam.outputs.otp-version }}-${{ steps.beam.outputs.elixir-version }}-${{ hashFiles('mix.lock') }}
