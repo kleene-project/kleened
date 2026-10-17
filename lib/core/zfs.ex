@@ -68,7 +68,11 @@ defmodule Kleened.Core.ZFS do
     end
   end
 
-  @spec info(dataset() | snapshot()) :: %{exists?: boolean(), mountpoint: String.t() | nil}
+  @spec info(dataset() | snapshot()) :: %{
+          exists?: boolean(),
+          mountpoint: String.t() | nil,
+          parent_snapshot: String.t() | nil
+        }
   def info(filesystem_or_snapshot) do
     options = %{suppress_logging: true, suppress_warning: true}
 

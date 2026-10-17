@@ -1,40 +1,25 @@
 defmodule Kleened.Core.Deployment do
   alias Kleened.Core.{MetaData, Utils, ZFS, Const, Config, ImageBulkBuild, Volume, Network}
+  alias Kleened.Core.Container
   alias Kleened.API.Schemas
   require Logger
 
-  @spec start(%Schemas.DeploymentConfig{}) :: {:ok, %{}} | {:error, String.t()}
-  def start(_deploy) do
-    # TODO
-  end
-
-  @spec stop(%Schemas.DeploymentConfig{}) :: {:ok, %{}} | {:error, String.t()}
-  def stop(_deploy) do
-    # TODO
-  end
-
   @spec create_containers(%Schemas.DeploymentConfig{}) ::
-          {:ok, [%Schemas.Container{}]} | {:error, {[%Schemas.Container{}], String.t()}}
+          {:ok, [Container.t()]} | {:error, String.t()}
   def create_containers(deploy) do
     create_containers_(deploy.containers, [])
   end
 
   @spec create_volumes(%Schemas.DeploymentConfig{}) ::
-          {:ok, [%Schemas.Volume{}]} | {:error, {String.t(), [%Schemas.Volume{}]}}
+          {:ok, [%Schemas.Volume{}]}
   def create_volumes(deploy) do
     create_volumes_(deploy.volumes, [])
   end
 
   @spec create_networks(%Schemas.DeploymentConfig{}) ::
-          {:ok, [%Schemas.Network{}]} | {:error, {String.t(), [%Schemas.Network{}]}}
+          {:ok, [%Schemas.Network{}]} | {:error, String.t()}
   def create_networks(deploy) do
     create_networks_(deploy.networks, [])
-  end
-
-  @spec remove(%Schemas.DeploymentConfig{}) :: {:ok, %{}} | {:error, String.t()}
-  def remove(_deploy) do
-    # TODO
-    # Should remove networks & containers - specify '-v' to remove volumes as well
   end
 
   @spec build(%Schemas.DeploymentConfig{}) :: :ok | {:error, String.t()}
@@ -43,7 +28,7 @@ defmodule Kleened.Core.Deployment do
   end
 
   @spec create_containers_([%Schemas.ContainerConfig{}], [Container.t()]) ::
-          {:ok, [Container.t()]} | {:error, {String.t(), [Container.t()]}}
+          {:ok, [Container.t()]} | {:error, String.t()}
   def create_containers_([], containers) do
     {:ok, containers}
   end
@@ -56,7 +41,7 @@ defmodule Kleened.Core.Deployment do
             create_containers_(rest, [container | containers])
 
           {:error, reason} ->
-            {:error, {reason, containers}}
+            {:error, reason}
         end
 
       _container ->
@@ -65,7 +50,7 @@ defmodule Kleened.Core.Deployment do
   end
 
   @spec create_networks_([%Schemas.NetworkConfig{}], [%Schemas.Network{}]) ::
-          {:ok, [%Schemas.Network{}]} | {:error, {String.t(), [%Schemas.Network{}]}}
+          {:ok, [%Schemas.Network{}]} | {:error, String.t()}
   def create_networks_([], networks) do
     {:ok, networks}
   end
@@ -84,7 +69,7 @@ defmodule Kleened.Core.Deployment do
   end
 
   @spec create_volumes_([%Schemas.VolumeConfig{}], [%Schemas.Volume{}]) ::
-          {:ok, [%Schemas.Volume{}]} | {:error, {String.t(), [%Schemas.Volume{}]}}
+          {:ok, [%Schemas.Volume{}]}
   def create_volumes_([], volumes) do
     {:ok, volumes}
   end
@@ -92,17 +77,16 @@ defmodule Kleened.Core.Deployment do
   def create_volumes_([volume | rest], volumes) do
     case MetaData.get_volume(volume.name) do
       :not_found ->
-        case Volume.create(volume.name) do
-          %Schemas.Volume{} = volume -> create_volumes_(rest, [volume | volumes])
-          {:error, msg} -> {:error, {msg, volumes}}
-        end
+        volume = Volume.create(volume.name)
+        create_volumes_(rest, [volume | volumes])
 
       _ ->
         create_volumes_(rest, volumes)
     end
   end
 
-  @spec diff(%Schemas.DeploymentConfig{}) :: {:ok, %{}} | {:error, String.t()}
+  @spec diff(%Schemas.DeploymentConfig{}) ::
+          {:ok, %{containers: map(), images: map(), networks: map()}}
   def diff(deploy_spec) do
     Logger.debug("Creating diff on spec #{inspect(deploy_spec)}")
 

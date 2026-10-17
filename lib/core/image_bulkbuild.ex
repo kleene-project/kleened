@@ -30,8 +30,8 @@ defmodule Kleened.Core.ImageBulkBuild do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
 
-  @spec bulk_build([%Schemas.ImageBuildConfig{} | %Schemas.ImageCreateConfig{}], String.t()) ::
-          {:ok, String.t(), pid()} | {:error, String.t()} | {:error, String.t()}
+  @spec bulk_build([Schemas.ImageBuildConfig.t() | Schemas.ImageCreateConfig.t()], pos_integer()) ::
+          :ok | {:error, String.t()}
   def bulk_build(images, worker_count) do
     GenServer.call(__MODULE__, {:build, images, worker_count, self()})
   end
@@ -62,8 +62,8 @@ defmodule Kleened.Core.ImageBulkBuild do
     false
   end
 
-  @spec extract_parent_images([%Schemas.ImageBuildConfig{}]) ::
-          {:ok, [String.t()]} | {:error, String.t()}
+  @spec extract_parent_images([Schemas.ImageBuildConfig.t()]) ::
+          {:ok, %{String.t() => String.t()}} | {:error, String.t()}
   def extract_parent_images(images) do
     extract_parent_images(images, %{})
   end
@@ -108,10 +108,11 @@ defmodule Kleened.Core.ImageBulkBuild do
     end)
   end
 
-  @spec no_images_with_nonexisting_parents([%Schemas.ImageBuildConfig{}], [String.t()], [
-          String.t()
-        ]) ::
-          :ok | :error
+  @spec no_images_with_nonexisting_parents(
+          [Schemas.ImageBuildConfig.t()],
+          [Schemas.ImageCreateConfig.t()],
+          %{String.t() => String.t()}
+        ) :: boolean()
   def no_images_with_nonexisting_parents(build_images, base_images, parent_images) do
     # Check if the images to build has a parent that is either already built or going to be built
     already_built = MetaData.list_images() |> Enum.map(&"#{&1.name}:#{&1.tag}") |> MapSet.new()
@@ -122,8 +123,8 @@ defmodule Kleened.Core.ImageBulkBuild do
     parent_images |> Enum.all?(&MapSet.member?(all_images, &1))
   end
 
-  @spec partition_images([%Schemas.ImageBuildConfig{}], [String.t()]) ::
-          {[%Schemas.ImageBuildConfig{}], [%Schemas.ImageBuildConfig{}]}
+  @spec partition_images([Schemas.ImageBuildConfig.t()], %{String.t() => String.t()}) ::
+          {[Schemas.ImageBuildConfig.t()], [Schemas.ImageBuildConfig.t()]}
   defp partition_images(build_images, parent_map) do
     # Partition the images to build into two categories:
     # 1) images where their parent already exists so they can be builded straight away
@@ -287,16 +288,8 @@ defmodule Kleened.Core.ImageBulkBuild do
         ready_to_build: []
     }
 
-    case state.ready_to_build do
-      [] ->
-        # send_msg(msg, state)
-        send_msg({:deployment_build_complete, state.finished_builds}, state)
-        {:noreply, %State{}}
-
-      _images_to_build ->
-        %State{state | worker_count: 0}
-        {:noreply, state}
-    end
+    send_msg({:deployment_build_complete, state.finished_builds}, state)
+    {:noreply, %State{}}
   end
 
   defp start_building(state) do
