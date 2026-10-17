@@ -44,17 +44,22 @@ defmodule Kleened.API.DeploymentBuild do
     Logger.debug("receiving build config: #{deploy_raw}")
 
     with {:json, {:ok, deploy}} <- {:json, Jason.decode(deploy_raw)},
-         {:ok, deploy} = Utils.cast_deploy_config(deploy),
+         {:ok, deploy} <- Utils.cast_deploy_config(deploy),
          # buildargs = Core.Utils.map2envlist(config.buildargs),
          {:build, :ok} <- {:build, Deployment.build(deploy)} do
       Logger.debug("image build started, awaiting output")
       {[{:text, Utils.starting_message()}], %{handshaking: false}}
     else
-      {:error, [openapispex_error | _rest]} ->
+      {:error, [%Cast.Error{} = openapispex_error | _rest]} ->
         error_message = Cast.Error.message(openapispex_error)
         Logger.notice("Error casting OpenAPI schema. #{inspect(error_message)}. Closing websocke")
         error = Utils.error_message("invalid parameters")
         {[{:text, error_message}, {:close, 1002, error}], state}
+
+      {:error, msg} ->
+        Logger.notice("Error casting deployment config: #{inspect(msg)}. Closing websocket.")
+        error = Utils.error_message("invalid parameters")
+        {[{:text, inspect(msg)}, {:close, 1002, error}], state}
 
       {:json, {:error, json_error}} ->
         Logger.notice("Error parsing json. Closing websocket.")

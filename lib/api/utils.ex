@@ -139,7 +139,7 @@ defmodule Kleened.API.Utils do
   def cast_deploy_containers([config | rest], containers) do
     case Cast.cast(Schemas.ContainerConfig.schema(), config) do
       {:ok, container_config} -> cast_deploy_containers(rest, [container_config | containers])
-      {{:error, msg}, _} -> {:error, msg}
+      {:error, msg} -> {:error, msg}
     end
   end
 

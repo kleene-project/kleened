@@ -54,9 +54,6 @@ defmodule Kleened.API.Deployment do
         {:ok, result} ->
           send_resp(conn, 201, Jason.encode!(result))
 
-        {:error, {reason, _containers}} ->
-          send_resp(conn, 404, Utils.error_response(reason))
-
         {:error, reason} ->
           send_resp(conn, 404, Utils.error_response(reason))
       end
@@ -108,9 +105,6 @@ defmodule Kleened.API.Deployment do
       case Core.Deployment.create_networks(deploy) do
         {:ok, result} ->
           send_resp(conn, 201, Jason.encode!(result))
-
-        {:error, {reason, _networks}} ->
-          send_resp(conn, 404, Utils.error_response(reason))
 
         {:error, reason} ->
           send_resp(conn, 404, Utils.error_response(reason))
@@ -164,12 +158,6 @@ defmodule Kleened.API.Deployment do
       case Core.Deployment.create_volumes(deploy) do
         {:ok, result} ->
           send_resp(conn, 201, Jason.encode!(result))
-
-        {:error, {reason, _volumes}} ->
-          send_resp(conn, 404, Utils.error_response(reason))
-
-        {:error, reason} ->
-          send_resp(conn, 404, Utils.error_response(reason))
       end
     end
   end
@@ -214,13 +202,11 @@ defmodule Kleened.API.Deployment do
     def diff(conn, _opts) do
       conn = Plug.Conn.fetch_query_params(conn)
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
+      {:ok, deploy} = Utils.cast_deploy_config(conn.body_params)
 
-      case Core.Deployment.diff(conn.body_params) do
+      case Core.Deployment.diff(deploy) do
         {:ok, result} ->
           send_resp(conn, 201, Jason.encode!(result))
-
-        {:error, reason} ->
-          send_resp(conn, 404, Utils.error_response(reason))
       end
     end
   end
