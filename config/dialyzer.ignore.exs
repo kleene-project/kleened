@@ -41,8 +41,6 @@
    "The pattern can never match the type {:error, <<_::64, _::size(8)>>}."},
   {"lib/api/container.ex",
    "The pattern can never match the type %Plug.Conn.Unfetched{:aspect => atom(), binary() => _}."},
-  {"lib/api/image_build.ex",
-   "The pattern can never match the type {:build, {:error, <<_::64, _::size(8)>>}}."},
 
   # --- Dead branches -------------------------------------------------------
   #
@@ -71,10 +69,5 @@
   # --- Opaque type misuse --------------------------------------------------
   #
   # initialize_logging/1 calls Enum.member? on a value dialyzer sees as opaque.
-  {"lib/core/config.ex", "Type mismatch in call without opaque term in member?."},
-
-  # ZFS.info/1 returns atom keys; this clause matches the string key
-  # "mountpoint", so the "no mountpoint" branch is dead.
-  {"lib/core/config.ex",
-   "The pattern can never match the type %{:exists? => boolean(), :mountpoint => nil | binary()}."}
+  {"lib/core/config.ex", "Type mismatch in call without opaque term in member?."}
 ]

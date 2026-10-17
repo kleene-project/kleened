@@ -220,7 +220,7 @@ defmodule Kleened.Core.Config do
     root_status = ZFS.info(root)
 
     case root_status do
-      %{"mountpoint" => nil} ->
+      %{mountpoint: nil} ->
         msg =
           "kleened's root zfs filesystem #{root} does not have any mountpoint. Please set it manually."
 
