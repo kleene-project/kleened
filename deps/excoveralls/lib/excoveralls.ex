@@ -3,6 +3,7 @@ defmodule ExCoveralls do
   Provides the entry point for coverage calculation and output.
   This module method is called by Mix.Tasks.Test
   """
+  alias ExCoveralls.Cobertura
   alias ExCoveralls.Stats
   alias ExCoveralls.Cover
   alias ExCoveralls.ConfServer
@@ -31,6 +32,7 @@ defmodule ExCoveralls do
   @type_json        "json"
   @type_post        "post"
   @type_xml         "xml"
+  @type_cobertura   "cobertura"
   @type_lcov        "lcov"
 
   @doc """
@@ -39,13 +41,14 @@ defmodule ExCoveralls do
   def start(compile_path, opts) do
     Cover.compile(compile_path)
 
-    options = ConfServer.get()
-    if options[:import_cover] do
-      Cover.import(options[:import_cover])
-    end
-
     fn() ->
-      execute(ConfServer.get, compile_path, opts)
+      options = ConfServer.get()
+
+      if options[:import_cover] do
+        Cover.import(options[:import_cover])
+      end
+
+      execute(options, compile_path, opts)
     end
   end
 
@@ -58,8 +61,12 @@ defmodule ExCoveralls do
     if options[:umbrella] do
       store_stats(stats, options, compile_path)
     else
-      Stats.update_paths(stats, options) |>
-        analyze(options[:type] || "local", options)
+      types = List.wrap(options[:type] || "local")
+      stats = Stats.update_paths(stats, options)
+
+      # Push all available options down
+      options = options ++ opts
+      Enum.each(types, &analyze(stats, &1, options))
     end
   after
     if name = opts[:export] do
@@ -136,6 +143,10 @@ defmodule ExCoveralls do
 
   def analyze(stats, @type_xml, options) do
     Xml.execute(stats, options)
+  end
+  
+  def analyze(stats, @type_cobertura, options) do
+    Cobertura.execute(stats, options)
   end
 
   def analyze(stats, @type_post, options) do

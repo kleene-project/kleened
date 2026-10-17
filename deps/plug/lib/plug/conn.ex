@@ -32,19 +32,17 @@ defmodule Plug.Conn do
   ## Fetchable fields
 
   Fetchable fields do not populate with request information until the corresponding
-  prefixed 'fetch_' function retrieves them, e.g., the `fetch_cookies/2` function
-  retrieves the `cookies` field.
+  prefixed 'fetch_' function retrieves them, e.g., the `fetch_query_params/2` function
+  retrieves the `query_params` field.
 
   If you access these fields before fetching them, they will be returned as
   `Plug.Conn.Unfetched` structs.
 
-    * `cookies`- the request cookies with the response cookies
-    * `body_params` - the request body params, populated through a `Plug.Parsers` parser.
+    * `body_params` - the request body params, populated through a `Plug.Parsers` parser
     * `query_params` - the request query params, populated through `fetch_query_params/2`
     * `path_params` - the request path params, populated by routers such as `Plug.Router`
-    * `params` - the request params, the result of merging the `:path_params` on top of
-       `:body_params` on top of `:query_params`
-    * `req_cookies` - the request cookies (without the response ones)
+    * `params` - the request params, the result of merging `:body_params` on top of
+      `:query_params` alongside any further changes (such as the ones done by `Plug.Router`)
 
   ## Session vs Assigns
 
@@ -67,16 +65,14 @@ defmodule Plug.Conn do
 
   More can be stored in a session cookie, but be careful: this makes requests
   and responses heavier, and clients may reject cookies beyond a certain size.
-  Also, session cookie are not shared between a user's different browsers or devices.
-
-  If the session is stored elsewhere, such as with `Plug.Session.ETS`, session
-  data lookup still needs a key, e.g., a user's id. Unlike session data, `assigns`
-  data fields only last a single request.
+  Also, session cookies are not shared between a user's different browsers or devices.
+  If the session is stored elsewhere, such as a database, the browser only has to
+  store the session key and therefore more data can be stored in the session.
 
   A typical use case would be for an authentication plug to look up a user by id
-  and keep the state of the user's credentials by storing them in `assigns`.
-  Other plugs will then also have access through the `assigns` storage. This is
-  an important point because the session data disappears on the next request.
+  and keep the user information stored in `assigns`. Other plugs will then also
+  have access to it via `assigns`. This is an important point because the assign
+  data disappears on the next request.
 
   To summarize: `assigns` is for storing data to be accessed during the current
   request, and the session is for storing data to be accessed in subsequent
@@ -89,7 +85,6 @@ defmodule Plug.Conn do
     * `resp_body` - the response body is an empty string by default. It is set
       to nil after the response is sent, except for test connections. The response
       charset defaults to "utf-8".
-    * `resp_cookies` - the response cookies with their name and options
     * `resp_headers` - the response headers as a list of tuples, `cache-control`
       is set to `"max-age=0, private, must-revalidate"` by default.
       Note: Use all lowercase for response headers.
@@ -98,7 +93,6 @@ defmodule Plug.Conn do
   ## Connection fields
 
     * `assigns` - shared user data as a map
-    * `owner` - the Elixir process that owns the connection
     * `halted` - the boolean status on whether the pipeline was halted
     * `secret_key_base` - a secret key used to verify and encrypt cookies.
       These features require manual field setup. Data must be kept in the
@@ -119,9 +113,19 @@ defmodule Plug.Conn do
     * `adapter` - holds the adapter information in a tuple
     * `private` - shared library data as a map
 
+  ## Deprecated fields
+
+    * `cookies`- the request cookies with the response cookies.
+      Use `get_cookies/1` instead.
+    * `owner` - the Elixir process that owns the connection.
+    * `req_cookies` - the decoded request cookies (without decrypting or verifying them).
+      Use `get_req_header/2` or `get_cookies/1` instead.
+    * `resp_cookies`- the request cookies with the response cookies.
+      Use `get_resp_cookies/1` instead.
+
   ## Custom status codes
 
-  `Plug` allows status codes to be overridden or added and allow new codes not directly
+  `Plug` allows status codes to be overridden or added and allows new codes not directly
   specified by `Plug` or its adapters. The `:plug` application's Mix config can add or
   override a status code.
 
@@ -170,7 +174,6 @@ defmodule Plug.Conn do
   @type headers :: [{binary, binary}]
   @type host :: binary
   @type int_status :: non_neg_integer | nil
-  @type owner :: pid
   @type method :: binary
   @type query_param :: binary | %{optional(binary) => query_param} | [query_param]
   @type query_params :: %{optional(binary) => query_param}
@@ -192,7 +195,7 @@ defmodule Plug.Conn do
           halted: halted,
           host: host,
           method: method,
-          owner: owner,
+          owner: pid | nil,
           params: params | Unfetched.t(),
           path_info: segments,
           path_params: query_params,
@@ -291,7 +294,7 @@ defmodule Plug.Conn do
   alias Plug.Conn
   @epoch {{1970, 1, 1}, {0, 0, 0}}
   @already_sent {:plug_conn, :sent}
-  @unsent [:unset, :set, :set_chunked, :set_file]
+  @unsent [:unset, :set, :set_upgrade, :set_chunked, :set_file]
 
   @doc """
   Assigns a value to a key in the connection.
@@ -443,7 +446,7 @@ defmodule Plug.Conn do
     {:ok, body, payload} =
       adapter.send_resp(payload, conn.status, conn.resp_headers, conn.resp_body)
 
-    send(owner, @already_sent)
+    owner && send(owner, @already_sent)
     %{conn | adapter: {adapter, payload}, resp_body: body, state: :sent}
   end
 
@@ -494,7 +497,7 @@ defmodule Plug.Conn do
     {:ok, body, payload} =
       adapter.send_file(payload, conn.status, conn.resp_headers, file, offset, length)
 
-    send(owner, @already_sent)
+    owner && send(owner, @already_sent)
     %{conn | adapter: {adapter, payload}, state: :file, resp_body: body}
   end
 
@@ -507,7 +510,7 @@ defmodule Plug.Conn do
   the `chunk/2` function.
 
   HTTP/2 does not support chunking and will instead stream the response without a
-  transfer encoding. When using HTTP/1.1, the Cowboy adapter will stream the response
+  transfer encoding. When using HTTP/1.1, the underlying adapter will stream the response
   instead of emitting chunks if the `content-length` header has been set before calling
   `send_chunked/2`.
   """
@@ -522,7 +525,7 @@ defmodule Plug.Conn do
     conn = %{conn | status: Plug.Conn.Status.code(status), resp_body: nil}
     conn = run_before_send(conn, :set_chunked)
     {:ok, body, payload} = adapter.send_chunked(payload, conn.status, conn.resp_headers)
-    send(owner, @already_sent)
+    owner && send(owner, @already_sent)
     %{conn | adapter: {adapter, payload}, state: :chunked, resp_body: body}
   end
 
@@ -632,6 +635,36 @@ defmodule Plug.Conn do
   @spec get_peer_data(t) :: Plug.Conn.Adapter.peer_data()
   def get_peer_data(%Conn{adapter: {adapter, payload}}) do
     adapter.get_peer_data(payload)
+  end
+
+  @doc """
+  Returns the request sock (local) data.
+
+  It raises if the adapter does not provide this metadata.
+  """
+  @spec get_sock_data(t) :: Plug.Conn.Adapter.sock_data()
+  def get_sock_data(%Conn{adapter: {adapter, payload}}) do
+    if function_exported?(adapter, :get_sock_data, 1) do
+      adapter.get_sock_data(payload)
+    else
+      raise "get_sock_data not supported by #{inspect(adapter)}"
+    end
+  end
+
+  @doc """
+  Returns SSL data for the connection.
+
+  If the connection is not SSL, returns nil.
+
+  It raises if the adapter does not provide this metadata.
+  """
+  @spec get_ssl_data(t) :: Plug.Conn.Adapter.ssl_data()
+  def get_ssl_data(%Conn{adapter: {adapter, payload}}) do
+    if function_exported?(adapter, :get_ssl_data, 1) do
+      adapter.get_ssl_data(payload)
+    else
+      raise "get_ssl_data not supported by #{inspect(adapter)}"
+    end
   end
 
   @doc """
@@ -1163,8 +1196,10 @@ defmodule Plug.Conn do
   @doc """
   Reads the headers of a multipart request.
 
-  It returns `{:ok, headers, conn}` with the headers or
-  `{:done, conn}` if there are no more parts.
+  It returns `{:ok, headers, conn}` with the headers,
+  `{:error, :too_large, conn}` if the current multipart header block
+  exceeds the configured `:length`, or `{:done, conn}` if there are
+  no more parts.
 
   Once `read_part_headers/2` is invoked, you may call
   `read_part_body/2` to read the body associated to the headers.
@@ -1173,40 +1208,47 @@ defmodule Plug.Conn do
 
   ## Options
 
-    * `:length` - sets the maximum number of bytes to read from the body for
-      each chunk, defaults to `64_000` bytes
+    * `:length` - sets the maximum number of bytes to read while parsing the
+      current multipart header block, defaults to `64_000` bytes
     * `:read_length` - sets the amount of bytes to read at one time from the
       underlying socket to fill the chunk, defaults to `64_000` bytes
     * `:read_timeout` - sets the timeout for each socket read, defaults to
       `5_000` milliseconds
 
+  > #### Request length {: .warning}
+  >
+  > The `:length` option tracks the maximum length within a single call.
+  > When doing multiple calls to `read_part_headers/2` and `read_part_body/2`,
+  > it is your responsibility to track the overall response length.
   """
-  @spec read_part_headers(t, Keyword.t()) :: {:ok, headers, t} | {:done, t}
+  @spec read_part_headers(t, Keyword.t()) ::
+          {:ok, headers, t} | {:error, :too_large, t} | {:done, t}
   def read_part_headers(%Conn{adapter: {adapter, state}} = conn, opts \\ []) do
-    opts = opts ++ [length: 64_000, read_length: 64_000, read_timeout: 5000]
-
     case init_multipart(conn) do
       {boundary, buffer} ->
+        opts = opts ++ [length: 64_000, read_length: 64_000, read_timeout: 5000]
+        length = Keyword.fetch!(opts, :length)
         {data, state} = read_multipart_from_buffer_or_adapter(buffer, adapter, state, opts)
-        read_part_headers(conn, data, boundary, adapter, state, opts)
+        read_part_headers(conn, data, length, boundary, adapter, state, opts)
 
       :done ->
         {:done, conn}
     end
   end
 
-  defp read_part_headers(conn, data, boundary, adapter, state, opts) do
+  defp read_part_headers(conn, data, length, boundary, adapter, state, opts) do
     case :plug_multipart.parse_headers(data, boundary) do
+      {:ok, _headers, rest} when byte_size(data) - byte_size(rest) > length ->
+        {:error, :too_large, store_multipart(conn, {boundary, rest}, adapter, state)}
+
       {:ok, headers, rest} ->
         {:ok, headers, store_multipart(conn, {boundary, rest}, adapter, state)}
 
       :more ->
-        {_, next, state} = next_multipart(adapter, state, opts)
-        read_part_headers(conn, data <> next, boundary, adapter, state, opts)
+        read_part_headers_more(conn, data, length, boundary, adapter, state, opts)
 
       {:more, rest} ->
-        {_, next, state} = next_multipart(adapter, state, opts)
-        read_part_headers(conn, rest <> next, boundary, adapter, state, opts)
+        read_part_headers_more(conn, rest, length, boundary, adapter, state, opts)
 
       {:done, _} ->
         {:done, store_multipart(conn, :done, adapter, state)}
@@ -1221,6 +1263,21 @@ defmodule Plug.Conn do
   if there is no more body.
 
   It accepts the same options as `read_body/2`.
+
+  ## Options
+
+    * `:length` - sets the maximum number of bytes to read from the body on
+      every call, defaults to `8_000_000` bytes
+    * `:read_length` - sets the amount of bytes to read at one time from the
+      underlying socket to fill the chunk, defaults to `1_000_000` bytes
+    * `:read_timeout` - sets the timeout for each socket read, defaults to
+      `15_000` milliseconds
+
+  > #### Request length {: .warning}
+  >
+  > The `:length` option tracks the maximum length within a single call.
+  > When doing multiple calls to `read_part_headers/2` and `read_part_body/2`,
+  > it is your responsibility to track the overall response length.
   """
   @spec read_part_body(t, Keyword.t()) :: {:ok, binary, t} | {:more, binary, t} | {:done, t}
   def read_part_body(%Conn{adapter: {adapter, state}} = conn, opts) do
@@ -1295,6 +1352,16 @@ defmodule Plug.Conn do
     %{put_in(conn.private[:plug_multipart], multipart) | adapter: {adapter, state}}
   end
 
+  defp read_part_headers_more(conn, data, length, boundary, adapter, state, _opts)
+       when byte_size(data) >= length do
+    {:error, :too_large, store_multipart(conn, {boundary, data}, adapter, state)}
+  end
+
+  defp read_part_headers_more(conn, data, length, boundary, adapter, state, opts) do
+    {_, next, state} = next_multipart(adapter, state, opts)
+    read_part_headers(conn, data <> next, length, boundary, adapter, state, opts)
+  end
+
   defp read_multipart_from_buffer_or_adapter("", adapter, state, opts) do
     {_, data, state} = adapter.read_req_body(state, opts)
     {data, state}
@@ -1319,7 +1386,7 @@ defmodule Plug.Conn do
   proxies require it to support server push for HTTP/2. You can call
   `get_http_protocol/1` to retrieve the protocol and version.
   """
-  @spec inform(t, status, Keyword.t()) :: t
+  @spec inform(t, status, [{atom() | binary(), binary()}]) :: t
   def inform(%Conn{adapter: {adapter, _}} = conn, status, headers \\ []) do
     status_code = Plug.Conn.Status.code(status)
 
@@ -1340,7 +1407,7 @@ defmodule Plug.Conn do
 
   See `inform/3` for more information.
   """
-  @spec inform!(t, status, Keyword.t()) :: t
+  @spec inform!(t, status, [{atom() | binary(), binary()}]) :: t
   def inform!(%Conn{adapter: {adapter, _}} = conn, status, headers \\ []) do
     status_code = Plug.Conn.Status.code(status)
 
@@ -1369,6 +1436,10 @@ defmodule Plug.Conn do
   end
 
   defp adapter_inform(%Conn{adapter: {adapter, payload}}, status, headers) do
+    for {key, value} <- headers do
+      validate_header_key_value!(to_string(key), value)
+    end
+
     adapter.inform(payload, status, headers)
   end
 
@@ -1389,7 +1460,7 @@ defmodule Plug.Conn do
   If the upgrade is accepted by the adapter, the returned `Plug.Conn` will have a `state` of
   `:upgraded`. This state is considered equivalently to a 'sent' state, and is subject to the same
   limitation on subsequent mutating operations. Note that there is no guarantee or expectation
-  that the actual upgrade process has succeeded, or event that it is undertaken within this
+  that the actual upgrade process has succeeded, or even that it is undertaken within this
   function; it is entirely possible (likely, even) that the server will only do the actual upgrade
   later in the connection lifecycle.
 
@@ -1400,9 +1471,11 @@ defmodule Plug.Conn do
   @spec upgrade_adapter(t, atom, term) :: t
   def upgrade_adapter(%Conn{adapter: {adapter, payload}, state: state} = conn, protocol, args)
       when state in @unsent do
+    conn = run_before_send(%{conn | status: 101}, :set_upgrade)
+
     case adapter.upgrade(payload, protocol, args) do
       {:ok, payload} ->
-        %{conn | adapter: {adapter, payload}, state: :upgraded}
+        %{conn | state: :upgraded, adapter: {adapter, payload}}
 
       {:error, :not_supported} ->
         raise ArgumentError, "upgrade to #{protocol} not supported by #{inspect(adapter)}"
@@ -1545,6 +1618,30 @@ defmodule Plug.Conn do
   end
 
   @doc """
+  Returns a map with both request and response cookies.
+
+  Raises if cookies have not been fetched.
+  """
+  @spec get_cookies(t) :: %{optional(binary) => term}
+  def get_cookies(conn) do
+    case conn.cookies do
+      %Unfetched{} -> raise ArgumentError, "cookies not fetched, call fetch_cookies/2"
+      %{} = cookies -> cookies
+    end
+  end
+
+  @doc """
+  Returns a map with response cookies.
+
+  Each response cookie is represented as a map with the
+  metadata to be sent as part of the response.
+  """
+  @spec get_resp_cookies(t) :: %{optional(binary) => map}
+  def get_resp_cookies(conn) do
+    conn.resp_cookies
+  end
+
+  @doc """
   Puts a response cookie in the connection.
 
   If the `:sign` or `:encrypt` flag are given, then the cookie
@@ -1599,11 +1696,13 @@ defmodule Plug.Conn do
       option will set both the _max-age_ and _expires_ cookie attributes. Unset
       by default, which means the browser will default to a [session cookie](https://developer.mozilla.org/en-US/docs/Web/HTTP/Cookies#define_the_lifetime_of_a_cookie).
     * `:path` - the path the cookie applies to
-    * `:http_only` - when `false`, the cookie is accessible beyond HTTP
+    * `:http_only` - when `false`, the cookie is accessible beyond HTTP. Defaults to `true`
     * `:secure` - if the cookie must be sent only over https. Defaults
       to true when the connection is HTTPS
     * `:extra` - string to append to cookie. Use this to take advantage of
-      non-standard cookie attributes.
+      non-standard cookie attributes. Since this option may append multiple
+      attributes, callers must not pass user input. If user input must be
+      passed, callers must validate it against semicolon (`;`).
     * `:sign` - when true, signs the cookie
     * `:encrypt` - when true, encrypts the cookie
     * `:same_site` - set the cookie SameSite attribute to a string value.
@@ -1614,38 +1713,10 @@ defmodule Plug.Conn do
   def put_resp_cookie(%Conn{} = conn, key, value, opts \\ [])
       when is_binary(key) and is_list(opts) do
     %{resp_cookies: resp_cookies, scheme: scheme} = conn
-    {to_send_value, opts} = maybe_sign_or_encrypt_cookie(conn, key, value, opts)
+    {to_send_value, opts} = Plug.Conn.Cookies.sign_or_encrypt(conn, key, value, opts)
     cookie = [{:value, to_send_value} | opts] |> Map.new() |> maybe_secure_cookie(scheme)
     resp_cookies = Map.put(resp_cookies, key, cookie)
     update_cookies(%{conn | resp_cookies: resp_cookies}, &Map.put(&1, key, value))
-  end
-
-  defp maybe_sign_or_encrypt_cookie(conn, key, value, opts) do
-    {sign?, opts} = Keyword.pop(opts, :sign, false)
-    {encrypt?, opts} = Keyword.pop(opts, :encrypt, false)
-
-    case {sign?, encrypt?} do
-      {true, true} ->
-        raise ArgumentError,
-              ":encrypt automatically implies :sign. Please pass only one or the other"
-
-      {true, false} ->
-        {Plug.Crypto.sign(conn.secret_key_base, key <> "_cookie", value, max_age(opts)), opts}
-
-      {false, true} ->
-        {Plug.Crypto.encrypt(conn.secret_key_base, key <> "_cookie", value, max_age(opts)), opts}
-
-      {false, false} when is_binary(value) ->
-        {value, opts}
-
-      {false, false} ->
-        raise ArgumentError, "cookie value must be a binary unless the cookie is signed/encrypted"
-    end
-  end
-
-  defp max_age(opts) do
-    max_age = Keyword.get(opts, :max_age) || 86400
-    [keys: Plug.Keys, max_age: max_age]
   end
 
   defp maybe_secure_cookie(cookie, :https), do: Map.put_new(cookie, :secure, true)

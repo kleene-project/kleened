@@ -1,5 +1,42 @@
 # Changelog
 
+## v2.10.2 (2026-07-06)
+
+* Ensure pool connections terminate synchronously when the pool manager shuts down
+* Ensure transaction is reset before the pool is checked in
+
+## v2.10.1 (2026-05-09)
+
+* Ensure `:max_lifetime` works on connections that have been idle
+* Always distribute `:disconnect_all` over the given limit, even for idle connections
+
+## v2.10.0 (2026-04-24)
+
+* Add `:max_lifetime` to connection
+* Fix watcher blocking during slow pool termination
+* Fix owner unallow using wrong ref when switching owners
+* Add label (repo name) to ownership errors
+* Wrap options into a sensitive data struct when crossing process boundaries
+
+## v2.9.0 (2026-01-10)
+
+* Enhancements
+  * Whenever possible, have error messages that include a PID also include ancestors and one of process label, name, or initial call
+  * Allow clients to retry when specified
+  * Remove sensitive options before calling `after_connect`
+
+## v2.8.1 (2025-06-24)
+
+* Enhancements
+  * Automatically set and read process labels in error reports
+
+## v2.8.0 (2025-06-24)
+
+* Enhancements
+  * Allow `unallow_existing` as an opt to `ownership_allow/4`
+  * Improve ETS performance by enabling descentralized counters
+  * Increase default queue interval to 2000ms
+
 ## v2.7.0 (2024-07-02)
 
 * Enhancements

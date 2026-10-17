@@ -6,7 +6,7 @@ defmodule InetCidr.Mixfile do
   def project do
     [
       app: :inet_cidr,
-      version: "1.0.8",
+      version: "1.0.9",
       elixir: "~> 1.0",
       build_embedded: Mix.env() == :prod,
       start_permanent: Mix.env() == :prod,
@@ -25,7 +25,7 @@ defmodule InetCidr.Mixfile do
   end
 
   defp deps do
-    [{:ex_doc, ">= 0.0.0", only: :dev, runtime: false}]
+    [{:ex_doc, ">= 0.0.0", only: :dev, runtime: false, warn_if_outdated: true}]
   end
 
   defp docs do

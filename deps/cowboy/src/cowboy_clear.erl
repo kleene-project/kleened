@@ -1,4 +1,4 @@
-%% Copyright (c) 2016-2024, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -36,10 +36,6 @@ connection_process(Parent, Ref, Transport, Opts) ->
 	ProxyInfo = get_proxy_info(Ref, Opts),
 	{ok, Socket} = ranch:handshake(Ref),
 	%% Use cowboy_http2 directly only when 'http' is missing.
-	%% Otherwise switch to cowboy_http2 from cowboy_http.
-	%%
-	%% @todo Extend this option to cowboy_tls and allow disabling
-	%% the switch to cowboy_http2 in cowboy_http. Also document it.
 	Protocol = case maps:get(protocols, Opts, [http2, http]) of
 		[http2] -> cowboy_http2;
 		[_|_] -> cowboy_http

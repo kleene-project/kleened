@@ -1,4 +1,4 @@
-%% Copyright (c) 2015-2023, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -72,6 +72,8 @@
 -type utf8_state() :: 0..8 | undefined.
 -export_type([utf8_state/0]).
 
+-compile({inline, [utf8_class/0]}).
+
 %% @doc Generate a key for the Websocket handshake request.
 
 -spec key() -> binary().
@@ -133,6 +135,13 @@ negotiate_permessage_deflate1(Params, Extensions, Opts) ->
 			ignore;
 		{#{client_max_window_bits := CB}, _} when CB > ClientMaxWindowBits ->
 			ignore;
+		%% When the server requires a client_max_window_bits lower than the
+		%% default, but the client does not support the parameter (the client
+		%% didn't send the parameter), fail the negotiation. (RFC7692 7.1.2.2)
+		{Negotiated, _} when
+				not is_map_key(client_max_window_bits_set, Negotiated),
+				ClientMaxWindowBits < 15 ->
+			ignore;
 		{Negotiated, RespParams2} ->
 			%% We add the configured max window bits if necessary.
 			RespParams = case Negotiated of
@@ -165,12 +174,14 @@ negotiate_params([{<<"client_max_window_bits">>, Max}|Tail], Negotiated, RespPar
 		error ->
 			ignore;
 		CB when CB =< CB0 ->
-			negotiate_params(Tail, Negotiated#{client_max_window_bits => CB},
+			negotiate_params(Tail, Negotiated#{
+				client_max_window_bits => CB,
+				client_max_window_bits_set => true},
 				[<<"; client_max_window_bits=">>, Max|RespParams]);
 		%% When the client sends window bits larger than the server wants
 		%% to use, we use what the server defined.
 		_ ->
-			negotiate_params(Tail, Negotiated,
+			negotiate_params(Tail, Negotiated#{client_max_window_bits_set => true},
 				[<<"; client_max_window_bits=">>, integer_to_binary(CB0)|RespParams])
 	end;
 negotiate_params([{<<"server_max_window_bits">>, Max}|Tail], Negotiated, RespParams) ->
@@ -443,7 +454,7 @@ frag_state(_, 1, _, FragState) -> FragState.
 	| {ok, close_code(), binary(), utf8_state(), binary()}
 	| {more, binary(), utf8_state()}
 	| {more, close_code(), binary(), utf8_state()}
-	| {error, badframe | badencoding}.
+	| {error, badframe | badencoding | badsize}.
 %% Empty last frame of compressed message.
 parse_payload(Data, _, Utf8State, _, _, 0, {fin, _, << 1:1, 0:2 >>},
 		#{inflate := Inflate, inflate_takeover := TakeOver}, _) ->
@@ -455,16 +466,27 @@ parse_payload(Data, _, Utf8State, _, _, 0, {fin, _, << 1:1, 0:2 >>},
 	{ok, <<>>, Utf8State, Data};
 %% Compressed fragmented frame.
 parse_payload(Data, MaskKey, Utf8State, ParsedLen, Type, Len, FragState = {_, _, << 1:1, 0:2 >>},
-		#{inflate := Inflate, inflate_takeover := TakeOver}, _) ->
+		Exts = #{inflate := Inflate, inflate_takeover := TakeOver}, _) ->
 	{Data2, Rest, Eof} = split_payload(Data, Len),
-	Payload = inflate_frame(unmask(Data2, MaskKey, ParsedLen), Inflate, TakeOver, FragState, Eof),
-	validate_payload(Payload, Rest, Utf8State, ParsedLen, Type, FragState, Eof);
+	MaxInflateSize = maps:get(max_inflate_size, Exts, infinity),
+	case inflate_frame(unmask(Data2, MaskKey, ParsedLen), Inflate, TakeOver, MaxInflateSize, FragState, Eof) of
+		{ok, Payload} ->
+			validate_payload(Payload, Rest, Utf8State, ParsedLen, Type, FragState, Eof);
+		Error ->
+			Error
+	end;
 %% Compressed frame.
 parse_payload(Data, MaskKey, Utf8State, ParsedLen, Type, Len, FragState,
-		#{inflate := Inflate, inflate_takeover := TakeOver}, << 1:1, 0:2 >>) when Type =:= text; Type =:= binary ->
+		Exts = #{inflate := Inflate, inflate_takeover := TakeOver}, << 1:1, 0:2 >>)
+		when Type =:= text; Type =:= binary ->
 	{Data2, Rest, Eof} = split_payload(Data, Len),
-	Payload = inflate_frame(unmask(Data2, MaskKey, ParsedLen), Inflate, TakeOver, FragState, Eof),
-	validate_payload(Payload, Rest, Utf8State, ParsedLen, Type, FragState, Eof);
+	MaxInflateSize = maps:get(max_inflate_size, Exts, infinity),
+	case inflate_frame(unmask(Data2, MaskKey, ParsedLen), Inflate, TakeOver, MaxInflateSize, FragState, Eof) of
+		{ok, Payload} ->
+			validate_payload(Payload, Rest, Utf8State, ParsedLen, Type, FragState, Eof);
+		Error ->
+			Error
+	end;
 %% Empty frame.
 parse_payload(Data, _, Utf8State, 0, _, 0, _, _, _)
 		when Utf8State =:= 0; Utf8State =:= undefined ->
@@ -518,13 +540,17 @@ unmask(Data, MaskKey, 0) ->
 	mask(Data, MaskKey, <<>>);
 %% We unmask on the fly so we need to continue from the right mask byte.
 unmask(Data, MaskKey, UnmaskedLen) ->
-	Left = UnmaskedLen rem 4,
-	Right = 4 - Left,
-	MaskKey2 = (MaskKey bsl (Left * 8)) + (MaskKey bsr (Right * 8)),
+	Left = (UnmaskedLen rem 4) * 8,
+	Right = 32 - Left,
+	MaskKey2 = (MaskKey bsl Left) + (MaskKey bsr Right),
 	mask(Data, MaskKey2, <<>>).
 
-mask(<<>>, _, Unmasked) ->
-	Unmasked;
+mask(<< O1:32, O2:32, O3:32, O4:32, Rest/bits >>, MaskKey, Acc) ->
+	T1 = O1 bxor MaskKey,
+	T2 = O2 bxor MaskKey,
+	T3 = O3 bxor MaskKey,
+	T4 = O4 bxor MaskKey,
+	mask(Rest, MaskKey, << Acc/binary, T1:32, T2:32, T3:32, T4:32 >>);
 mask(<< O:32, Rest/bits >>, MaskKey, Acc) ->
 	T = O bxor MaskKey,
 	mask(Rest, MaskKey, << Acc/binary, T:32 >>);
@@ -539,18 +565,33 @@ mask(<< O:16 >>, MaskKey, Acc) ->
 mask(<< O:8 >>, MaskKey, Acc) ->
 	<< MaskKey2:8, _:24 >> = << MaskKey:32 >>,
 	T = O bxor MaskKey2,
-	<< Acc/binary, T:8 >>.
+	<< Acc/binary, T:8 >>;
+mask(<<>>, _, Unmasked) ->
+	Unmasked.
 
-inflate_frame(Data, Inflate, TakeOver, FragState, true)
+inflate_frame(Data, Inflate, TakeOver, MaxInflateSize, FragState, true)
 		when FragState =:= undefined; element(1, FragState) =:= fin ->
-	Data2 = zlib:inflate(Inflate, << Data/binary, 0, 0, 255, 255 >>),
-	case TakeOver of
-		no_takeover -> zlib:inflateReset(Inflate);
-		takeover -> ok
-	end,
-	iolist_to_binary(Data2);
-inflate_frame(Data, Inflate, _T, _F, _E) ->
-	iolist_to_binary(zlib:inflate(Inflate, Data)).
+	case cow_deflate:inflate(Inflate, [Data, <<0, 0, 255, 255>>], MaxInflateSize) of
+		{ok, Data2} ->
+			case TakeOver of
+				no_takeover -> zlib:inflateReset(Inflate);
+				takeover -> ok
+			end,
+			{ok, iolist_to_binary(Data2)};
+		{error, data_error} ->
+			{error, badframe};
+		{error, size_error} ->
+			{error, badsize}
+	end;
+inflate_frame(Data, Inflate, _T, MaxInflateSize, _F, _E) ->
+	case cow_deflate:inflate(Inflate, Data, MaxInflateSize) of
+		{ok, Data2} ->
+			{ok, iolist_to_binary(Data2)};
+		{error, data_error} ->
+			{error, badframe};
+		{error, size_error} ->
+			{error, badsize}
+	end.
 
 %% The Utf8State variable can be set to 'undefined' to disable the validation.
 validate_payload(Payload, _, undefined, _, _, _, false) ->
@@ -559,14 +600,14 @@ validate_payload(Payload, Rest, undefined, _, _, _, true) ->
 	{ok, Payload, undefined, Rest};
 %% Text frames and close control frames MUST have a payload that is valid UTF-8.
 validate_payload(Payload, Rest, Utf8State, _, Type, _, Eof) when Type =:= text; Type =:= close ->
-	case validate_utf8(Payload, Utf8State) of
+	case validate_text(Payload, Utf8State) of
 		1 -> {error, badencoding};
 		Utf8State2 when not Eof -> {more, Payload, Utf8State2};
 		0 when Eof -> {ok, Payload, 0, Rest};
 		_ -> {error, badencoding}
 	end;
 validate_payload(Payload, Rest, Utf8State, _, fragment, {Fin, text, _}, Eof) ->
-	case validate_utf8(Payload, Utf8State) of
+	case validate_text(Payload, Utf8State) of
 		1 -> {error, badencoding};
 		0 when Eof -> {ok, Payload, 0, Rest};
 		Utf8State2 when Eof, Fin =:= nofin -> {ok, Payload, Utf8State2, Rest};
@@ -581,36 +622,237 @@ validate_payload(Payload, Rest, Utf8State, _, _, _, true) ->
 %% Based on the Flexible and Economical UTF-8 Decoder algorithm by
 %% Bjoern Hoehrmann <bjoern@hoehrmann.de> (http://bjoern.hoehrmann.de/utf-8/decoder/dfa/).
 %%
-%% The original algorithm has been unrolled into all combinations of values for C and State
-%% each with a clause. The common clauses were then grouped together.
+%% The original algorithm has been reworked to better adapt to
+%% the current Erlang VM (at the time of writing).
+%%
+%% We keep the character class table to quickly find which class
+%% a character is. The transition table was removed in favor of
+%% a separate Erlang function per state as that proved more
+%% efficient.
+%%
+%% We store the character class table in a tuple returned by
+%% an inline function.
+%%
+%% We handle ASCII characters specially because when ASCII
+%% characters are present we are highly likely to have mostly
+%% or only ASCII characters. We process them 4 at a time when
+%% possible.
+%%
+%% When a non-ASCII character is encountered, we switch to
+%% the UTF-8 decoder. When in the UTF-8 decoder we have to
+%% process characters one at a time. When we are in the UTF-8
+%% decoder we expect there to be additional UTF-8 characters
+%% so we check for them instead of reverting back to ASCII
+%% every time. This greatly speeds up decoding of Japanese
+%% and other non-ASCII text.
+%%
+%% Our UTF-8 decoder functions consist of looking up the
+%% character class of the current byte and then using a
+%% case clause to determine which state we are switching to.
+%%
+%% We order clauses based on the likelihood of the character class.
+%% Order is determined by the number of occurrences of the class in
+%% the table. The order (and number of occurrences) is as follow:
+%% 7 (32), 2 (30), 1 and 9 (16), 3 (14), 8 (13), 6 (3), 4, 5, 10 and 11.
 %%
 %% This function returns 0 on success, 1 on error, and 2..8 on incomplete data.
-validate_utf8(<<>>, State) -> State;
-validate_utf8(<< C, Rest/bits >>, 0) when C < 128 -> validate_utf8(Rest, 0);
-validate_utf8(<< C, Rest/bits >>, 2) when C >= 128, C < 144 -> validate_utf8(Rest, 0);
-validate_utf8(<< C, Rest/bits >>, 3) when C >= 128, C < 144 -> validate_utf8(Rest, 2);
-validate_utf8(<< C, Rest/bits >>, 5) when C >= 128, C < 144 -> validate_utf8(Rest, 2);
-validate_utf8(<< C, Rest/bits >>, 7) when C >= 128, C < 144 -> validate_utf8(Rest, 3);
-validate_utf8(<< C, Rest/bits >>, 8) when C >= 128, C < 144 -> validate_utf8(Rest, 3);
-validate_utf8(<< C, Rest/bits >>, 2) when C >= 144, C < 160 -> validate_utf8(Rest, 0);
-validate_utf8(<< C, Rest/bits >>, 3) when C >= 144, C < 160 -> validate_utf8(Rest, 2);
-validate_utf8(<< C, Rest/bits >>, 5) when C >= 144, C < 160 -> validate_utf8(Rest, 2);
-validate_utf8(<< C, Rest/bits >>, 6) when C >= 144, C < 160 -> validate_utf8(Rest, 3);
-validate_utf8(<< C, Rest/bits >>, 7) when C >= 144, C < 160 -> validate_utf8(Rest, 3);
-validate_utf8(<< C, Rest/bits >>, 2) when C >= 160, C < 192 -> validate_utf8(Rest, 0);
-validate_utf8(<< C, Rest/bits >>, 3) when C >= 160, C < 192 -> validate_utf8(Rest, 2);
-validate_utf8(<< C, Rest/bits >>, 4) when C >= 160, C < 192 -> validate_utf8(Rest, 2);
-validate_utf8(<< C, Rest/bits >>, 6) when C >= 160, C < 192 -> validate_utf8(Rest, 3);
-validate_utf8(<< C, Rest/bits >>, 7) when C >= 160, C < 192 -> validate_utf8(Rest, 3);
-validate_utf8(<< C, Rest/bits >>, 0) when C >= 194, C < 224 -> validate_utf8(Rest, 2);
-validate_utf8(<< 224, Rest/bits >>, 0) -> validate_utf8(Rest, 4);
-validate_utf8(<< C, Rest/bits >>, 0) when C >= 225, C < 237 -> validate_utf8(Rest, 3);
-validate_utf8(<< 237, Rest/bits >>, 0) -> validate_utf8(Rest, 5);
-validate_utf8(<< C, Rest/bits >>, 0) when C =:= 238; C =:= 239 -> validate_utf8(Rest, 3);
-validate_utf8(<< 240, Rest/bits >>, 0) -> validate_utf8(Rest, 6);
-validate_utf8(<< C, Rest/bits >>, 0) when C =:= 241; C =:= 242; C =:= 243 -> validate_utf8(Rest, 7);
-validate_utf8(<< 244, Rest/bits >>, 0) -> validate_utf8(Rest, 8);
-validate_utf8(_, _) -> 1.
+%% It expects a starting state value of 0. It can be called again
+%% to stream parse large amounts of text as long as the returned
+%% 2..8 state is provided when it is called back.
+
+validate_text(Text, 0) -> validate_ascii(Text);
+validate_text(Text, 2) -> validate_s2(Text);
+validate_text(Text, 3) -> validate_s3(Text);
+validate_text(Text, 4) -> validate_s4(Text);
+validate_text(Text, 5) -> validate_s5(Text);
+validate_text(Text, 6) -> validate_s6(Text);
+validate_text(Text, 7) -> validate_s7(Text);
+validate_text(Text, 8) -> validate_s8(Text).
+
+validate_ascii(<<>>) -> 0;
+validate_ascii(<<C1,C2,C3,C4,R/bits>>) when C1 < 128, C2 < 128, C3 < 128, C4 < 128 -> validate_ascii(R);
+validate_ascii(<<C1,R/bits>>) when C1 < 128 -> validate_ascii(R);
+validate_ascii(Text) -> validate_s0(Text).
+
+%% Instead of switching back to ASCII we first have this
+%% function attempt to find a non-ASCII character to
+%% greatly speed up decoding of Japanese and other languages.
+validate_s0(<<C,R/bits>>) when C >= 128 ->
+	Class = element(C - 127, utf8_class()),
+	case Class of
+		2 -> validate_s2(R);
+		3 -> validate_s3(R);
+		6 -> validate_s7(R);
+		4 -> validate_s5(R);
+		5 -> validate_s8(R);
+		10 -> validate_s4(R);
+		11 -> validate_s6(R);
+		_ -> 1
+	end;
+validate_s0(Text) ->
+	validate_ascii(Text).
+
+validate_s2(<<C,R/bits>>) when C >= 128 ->
+	Class = element(C - 127, utf8_class()),
+	case Class of
+		7 -> validate_s0(R);
+		1 -> validate_s0(R);
+		9 -> validate_s0(R);
+		_ -> 1
+	end;
+validate_s2(<<>>) ->
+	2;
+validate_s2(_) ->
+	1.
+
+validate_s3(<<C,R/bits>>) when C >= 128 ->
+	Class = element(C - 127, utf8_class()),
+	case Class of
+		7 -> validate_s2(R);
+		1 -> validate_s2(R);
+		9 -> validate_s2(R);
+		_ -> 1
+	end;
+validate_s3(<<>>) ->
+	3;
+validate_s3(_) ->
+	1.
+
+validate_s4(<<C,R/bits>>) when C >= 128 ->
+	Class = element(C - 127, utf8_class()),
+	case Class of
+		7 -> validate_s2(R);
+		_ -> 1
+	end;
+validate_s4(<<>>) ->
+	4;
+validate_s4(_) ->
+	1.
+
+validate_s5(<<C,R/bits>>) when C >= 128 ->
+	Class = element(C - 127, utf8_class()),
+	case Class of
+		1 -> validate_s2(R);
+		9 -> validate_s2(R);
+		_ -> 1
+	end;
+validate_s5(<<>>) ->
+	5;
+validate_s5(_) ->
+	1.
+
+validate_s6(<<C,R/bits>>) when C >= 128 ->
+	Class = element(C - 127, utf8_class()),
+	case Class of
+		7 -> validate_s3(R);
+		9 -> validate_s3(R);
+		_ -> 1
+	end;
+validate_s6(<<>>) ->
+	6;
+validate_s6(_) ->
+	1.
+
+validate_s7(<<C,R/bits>>) when C >= 128 ->
+	Class = element(C - 127, utf8_class()),
+	case Class of
+		7 -> validate_s3(R);
+		1 -> validate_s3(R);
+		9 -> validate_s3(R);
+		_ -> 1
+	end;
+validate_s7(<<>>) ->
+	7;
+validate_s7(_) ->
+	1.
+
+validate_s8(<<C,R/bits>>) when C >= 128 ->
+	Class = element(C - 127, utf8_class()),
+	case Class of
+		1 -> validate_s3(R);
+		_ -> 1
+	end;
+validate_s8(<<>>) ->
+	8;
+validate_s8(_) ->
+	1.
+
+utf8_class() ->
+	{
+		1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+		9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+		7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+		7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+		8,8,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+		2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+		10,3,3,3,3,3,3,3,3,3,3,3,3,4,3,3,
+		11,6,6,6,5,8,8,8,8,8,8,8,8,8,8,8
+	}.
+
+-ifdef(TEST).
+
+validate_text_valid_test() ->
+	0 = validate_text(<<>>, 0),
+	0 = validate_text(<<"Hello world!">>, 0),
+	0 = validate_text(<<16#c2, 16#a2>>, 0),
+	0 = validate_text(<<16#e2, 16#82, 16#ac>>, 0),
+	0 = validate_text(<<16#f0, 16#9f, 16#98, 16#80>>, 0),
+	2 = validate_text(<<16#c2>>, 0),
+	0 = validate_text(<<16#a2>>, 2),
+	ok.
+
+validate_text_rejects_ascii_after_multibyte_lead_test_() ->
+	Tests = [
+		{<<"s2">>, <<16#c2, $A>>},
+		{<<"s3">>, <<16#e1, $A>>},
+		{<<"s4">>, <<16#e0, $A>>},
+		{<<"s5">>, <<16#ed, $A>>},
+		{<<"s6">>, <<16#f0, $A>>},
+		{<<"s7">>, <<16#f1, $A>>},
+		{<<"s8">>, <<16#f4, $A>>}
+	],
+	[{Name, fun() -> 1 = validate_text(Text, 0) end}
+		|| {Name, Text} <- Tests].
+
+validate_text_rejects_streamed_ascii_in_continuation_state_test_() ->
+	Tests = [
+		{<<"s2">>, 2},
+		{<<"s3">>, 3},
+		{<<"s4">>, 4},
+		{<<"s5">>, 5},
+		{<<"s6">>, 6},
+		{<<"s7">>, 7},
+		{<<"s8">>, 8}
+	],
+	[{Name, fun() -> 1 = validate_text(<<"A">>, State) end}
+		|| {Name, State} <- Tests].
+
+parse_payload_text_utf8_test() ->
+	Payload = <<16#f0, 16#9f, 16#98, 16#80>>,
+	{ok, Payload, 0, <<>>}
+		= parse_payload(Payload, undefined, 0, 0, text, 4, undefined, #{},
+			<<0:3>>),
+	ok.
+
+parse_payload_rejects_invalid_utf8_text_test() ->
+	{error, badencoding}
+		= parse_payload(<<16#c2, $A>>, undefined, 0, 0, text, 2,
+			undefined, #{}, <<0:3>>),
+	ok.
+
+parse_payload_rejects_invalid_utf8_close_test() ->
+	{error, badencoding}
+		= parse_payload(<<1000:16, 16#c2, $A>>, undefined, 0, 0,
+			close, 4, undefined, #{}, <<0:3>>),
+	ok.
+
+parse_payload_rejects_streamed_invalid_utf8_fragment_test() ->
+	{error, badencoding}
+		= parse_payload(<<"A">>, undefined, 2, 0, fragment, 1,
+			{fin, text, <<0:3>>}, #{}, <<0:3>>),
+	ok.
+
+-endif.
 
 %% @doc Return a frame tuple from parsed state and data.
 
@@ -729,13 +971,22 @@ payload_length(Payload) ->
 	end.
 
 deflate_frame(Payload, Deflate, TakeOver) ->
+	%% Compress all the octets of the payload of the message using DEFLATE.
 	Deflated = iolist_to_binary(zlib:deflate(Deflate, Payload, sync)),
 	case TakeOver of
 		no_takeover -> zlib:deflateReset(Deflate);
 		takeover -> ok
 	end,
+	%% Remove 4 octets (that are 0x00 0x00 0xff 0xff) from the tail end.
 	Len = byte_size(Deflated) - 4,
 	case Deflated of
-		<< Body:Len/binary, 0:8, 0:8, 255:8, 255:8 >> -> Body;
-		_ -> Deflated
+		<< Body:Len/binary, 0:8, 0:8, 255:8, 255:8 >> ->
+			Body;
+		<<>> ->
+			%% If the resulting data does not end with an empty DEFLATE block
+			%% with no compression (the "BTYPE" bits are set to 00), append an
+			%% empty DEFLATE block with no compression to the tail end.
+			<<0>>;
+		_ ->
+			Deflated
 	end.

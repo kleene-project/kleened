@@ -1,4 +1,4 @@
-%% Copyright (c) 2019-2023, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -50,6 +50,10 @@
 
 -include("cow_inline.hrl").
 -include("cow_parse.hrl").
+
+-ifdef(TEST).
+-include_lib("stdlib/include/assert.hrl").
+-endif.
 
 %% Parse a URI template.
 
@@ -342,7 +346,7 @@ expand_uritemplate_test_() ->
 						io:format("expected: ~0p", [Expected]),
 						case Expected of
 							false ->
-								{'EXIT', _} = (catch expand(URITemplate, Vars));
+								?assertError(_, expand(URITemplate, Vars));
 							[_|_] ->
 								Result = iolist_to_binary(expand(URITemplate, Vars)),
 								io:format("~p", [Result]),

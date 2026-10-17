@@ -1,4 +1,4 @@
-%% Copyright (c) 2015-2023, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -28,6 +28,7 @@
 -export([closing/4]).
 -export([close/4]).
 -export([keepalive/3]).
+-export([ping/4]).
 -export([ws_send/6]).
 -export([down/1]).
 
@@ -42,7 +43,7 @@
 }).
 
 -record(ws_state, {
-	reply_to :: pid(),
+	reply_to :: gun:reply_to(),
 	stream_ref :: reference(),
 	socket :: inet:socket() | ssl:sslsocket(),
 	transport :: module(),
@@ -83,6 +84,12 @@ do_check_options([Opt={protocols, L}|Opts]) when is_list(L) ->
 		_ -> {error, {options, {ws, Opt}}}
 	end;
 do_check_options([{reply_to, P}|Opts]) when is_pid(P) ->
+	do_check_options(Opts);
+do_check_options([{reply_to, F}|Opts]) when is_function(F, 1) ->
+	do_check_options(Opts);
+do_check_options([{reply_to, {F, A}}|Opts]) when is_function(F, 1 + length(A)) ->
+	do_check_options(Opts);
+do_check_options([{reply_to, {M, F, A}}|Opts]) when is_atom(M), is_atom(F), is_list(A) ->
 	do_check_options(Opts);
 do_check_options([{silence_pings, B}|Opts]) when is_boolean(B) ->
 	do_check_options(Opts);
@@ -249,23 +256,33 @@ dispatch(Rest, State0=#ws_state{reply_to=ReplyTo, stream_ref=StreamRef,
 				_ -> Flow0 - Dec
 			end,
 			State1 = State0#ws_state{flow=Flow, handler_state=HandlerState},
-			{State, EvHandlerState} = case Frame of
+			case Frame of
 				ping ->
-					{[], EvHandlerState2} = send(pong, State1, ReplyTo, EvHandler, EvHandlerState1),
-					{State1, EvHandlerState2};
+					case send(pong, State1, ReplyTo, EvHandler, EvHandlerState1) of
+						{[], EvHandlerState2} ->
+							handle(Rest, State1, EvHandler, EvHandlerState2);
+						{Error={error, _}, EvHandlerState2} ->
+							{[{state, State1}, Error], EvHandlerState2}
+					end;
 				{ping, Payload} ->
-					{[], EvHandlerState2} = send({pong, Payload}, State1, ReplyTo, EvHandler, EvHandlerState1),
-					{State1, EvHandlerState2};
+					case send({pong, Payload}, State1, ReplyTo, EvHandler, EvHandlerState1) of
+						{[], EvHandlerState2} ->
+							handle(Rest, State1, EvHandler, EvHandlerState2);
+						{Error={error, _}, EvHandlerState2} ->
+							{[{state, State1}, Error], EvHandlerState2}
+					end;
 				close ->
-					{State1#ws_state{in=close}, EvHandlerState1};
+					State = State1#ws_state{in=close},
+					handle(Rest, State, EvHandler, EvHandlerState1);
 				{close, _, _} ->
-					{State1#ws_state{in=close}, EvHandlerState1};
+					State = State1#ws_state{in=close},
+					handle(Rest, State, EvHandler, EvHandlerState1);
 				{fragment, fin, _, _} ->
-					{State1#ws_state{frag_state=undefined}, EvHandlerState1};
+					State = State1#ws_state{frag_state=undefined},
+					handle(Rest, State, EvHandler, EvHandlerState1);
 				_ ->
-					{State1, EvHandlerState1}
-			end,
-			handle(Rest, State, EvHandler, EvHandlerState)
+					handle(Rest, State1, EvHandler, EvHandlerState1)
+			end
 	end.
 
 update_flow(State=#ws_state{flow=Flow0}, _ReplyTo, _StreamRef, Inc) ->
@@ -301,6 +318,9 @@ close(_, _, _, EvHandlerState) ->
 keepalive(State=#ws_state{reply_to=ReplyTo}, EvHandler, EvHandlerState0) ->
 	send(ping, State, ReplyTo, EvHandler, EvHandlerState0).
 
+ping(_State, undefined, _ReplyTo, PingRef) ->
+	{error, {ping_not_implemented, PingRef}}.
+
 %% Send one frame.
 send(Frame, State=#ws_state{stream_ref=StreamRef,
 		socket=Socket, transport=Transport, in=In, extensions=Extensions},
@@ -330,7 +350,7 @@ send(Frame, State=#ws_state{stream_ref=StreamRef,
 					{[], EvHandlerState}
 			end;
 		Error={error, _} ->
-			{Error, EvHandlerState0}
+			{Error, EvHandlerState1}
 	end.
 
 %% Send many frames.

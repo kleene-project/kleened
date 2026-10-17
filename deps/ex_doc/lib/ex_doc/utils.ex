@@ -1,66 +1,8 @@
 defmodule ExDoc.Utils do
+  # General helpers used throughout ExDoc or extracted for testing.
+  # Avoid adding functions to this module whenever possible,
+  # instead prefer defining modules closer to the context they are used.
   @moduledoc false
-
-  @doc """
-  Emits a warning.
-  """
-  if Version.match?(System.version(), ">= 1.14.0") do
-    def warn(message, stacktrace_info) do
-      IO.warn(message, stacktrace_info)
-    end
-  else
-    def warn(message, _stacktrace_info) do
-      IO.warn(message, [])
-    end
-  end
-
-  @doc """
-  Runs the `before_closing_head_tag` callback.
-  """
-  def before_closing_head_tag(%{before_closing_head_tag: {m, f, a}}, module) do
-    apply(m, f, [module | a])
-  end
-
-  def before_closing_head_tag(%{before_closing_head_tag: before_closing_head_tag}, module)
-      when is_map(before_closing_head_tag) do
-    Map.get(before_closing_head_tag, module, "")
-  end
-
-  def before_closing_head_tag(%{before_closing_head_tag: before_closing_head_tag}, module) do
-    before_closing_head_tag.(module)
-  end
-
-  @doc """
-  Runs the `before_closing_footer_tag` callback.
-  """
-  def before_closing_footer_tag(%{before_closing_footer_tag: {m, f, a}}, module) do
-    apply(m, f, [module | a])
-  end
-
-  def before_closing_footer_tag(%{before_closing_footer_tag: before_closing_footer_tag}, module)
-      when is_map(before_closing_footer_tag) do
-    Map.get(before_closing_footer_tag, module, "")
-  end
-
-  def before_closing_footer_tag(%{before_closing_footer_tag: before_closing_footer_tag}, module) do
-    before_closing_footer_tag.(module)
-  end
-
-  @doc """
-  Runs the `before_closing_body_tag` callback.
-  """
-  def before_closing_body_tag(%{before_closing_body_tag: {m, f, a}}, module) do
-    apply(m, f, [module | a])
-  end
-
-  def before_closing_body_tag(%{before_closing_body_tag: before_closing_body_tag}, module)
-      when is_map(before_closing_body_tag) do
-    Map.get(before_closing_body_tag, module, "")
-  end
-
-  def before_closing_body_tag(%{before_closing_body_tag: before_closing_body_tag}, module) do
-    before_closing_body_tag.(module)
-  end
 
   @doc """
   HTML escapes the given string.
@@ -78,13 +20,12 @@ defmodule ExDoc.Utils do
     end)
   end
 
-  @clean_html_regex ~r/<\/?\s*[a-zA-Z]+(?:[^>=]|='[^']*'|="[^"]*"|=[^'"][^\s>]*)*>/
-
   @doc """
   Strips HTML tags from text leaving their text content
   """
   def strip_tags(text, replace_with \\ "") when is_binary(text) do
-    String.replace(text, @clean_html_regex, replace_with)
+    clean_html_regex = ~r/<\/?\s*[a-zA-Z]+(?:[^>=]|='[^']*'|="[^"]*"|=[^'"][^\s>]*)*>/
+    String.replace(text, clean_html_regex, replace_with)
   end
 
   @doc """
@@ -96,7 +37,6 @@ defmodule ExDoc.Utils do
 
   def text_to_id(text) when is_binary(text) do
     text
-    |> strip_tags()
     |> String.replace(~r/&#\d+;/, "")
     |> String.replace(~r/&[A-Za-z0-9]+;/, "")
     |> String.replace(~r/\W+/u, "-")
@@ -154,6 +94,7 @@ defmodule ExDoc.Utils do
   their app due to an ExDoc restriction, so we ship with a
   simple JSON implementation.
   """
+  # TODO: Remove this once we require Elixir v1.20+
   def to_json(nil), do: "null"
   def to_json(true), do: "true"
   def to_json(false), do: "false"
@@ -215,23 +156,4 @@ defmodule ExDoc.Utils do
     do: to_json_string(rest, <<acc::binary, x>>)
 
   defp to_json_string(<<>>, acc), do: <<acc::binary, "\"">>
-
-  @doc """
-  Generates a url based on the given pattern.
-  """
-  def source_url_pattern(source_url_pattern, path, line)
-      when is_binary(path) and is_integer(line) do
-    cond do
-      is_function(source_url_pattern) ->
-        source_url_pattern.(path, line)
-
-      source_url_pattern ->
-        source_url_pattern
-        |> String.replace("%{path}", path)
-        |> String.replace("%{line}", Integer.to_string(line))
-
-      true ->
-        nil
-    end
-  end
 end

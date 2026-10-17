@@ -1,4 +1,4 @@
-%% Copyright (c) 2013-2023, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -60,6 +60,10 @@
 %% Streaming data.
 -export([data/4]).
 
+%% User pings.
+-export([ping/1]).
+-export([ping/2]).
+
 %% Tunneling.
 -export([connect/2]).
 -export([connect/3]).
@@ -112,6 +116,7 @@
 -export([connected_ws_only/3]).
 -export([closing/3]).
 -export([terminate/3]).
+-export([reply/2]).
 
 -type req_headers() :: [{binary() | string() | atom(), iodata()}]
 	| #{binary() | string() | atom() => iodata()}.
@@ -124,8 +129,9 @@
 	| {close, ws_close_code(), iodata()}.
 -export_type([ws_frame/0]).
 
--type protocol() :: http | http2 | raw | socks
-	| {http, http_opts()} | {http2, http2_opts()} | {raw, raw_opts()} | {socks, socks_opts()}.
+-type protocol() :: http | http2 | http3 | raw | socks
+	| {http, http_opts()} | {http2, http2_opts()} | {http3, http3_opts()}
+	| {raw, raw_opts()} | {socks, socks_opts()}.
 -export_type([protocol/0]).
 
 -type protocols() :: [protocol()].
@@ -141,6 +147,7 @@
 	event_handler => {module(), any()},
 	http_opts => http_opts(),
 	http2_opts => http2_opts(),
+	http3_opts => http3_opts(),
 	protocols => protocols(),
 	raw_opts => raw_opts(),
 	retry => non_neg_integer(),
@@ -153,7 +160,7 @@
 	tls_handshake_timeout => timeout(),
 	tls_opts => [ssl:tls_client_option()],
 	trace => boolean(),
-	transport => tcp | tls | ssl,
+	transport => tcp | tls | ssl | quic,
 	ws_opts => ws_opts()
 }.
 -export_type([opts/0]).
@@ -196,9 +203,16 @@
 }.
 -export_type([raw_opts/0]).
 
+-type reply_to() :: pid()
+	| fun((_) -> _)
+	| {fun(), list()}
+	| {module(), atom(), list()}.
+-export_type([reply_to/0]).
+
 -type req_opts() :: #{
 	flow => pos_integer(),
-	reply_to => pid(),
+	invalid_request_headers => raise | ignore,
+	reply_to => reply_to(),
 	tunnel => stream_ref()
 }.
 -export_type([req_opts/0]).
@@ -209,6 +223,8 @@
 	cookie_ignore_informational => boolean(),
 	flow => pos_integer(),
 	keepalive => timeout(),
+	max_header_block_size => non_neg_integer(),
+	max_trailer_block_size => non_neg_integer(),
 	transform_header_name => fun((binary()) -> binary()),
 	version => 'HTTP/1.1' | 'HTTP/1.0',
 
@@ -252,6 +268,11 @@
 }.
 -export_type([http2_opts/0]).
 
+%% @todo
+-type http3_opts() :: #{
+}.
+-export_type([http3_opts/0]).
+
 -type socks_opts() :: #{
 	version => 5,
 	auth => [{username_password, binary(), binary()} | none],
@@ -272,6 +293,7 @@
 	compress => boolean(),
 	default_protocol => module(),
 	flow => pos_integer(),
+	invalid_request_headers => raise | ignore,
 	keepalive => timeout(),
 	protocols => [{binary(), module()}],
 	reply_to => pid(),
@@ -314,7 +336,7 @@
 	keepalive_ref :: undefined | reference(),
 	socket :: undefined | inet:socket() | ssl:sslsocket() | pid(),
 	transport :: module(),
-	active = true :: boolean(),
+	active = false :: boolean(),
 	messages :: {atom(), atom(), atom()},
 	protocol :: module(),
 	protocol_state :: any(),
@@ -391,6 +413,11 @@ check_options([{http2_opts, ProtoOpts}|Opts]) when is_map(ProtoOpts) ->
 		Error ->
 			Error
 	end;
+check_options([{http3_opts, ProtoOpts}|Opts]) when is_map(ProtoOpts) ->
+	case gun_http3:check_options(ProtoOpts) of
+		ok ->
+			check_options(Opts)
+	end;
 check_options([Opt = {protocols, L}|Opts]) when is_list(L) ->
 	case check_protocols_opt(L) of
 		ok -> check_options(Opts);
@@ -428,7 +455,7 @@ check_options([{tls_opts, L}|Opts]) when is_list(L) ->
 	check_options(Opts);
 check_options([{trace, B}|Opts]) when is_boolean(B) ->
 	check_options(Opts);
-check_options([{transport, T}|Opts]) when T =:= tcp; T =:= tls ->
+check_options([{transport, T}|Opts]) when T =:= tcp; T =:= tls; T =:= quic ->
 	check_options(Opts);
 check_options([{ws_opts, ProtoOpts}|Opts]) when is_map(ProtoOpts) ->
 	case gun_ws:check_options(ProtoOpts) of
@@ -442,9 +469,9 @@ check_options([Opt|_]) ->
 
 check_protocols_opt(Protocols) ->
 	%% Protocols must not appear more than once, and they
-	%% must be one of http, http2 or socks.
+	%% must be one of http, http2, http3, raw or socks.
 	ProtoNames0 = lists:usort([case P0 of {P, _} -> P; P -> P end || P0 <- Protocols]),
-	ProtoNames = [P || P <- ProtoNames0, lists:member(P, [http, http2, raw, socks])],
+	ProtoNames = [P || P <- ProtoNames0, lists:member(P, [http, http2, http3, raw, socks])],
 	case length(Protocols) =:= length(ProtoNames) of
 		false -> error;
 		true ->
@@ -453,6 +480,7 @@ check_protocols_opt(Protocols) ->
 			TupleCheck = [case P of
 				{http, Opts} -> gun_http:check_options(Opts);
 				{http2, Opts} -> gun_http2:check_options(Opts);
+				{http3, Opts} -> gun_http3:check_options(Opts);
 				{raw, Opts} -> gun_raw:check_options(Opts);
 				{socks, Opts} -> gun_socks:check_options(Opts)
 			end || P <- Protocols, is_tuple(P)],
@@ -464,14 +492,16 @@ check_protocols_opt(Protocols) ->
 	end.
 
 consider_tracing(ServerPid, #{trace := true}) ->
-	dbg:tracer(),
+	_ = dbg:tracer(),
 	_ = dbg:tpl(gun, [{'_', [], [{return_trace}]}]),
 	_ = dbg:tpl(gun_http, [{'_', [], [{return_trace}]}]),
 	_ = dbg:tpl(gun_http2, [{'_', [], [{return_trace}]}]),
+	_ = dbg:tpl(gun_http3, [{'_', [], [{return_trace}]}]),
 	_ = dbg:tpl(gun_raw, [{'_', [], [{return_trace}]}]),
 	_ = dbg:tpl(gun_socks, [{'_', [], [{return_trace}]}]),
 	_ = dbg:tpl(gun_ws, [{'_', [], [{return_trace}]}]),
-	dbg:p(ServerPid, all);
+	_ = dbg:p(ServerPid, all),
+	ok;
 consider_tracing(_, _) ->
 	ok.
 
@@ -481,7 +511,7 @@ set_owner(ServerPid, NewOwnerPid) ->
 
 -spec info(pid()) -> map().
 info(ServerPid) ->
-	{_, #state{
+	{CurrentStateName, #state{
 		owner=Owner,
 		socket=Socket,
 		transport=Transport,
@@ -490,15 +520,19 @@ info(ServerPid) ->
 		origin_host=OriginHost,
 		origin_port=OriginPort,
 		intermediaries=Intermediaries,
-		cookie_store=CookieStore
+		cookie_store=CookieStore,
+		event_handler=EventHandler,
+		event_handler_state=EventHandlerState
 	}} = sys:get_state(ServerPid),
 	Info0 = #{
 		owner => Owner,
 		socket => Socket,
+		%% @todo This is no longer correct for https because of QUIC.
 		transport => case OriginScheme of
 			<<"http">> -> tcp;
 			<<"https">> -> tls
 		end,
+		state_name => CurrentStateName,
 		origin_scheme => case Protocol of
 			gun_raw -> undefined;
 			gun_socks -> undefined;
@@ -507,7 +541,9 @@ info(ServerPid) ->
 		origin_host => OriginHost,
 		origin_port => OriginPort,
 		intermediaries => intermediaries_info(Intermediaries, []),
-		cookie_store => CookieStore
+		cookie_store => CookieStore,
+		event_handler => EventHandler,
+		event_handler_state => EventHandlerState
 	},
 	Info = case Socket of
 		undefined ->
@@ -651,12 +687,14 @@ headers(ServerPid, Method, Path, Headers) ->
 
 -spec headers(pid(), iodata(), iodata(), req_headers(), req_opts()) -> stream_ref().
 headers(ServerPid, Method, Path, Headers0, ReqOpts) ->
+	Headers = normalize_headers(Headers0),
+	maybe_invalid_request_headers(Headers, ReqOpts),
 	Tunnel = get_tunnel(ReqOpts),
 	StreamRef = make_stream_ref(Tunnel),
 	InitialFlow = maps:get(flow, ReqOpts, infinity),
 	ReplyTo = maps:get(reply_to, ReqOpts, self()),
 	gen_statem:cast(ServerPid, {headers, ReplyTo, StreamRef,
-		Method, Path, normalize_headers(Headers0), InitialFlow}),
+		Method, Path, Headers, InitialFlow}),
 	StreamRef.
 
 -spec request(pid(), iodata(), iodata(), req_headers(), iodata()) -> stream_ref().
@@ -665,12 +703,14 @@ request(ServerPid, Method, Path, Headers, Body) ->
 
 -spec request(pid(), iodata(), iodata(), req_headers(), iodata(), req_opts()) -> stream_ref().
 request(ServerPid, Method, Path, Headers, Body, ReqOpts) ->
+	NormHeaders = normalize_headers(Headers),
+	maybe_invalid_request_headers(NormHeaders, ReqOpts),
 	Tunnel = get_tunnel(ReqOpts),
 	StreamRef = make_stream_ref(Tunnel),
 	InitialFlow = maps:get(flow, ReqOpts, infinity),
 	ReplyTo = maps:get(reply_to, ReqOpts, self()),
 	gen_statem:cast(ServerPid, {request, ReplyTo, StreamRef,
-		Method, Path, normalize_headers(Headers), Body, InitialFlow}),
+		Method, Path, NormHeaders, Body, InitialFlow}),
 	StreamRef.
 
 get_tunnel(#{tunnel := Tunnel}) when is_reference(Tunnel) ->
@@ -694,6 +734,28 @@ normalize_headers([{Name, Value}|Tail]) when is_atom(Name) ->
 normalize_headers(Headers) when is_map(Headers) ->
 	normalize_headers(maps:to_list(Headers)).
 
+maybe_invalid_request_headers(Headers, ReqOpts) ->
+	case maps:get(invalid_request_headers, ReqOpts, raise) of
+		raise ->
+			case maybe_invalid_request_headers(Headers) of
+				ok ->
+					ok;
+				{error, Name} ->
+					error({invalid_request_header, Name,
+						"An invalid request header was detected."})
+			end;
+		ignore ->
+			ok
+	end.
+
+maybe_invalid_request_headers([{Name, Value}|Tail]) ->
+	case binary:match(iolist_to_binary(Value), [<<$\r>>, <<$\n>>]) of
+		nomatch -> maybe_invalid_request_headers(Tail);
+		_ -> {error, Name}
+	end;
+maybe_invalid_request_headers([]) ->
+	ok.
+
 %% Streaming data.
 
 -spec data(pid(), stream_ref(), fin | nofin, iodata()) -> ok.
@@ -704,6 +766,20 @@ data(ServerPid, StreamRef, IsFin, Data) ->
 		_ ->
 			gen_statem:cast(ServerPid, {data, self(), StreamRef, IsFin, Data})
 	end.
+
+%% User pings.
+
+-spec ping(pid()) -> reference().
+ping(ServerPid) ->
+	ping(ServerPid, #{}).
+
+-spec ping(pid(), req_opts()) -> reference().
+ping(ServerPid, ReqOpts) ->
+	Tunnel = get_tunnel(ReqOpts),
+	PingRef = make_ref(),
+	ReplyTo = maps:get(reply_to, ReqOpts, self()),
+	gen_statem:cast(ServerPid, {ping, ReplyTo, Tunnel, PingRef}),
+	PingRef.
 
 %% Tunneling.
 
@@ -716,7 +792,9 @@ connect(ServerPid, Destination, Headers) ->
 	connect(ServerPid, Destination, Headers, #{}).
 
 -spec connect(pid(), connect_destination(), req_headers(), req_opts()) -> stream_ref().
-connect(ServerPid, Destination, Headers, ReqOpts) ->
+connect(ServerPid, Destination, Headers0, ReqOpts) ->
+	Headers = normalize_headers(Headers0),
+	maybe_invalid_request_headers(Headers, ReqOpts),
 	Tunnel = get_tunnel(ReqOpts),
 	StreamRef = make_stream_ref(Tunnel),
 	InitialFlow = maps:get(flow, ReqOpts, infinity),
@@ -818,7 +896,7 @@ await_body(ServerPid, StreamRef, Timeout, MRef, Acc) ->
 	end.
 
 -spec await_up(pid())
-	-> {ok, http | http2 | raw | socks}
+	-> {ok, http | http2 | http3 | raw | socks}
 	| {error, {down, any()} | timeout}.
 await_up(ServerPid) ->
 	MRef = monitor(process, ServerPid),
@@ -827,7 +905,7 @@ await_up(ServerPid) ->
 	Res.
 
 -spec await_up(pid(), reference() | timeout())
-	-> {ok, http | http2 | raw | socks}
+	-> {ok, http | http2 | http3 | raw | socks}
 	| {error, {down, any()} | timeout}.
 await_up(ServerPid, MRef) when is_reference(MRef) ->
 	await_up(ServerPid, 5000, MRef);
@@ -838,7 +916,7 @@ await_up(ServerPid, Timeout) ->
 	Res.
 
 -spec await_up(pid(), timeout(), reference())
-	-> {ok, http | http2 | raw | socks}
+	-> {ok, http | http2 | http3 | raw | socks}
 	| {error, {down, any()} | timeout}.
 await_up(ServerPid, Timeout, MRef) ->
 	receive
@@ -941,19 +1019,23 @@ ws_upgrade(ServerPid, Path) ->
 	ws_upgrade(ServerPid, Path, []).
 
 -spec ws_upgrade(pid(), iodata(), req_headers()) -> stream_ref().
-ws_upgrade(ServerPid, Path, Headers) ->
+ws_upgrade(ServerPid, Path, Headers0) ->
+	Headers = normalize_headers(Headers0),
+	maybe_invalid_request_headers(Headers, #{invalid_request_headers => raise}),
 	StreamRef = make_ref(),
-	gen_statem:cast(ServerPid, {ws_upgrade, self(), StreamRef, Path, normalize_headers(Headers)}),
+	gen_statem:cast(ServerPid, {ws_upgrade, self(), StreamRef, Path, Headers}),
 	StreamRef.
 
 -spec ws_upgrade(pid(), iodata(), req_headers(), ws_opts()) -> stream_ref().
-ws_upgrade(ServerPid, Path, Headers, Opts0) ->
-	Tunnel = get_tunnel(Opts0),
-	Opts = maps:without([tunnel], Opts0),
-	ok = gun_ws:check_options(Opts),
+ws_upgrade(ServerPid, Path, Headers0, WsOpts0) ->
+	Headers = normalize_headers(Headers0),
+	maybe_invalid_request_headers(Headers, WsOpts0),
+	Tunnel = get_tunnel(WsOpts0),
+	WsOpts = maps:without([invalid_request_headers, tunnel], WsOpts0),
+	ok = gun_ws:check_options(WsOpts),
 	StreamRef = make_stream_ref(Tunnel),
-	ReplyTo = maps:get(reply_to, Opts, self()),
-	gen_statem:cast(ServerPid, {ws_upgrade, ReplyTo, StreamRef, Path, normalize_headers(Headers), Opts}),
+	ReplyTo = maps:get(reply_to, WsOpts, self()),
+	gen_statem:cast(ServerPid, {ws_upgrade, ReplyTo, StreamRef, Path, Headers, WsOpts}),
 	StreamRef.
 
 -spec ws_send(pid(), stream_ref(), ws_frame() | [ws_frame()]) -> ok.
@@ -970,11 +1052,24 @@ start_link(Owner, Host, Port, Opts) ->
 init({Owner, Host, Port, Opts}) ->
 	Retry = maps:get(retry, Opts, 5),
 	OriginTransport = maps:get(transport, Opts, default_transport(Port)),
+	%% When Unix Domain Sockets are used we set
+	%% the origin authority to "localhost" by default.
+	{OriginHost, OriginPort} = case Host of
+		{local, _} ->
+			OriginPort0 = case OriginTransport of
+				tcp -> 80;
+				_ -> 443
+			end,
+			{<<"localhost">>, OriginPort0};
+		_ ->
+			{Host, Port}
+	end,
 	%% The OriginScheme is not really http when we connect to socks/raw.
 	%% This is corrected in the gun:info/1 and gun:stream_info/2 functions where applicable.
 	{OriginScheme, Transport} = case OriginTransport of
 		tcp -> {<<"http">>, gun_tcp};
-		tls -> {<<"https">>, gun_tls}
+		tls -> {<<"https">>, gun_tls};
+		quic -> {<<"https">>, gun_quicer}
 	end,
 	OwnerRef = monitor(process, Owner),
 	{EvHandler, EvHandlerState0} = maps:get(event_handler, Opts,
@@ -990,7 +1085,7 @@ init({Owner, Host, Port, Opts}) ->
 	CookieStore = maps:get(cookie_store, Opts, undefined),
 	State = #state{owner=Owner, status={up, OwnerRef},
 		host=Host, port=Port, origin_scheme=OriginScheme,
-		origin_host=Host, origin_port=Port, opts=Opts,
+		origin_host=OriginHost, origin_port=OriginPort, opts=Opts,
 		transport=Transport, messages=Transport:messages(),
 		event_handler=EvHandler, event_handler_state=EvHandlerState,
 		cookie_store=CookieStore},
@@ -1062,6 +1157,38 @@ domain_lookup(Type, Event, State) ->
 	handle_common(Type, Event, ?FUNCTION_NAME, State).
 
 connecting(_, {retries, Retries, LookupInfo}, State=#state{opts=Opts,
+		transport=gun_quicer, event_handler=EvHandler, event_handler_state=EvHandlerState0}) ->
+	%% @todo We are doing the TLS handshake at the same time,
+	%%       we cannot separate it from the connection. Fire events.
+	ConnectTimeout = maps:get(connect_timeout, Opts, infinity),
+	ConnectEvent = #{
+		lookup_info => LookupInfo,
+		timeout => ConnectTimeout
+	},
+	EvHandlerState1 = EvHandler:connect_start(ConnectEvent, EvHandlerState0),
+	case gun_quicer:connect(LookupInfo, ConnectTimeout) of
+		{ok, Socket} ->
+			%% @todo We should double check the ALPN result.
+			[Protocol] = maps:get(protocols, Opts, [http3]),
+			ProtocolName = case Protocol of
+				{P, _} -> P;
+				P -> P
+			end,
+			EvHandlerState = EvHandler:connect_end(ConnectEvent#{
+				socket => Socket,
+				protocol => ProtocolName
+			}, EvHandlerState1),
+			{next_state, connected_protocol_init,
+				State#state{event_handler_state=EvHandlerState},
+				{next_event, internal, {connected, Retries, Socket, Protocol}}};
+		{error, Reason} ->
+			EvHandlerState = EvHandler:connect_end(ConnectEvent#{
+				error => Reason
+			}, EvHandlerState1),
+			{next_state, not_connected, State#state{event_handler_state=EvHandlerState},
+				{next_event, internal, {retries, Retries, Reason}}}
+	end;
+connecting(_, {retries, Retries, LookupInfo}, State=#state{opts=Opts,
 		transport=Transport, event_handler=EvHandler, event_handler_state=EvHandlerState0}) ->
 	ConnectTimeout = maps:get(connect_timeout, Opts, infinity),
 	ConnectEvent = #{
@@ -1100,6 +1227,7 @@ connecting(_, {retries, Retries, LookupInfo}, State=#state{opts=Opts,
 initial_tls_handshake(_, {retries, Retries, Socket}, State0=#state{opts=Opts, origin_host=OriginHost}) ->
 	Protocols = maps:get(protocols, Opts, [http2, http]),
 	HandshakeEvent = #{
+		%% @todo This results in ensure_tls_opts being called twice.
 		tls_opts => ensure_tls_opts(Protocols, maps:get(tls_opts, Opts, []), OriginHost),
 		timeout => maps:get(tls_handshake_timeout, Opts, infinity)
 	},
@@ -1132,6 +1260,14 @@ ensure_tls_opts(Protocols0, TransOpts0, OriginHost) ->
 					end
 			end
 	end,
+	%% Wildcard certificate matching.
+	TransOpts2 = case lists:keymember(customize_hostname_check, 1, TransOpts1) of
+		true ->
+			TransOpts1;
+		false ->
+			HTTPSMatchFun = public_key:pkix_verify_hostname_match_fun(https),
+			[{customize_hostname_check, [{match_fun, HTTPSMatchFun}]}|TransOpts1]
+	end,
 	%% ALPN.
 	Protocols = lists:foldl(fun
 		(http, Acc) -> [<<"http/1.1">>|Acc];
@@ -1142,7 +1278,7 @@ ensure_tls_opts(Protocols0, TransOpts0, OriginHost) ->
 	end, [], Protocols0),
 	TransOpts = [
 		{alpn_advertised_protocols, Protocols}
-	|TransOpts1],
+	|TransOpts2],
 	%% SNI.
 	%%
 	%% Normally only DNS hostnames are supported for SNI. However, the ssl
@@ -1170,10 +1306,10 @@ tls_handshake(internal, {tls_handshake, HandshakeEvent, Protocols, ReplyTo},
 				NewProtocolName -> {NewProtocolName, #{tunnel_transport => tls}}
 			end,
 			Protocol = gun_protocols:handler(NewProtocol),
-			ReplyTo ! {gun_tunnel_up, self(), StreamRef, Protocol:name()},
+			reply(ReplyTo, {gun_tunnel_up, self(), StreamRef, Protocol:name()}),
 			commands([
 				{switch_transport, gun_tls, TLSSocket},
-				{switch_protocol, NewProtocol, ReplyTo}
+				{switch_protocol, NewProtocol, ReplyTo, <<>>}
 			], State);
 		{error, Reason, State} ->
 			commands({error, Reason}, State)
@@ -1205,12 +1341,12 @@ tls_handshake(info, {gun_tls_proxy, Socket, {ok, Negotiated}, {HandshakeEvent, P
 		NewProtocolName -> {NewProtocolName, #{tunnel_transport => tls}}
 	end,
 	Protocol = gun_protocols:handler(NewProtocol),
-	ReplyTo ! {gun_tunnel_up, self(), StreamRef, Protocol:name()},
+	reply(ReplyTo, {gun_tunnel_up, self(), StreamRef, Protocol:name()}),
 	EvHandlerState = EvHandler:tls_handshake_end(HandshakeEvent#{
 		socket => Socket,
 		protocol => Protocol:name()
 	}, EvHandlerState0),
-	commands([{switch_protocol, NewProtocol, ReplyTo}], State0#state{event_handler_state=EvHandlerState});
+	commands([{switch_protocol, NewProtocol, ReplyTo, <<>>}], State0#state{event_handler_state=EvHandlerState});
 tls_handshake(info, {gun_tls_proxy, Socket, Error = {error, Reason}, {HandshakeEvent, _, _}},
 		State=#state{socket=Socket, event_handler=EvHandler, event_handler_state=EvHandlerState0}) ->
 	EvHandlerState = EvHandler:tls_handshake_end(HandshakeEvent#{
@@ -1231,10 +1367,18 @@ normal_tls_handshake(Socket, State=#state{
 	EvHandlerState1 = EvHandler:tls_handshake_start(HandshakeEvent, EvHandlerState0),
 	case gun_tls:connect(Socket, TLSOpts, TLSTimeout) of
 		{ok, TLSSocket} ->
-			%% This call may return {error,closed} when the socket has
-			%% been closed by the peer. This should be very rare (due to
-			%% timing) but can happen for example when client certificates
-			%% were required but not sent or invalid with some servers.
+			%% When initially connecting we are in passive mode and
+			%% in that state we expect this call to always succeed.
+			%% In rare scenarios (suspended Gun process) it may
+			%% return {error,closed}, but this indicates that the
+			%% socket process is gone and we cannot retrieve a potential
+			%% TLS alert.
+			%%
+			%% When using HTTP/1.1 CONNECT we are also in passive mode
+			%% because CONNECT involves a response that is received via
+			%% active mode, which automatically goes into passive mode
+			%% ({active,once}), and we only reenable active mode after
+			%% processing commands.
 			case ssl:negotiated_protocol(TLSSocket) of
 				{error, Reason = closed} ->
 					EvHandlerState = EvHandler:tls_handshake_end(HandshakeEvent#{
@@ -1267,8 +1411,9 @@ connected_protocol_init(internal, {connected, Retries, Socket, NewProtocol},
 				{next_event, internal, {retries, Retries, Reason}}};
 		{ok, StateName, ProtoState} ->
 			%% @todo Don't send gun_up and gun_down if active/1 fails here.
-			Owner ! {gun_up, self(), Protocol:name()},
-			State1 = State0#state{socket=Socket, protocol=Protocol, protocol_state=ProtoState},
+			reply(Owner, {gun_up, self(), Protocol:name()}),
+			State1 = State0#state{socket=Socket, protocol=Protocol,
+				protocol_state=ProtoState, active=true},
 			case active(State1) of
 				{ok, State2} ->
 					State = case Protocol:has_keepalive() of
@@ -1289,9 +1434,9 @@ connected_data_only(cast, Msg, _)
 			element(1, Msg) =:= connect; element(1, Msg) =:= ws_upgrade;
 			element(1, Msg) =:= ws_send ->
 	ReplyTo = element(2, Msg),
-	ReplyTo ! {gun_error, self(), {badstate,
+	reply(ReplyTo, {gun_error, self(), {badstate,
 		"This connection does not accept new requests to be opened "
-		"nor does it accept Websocket frames."}},
+		"nor does it accept Websocket frames."}}),
 	keep_state_and_data;
 connected_data_only(Type, Event, State) ->
 	handle_common_connected(Type, Event, ?FUNCTION_NAME, State).
@@ -1307,8 +1452,8 @@ connected_ws_only(cast, Msg, _)
 		when element(1, Msg) =:= headers; element(1, Msg) =:= request; element(1, Msg) =:= data;
 			element(1, Msg) =:= connect; element(1, Msg) =:= ws_upgrade ->
 	ReplyTo = element(2, Msg),
-	ReplyTo ! {gun_error, self(), {badstate,
-		"This connection only accepts Websocket frames."}},
+	reply(ReplyTo, {gun_error, self(), {badstate,
+		"This connection only accepts Websocket frames."}}),
 	keep_state_and_data;
 connected_ws_only(Type, Event, State) ->
 	handle_common_connected_no_input(Type, Event, ?FUNCTION_NAME, State).
@@ -1317,6 +1462,14 @@ connected_ws_only(Type, Event, State) ->
 %%
 %% @todo It might be better, internally, to pass around a URIMap
 %% containing the target URI, instead of separate Host/Port/PathWithQs.
+connected(cast, {ping, ReplyTo, Tunnel0, PingRef},
+		State=#state{protocol=Protocol, protocol_state=ProtoState}) ->
+	Tunnel = case dereference_stream_ref(Tunnel0, State) of
+		[] -> undefined;
+		Tunnel1 -> Tunnel1
+	end,
+	Commands = Protocol:ping(ProtoState, Tunnel, ReplyTo, PingRef),
+	commands(Commands, State);
 connected(cast, {headers, ReplyTo, StreamRef, Method, Path, Headers, InitialFlow},
 		State=#state{origin_host=Host, origin_port=Port,
 			protocol=Protocol, protocol_state=ProtoState, cookie_store=CookieStore0,
@@ -1339,13 +1492,14 @@ connected(cast, {request, ReplyTo, StreamRef, Method, Path, Headers, Body, Initi
 		event_handler_state=EvHandlerState});
 connected(cast, {connect, ReplyTo, StreamRef, Destination, Headers, InitialFlow},
 		State=#state{origin_host=Host, origin_port=Port,
-			protocol=Protocol, protocol_state=ProtoState,
+			protocol=Protocol, protocol_state=ProtoState, cookie_store=CookieStore0,
 			event_handler=EvHandler, event_handler_state=EvHandlerState0}) ->
-	{Commands, EvHandlerState} = Protocol:connect(ProtoState,
+	{Commands, CookieStore, EvHandlerState} = Protocol:connect(ProtoState,
 		dereference_stream_ref(StreamRef, State), ReplyTo,
 		Destination, #{host => Host, port => Port},
-		Headers, InitialFlow, EvHandler, EvHandlerState0),
-	commands(Commands, State#state{event_handler_state=EvHandlerState});
+		Headers, InitialFlow, CookieStore0, EvHandler, EvHandlerState0),
+	commands(Commands, State#state{cookie_store=CookieStore,
+		event_handler_state=EvHandlerState});
 %% Public Websocket interface.
 connected(cast, {ws_upgrade, ReplyTo, StreamRef, Path, Headers}, State=#state{opts=Opts}) ->
 	WsOpts = maps:get(ws_opts, Opts, #{}),
@@ -1411,23 +1565,23 @@ closing(state_timeout, closing_timeout, State=#state{status=Status}) ->
 %% When reconnect is disabled, fail HTTP/Websocket operations immediately.
 closing(cast, {headers, ReplyTo, StreamRef, _Method, _Path, _Headers, _InitialFlow},
 		State=#state{opts=#{retry := 0}}) ->
-	ReplyTo ! {gun_error, self(), StreamRef, closing},
+	reply(ReplyTo, {gun_error, self(), StreamRef, closing}),
 	{keep_state, State};
 closing(cast, {request, ReplyTo, StreamRef, _Method, _Path, _Headers, _Body, _InitialFlow},
 		State=#state{opts=#{retry := 0}}) ->
-	ReplyTo ! {gun_error, self(), StreamRef, closing},
+	reply(ReplyTo, {gun_error, self(), StreamRef, closing}),
 	{keep_state, State};
 closing(cast, {connect, ReplyTo, StreamRef, _Destination, _Headers, _InitialFlow},
 		State=#state{opts=#{retry := 0}}) ->
-	ReplyTo ! {gun_error, self(), StreamRef, closing},
+	reply(ReplyTo, {gun_error, self(), StreamRef, closing}),
 	{keep_state, State};
 closing(cast, {ws_upgrade, ReplyTo, StreamRef, _Path, _Headers},
 		State=#state{opts=#{retry := 0}}) ->
-	ReplyTo ! {gun_error, self(), StreamRef, closing},
+	reply(ReplyTo, {gun_error, self(), StreamRef, closing}),
 	{keep_state, State};
 closing(cast, {ws_upgrade, ReplyTo, StreamRef, _Path, _Headers, _WsOpts},
 		State=#state{opts=#{retry := 0}}) ->
-	ReplyTo ! {gun_error, self(), StreamRef, closing},
+	reply(ReplyTo, {gun_error, self(), StreamRef, closing}),
 	{keep_state, State};
 closing(Type, Event, State) ->
 	handle_common_connected(Type, Event, ?FUNCTION_NAME, State).
@@ -1453,13 +1607,22 @@ handle_common_connected(Type, Event, StateName, StateData) ->
 	handle_common_connected_no_input(Type, Event, StateName, StateData).
 
 %% Socket events.
+handle_common_connected_no_input(info, Msg, _, State=#state{
+		protocol=Protocol=gun_http3, protocol_state=ProtoState, cookie_store=CookieStore0,
+		event_handler=EvHandler, event_handler_state=EvHandlerState0})
+		when element(1, Msg) =:= quic ->
+%	ct:pal("~p", [Msg]),
+	{Commands, CookieStore, EvHandlerState} = Protocol:handle(Msg,
+		ProtoState, CookieStore0, EvHandler, EvHandlerState0),
+	maybe_active(commands(Commands, State#state{cookie_store=CookieStore,
+		event_handler_state=EvHandlerState}));
 handle_common_connected_no_input(info, {OK, Socket, Data}, _,
-		State0=#state{socket=Socket, messages={OK, _, _},
+		State=#state{socket=Socket, messages={OK, _, _},
 		protocol=Protocol, protocol_state=ProtoState, cookie_store=CookieStore0,
 		event_handler=EvHandler, event_handler_state=EvHandlerState0}) ->
 	{Commands, CookieStore, EvHandlerState} = Protocol:handle(Data,
 		ProtoState, CookieStore0, EvHandler, EvHandlerState0),
-	maybe_active(commands(Commands, State0#state{cookie_store=CookieStore,
+	maybe_active(commands(Commands, State#state{cookie_store=CookieStore,
 		event_handler_state=EvHandlerState}));
 handle_common_connected_no_input(info, {Closed, Socket}, _,
 		State=#state{socket=Socket, messages={_, Closed, _}}) ->
@@ -1575,6 +1738,8 @@ maybe_active(Other) ->
 
 active(State=#state{active=false}) ->
 	{ok, State};
+active(State=#state{transport=gun_quicer}) ->
+	{ok, State};
 active(State=#state{socket=Socket, transport=Transport}) ->
 	case Transport:setopts(Socket, [{active, once}]) of
 		ok ->
@@ -1635,8 +1800,8 @@ handle_common(cast, {set_owner, CurrentOwner, NewOwner}, _,
 	{keep_state, State#state{owner=NewOwner, status={up, NewOwnerRef}}};
 %% We cannot change the owner when we are shutting down.
 handle_common(cast, {set_owner, CurrentOwner, _}, _, #state{owner=CurrentOwner}) ->
-	CurrentOwner ! {gun_error, self(), {badstate,
-		"The owner of the connection cannot be changed when the connection is shutting down."}},
+	reply(CurrentOwner, {gun_error, self(), {badstate,
+		"The owner of the connection cannot be changed when the connection is shutting down."}}),
 	keep_state_and_state;
 handle_common(cast, shutdown, StateName, State=#state{
 		status=Status, socket=Socket, transport=Transport, protocol=Protocol}) ->
@@ -1736,8 +1901,8 @@ commands([{switch_transport, Transport, Socket}|Tail], State0=#state{
 		Disconnect ->
 			Disconnect
 	end;
-commands([{switch_protocol, NewProtocol, ReplyTo}], State0=#state{
-		opts=Opts, socket=Socket, transport=Transport,
+commands([{switch_protocol, NewProtocol, ReplyTo, Buffer}], State0=#state{
+		opts=Opts, socket=Socket, transport=Transport, messages={OK, _, _},
 		event_handler=EvHandler, event_handler_state=EvHandlerState0}) ->
 	{Protocol, ProtoOpts0} = gun_protocols:handler_and_opts(NewProtocol, Opts),
 	ProtoOpts = case ProtoOpts0 of
@@ -1760,9 +1925,13 @@ commands([{switch_protocol, NewProtocol, ReplyTo}], State0=#state{
 	case active(State1) of
 		{ok, State2} ->
 			State = keepalive_cancel(State2),
+			Actions = case Buffer of
+				<<>> -> [];
+				_ -> [{next_event, info, {OK, Socket, Buffer}}]
+			end,
 			case Protocol:has_keepalive() of
-				true -> {next_state, StateName, keepalive_timeout(State)};
-				false -> {next_state, StateName, State}
+				true -> {next_state, StateName, keepalive_timeout(State), Actions};
+				false -> {next_state, StateName, State, Actions}
 			end;
 		Disconnect ->
 			Disconnect
@@ -1775,7 +1944,8 @@ commands([TLSHandshake={tls_handshake, _, _, _}], State) ->
 disconnect(State0=#state{owner=Owner, status=Status, opts=Opts,
 		intermediaries=Intermediaries, socket=Socket, transport=Transport0,
 		protocol=Protocol, protocol_state=ProtoState,
-		event_handler=EvHandler, event_handler_state=EvHandlerState0}, Reason) ->
+		event_handler=EvHandler, event_handler_state=EvHandlerState0}, Reason0) ->
+	Reason = maybe_tls_alert(State0, Reason0),
 	EvHandlerState1 = Protocol:close(Reason, ProtoState, EvHandler, EvHandlerState0),
 	_ = Transport0:close(Socket),
 	EvHandlerState = EvHandler:disconnect(#{reason => Reason}, EvHandlerState1),
@@ -1789,7 +1959,10 @@ disconnect(State0=#state{owner=Owner, status=Status, opts=Opts,
 			%% We closed the socket, discard any remaining socket events.
 			disconnect_flush(State1),
 			KilledStreams = Protocol:down(ProtoState),
-			Owner ! {gun_down, self(), Protocol:name(), Reason, KilledStreams},
+			%% @todo Reason here may be {error, Reason1} which leads to
+			%% different behavior compared to down messages received
+			%% from failing to connect where Reason1 is what gets sent.
+			reply(Owner, {gun_down, self(), Protocol:name(), Reason, KilledStreams}),
 			Retry = maps:get(retry, Opts, 5),
 			State2 = keepalive_cancel(State1#state{
 				socket=undefined, protocol=undefined, protocol_state=undefined}),
@@ -1810,6 +1983,66 @@ disconnect(State0=#state{owner=Owner, status=Status, opts=Opts,
 			{next_state, not_connected, State,
 				{next_event, internal, {retries, Retry, Reason}}}
 	end.
+
+%% With TLS 1.3 the handshake may not have validated the certificate
+%% by the time it completes. The validation may therefore fail at any
+%% time afterwards. TLS 1.3 also introduced post-handshake authentication
+%% which would produce the same results. Erlang/OTP's ssl has a number
+%% of asynchronous functions which won't return the alert as an error
+%% and instead return a plain {error,closed}, including ssl:send.
+%% Gun must therefore check whether a close is resulting from a TLS alert
+%% and use that alert as a more descriptive disconnect reason.
+%%
+%% Sometimes, ssl:send will return {error,einval}, because while the
+%% TLS pseudo-socket still exists, the underlying TCP socket is already
+%% gone. In that case we can still query the TLS pseudo-socket to get
+%% the detailed TLS alert.
+%%
+%% @todo We currently do not support retrieving the alert from a gun_tls_proxy
+%% socket. We need a test case to best understand what should be done there.
+%% But since the socket belongs to that process we likely need additional
+%% changes there to make it work.
+maybe_tls_alert(#state{socket=Socket, transport=gun_tls,
+		active=true, messages={_, _, Error}}, Reason0)
+		%% The unwrapped tuple we get half the time makes this clause more complex.
+		when Reason0 =:= {error, closed}; Reason0 =:= {error, einval}; Reason0 =:= closed ->
+	%% When active mode is enabled we should have the alert in our
+	%% mailbox so we can just retrieve it. In case it is late we
+	%% use a short timeout to increase the chances of catching it.
+	receive
+		{Error, Socket, Reason} ->
+			Reason
+	after 200 ->
+		Reason0
+	end;
+maybe_tls_alert(#state{socket=Socket, transport=Transport=gun_tls,
+		active=false}, Reason0)
+		when Reason0 =:= {error, closed}; Reason0 =:= {error, einval}; Reason0 =:= closed ->
+	%% When active mode is disabled we can do a number of operations to
+	%% receive the alert. Enabling active mode is one of them.
+	case Transport:setopts(Socket, [{active, once}]) of
+		{error, Reason={tls_alert, _}} ->
+			Reason;
+		_ ->
+			Reason0
+	end;
+%% We unwrap the TLS alert error for consistency.
+%% @todo Consistenly wrap/unwrap all errors instead of just this one.
+maybe_tls_alert(_, {error, Reason={tls_alert, _}}) ->
+	Reason;
+%% We may also need to receive the alert when proxying TLS.
+maybe_tls_alert(#state{socket=Socket, transport=gun_tls_proxy,
+		active=true, messages={_, _, Error}}, Reason0)
+		%% The unwrapped tuple we get half the time makes this clause more complex.
+		when Reason0 =:= {error, closed}; Reason0 =:= {error, einval}; Reason0 =:= closed ->
+	receive
+		{Error, Socket, Reason} ->
+			Reason
+	after 200 ->
+		Reason0
+	end;
+maybe_tls_alert(_, Reason) ->
+	Reason.
 
 disconnect_flush(State=#state{socket=Socket, messages={OK, Closed, Error}}) ->
 	receive
@@ -1866,3 +2099,12 @@ terminate(Reason, StateName, #state{event_handler=EvHandler,
 		reason => Reason
 	},
 	EvHandler:terminate(TerminateEvent, EvHandlerState).
+
+reply(Pid, Reply) when is_pid(Pid) ->
+	Pid ! Reply;
+reply({M, F, A}, Reply) when is_atom(M), is_atom(F), is_list(A) ->
+	apply(M, F, [Reply|A]);
+reply(Fun, Reply) when is_function(Fun, 1) ->
+	Fun(Reply);
+reply({Fun, A}, Reply) when is_list(A), is_function(Fun, length(A) + 1) ->
+	apply(Fun, [Reply|A]).

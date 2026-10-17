@@ -6,6 +6,7 @@ defmodule Kleened.Core.Application do
 
   use Application
 
+  @spec start_link() :: {:ok, pid()} | {:error, String.t()}
   def start_link() do
     start(nil, nil)
   end
@@ -47,6 +48,7 @@ defmodule Kleened.Core.Application do
     remove_pidfile()
   end
 
+  @spec api_socket_listeners([Kleened.Core.Config.listener()]) :: [Supervisor.child_spec()]
   def api_socket_listeners(listeners) do
     indexed_listeners = Enum.zip(Enum.to_list(1..length(listeners)), listeners)
 
@@ -59,6 +61,7 @@ defmodule Kleened.Core.Application do
     end)
   end
 
+  @spec initialize_containers() :: :ok
   def initialize_containers() do
     Logger.info("Initializing containers...")
 

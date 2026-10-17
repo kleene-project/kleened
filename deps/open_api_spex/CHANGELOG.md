@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## v3.22.3 - 2026-05-05
+
+* chore: removed unused require(s) by @David-Klemenc in https://github.com/open-api-spex/open_api_spex/pull/700
+* Relax decimal requirement by @josevalim in https://github.com/open-api-spex/open_api_spex/pull/702
+
+## v3.22.2 - 2026-01-08
+
+* fix: type warnings Elixir 1.19 by @davydog187 in https://github.com/open-api-spex/open_api_spex/pull/693
+
+## v3.22.1 - 2025-11-21
+
+* Fix elixir 1.19 support by @adamcstephens in https://github.com/open-api-spex/open_api_spex/pull/685
+
+## v3.22.0 - 2025-08-05
+
+* Support multiple apps in Plug.SwaggerUI by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/676
+* Validate keys given to operation/2 macro by @xxdavid in https://github.com/open-api-spex/open_api_spex/pull/675
+
+## v3.21.5 - 2025-07-08
+
+* Fix assert_operation_response/2 references by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/673
+
+## v3.21.4 - 2025-07-01
+
+* Fix OTP-28 support by @bopm in https://github.com/open-api-spex/open_api_spex/pull/672
+
+## v3.21.3 - 2025-06-25
+
+* Fix cast x-validate when decoded schema by @GPrimola in https://github.com/open-api-spex/open_api_spex/pull/647
+* Add examples property to Schema by @madjar in https://github.com/open-api-spex/open_api_spex/pull/654
+* Document schema resolver duplicate titles behaviour by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/656
+* Fix 1.18 compilation warnings by @zorbash in https://github.com/open-api-spex/open_api_spex/pull/665
 
 ## v3.21.2 - 2024-10-02
 

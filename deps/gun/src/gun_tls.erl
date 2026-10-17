@@ -1,4 +1,4 @@
-%% Copyright (c) 2011-2023, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -35,7 +35,7 @@ connect(Socket, Opts, Timeout) ->
 send(Socket, Packet) ->
 	ssl:send(Socket, Packet).
 
--spec setopts(ssl:sslsocket(), list()) -> ok | {error, atom()}.
+-spec setopts(ssl:sslsocket(), list()) -> ok | {error, any()}.
 setopts(Socket, Opts) ->
 	ssl:setopts(Socket, Opts).
 

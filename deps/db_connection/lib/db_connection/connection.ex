@@ -6,13 +6,15 @@ defmodule DBConnection.Connection do
   require Logger
   alias DBConnection.Backoff
   alias DBConnection.Holder
+  alias DBConnection.Util
 
   @timeout 15_000
 
   @doc false
   def start_link(mod, opts, pool, tag) do
     start_opts = Keyword.take(opts, [:debug, :spawn_opt])
-    :gen_statem.start_link(__MODULE__, {mod, opts, pool, tag}, start_opts)
+    sensitive_options = %DBConnection.SensitiveData{data: opts}
+    :gen_statem.start_link(__MODULE__, {mod, sensitive_options, pool, tag}, start_opts)
   end
 
   @doc false
@@ -46,7 +48,11 @@ defmodule DBConnection.Connection do
 
   @doc false
   @impl :gen_statem
-  def init({mod, opts, pool, tag}) do
+  def init({mod, %DBConnection.SensitiveData{data: opts}, pool, tag}) do
+    pool_index = Keyword.get(opts, :pool_index)
+    label = if pool_index, do: "db_conn_#{pool_index}", else: "db_conn"
+    Util.set_label(label)
+
     s = %{
       mod: mod,
       opts: opts,
@@ -55,6 +61,7 @@ defmodule DBConnection.Connection do
       pool: pool,
       tag: tag,
       timer: nil,
+      connected_at: nil,
       backoff: Backoff.new(opts),
       connection_listeners: Keyword.get(opts, :connection_listeners, []),
       after_connect: Keyword.get(opts, :after_connect),
@@ -79,14 +86,24 @@ defmodule DBConnection.Connection do
     else
       {:ok, state} when after_connect != nil ->
         ref = make_ref()
+        connected_at = System.monotonic_time()
         :gen_statem.cast(self(), {:after_connect, ref})
-        {:keep_state, %{s | state: state, client: {ref, :connect}}}
+        {:keep_state, %{s | state: state, client: {ref, :connect}, connected_at: connected_at}}
 
       {:ok, state} ->
         backoff = backoff && Backoff.reset(backoff)
         ref = make_ref()
+        connected_at = System.monotonic_time()
         :gen_statem.cast(self(), {:connected, ref})
-        {:keep_state, %{s | state: state, client: {ref, :connect}, backoff: backoff}}
+
+        {:keep_state,
+         %{
+           s
+           | state: state,
+             client: {ref, :connect},
+             backoff: backoff,
+             connected_at: connected_at
+         }}
 
       {:error, err} when is_nil(backoff) ->
         Logger.error(
@@ -94,7 +111,7 @@ defmodule DBConnection.Connection do
             [
               inspect(mod),
               " (",
-              inspect(self()),
+              Util.inspect_pid(self()),
               ") failed to connect: " | Exception.format_banner(:error, err, [])
             ]
           end,
@@ -110,7 +127,7 @@ defmodule DBConnection.Connection do
               inspect(mod),
               ?\s,
               ?(,
-              inspect(self()),
+              Util.inspect_pid(self()),
               ") failed to connect: "
               | Exception.format_banner(:error, err, [])
             ]
@@ -136,7 +153,7 @@ defmodule DBConnection.Connection do
           inspect(mod),
           ?\s,
           ?(,
-          inspect(self()),
+          Util.inspect_pid(self()),
           ") disconnected: " | Exception.format_banner(:error, err, [])
         ]
       end)
@@ -148,7 +165,7 @@ defmodule DBConnection.Connection do
     demonitor(client)
     cancel_timer(timer)
     :ok = apply(mod, :disconnect, [err, state])
-    s = %{s | state: nil, client: :closed, timer: nil}
+    s = %{s | state: nil, client: :closed, timer: nil, connected_at: nil}
 
     notify_connection_listeners(:disconnected, s)
 
@@ -267,7 +284,9 @@ defmodule DBConnection.Connection do
         :no_state,
         %{client: {ref, :after_connect}} = s
       ) do
-    message = "client #{inspect(pid)} exited: " <> Exception.format_exit(reason)
+    message =
+      "client #{Util.inspect_pid(pid)} exited: " <> Exception.format_exit(reason)
+
     err = DBConnection.ConnectionError.exception(message)
 
     {:keep_state, %{s | client: {nil, :after_connect}},
@@ -275,7 +294,9 @@ defmodule DBConnection.Connection do
   end
 
   def handle_event(:info, {:DOWN, mon, _, pid, reason}, :no_state, %{client: {ref, mon}} = s) do
-    message = "client #{inspect(pid)} exited: " <> Exception.format_exit(reason)
+    message =
+      "client #{Util.inspect_pid(pid)} exited: " <> Exception.format_exit(reason)
+
     err = DBConnection.ConnectionError.exception(message)
 
     {:keep_state, %{s | client: {ref, nil}},
@@ -290,14 +311,14 @@ defmodule DBConnection.Connection do
       )
       when is_reference(timer) do
     message =
-      "client #{inspect(pid)} timed out because it checked out " <>
+      "client #{Util.inspect_pid(pid)} timed out because it checked out " <>
         "the connection for longer than #{timeout}ms"
 
     exc =
       case Process.info(pid, :current_stacktrace) do
         {:current_stacktrace, stacktrace} ->
           message <>
-            "\n\n#{inspect(pid)} was at location:\n\n" <>
+            "\n\n#{Util.inspect_pid(pid)} was at location:\n\n" <>
             Exception.format_stacktrace(stacktrace)
 
         _ ->
@@ -332,7 +353,7 @@ defmodule DBConnection.Connection do
 
   def handle_event(:info, msg, :no_state, %{mod: mod} = s) do
     Logger.info(fn ->
-      [inspect(mod), ?\s, ?(, inspect(self()), ") missed message: " | inspect(msg)]
+      [inspect(mod), ?\s, ?(, Util.inspect_pid(self()), ") missed message: " | inspect(msg)]
     end)
 
     handle_timeout(s)
@@ -460,8 +481,8 @@ defmodule DBConnection.Connection do
     pool_update(state, %{s | client: nil, backoff: backoff})
   end
 
-  defp pool_update(state, %{pool: pool, tag: tag, mod: mod} = s) do
-    case Holder.update(pool, tag, mod, state) do
+  defp pool_update(state, %{pool: pool, tag: tag, mod: mod, connected_at: connected_at} = s) do
+    case Holder.update(pool, tag, mod, state, connected_at) do
       {:ok, ref} ->
         {:keep_state, %{s | client: {ref, :pool}, state: state}, :hibernate}
 

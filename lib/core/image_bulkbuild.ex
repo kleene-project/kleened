@@ -83,9 +83,9 @@ defmodule Kleened.Core.ImageBulkBuild do
       nil ->
         with {:ok, instructions} <-
                Image.load_and_parse_dockerfile(config.dockerfile, config.context),
-             {_, {:from, image}} <- find_from_instruction(instructions) do
+             {_, from_instruction} <- find_from_instruction(instructions),
+             image <- parent_image_ref(from_instruction) do
           parents = Map.put(parents, config.tag, Utils.normalize_nametag(image))
-          # extract_parent_images(rest, [Utils.normalize_nametag(image) | parents])
           extract_parent_images(rest, parents)
         else
           {:error, :enoent} -> {:error, "Could not open #{config.context}/#{config.dockerfile}"}
@@ -95,8 +95,14 @@ defmodule Kleened.Core.ImageBulkBuild do
     end
   end
 
+  # A FROM instruction is either {:from, image} or, with a build-stage alias,
+  # {:from, image, alias}. The parent image reference is the first payload.
+  defp parent_image_ref({:from, image}), do: image
+  defp parent_image_ref({:from, image, _alias}), do: image
+
   def find_from_instruction(instructions) do
     Enum.find(instructions, fn
+      {_, {:from, _, _}} -> true
       {_, {:from, _}} -> true
       _ -> false
     end)

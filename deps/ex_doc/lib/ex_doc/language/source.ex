@@ -1,4 +1,5 @@
 defmodule ExDoc.Language.Source do
+  # Shared helpers used by both Erlang and Elixir.
   @moduledoc false
 
   def anno_line(line) when is_integer(line), do: abs(line)
@@ -53,13 +54,13 @@ defmodule ExDoc.Language.Source do
       end)
       |> Map.new()
 
-    # Expand records in all specs, callbacks, types and opaques
+    # Expand records in all specs, callbacks, types, opaques and nominals
     filtermap_ast(abst_code, nil, fn
       {:attribute, anno, kind, {mfa, ast}} when kind in [:spec, :callback] ->
         ast = Enum.map(ast, &expand_records(&1, records))
         {:attribute, anno, kind, {mfa, ast}}
 
-      {:attribute, anno, type, {name, ast, args}} when type in [:opaque, :type] ->
+      {:attribute, anno, type, {name, ast, args}} when type in [:opaque, :nominal, :type] ->
         {:attribute, anno, type, {name, expand_records(ast, records), args}}
 
       otherwise ->
@@ -91,7 +92,7 @@ defmodule ExDoc.Language.Source do
   end
 
   defp expand_records({type, anno, what, args}, records) when type in [:type, :user_type] do
-    {:type, anno, what, expand_records(args, records)}
+    {type, anno, what, expand_records(args, records)}
   end
 
   defp expand_records({:remote_type, anno, [m, t, args]}, records) do
@@ -194,7 +195,7 @@ defmodule ExDoc.Language.Source do
   def fetch_type!(module_data, name, arity) do
     find_ast(module_data.private.abst_code, module_data.source_basedir, fn
       {:attribute, anno, type, {^name, _, args} = spec} = attr ->
-        if type in [:opaque, :type] and length(args) == arity do
+        if type in [:nominal, :opaque, :type] and length(args) == arity do
           %{
             type: type,
             spec: spec,

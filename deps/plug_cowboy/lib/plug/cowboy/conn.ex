@@ -2,6 +2,8 @@ defmodule Plug.Cowboy.Conn do
   @behaviour Plug.Conn.Adapter
   @moduledoc false
 
+  @already_sent {:plug_conn, :sent}
+
   def conn(req) do
     %{
       path: path,
@@ -13,8 +15,14 @@ defmodule Plug.Cowboy.Conn do
       peer: {remote_ip, _}
     } = req
 
+    scheme =
+      case :cowboy_req.scheme(req) do
+        "http" -> :http
+        "https" -> :https
+      end
+
     %Plug.Conn{
-      adapter: {__MODULE__, req},
+      adapter: {__MODULE__, Map.put(req, :plug_pid, self())},
       host: host,
       method: method,
       owner: self(),
@@ -24,7 +32,7 @@ defmodule Plug.Cowboy.Conn do
       query_string: qs,
       req_headers: to_headers_list(headers),
       request_path: path,
-      scheme: String.to_atom(:cowboy_req.scheme(req))
+      scheme: scheme
     }
   end
 
@@ -33,6 +41,7 @@ defmodule Plug.Cowboy.Conn do
     req = to_headers_map(req, headers)
     status = Integer.to_string(status) <> " " <> Plug.Conn.Status.reason_phrase(status)
     req = :cowboy_req.reply(status, %{}, body, req)
+    send(req.plug_pid, @already_sent)
     {:ok, nil, req}
   end
 
@@ -49,6 +58,7 @@ defmodule Plug.Cowboy.Conn do
     body = {:sendfile, offset, length, path}
     req = to_headers_map(req, headers)
     req = :cowboy_req.reply(status, %{}, body, req)
+    send(req.plug_pid, @already_sent)
     {:ok, nil, req}
   end
 
@@ -56,6 +66,7 @@ defmodule Plug.Cowboy.Conn do
   def send_chunked(req, status, headers) do
     req = to_headers_map(req, headers)
     req = :cowboy_req.stream_reply(status, %{}, req)
+    send(req.plug_pid, @already_sent)
     {:ok, nil, req}
   end
 
@@ -127,6 +138,13 @@ defmodule Plug.Cowboy.Conn do
       port: port,
       ssl_cert: if(cert == :undefined, do: nil, else: cert)
     }
+  end
+
+  @impl true
+  def get_sock_data(req) do
+    {addr, port} = :cowboy_req.sock(req)
+
+    %{address: addr, port: port}
   end
 
   @impl true

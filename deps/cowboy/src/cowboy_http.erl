@@ -1,4 +1,4 @@
-%% Copyright (c) 2016-2024, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -12,9 +12,15 @@
 %% ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 %% OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
+%% @todo Worth renaming to cowboy_http1.
+%% @todo Change use of cow_http to cow_http1 where appropriate.
 -module(cowboy_http).
 
 -export([init/6]).
+-export([loop/1]).
+
+%% Shared with other HTTP versions.
+-export([validate_response_headers/2]).
 
 -export([system_continue/3]).
 -export([system_terminate/4]).
@@ -22,18 +28,26 @@
 
 -type opts() :: #{
 	active_n => pos_integer(),
+	alpn_default_protocol => http | http2,
 	chunked => boolean(),
 	compress_buffering => boolean(),
 	compress_threshold => non_neg_integer(),
 	connection_type => worker | supervisor,
+	dynamic_buffer => false | {pos_integer(), pos_integer()},
+	dynamic_buffer_initial_average => non_neg_integer(),
+	dynamic_buffer_initial_size => pos_integer(),
 	env => cowboy_middleware:env(),
+	hibernate => boolean(),
 	http10_keepalive => boolean(),
 	idle_timeout => timeout(),
 	inactivity_timeout => timeout(),
 	initial_stream_flow_size => non_neg_integer(),
+	invalid_response_headers => error_terminate | ignore,
 	linger_timeout => timeout(),
 	logger => module(),
 	max_authority_length => non_neg_integer(),
+	max_authorization_header_value_length => non_neg_integer(),
+	max_cookie_header_value_length => non_neg_integer(),
 	max_empty_lines => non_neg_integer(),
 	max_header_name_length => non_neg_integer(),
 	max_header_value_length => non_neg_integer(),
@@ -41,10 +55,12 @@
 	max_keepalive => non_neg_integer(),
 	max_method_length => non_neg_integer(),
 	max_request_line_length => non_neg_integer(),
+	max_skip_body_length => non_neg_integer(),
 	metrics_callback => cowboy_metrics_h:metrics_callback(),
 	metrics_req_filter => fun((cowboy_req:req()) -> map()),
 	metrics_resp_headers_filter => fun((cowboy:http_headers()) -> cowboy:http_headers()),
 	middlewares => [module()],
+	protocols => [http | http2],
 	proxy_header => boolean(),
 	request_timeout => timeout(),
 	reset_idle_timeout_on_send => boolean(),
@@ -78,6 +94,9 @@
 	received = 0 :: non_neg_integer(),
 	transfer_decode_fun :: fun((binary(), cow_http_te:state()) -> cow_http_te:decode_ret()),
 	transfer_decode_state :: cow_http_te:state()
+}).
+
+-record(ps_trailer, {
 }).
 
 -record(stream, {
@@ -130,10 +149,14 @@
 	in_streamid = 1 :: pos_integer(),
 
 	%% Parsing state for the current stream or stream-to-be.
-	in_state = #ps_request_line{} :: #ps_request_line{} | #ps_header{} | #ps_body{},
+	in_state = #ps_request_line{} :: #ps_request_line{} | #ps_header{} | #ps_body{} | #ps_trailer{},
 
 	%% Flow requested for the current stream.
 	flow = infinity :: non_neg_integer() | infinity,
+
+	%% Dynamic buffer moving average and current buffer size.
+	dynamic_buffer_size :: pos_integer() | false,
+	dynamic_buffer_moving_average :: float(),
 
 	%% Identifier for the stream currently being written.
 	%% Note that out_streamid =< in_streamid.
@@ -179,12 +202,16 @@ init(Parent, Ref, Socket, Transport, ProxyHeader, Opts) ->
 		parent=Parent, ref=Ref, socket=Socket,
 		transport=Transport, proxy_header=ProxyHeader, opts=Opts,
 		peer=Peer, sock=Sock, cert=Cert,
+		dynamic_buffer_size=init_dynamic_buffer_size(Opts),
+		dynamic_buffer_moving_average=maps:get(dynamic_buffer_initial_average, Opts, 0.0),
 		last_streamid=maps:get(max_keepalive, Opts, 1000)},
 	safe_setopts_active(State),
-	loop(set_timeout(State, request_timeout)).
+	before_loop(set_timeout(State, request_timeout)).
+
+-include("cowboy_dynamic_buffer.hrl").
 
 setopts_active(#state{socket=Socket, transport=Transport, opts=Opts}) ->
-	N = maps:get(active_n, Opts, 100),
+	N = maps:get(active_n, Opts, 1),
 	Transport:setopts(Socket, [{active, N}]).
 
 safe_setopts_active(State) ->
@@ -210,6 +237,13 @@ flush_passive(Socket, Messages) ->
 		ok
 	end.
 
+before_loop(State=#state{opts=#{hibernate := true}}) ->
+	proc_lib:hibernate(?MODULE, loop, [State]);
+before_loop(State) ->
+	loop(State).
+
+-spec loop(#state{}) -> ok.
+
 loop(State=#state{parent=Parent, socket=Socket, transport=Transport, opts=Opts,
 		buffer=Buffer, timer=TimerRef, children=Children, in_streamid=InStreamID,
 		last_streamid=LastStreamID}) ->
@@ -218,11 +252,13 @@ loop(State=#state{parent=Parent, socket=Socket, transport=Transport, opts=Opts,
 	receive
 		%% Discard data coming in after the last request
 		%% we want to process was received fully.
-		{OK, Socket, _} when OK =:= element(1, Messages), InStreamID > LastStreamID ->
-			loop(State);
+		{OK, Socket, Data} when OK =:= element(1, Messages), InStreamID > LastStreamID ->
+			State1 = maybe_resize_buffer(State, Data),
+			before_loop(State1);
 		%% Socket messages.
 		{OK, Socket, Data} when OK =:= element(1, Messages) ->
-			parse(<< Buffer/binary, Data/binary >>, State);
+			State1 = maybe_resize_buffer(State, Data),
+			parse(<< Buffer/binary, Data/binary >>, State1);
 		{Closed, Socket} when Closed =:= element(2, Messages) ->
 			terminate(State, {socket_error, closed, 'The socket has been closed.'});
 		{Error, Socket, Reason} when Error =:= element(3, Messages) ->
@@ -231,37 +267,37 @@ loop(State=#state{parent=Parent, socket=Socket, transport=Transport, opts=Opts,
 				%% Hardcoded for compatibility with Ranch 1.x.
 				Passive =:= tcp_passive; Passive =:= ssl_passive ->
 			safe_setopts_active(State),
-			loop(State);
+			before_loop(State);
 		%% Timeouts.
 		{timeout, Ref, {shutdown, Pid}} ->
 			cowboy_children:shutdown_timeout(Children, Ref, Pid),
-			loop(State);
+			before_loop(State);
 		{timeout, TimerRef, Reason} ->
 			timeout(State, Reason);
 		{timeout, _, _} ->
-			loop(State);
+			before_loop(State);
 		%% System messages.
 		{'EXIT', Parent, shutdown} ->
 			Reason = {stop, {exit, shutdown}, 'Parent process requested shutdown.'},
-			loop(initiate_closing(State, Reason));
+			before_loop(initiate_closing(State, Reason));
 		{'EXIT', Parent, Reason} ->
 			terminate(State, {stop, {exit, Reason}, 'Parent process terminated.'});
 		{system, From, Request} ->
 			sys:handle_system_msg(Request, From, Parent, ?MODULE, [], State);
 		%% Messages pertaining to a stream.
 		{{Pid, StreamID}, Msg} when Pid =:= self() ->
-			loop(info(State, StreamID, Msg));
+			before_loop(info(State, StreamID, Msg));
 		%% Exit signal from children.
 		Msg = {'EXIT', Pid, _} ->
-			loop(down(State, Pid, Msg));
+			before_loop(down(State, Pid, Msg));
 		%% Calls from supervisor module.
 		{'$gen_call', From, Call} ->
 			cowboy_children:handle_supervisor_call(Call, From, Children, ?MODULE),
-			loop(State);
+			before_loop(State);
 		%% Unknown messages.
 		Msg ->
 			cowboy:log(warning, "Received stray message ~p.~n", [Msg], Opts),
-			loop(State)
+			before_loop(State)
 	after InactivityTimeout ->
 		terminate(State, {internal_error, timeout, 'No message or data received before timeout.'})
 	end.
@@ -293,6 +329,7 @@ set_timeout(State=#state{streams=[], in_state=InState}, idle_timeout)
 		when element(1, InState) =/= ps_body ->
 	State;
 %% Otherwise we can set the timeout.
+%% @todo Don't do this so often, use a strategy similar to Websocket/H2 if possible.
 set_timeout(State0=#state{opts=Opts, overriden_opts=Override}, Name) ->
 	State = cancel_timeout(State0),
 	Default = case Name of
@@ -325,7 +362,7 @@ cancel_timeout(State=#state{timer=TimerRef}) ->
 		_ ->
 			%% Do a synchronous cancel and remove the message if any
 			%% to avoid receiving stray messages.
-			_ = erlang:cancel_timer(TimerRef),
+			_ = erlang:cancel_timer(TimerRef, [{async, false}, {info, false}]),
 			receive
 				{timeout, TimerRef, _} -> ok
 			after 0 ->
@@ -346,12 +383,12 @@ timeout(State, idle_timeout) ->
 		'Connection idle longer than configuration allows.'}).
 
 parse(<<>>, State) ->
-	loop(State#state{buffer= <<>>});
+	before_loop(State#state{buffer= <<>>});
 %% Do not process requests that come in after the last request
 %% and discard the buffer if any to save memory.
 parse(_, State=#state{in_streamid=InStreamID, in_state=#ps_request_line{},
 		last_streamid=LastStreamID}) when InStreamID > LastStreamID ->
-	loop(State#state{buffer= <<>>});
+	before_loop(State#state{buffer= <<>>});
 parse(Buffer, State=#state{in_state=#ps_request_line{empty_lines=EmptyLines}}) ->
 	after_parse(parse_request(Buffer, State, EmptyLines));
 parse(Buffer, State=#state{in_state=PS=#ps_header{headers=Headers, name=undefined}}) ->
@@ -363,7 +400,9 @@ parse(Buffer, State=#state{in_state=PS=#ps_header{headers=Headers, name=Name}}) 
 		State#state{in_state=PS#ps_header{headers=undefined, name=undefined}},
 		Headers, Name));
 parse(Buffer, State=#state{in_state=#ps_body{}}) ->
-	after_parse(parse_body(Buffer, State)).
+	after_parse(parse_body(Buffer, State));
+parse(Buffer, State=#state{in_state=#ps_trailer{}}) ->
+	after_parse(parse_trailer(Buffer, State)).
 
 after_parse({request, Req=#{streamid := StreamID, method := Method,
 		headers := Headers, version := Version},
@@ -420,13 +459,13 @@ after_parse({data, StreamID, IsFin, Data, State0=#state{opts=Opts, buffer=Buffer
 	end;
 %% No corresponding stream. We must skip the body of the previous request
 %% in order to process the next one.
-after_parse({data, _, IsFin, _, State}) ->
-	loop(set_timeout(State, case IsFin of
+after_parse({data, _, IsFin, _, State=#state{buffer=Buffer}}) ->
+	parse(Buffer, set_timeout(State, case IsFin of
 		fin -> request_timeout;
 		nofin -> idle_timeout
 	end));
 after_parse({more, State}) ->
-	loop(set_timeout(State, idle_timeout)).
+	before_loop(set_timeout(State, idle_timeout)).
 
 update_flow(fin, _, State) ->
 	%% This function is only called after parsing, therefore we
@@ -467,10 +506,13 @@ parse_request(Buffer, State=#state{opts=Opts, in_streamid=InStreamID}, EmptyLine
 				'The request-line length is larger than configuration allows. (RFC7230 3.1.1)'});
 		nomatch ->
 			{more, State#state{buffer=Buffer, in_state=#ps_request_line{empty_lines=EmptyLines}}};
-		1 when EmptyLines =:= MaxEmptyLines ->
+		error ->
+			error_terminate(400, State, {connection_error, protocol_error,
+				'The request-line must use the CRLF line terminator. (RFC7230 3.1.1, RFC7230 3.5)'});
+		0 when EmptyLines =:= MaxEmptyLines ->
 			error_terminate(400, State, {connection_error, limit_reached,
 				'More empty lines were received than configuration allows. (RFC7230 3.5)'});
-		1 ->
+		0 ->
 			<< _:16, Rest/bits >> = Buffer,
 			parse_request(Rest, State, EmptyLines + 1);
 		_ ->
@@ -486,16 +528,23 @@ parse_request(Buffer, State=#state{opts=Opts, in_streamid=InStreamID}, EmptyLine
 						'The TRACE method is currently not implemented. (RFC7231 4.3.8)'});
 				%% Accept direct HTTP/2 only at the beginning of the connection.
 				<< "PRI * HTTP/2.0\r\n", _/bits >> when InStreamID =:= 1 ->
-					%% @todo Might be worth throwing to get a clean stacktrace.
-					http2_upgrade(State, Buffer);
+					case lists:member(http2, maps:get(protocols, Opts, [http2, http])) of
+						true ->
+							http2_upgrade(State, Buffer);
+						false ->
+							error_terminate(501, State, {connection_error, no_error,
+								'Prior knowledge upgrade to HTTP/2 is disabled by configuration.'})
+					end;
 				_ ->
 					parse_method(Buffer, State, <<>>,
 						maps:get(max_method_length, Opts, 32))
 			end
 	end.
 
-match_eol(<< $\n, _/bits >>, N) ->
+match_eol(<< $\r, $\n, _/bits >>, N) ->
 	N;
+match_eol(<< $\n, _/bits >>, _) ->
+	error;
 match_eol(<< _, Rest/bits >>, N) ->
 	match_eol(Rest, N + 1);
 match_eol(_, _) ->
@@ -528,16 +577,10 @@ parse_uri(_, State, _) ->
 	error_terminate(400, State, {connection_error, protocol_error,
 		'Invalid request-line or request-target. (RFC7230 3.1.1, RFC7230 5.3)'}).
 
-%% @todo We probably want to apply max_authority_length also
-%% to the host header and to document this option. It might
-%% also be useful for HTTP/2 requests.
 parse_uri_authority(Rest, State=#state{opts=Opts}, Method) ->
 	parse_uri_authority(Rest, State, Method, <<>>,
 		maps:get(max_authority_length, Opts, 255)).
 
-parse_uri_authority(_, State, _, _, 0) ->
-	error_terminate(414, State, {connection_error, limit_reached,
-		'The authority component of the absolute URI is longer than configuration allows. (RFC7230 2.7.1)'});
 parse_uri_authority(<<C, Rest/bits>>, State, Method, SoFar, Remaining) ->
 	case C of
 		$\r ->
@@ -557,11 +600,17 @@ parse_uri_authority(<<C, Rest/bits>>, State, Method, SoFar, Remaining) ->
 		$\s -> parse_version(Rest, State, Method, SoFar, <<"/">>, <<>>);
 		$? -> parse_uri_query(Rest, State, Method, SoFar, <<"/">>, <<>>);
 		$# -> skip_uri_fragment(Rest, State, Method, SoFar, <<"/">>, <<>>);
-		C -> parse_uri_authority(Rest, State, Method, <<SoFar/binary, C>>, Remaining - 1)
+		C when Remaining > 0 ->
+			parse_uri_authority(Rest, State, Method, <<SoFar/binary, C>>, Remaining - 1);
+		_ ->
+			error_terminate(414, State, {connection_error, limit_reached,
+				'The authority component of the absolute URI is longer than configuration allows. (RFC7230 2.7.1)'})
 	end.
 
 parse_uri_path(<<C, Rest/bits>>, State, Method, Authority, SoFar) ->
 	case C of
+		$\0 -> error_terminate(400, State, {connection_error, protocol_error,
+			'NUL byte is not allowed in the request-target. (RFC7230 3.1.1)'});
 		$\r -> error_terminate(400, State, {connection_error, protocol_error,
 			'The request-target must not be followed by a line break. (RFC7230 3.1.1)'});
 		$\s -> parse_version(Rest, State, Method, Authority, SoFar, <<>>);
@@ -572,6 +621,8 @@ parse_uri_path(<<C, Rest/bits>>, State, Method, Authority, SoFar) ->
 
 parse_uri_query(<<C, Rest/bits>>, State, M, A, P, SoFar) ->
 	case C of
+		$\0 -> error_terminate(400, State, {connection_error, protocol_error,
+			'NUL byte is not allowed in the request-target. (RFC7230 3.1.1)'});
 		$\r -> error_terminate(400, State, {connection_error, protocol_error,
 			'The request-target must not be followed by a line break. (RFC7230 3.1.1)'});
 		$\s -> parse_version(Rest, State, M, A, P, SoFar);
@@ -607,6 +658,10 @@ before_parse_headers(Rest, State, M, A, P, Q, V) ->
 
 %% Headers.
 
+parse_header(<< $\n, _/bits >>, State=#state{in_state=PS}, Headers) ->
+	error_terminate(400, State#state{in_state=PS#ps_header{headers=Headers}},
+		{connection_error, protocol_error,
+			'Header lines must use the CRLF line terminator. (RFC7230 3.2, RFC7230 3.5)'});
 %% We need two or more bytes in the buffer to continue.
 parse_header(Rest, State=#state{in_state=PS}, Headers) when byte_size(Rest) < 2 ->
 	{more, State#state{buffer=Rest, in_state=PS#ps_header{headers=Headers}}};
@@ -632,11 +687,13 @@ parse_header_colon(Buffer, State=#state{opts=Opts, in_state=PS}, Headers) ->
 				{connection_error, limit_reached,
 					'A header name is larger than configuration allows. (RFC7230 3.2.5, RFC6585 5)'});
 		nomatch ->
-			%% We don't have a colon but we might have an invalid header line,
-			%% so check if we have an LF and abort with an error if we do.
 			case match_eol(Buffer, 0) of
 				nomatch ->
 					{more, State#state{buffer=Buffer, in_state=PS#ps_header{headers=Headers}}};
+				error ->
+					error_terminate(400, State#state{in_state=PS#ps_header{headers=Headers}},
+						{connection_error, protocol_error,
+							'Header lines must use the CRLF line terminator. (RFC7230 3.2, RFC7230 3.5)'});
 				_ ->
 					error_terminate(400, State#state{in_state=PS#ps_header{headers=Headers}},
 						{connection_error, protocol_error,
@@ -663,6 +720,15 @@ parse_hd_name(<< C, _/bits >>, State=#state{in_state=PS}, H, _) when ?IS_WS(C) -
 	error_terminate(400, State#state{in_state=PS#ps_header{headers=H}},
 		{connection_error, protocol_error,
 			'Whitespace is not allowed between the header name and the colon. (RFC7230 3.2.4)'});
+parse_hd_name(<< C, _/bits >>, State=#state{in_state=PS}, H, _)
+		when C =:= $\r; C =:= $\n ->
+	error_terminate(400, State#state{in_state=PS#ps_header{headers=H}},
+		{connection_error, protocol_error,
+			'A header line is missing a colon separator. (RFC7230 3.2.4)'});
+parse_hd_name(<< $\0, _/bits >>, State=#state{in_state=PS}, H, _) ->
+	error_terminate(400, State#state{in_state=PS#ps_header{headers=H}},
+		{connection_error, protocol_error,
+			'NUL byte is not allowed in header name. (RFC9110 5.5)'});
 parse_hd_name(<< C, Rest/bits >>, State, H, SoFar) ->
 	?LOWER(parse_hd_name, Rest, State, H, SoFar).
 
@@ -671,7 +737,7 @@ parse_hd_before_value(<< $\s, Rest/bits >>, S, H, N) ->
 parse_hd_before_value(<< $\t, Rest/bits >>, S, H, N) ->
 	parse_hd_before_value(Rest, S, H, N);
 parse_hd_before_value(Buffer, State=#state{opts=Opts, in_state=PS}, H, N) ->
-	MaxLength = maps:get(max_header_value_length, Opts, 4096),
+	MaxLength = max_header_value_length(N, Opts),
 	case match_eol(Buffer, 0) of
 		nomatch when byte_size(Buffer) > MaxLength ->
 			error_terminate(431, State#state{in_state=PS#ps_header{headers=H}},
@@ -679,9 +745,27 @@ parse_hd_before_value(Buffer, State=#state{opts=Opts, in_state=PS}, H, N) ->
 					'A header value is larger than configuration allows. (RFC7230 3.2.5, RFC6585 5)'});
 		nomatch ->
 			{more, State#state{buffer=Buffer, in_state=PS#ps_header{headers=H, name=N}}};
+		error ->
+			error_terminate(400, State#state{in_state=PS#ps_header{headers=H}},
+				{connection_error, protocol_error,
+					'Header lines must use the CRLF line terminator. (RFC7230 3.2, RFC7230 3.5)'});
 		_ ->
 			parse_hd_value(Buffer, State, H, N, <<>>)
 	end.
+
+max_header_value_length(<<"authorization">>, #{max_authorization_header_value_length := Max}) ->
+	Max;
+max_header_value_length(<<"cookie">>, #{max_cookie_header_value_length := Max}) ->
+	Max;
+%% Stop early when possible. But because the max header value length
+%% is a soft limit we may not catch a long host value here. We will
+%% check the host length again later.
+max_header_value_length(<<"host">>, Opts) ->
+	maps:get(max_authority_length, Opts, 255);
+max_header_value_length(_, #{max_header_value_length := Max}) ->
+	Max;
+max_header_value_length(_, _) ->
+	4096.
 
 parse_hd_value(<< $\r, $\n, Rest/bits >>, S, Headers0, Name, SoFar) ->
 	Value = clean_value_ws_end(SoFar, byte_size(SoFar) - 1),
@@ -692,6 +776,10 @@ parse_hd_value(<< $\r, $\n, Rest/bits >>, S, Headers0, Name, SoFar) ->
 		Value0 -> Headers0#{Name => << Value0/binary, ", ", Value/binary >>}
 	end,
 	parse_header(Rest, S, Headers);
+parse_hd_value(<< $\0, _/bits >>, S=#state{in_state=PS}, H, _, _) ->
+	error_terminate(400, S#state{in_state=PS#ps_header{headers=H}},
+		{connection_error, protocol_error,
+			'NUL byte is not allowed in header value. (RFC9110 5.5)'});
 parse_hd_value(<< C, Rest/bits >>, S, H, N, SoFar) ->
 	parse_hd_value(Rest, S, H, N, << SoFar/binary, C >>).
 
@@ -753,7 +841,16 @@ request(Buffer, State=#state{transport=Transport,
 					'The host header is different than the absolute-form authority component. (RFC7230 5.4)'})
 	end.
 
-request_parse_host(Buffer, State=#state{transport=Transport, in_state=PS}, Headers, RawHost) ->
+request_parse_host(Buffer, State=#state{opts=Opts}, Headers, RawHost) ->
+	case byte_size(RawHost) > maps:get(max_authority_length, Opts, 255) of
+		true ->
+			error_terminate(414, State, {connection_error, limit_reached,
+				'The host header is longer than configuration allows. (RFC7230 2.7.1, RFC7230 5.4)'});
+		false ->
+			request_parse_host1(Buffer, State, Headers, RawHost)
+	end.
+
+request_parse_host1(Buffer, State=#state{transport=Transport, in_state=PS}, Headers, RawHost) ->
 	try cow_http_hd:parse_host(RawHost) of
 		{Host, undefined} ->
 			request(Buffer, State, Headers, Host, default_port(Transport:secure()));
@@ -775,7 +872,7 @@ default_port(_) -> 80.
 %% End of request parsing.
 
 request(Buffer, State0=#state{ref=Ref, transport=Transport, peer=Peer, sock=Sock, cert=Cert,
-		proxy_header=ProxyHeader, in_streamid=StreamID, in_state=
+		opts=Opts, proxy_header=ProxyHeader, in_streamid=StreamID, in_state=
 			PS=#ps_header{method=Method, path=Path, qs=Qs, version=Version}},
 		Headers, Host, Port) ->
 	Scheme = case Transport:secure() of
@@ -839,7 +936,7 @@ request(Buffer, State0=#state{ref=Ref, transport=Transport, peer=Peer, sock=Sock
 		undefined -> Req0;
 		_ -> Req0#{proxy_header => ProxyHeader}
 	end,
-	case is_http2_upgrade(Headers, Version) of
+	case is_http2_upgrade(Headers, Version, Opts) of
 		false ->
 			State = case HasBody of
 				true ->
@@ -861,12 +958,13 @@ request(Buffer, State0=#state{ref=Ref, transport=Transport, peer=Peer, sock=Sock
 
 %% HTTP/2 upgrade.
 
-%% @todo We must not upgrade to h2c over a TLS connection.
 is_http2_upgrade(#{<<"connection">> := Conn, <<"upgrade">> := Upgrade,
-		<<"http2-settings">> := HTTP2Settings}, 'HTTP/1.1') ->
+		<<"http2-settings">> := HTTP2Settings}, 'HTTP/1.1', Opts) ->
 	Conns = cow_http_hd:parse_connection(Conn),
-	case {lists:member(<<"upgrade">>, Conns), lists:member(<<"http2-settings">>, Conns)} of
-		{true, true} ->
+	case lists:member(<<"upgrade">>, Conns)
+			andalso lists:member(<<"http2-settings">>, Conns)
+			andalso lists:member(http2, maps:get(protocols, Opts, [http2, http])) of
+		true ->
 			Protocols = cow_http_hd:parse_upgrade(Upgrade),
 			case lists:member(<<"h2c">>, Protocols) of
 				true ->
@@ -877,17 +975,17 @@ is_http2_upgrade(#{<<"connection">> := Conn, <<"upgrade">> := Upgrade,
 		_ ->
 			false
 	end;
-is_http2_upgrade(_, _) ->
+is_http2_upgrade(_, _, _) ->
 	false.
 
 %% Prior knowledge upgrade, without an HTTP/1.1 request.
 http2_upgrade(State=#state{parent=Parent, ref=Ref, socket=Socket, transport=Transport,
-		proxy_header=ProxyHeader, opts=Opts, peer=Peer, sock=Sock, cert=Cert}, Buffer) ->
+		proxy_header=ProxyHeader, peer=Peer, sock=Sock, cert=Cert}, Buffer) ->
 	case Transport:secure() of
 		false ->
 			_ = cancel_timeout(State),
-			cowboy_http2:init(Parent, Ref, Socket, Transport,
-				ProxyHeader, Opts, Peer, Sock, Cert, Buffer);
+			cowboy_http2:init(Parent, Ref, Socket, Transport, ProxyHeader,
+				opts_for_upgrade(State), Peer, Sock, Cert, Buffer);
 		true ->
 			error_terminate(400, State, {connection_error, protocol_error,
 				'Clients that support HTTP/2 over TLS MUST use ALPN. (RFC7540 3.4)'})
@@ -895,28 +993,42 @@ http2_upgrade(State=#state{parent=Parent, ref=Ref, socket=Socket, transport=Tran
 
 %% Upgrade via an HTTP/1.1 request.
 http2_upgrade(State=#state{parent=Parent, ref=Ref, socket=Socket, transport=Transport,
-		proxy_header=ProxyHeader, opts=Opts, peer=Peer, sock=Sock, cert=Cert},
+		proxy_header=ProxyHeader, peer=Peer, sock=Sock, cert=Cert},
 		Buffer, HTTP2Settings, Req) ->
-	%% @todo
-	%% However if the client sent a body, we need to read the body in full
-	%% and if we can't do that, return a 413 response. Some options are in order.
-	%% Always half-closed stream coming from this side.
-	try cow_http_hd:parse_http2_settings(HTTP2Settings) of
-		Settings ->
-			_ = cancel_timeout(State),
-			cowboy_http2:init(Parent, Ref, Socket, Transport,
-				ProxyHeader, Opts, Peer, Sock, Cert, Buffer, Settings, Req)
-	catch _:_ ->
-		error_terminate(400, State, {connection_error, protocol_error,
-			'The HTTP2-Settings header must contain a base64 SETTINGS payload. (RFC7540 3.2, RFC7540 3.2.1)'})
+	case Transport:secure() of
+		false ->
+			%% @todo
+			%% However if the client sent a body, we need to read the body in full
+			%% and if we can't do that, return a 413 response. Some options are in order.
+			%% Always half-closed stream coming from this side.
+			try cow_http_hd:parse_http2_settings(HTTP2Settings) of
+				Settings ->
+					_ = cancel_timeout(State),
+					cowboy_http2:init(Parent, Ref, Socket, Transport, ProxyHeader,
+						opts_for_upgrade(State), Peer, Sock, Cert, Buffer, Settings, Req)
+			catch _:_ ->
+				error_terminate(400, State, {connection_error, protocol_error,
+					'The HTTP2-Settings header must contain a base64 SETTINGS payload. (RFC7540 3.2, RFC7540 3.2.1)'})
+			end;
+		true ->
+			error_terminate(400, State, {connection_error, protocol_error,
+				'Clients that support HTTP/2 over TLS MUST use ALPN. (RFC7540 3.4)'})
 	end.
+
+opts_for_upgrade(#state{opts=Opts, dynamic_buffer_size=false}) ->
+	Opts;
+opts_for_upgrade(#state{opts=Opts, dynamic_buffer_size=Size,
+		dynamic_buffer_moving_average=MovingAvg}) ->
+	Opts#{
+		dynamic_buffer_initial_average => MovingAvg,
+		dynamic_buffer_initial_size => Size
+	}.
 
 %% Request body parsing.
 
 parse_body(Buffer, State=#state{in_streamid=StreamID, in_state=
 		PS=#ps_body{received=Received, transfer_decode_fun=TDecode,
 			transfer_decode_state=TState0}}) ->
-	%% @todo Proper trailers.
 	try TDecode(Buffer, TState0) of
 		more ->
 			{more, State#state{buffer=Buffer}};
@@ -932,16 +1044,56 @@ parse_body(Buffer, State=#state{in_streamid=StreamID, in_state=
 			{data, StreamID, nofin, Data, State#state{buffer=Rest,
 				in_state=PS#ps_body{received=Received + byte_size(Data),
 					transfer_decode_state=TState}}};
-		{done, _HasTrailers, Rest} ->
-			{data, StreamID, fin, <<>>,
-				State#state{buffer=Rest, in_streamid=StreamID + 1, in_state=#ps_request_line{}}};
-		{done, Data, _HasTrailers, Rest} ->
-			{data, StreamID, fin, Data,
-				State#state{buffer=Rest, in_streamid=StreamID + 1, in_state=#ps_request_line{}}}
+		{done, no_trailers, Rest} ->
+			{data, StreamID, fin, <<>>, State#state{
+				buffer=Rest,
+				in_streamid=StreamID + 1,
+				in_state=#ps_request_line{}
+			}};
+		{done, trailers, Rest} ->
+			{data, StreamID, fin, <<>>, State#state{
+				buffer=Rest,
+				in_state=#ps_trailer{}
+			}};
+		{done, Data, no_trailers, Rest} ->
+			{data, StreamID, fin, Data, State#state{
+				buffer=Rest,
+				in_streamid=StreamID + 1,
+				in_state=#ps_request_line{}
+			}};
+		{done, Data, trailers, Rest} ->
+			{data, StreamID, fin, Data, State#state{
+				buffer=Rest,
+				in_state=#ps_trailer{}
+			}}
 	catch _:_ ->
 		Reason = {connection_error, protocol_error,
 			'Failure to decode the content. (RFC7230 4)'},
 		terminate(stream_terminate(State, StreamID, Reason), Reason)
+	end.
+
+%% Trailer field values.
+
+%% @todo Proper trailers.
+parse_trailer(Buffer, State=#state{in_streamid=StreamID, streams=Streams}) ->
+	case binary:split(Buffer, <<"\r\n\r\n">>) of
+		[_] when byte_size(Buffer) >= 4096 ->
+			Reason = {connection_error, limit_reached,
+				'Trailer field values larger than hard limit allows.'},
+			case Streams of
+				[#stream{id=StreamID}|_] ->
+					terminate(stream_terminate(State, StreamID, Reason), Reason);
+				%% Stream already terminated.
+				_ ->
+					terminate(State, Reason)
+			end;
+		[_] ->
+			{more, State#state{buffer=Buffer}};
+		[_, Rest] ->
+			parse(Rest, State#state{
+				in_streamid=StreamID + 1,
+				in_state=#ps_request_line{}
+			})
 	end.
 
 %% Message handling.
@@ -1043,6 +1195,14 @@ commands(State, StreamID, [{error_response, _, _, _}|Tail]) ->
 %% Send an informational response.
 commands(State0=#state{socket=Socket, transport=Transport, out_state=wait, streams=Streams},
 		StreamID, [{inform, StatusCode, Headers}|Tail]) ->
+	case maybe_invalid_response_headers(Headers, State0) of
+		error_terminate ->
+			Reason = {internal_error, invalid_response_header,
+				'An invalid response header was detected in an informational response.'},
+			terminate(stream_terminate(State0, StreamID, Reason), Reason);
+		ok ->
+			ok
+	end,
 	%% @todo I'm pretty sure the last stream in the list is the one we want
 	%% considering all others are queued.
 	#stream{version=Version} = lists:keyfind(StreamID, #stream.id, Streams),
@@ -1063,6 +1223,14 @@ commands(State0=#state{socket=Socket, transport=Transport, out_state=wait, strea
 %% @todo Same two things above apply to DATA, possibly promise too.
 commands(State0=#state{socket=Socket, transport=Transport, out_state=wait, streams=Streams}, StreamID,
 		[{response, StatusCode, Headers0, Body}|Tail]) ->
+	case maybe_invalid_response_headers(Headers0, State0) of
+		error_terminate ->
+			Reason = {internal_error, invalid_response_header,
+				'An invalid response header was detected.'},
+			terminate(stream_terminate(State0, StreamID, Reason), Reason);
+		ok ->
+			ok
+	end,
 	%% @todo I'm pretty sure the last stream in the list is the one we want
 	%% considering all others are queued.
 	#stream{version=Version} = lists:keyfind(StreamID, #stream.id, Streams),
@@ -1084,6 +1252,14 @@ commands(State0=#state{socket=Socket, transport=Transport, out_state=wait, strea
 commands(State0=#state{socket=Socket, transport=Transport,
 		opts=Opts, overriden_opts=Override, streams=Streams0, out_state=OutState},
 		StreamID, [{headers, StatusCode, Headers0}|Tail]) ->
+	case maybe_invalid_response_headers(Headers0, State0) of
+		error_terminate ->
+			Reason = {internal_error, invalid_response_header,
+				'An invalid response header was detected.'},
+			terminate(stream_terminate(State0, StreamID, Reason), Reason);
+		ok ->
+			ok
+	end,
 	%% @todo Same as above (about the last stream in the list).
 	Stream = #stream{version=Version} = lists:keyfind(StreamID, #stream.id, Streams0),
 	Status = cow_http:status_to_integer(StatusCode),
@@ -1188,6 +1364,16 @@ commands(State0=#state{socket=Socket, transport=Transport, streams=Streams0, out
 	commands(State#state{streams=Streams}, StreamID, Tail);
 commands(State0=#state{socket=Socket, transport=Transport, streams=Streams, out_state=OutState},
 		StreamID, [{trailers, Trailers}|Tail]) ->
+	case maybe_invalid_response_headers(Trailers, State0) of
+		error_terminate ->
+			%% When there are invalid trailer headers the only thing
+			%% we can do is drop the connection.
+			Reason = {internal_error, invalid_response_header,
+				'An invalid response header was detected in trailers.'},
+			terminate(State0, Reason);
+		ok ->
+			ok
+	end,
 	case stream_te(OutState, lists:keyfind(StreamID, #stream.id, Streams)) of
 		trailers ->
 			ok = maybe_socket_error(State0,
@@ -1207,8 +1393,16 @@ commands(State0=#state{socket=Socket, transport=Transport, streams=Streams, out_
 	commands(State, StreamID, Tail);
 %% Protocol takeover.
 commands(State0=#state{ref=Ref, parent=Parent, socket=Socket, transport=Transport,
-		out_state=OutState, opts=Opts, buffer=Buffer, children=Children}, StreamID,
+		out_state=OutState, buffer=Buffer, children=Children}, StreamID,
 		[{switch_protocol, Headers, Protocol, InitialState}|_Tail]) ->
+	case maybe_invalid_response_headers(Headers, State0) of
+		error_terminate ->
+			Reason = {internal_error, invalid_response_header,
+				'An invalid response header was detected when switching protocol.'},
+			terminate(stream_terminate(State0, StreamID, Reason), Reason);
+		ok ->
+			ok
+	end,
 	%% @todo If there's streams opened after this one, fail instead of 101.
 	State1 = cancel_timeout(State0),
 	%% Before we send the 101 response we need to stop receiving data
@@ -1231,23 +1425,19 @@ commands(State0=#state{ref=Ref, parent=Parent, socket=Socket, transport=Transpor
 	%% Turn off the trap_exit process flag
 	%% since this process will no longer be a supervisor.
 	process_flag(trap_exit, false),
-	Protocol:takeover(Parent, Ref, Socket, Transport, Opts, Buffer, InitialState);
+	Protocol:takeover(Parent, Ref, Socket, Transport,
+		opts_for_upgrade(State), Buffer, InitialState);
 %% Set options dynamically.
-commands(State0=#state{overriden_opts=Opts},
-		StreamID, [{set_options, SetOpts}|Tail]) ->
-	State1 = case SetOpts of
-		#{idle_timeout := IdleTimeout} ->
-			set_timeout(State0#state{overriden_opts=Opts#{idle_timeout => IdleTimeout}},
+commands(State0, StreamID, [{set_options, SetOpts}|Tail]) ->
+	State = maps:fold(fun
+		(chunked, Chunked, StateF=#state{overriden_opts=Opts}) ->
+			StateF#state{overriden_opts=Opts#{chunked => Chunked}};
+		(idle_timeout, IdleTimeout, StateF=#state{overriden_opts=Opts}) ->
+			set_timeout(StateF#state{overriden_opts=Opts#{idle_timeout => IdleTimeout}},
 				idle_timeout);
-		_ ->
-			State0
-	end,
-	State = case SetOpts of
-		#{chunked := Chunked} ->
-			State1#state{overriden_opts=Opts#{chunked => Chunked}};
-		_ ->
-			State1
-	end,
+		(_, _, StateF) ->
+			StateF
+	end, State0, SetOpts),
 	commands(State, StreamID, Tail);
 %% Stream shutdown.
 commands(State, StreamID, [stop|Tail]) ->
@@ -1267,6 +1457,38 @@ commands(State=#state{opts=Opts}, StreamID, [Log={log, _, _, _}|Tail]) ->
 commands(State, StreamID, [{push, _, _, _, _, _, _, _}|Tail]) ->
 	commands(State, StreamID, Tail).
 
+maybe_invalid_response_headers(Headers, #state{opts=Opts}) ->
+	validate_response_headers(Headers, Opts).
+
+-spec validate_response_headers(cowboy:http_headers(),
+		#{invalid_response_headers => error_terminate | ignore})
+	-> ok | error_terminate.
+
+%% @todo This function is common to all HTTP versions.
+
+validate_response_headers(Headers, Opts) ->
+	case maps:get(invalid_response_headers, Opts, error_terminate) of
+		error_terminate ->
+			It = maps:iterator(Headers),
+			validate_response_headers(maps:next(It));
+		ignore ->
+			ok
+	end.
+
+validate_response_headers({_, V, It}) when is_binary(V) ->
+	case binary:match(V, [<<$\r>>, <<$\n>>]) of
+		nomatch ->
+			validate_response_headers(maps:next(It));
+		_ ->
+			error_terminate
+	end;
+validate_response_headers({K, V, It}) ->
+	%% We build a temporary binary for simplicity's sake
+	%% when we have a list/iolist.
+	validate_response_headers({K, iolist_to_binary(V), It});
+validate_response_headers(none) ->
+	ok.
+
 %% The set-cookie header is special; we can only send one cookie per header.
 headers_to_list(Headers0=#{<<"set-cookie">> := SetCookies}) ->
 	Headers1 = maps:to_list(maps:remove(<<"set-cookie">>, Headers0)),
@@ -1274,33 +1496,16 @@ headers_to_list(Headers0=#{<<"set-cookie">> := SetCookies}) ->
 headers_to_list(Headers) ->
 	maps:to_list(Headers).
 
-%% We wrap the sendfile call into a try/catch because on OTP-20
-%% and earlier a few different crashes could occur for sockets
-%% that were closing or closed. For example a badarg in
-%% erlang:port_get_data(#Port<...>) or a badmatch like
-%% {{badmatch,{error,einval}},[{prim_file,sendfile,8,[]}...
-%%
-%% OTP-21 uses a NIF instead of a port so the implementation
-%% and behavior has dramatically changed and it is unclear
-%% whether it will be necessary in the future.
-%%
-%% This try/catch prevents some noisy logs to be written
-%% when these errors occur.
 sendfile(State=#state{socket=Socket, transport=Transport, opts=Opts},
 		{sendfile, Offset, Bytes, Path}) ->
-	try
-		%% When sendfile is disabled we explicitly use the fallback.
-		{ok, _} = maybe_socket_error(State,
-			case maps:get(sendfile, Opts, true) of
-				true -> Transport:sendfile(Socket, Path, Offset, Bytes);
-				false -> ranch_transport:sendfile(Transport, Socket, Path, Offset, Bytes, [])
-			end
-		),
-		ok
-	catch _:_ ->
-		terminate(State, {socket_error, sendfile_crash,
-			'An error occurred when using the sendfile function.'})
-	end.
+	%% When sendfile is disabled we explicitly use the fallback.
+	{ok, _} = maybe_socket_error(State,
+		case maps:get(sendfile, Opts, true) of
+			true -> Transport:sendfile(Socket, Path, Offset, Bytes);
+			false -> ranch_transport:sendfile(Transport, Socket, Path, Offset, Bytes, [])
+		end
+	),
+	ok.
 
 %% Flush messages specific to cowboy_http before handing over the
 %% connection to another protocol.
@@ -1361,28 +1566,31 @@ stream_terminate(State0=#state{opts=Opts, in_streamid=InStreamID, in_state=InSta
 			terminate(State, skip_body_too_large);
 		#ps_body{} when InStreamID =:= OutStreamID ->
 			stream_next(State#state{flow=infinity});
+		#ps_trailer{} when InStreamID =:= OutStreamID ->
+			stream_next(State#state{flow=infinity});
 		_ ->
 			stream_next(State)
 	end.
 
 stream_next(State0=#state{opts=Opts, active=Active, out_streamid=OutStreamID, streams=Streams}) ->
+	%% Enable active mode again if it was disabled.
+	State1 = case Active of
+		true -> State0;
+		false -> active(State0)
+	end,
 	NextOutStreamID = OutStreamID + 1,
 	case lists:keyfind(NextOutStreamID, #stream.id, Streams) of
 		false ->
-			State = State0#state{out_streamid=NextOutStreamID, out_state=wait},
+			State = State1#state{out_streamid=NextOutStreamID, out_state=wait},
 			%% There are no streams remaining. We therefore can
 			%% and want to switch back to the request_timeout.
 			set_timeout(State, request_timeout);
 		#stream{queue=Commands} ->
-			State = case Active of
-				true -> State0;
-				false -> active(State0)
-			end,
 			%% @todo Remove queue from the stream.
 			%% We set the flow to the initial flow size even though
 			%% we might have sent some data through already due to pipelining.
 			Flow = maps:get(initial_stream_flow_size, Opts, 65535),
-			commands(State#state{flow=Flow, out_streamid=NextOutStreamID, out_state=wait},
+			commands(State1#state{flow=Flow, out_streamid=NextOutStreamID, out_state=wait},
 				NextOutStreamID, Commands)
 	end.
 
@@ -1483,31 +1691,43 @@ error_terminate(StatusCode, State=#state{ref=Ref, peer=Peer, in_state=StreamStat
 early_error(StatusCode, State, Reason, PartialReq) ->
 	early_error(StatusCode, State, Reason, PartialReq, #{}).
 
-early_error(StatusCode0, State=#state{socket=Socket, transport=Transport,
-		opts=Opts, in_streamid=StreamID}, Reason, PartialReq, RespHeaders0) ->
+early_error(StatusCode, State=#state{opts=Opts, in_streamid=StreamID},
+		Reason, PartialReq, RespHeaders0) ->
 	RespHeaders1 = RespHeaders0#{<<"content-length">> => <<"0">>},
-	Resp = {response, StatusCode0, RespHeaders1, <<>>},
-	try cowboy_stream:early_error(StreamID, Reason, PartialReq, Resp, Opts) of
-		{response, StatusCode, RespHeaders, RespBody} ->
-			ok = maybe_socket_error(State,
-				Transport:send(Socket, [
-					cow_http:response(StatusCode, 'HTTP/1.1', maps:to_list(RespHeaders)),
-					%% @todo We shouldn't send the body when the method is HEAD.
-					%% @todo Technically we allow the sendfile tuple.
-					RespBody
-				])
-			)
+	Resp0 = {response, StatusCode, RespHeaders1, <<>>},
+	try cowboy_stream:early_error(StreamID, Reason, PartialReq, Resp0, Opts) of
+		Resp = {response, _, RespHeaders, _} ->
+			case maybe_invalid_response_headers(RespHeaders, State) of
+				error_terminate ->
+					%% We still need to send an error response, so send what we
+					%% initially wanted to send. It's better than nothing.
+					early_error_resp(Resp0, State),
+					Reason1 = {internal_error, invalid_response_header,
+						'An invalid response header was detected.'},
+					terminate(State, Reason1);
+				ok ->
+					ok
+			end,
+			%% @todo We shouldn't send the body when the method is HEAD.
+			%% @todo Technically we allow the sendfile tuple.
+			early_error_resp(Resp, State)
 	catch Class:Exception:Stacktrace ->
 		cowboy:log(cowboy_stream:make_error_log(early_error,
-			[StreamID, Reason, PartialReq, Resp, Opts],
+			[StreamID, Reason, PartialReq, Resp0, Opts],
 			Class, Exception, Stacktrace), Opts),
-		%% We still need to send an error response, so send what we initially
-		%% wanted to send. It's better than nothing.
-		ok = maybe_socket_error(State,
-			Transport:send(Socket, cow_http:response(StatusCode0,
-				'HTTP/1.1', maps:to_list(RespHeaders1)))
-		)
+		%% We still need to send an error response, so send what we
+		%% initially wanted to send. It's better than nothing.
+		early_error_resp(Resp0, State)
 	end.
+
+early_error_resp({response, StatusCode, RespHeaders, RespBody},
+		State=#state{socket=Socket, transport=Transport}) ->
+	ok = maybe_socket_error(State,
+		Transport:send(Socket, [
+			cow_http:response(StatusCode, 'HTTP/1.1', maps:to_list(RespHeaders)),
+			RespBody
+		])
+	).
 
 initiate_closing(State=#state{streams=[]}, Reason) ->
 	terminate(State, Reason);
@@ -1531,7 +1751,7 @@ maybe_socket_error(_, Result = {ok, _}, _) ->
 maybe_socket_error(State, {error, Reason}, Human) ->
 	terminate(State, {socket_error, Reason, Human}).
 
--spec terminate(_, _) -> no_return().
+-spec terminate(#state{} | undefined, _) -> no_return().
 terminate(undefined, Reason) ->
 	exit({shutdown, Reason});
 terminate(State=#state{streams=Streams, children=Children}, Reason) ->
@@ -1595,12 +1815,12 @@ terminate_linger_loop(State=#state{socket=Socket}, TimerRef, Messages) ->
 
 -spec system_continue(_, _, #state{}) -> ok.
 system_continue(_, _, State) ->
-	loop(State).
+	before_loop(State).
 
 -spec system_terminate(any(), _, _, #state{}) -> no_return().
 system_terminate(Reason0, _, _, State) ->
 	Reason = {stop, {exit, Reason0}, 'sys:terminate/2,3 was called.'},
-	loop(initiate_closing(State, Reason)).
+	before_loop(initiate_closing(State, Reason)).
 
 -spec system_code_change(Misc, _, _, _) -> {ok, Misc} when Misc::{#state{}, binary()}.
 system_code_change(Misc, _, _, _) ->

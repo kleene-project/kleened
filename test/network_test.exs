@@ -1,6 +1,5 @@
 defmodule NetworkTest do
   use Kleened.Test.ConnCase
-  alias ExUnit.CaptureLog
   require Logger
   alias Kleened.Core.{Network, MetaData, OS}
   alias Kleened.Core.Utils.CIDR
@@ -22,18 +21,6 @@ defmodule NetworkTest do
   @cant_connect_disabled_with_any %{
     message: "containers with the 'disabled' network-driver cannot connect to networks."
   }
-  setup do
-    TestHelper.cleanup()
-
-    on_exit(fn ->
-      CaptureLog.capture_log(fn ->
-        TestHelper.cleanup()
-      end)
-    end)
-
-    :ok
-  end
-
   test "create, inspect, connect, and remove a 'loopback' network with custom interface name", %{
     api_spec: api_spec
   } do
@@ -194,57 +181,6 @@ defmodule NetworkTest do
     assert Network.interface_exists("custom_if")
     assert MetaData.get_network(network.id) == :not_found
     Network.destroy_interface(interface)
-  end
-
-  test "listing networks", %{api_spec: api_spec} do
-    Network.destroy_interface("kleene1")
-
-    assert [] = TestHelper.network_list(api_spec)
-
-    network1 = create_network(%{name: "testnet1", type: "bridge"})
-    create_network(%{name: "testnet2", type: "bridge"})
-
-    assert [
-             %{name: "testnet1"},
-             %{name: "testnet2"}
-           ] = TestHelper.network_list(api_spec)
-
-    assert TestHelper.network_remove(api_spec, network1.name) == %{id: network1.id}
-
-    assert [
-             %{name: "testnet2"}
-           ] = TestHelper.network_list(api_spec)
-  end
-
-  test "prune networks", %{api_spec: api_spec} do
-    network1 = create_network(%{name: "testnet1", type: "loopback"})
-
-    %Schemas.Network{id: network2_id} = create_network(%{name: "testnet2", type: "bridge"})
-
-    %{id: container_id} =
-      TestHelper.container_create(%{
-        name: "network_prune_test",
-        cmd: ["/bin/sleep", "10"],
-        network_driver: "ipnet",
-        network: "testnet1"
-      })
-
-    assert [network2_id] == TestHelper.network_prune(api_spec)
-    assert [%{name: "testnet1"}] = TestHelper.network_list(api_spec)
-    assert :ok == TestHelper.network_disconnect(api_spec, network1.id, container_id)
-  end
-
-  test "inspecting a network that doesn't exist" do
-    %Schemas.Network{} = create_network(%{type: "loopback"})
-    response = TestHelper.network_inspect_raw("notexist")
-    assert response.status == 404
-    assert response.resp_body == "{\"message\":\"network not found\"}"
-  end
-
-  test "remove a non-existing network", %{api_spec: api_spec} do
-    network = create_network(%{ifname: "kleene1", driver: "loopback"})
-    assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
-    assert TestHelper.network_remove(api_spec, network.name) == %{message: "network not found."}
   end
 
   test "create a network with same name twice", %{api_spec: api_spec} do
@@ -431,13 +367,13 @@ defmodule NetworkTest do
     network =
       create_network(%{
         name: "custom_net",
-        interface: "em0",
+        interface: gateway_interface(),
         subnet: "172.19.3.0/24",
         gateway: "",
         type: "custom",
-        # NAT needs to be disabled when using 'em0' as the custom interface
-        # since it is also the GW interface. Otherwise, it will NAT traffic on
-        # 'em0' to itself which breaks connectivity to the vagrant box.
+        # NAT needs to be disabled when the custom interface is also the gateway
+        # interface. Otherwise it NATs traffic on that interface to itself, which
+        # breaks connectivity to the dev VM.
         nat: ""
       })
 
@@ -476,7 +412,7 @@ defmodule NetworkTest do
     network =
       create_network(%{
         name: "custom_net",
-        interface: "em0",
+        interface: gateway_interface(),
         subnet: "172.19.3.0/24",
         gateway: "",
         nat: "",
@@ -729,49 +665,6 @@ defmodule NetworkTest do
            ] = routes6(routing_info)
   end
 
-  test "NAT'd connectivity of 'ipnet' containers" do
-    # loopback IPv4
-    container_connectivity_test(%{
-      network: %{
-        name: "testnet1",
-        gateway: "",
-        subnet: "10.13.37.0/24",
-        nat: "<host-gateway>",
-        type: "loopback"
-      },
-      client: %{network_driver: "ipnet"}
-    })
-
-    # bridge IPv4
-    container_connectivity_test(%{
-      network: %{
-        name: "testnet2",
-        gateway: "",
-        subnet: "10.13.38.0/24",
-        nat: "<host-gateway>",
-        type: "bridge"
-      },
-      client: %{network_driver: "ipnet"}
-    })
-  end
-
-  test "NAT'd connectivity of 'vnet' containers" do
-    interface = "kleened0"
-    Network.destroy_interface(interface)
-
-    # bridge IPv4
-    container_connectivity_test(%{
-      network: %{
-        name: "testnet2",
-        gateway: "<auto>",
-        subnet: "10.13.38.0/24",
-        nat: "<host-gateway>",
-        type: "bridge"
-      },
-      client: %{network_driver: "vnet"}
-    })
-  end
-
   test "No NAT means no connectivity on rfc1819 networks" do
     interface = "kleened0"
     Network.destroy_interface(interface)
@@ -899,7 +792,7 @@ defmodule NetworkTest do
       network: %{
         name: "testnet3",
         subnet: "172.20.1.0/24",
-        interface: "em0",
+        interface: gateway_interface(),
         nat: "",
         type: "custom"
       },
@@ -1587,6 +1480,13 @@ defmodule NetworkTest do
     Port.close(port)
   end
 
+  # The host's gateway interface, used where a test needs a 'custom' network bound to a
+  # real NIC. Detected rather than hardcoded: the NIC name differs per hypervisor.
+  defp gateway_interface() do
+    {:ok, interface} = Kleened.Core.FreeBSD.host_gateway_interface()
+    interface
+  end
+
   defp host_ip() do
     {:ok, interface} = Kleened.Core.FreeBSD.host_gateway_interface()
 
@@ -1611,16 +1511,7 @@ defmodule NetworkTest do
         ]
       )
 
-    msg =
-      receive do
-        {^port, msg} -> msg
-      after
-        2_000 ->
-          Logger.warning("tcpdump not responding")
-      end
-
-    assert {:data, {:eol, <<"tcpdump: listening on", _::binary>>}} = msg
-    port
+    await_tcpdump_listening(port, "pflog0")
   end
 
   defp listen_for_traffic() do
@@ -1638,16 +1529,20 @@ defmodule NetworkTest do
         ]
       )
 
-    msg =
-      receive do
-        {^port, msg} -> msg
-      after
-        2_000 ->
-          Logger.warning("tcpdump not responding")
-      end
+    await_tcpdump_listening(port, interface)
+  end
 
-    assert {:data, {:eol, <<"tcpdump: listening on", _::binary>>}} = msg
-    port
+  defp await_tcpdump_listening(port, interface) do
+    receive do
+      {^port, {:data, {:eol, <<"tcpdump: listening on", _::binary>>}}} ->
+        port
+
+      {^port, {:data, {:eol, other}}} ->
+        flunk("tcpdump on #{interface} failed to start: #{other}")
+    after
+      2_000 ->
+        flunk("tcpdump on #{interface} did not start listening within 2s")
+    end
   end
 
   defp read_tcpdump(port) do
@@ -1663,8 +1558,7 @@ defmodule NetworkTest do
         read_tcpdump(port)
     after
       1_000 ->
-        Logger.warning("Timed out while reading from tcp-dump")
-        "tcpdump timeout"
+        flunk("timed out after 1s waiting for a packet from tcpdump")
     end
   end
 

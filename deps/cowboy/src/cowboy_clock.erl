@@ -1,4 +1,4 @@
-%% Copyright (c) 2011-2024, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -93,7 +93,7 @@ handle_cast(_Msg, State) ->
 -spec handle_info(any(), State) -> {noreply, State} when State::#state{}.
 handle_info(update, #state{universaltime=Prev, rfc1123=B1, tref=TRef0}) ->
 	%% Cancel the timer in case an external process sent an update message.
-	_ = erlang:cancel_timer(TRef0),
+	_ = erlang:cancel_timer(TRef0, [{async, true}, {info, false}]),
 	T = erlang:universaltime(),
 	B2 = update_rfc1123(B1, Prev, T),
 	ets:insert(?MODULE, {rfc1123, B2}),

@@ -4,23 +4,6 @@ defmodule Erlex.MixProject do
   @version "VERSION" |> File.read!() |> String.trim()
   @elixir_version System.version() |> Version.parse!()
   @erlang_version :erlang.system_info(:otp_release) |> List.to_string() |> String.to_integer()
-  # Path.join([
-  #   :code.root_dir(),
-  #   "releases",
-  #   :erlang.system_info(:otp_release),
-  #   "OTP_VERSION"
-  # ])
-  # |> File.read!()
-  # |> String.trim()
-  # |> String.split(".")
-  # |> Stream.unfold(fn
-  #   [] -> nil
-  #   [head | tail] -> {head, tail}
-  # end)
-  # |> Stream.concat(Stream.repeatedly(fn -> 0 end))
-  # |> Enum.take(3)
-  # |> Enum.join(".")
-  # |> Version.parse!()
 
   @name "Erlex"
   @description "Convert Erlang style structs and error messages to equivalent Elixir."
@@ -94,6 +77,7 @@ defmodule Erlex.MixProject do
 
       # Clean tasks
       clean: [
+        &clean_parser_artifacts/1,
         &clean_extra_folders/1,
         "typecheck.clean",
         &clean_build_folders/1
@@ -103,11 +87,11 @@ defmodule Erlex.MixProject do
       # Quality control tools
       ###
 
-      # Check-all task
+      # Developer check-all task
       check: [
         "test",
-        "lint"
-        # "typecheck"
+        "lint",
+        "typecheck"
       ],
 
       # Linting tasks
@@ -122,14 +106,10 @@ defmodule Erlex.MixProject do
       "lint.format": "format --check-formatted",
       "lint.style": "credo --strict",
 
-      # Typecheck tasks
-      typecheck: [
-        "typecheck.run"
-      ],
-      "typecheck.build-cache": "dialyzer --plt --format dialyxir",
-      "typecheck.clean": "dialyzer.clean",
-      "typecheck.explain": "dialyzer.explain --format dialyxir",
-      "typecheck.run": "dialyzer --format dialyxir",
+      # Typecheck tasks (uses custom task - dialyxir has circular dep on erlex)
+      typecheck: "erlex.typecheck",
+      "typecheck.build-cache": "erlex.typecheck --build-plt",
+      "typecheck.clean": "erlex.typecheck --clean",
 
       # Test tasks
       "test.coverage": "coveralls",
@@ -157,7 +137,8 @@ defmodule Erlex.MixProject do
 
   defp deps() do
     [
-      # {:dialyxir, "~> 1.4", only: @dev_envs, runtime: false, override: true}, # Transative dependency on ErlEx
+      # Note: dialyxir cannot be used here - it depends on erlex (circular).
+      # Use `mix erlex.typecheck` instead (see lib/mix/tasks/erlex.typecheck.ex)
       {:excoveralls, "~> 0.18", only: :test},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
     ] ++ deps(:credo) ++ deps(:nimble_parsec)
@@ -231,6 +212,10 @@ defmodule Erlex.MixProject do
     dev_overrides = ["docs", "hex.publish"] |> Enum.map(&{&1, :dev})
 
     test_by_default ++ dev_overrides
+  end
+
+  defp clean_parser_artifacts(_) do
+    ~w[src/erlex_lexer.erl src/erlex_parser.erl] |> Enum.map(&File.rm_rf!/1)
   end
 
   defp clean_build_folders(_) do

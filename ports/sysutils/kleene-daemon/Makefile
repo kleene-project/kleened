@@ -1,84 +1,86 @@
-PORTNAME=		kleene-daemon
-DISTVERSIONPREFIX=		v
-DISTVERSION=		0.1.0rc2
-CATEGORIES=		sysutils
+PORTNAME=	kleene-daemon
+DISTVERSIONPREFIX=	v
+DISTVERSION=	0.1.1
+CATEGORIES=	sysutils
+MASTER_SITES+=	https://builds.hex.pm/installs/1.19.0/:hex
+DISTFILES+=	hex-${_HEXPM_VERSION}-otp-${_HEXPM_OTP}.ez:hex
 
-MAINTAINER=		lasse@philomath.dk
-COMMENT=		Kleene backend daemon for managing containers on FreeBSD
-WWW=			https://kleene.dev
+MAINTAINER=	lasse@philomath.dk
+COMMENT=	Kleene backend daemon for managing containers on FreeBSD
+WWW=		https://kleene.dev
 
-LICENSE=		BSD2CLAUSE
+LICENSE=	APACHE20 BSD2CLAUSE
+LICENSE_COMB=	multi
 
-BUILD_DEPENDS=		${LOCALBASE}/lib/elixir/lib/hex/ebin:devel/elixir-hex \
-			mix:lang/elixir \
-			rebar3:devel/rebar3
+BUILD_DEPENDS=	ca_root_nss>0:security/ca_root_nss \
+		mix:lang/elixir \
+		rebar3:devel/rebar3
 
-USES=			gmake ssl
-USE_GITHUB=		yes
+USES=		gmake ssl
+USE_GITHUB=	yes
 
-GH_TUPLE=		kleene-project:kleened:6a67380:DEFAULT
-USE_RC_SUBR=		kleened
+GH_ACCOUNT=	kleene-project
+GH_PROJECT=	kleened
+USE_RC_SUBR=	kleened
 
-SUB_FILES=		pkg-message
+MAKE_ENV+=	ERL_LIBS='' \
+		HEX_HOME=${WRKDIR}/.hex \
+		HEX_OFFLINE=true \
+		MIX_ARCHIVES=${WRKDIR} \
+		MIX_ENV=prod \
+		MIX_HOME=${WRKDIR}/.mix \
+		MIX_PATH=${WRKDIR}/.mix/archives/hex-${_HEXPM_VERSION}/hex-${_HEXPM_VERSION}/ebin \
+		MIX_REBAR3=${LOCALBASE}/bin/rebar3
 
-ETCDIR=			${PREFIX}/etc/kleened
+ETCDIR=		${PREFIX}/etc/kleened
+SUB_FILES=	pkg-message
+PLIST_SUB=	DISTVERSION=${DISTVERSION}
 
-MIX_TARGET=		release
-ELIXIR_LOCALE=		en_US.UTF-8
-ELIXIR_APP_NAME=	${PORTNAME}
-MIX_ENV=		MIX_REBAR3=${LOCALBASE}/bin/rebar3 \
-			LANG=${ELIXIR_LOCALE} LC_ALL=${ELIXIR_LOCALE} \
-			MIX_PATH=${LOCALBASE}/lib/elixir/lib/hex/ebin \
-			MIX_HOME=mix
-MIX_ENV_NAME=		prod
-MIX_COMPILE=		${SETENV} ${MIX_ENV} MIX_ENV=${MIX_ENV_NAME} mix \
-			${MIX_TARGET}
-
-RELEASE_PATH=		${WRKSRC}/_build/prod/rel/kleened
-RELEASE_BINARIES=	escript dialyzer erlexec beam.smp heart dyn_erl to_erl \
+_HEXPM_VERSION=		2.5.1
+_HEXPM_OTP=		28
+_HEX_DIR=		${WRKDIR}/.mix/archives/hex-${_HEXPM_VERSION}
+_RELEASE_PATH=		${WRKSRC}/_build/prod/rel/kleened
+_RELEASE_BINARIES=	escript dialyzer erlexec beam.smp heart dyn_erl to_erl \
 			erlc epmd run_erl typer inet_gethost erl_child_setup \
 			ct_run erl_call yielding_c_fun
 
 .include <bsd.port.pre.mk>
 
+post-extract:
+	${MKDIR} ${_HEX_DIR}
+	${MV} ${WRKDIR}/hex-* \
+		${_HEX_DIR}/
+
 do-build:
-	@cd ${WRKSRC} && ${MIX_COMPILE}
+	(cd ${WRKSRC} && \
+		${SETENV} ${MAKE_ENV} ${LOCALBASE}/bin/mix do deps.compile, \
+		compile, release)
 
 do-install:
-	${MKDIR} ${STAGEDIR}${PREFIX}/etc/kleened
+# sample configs
+	${MKDIR} ${STAGEDIR}${ETCDIR}
 	${INSTALL_DATA} ${WRKSRC}/example/kleened_config.yaml \
-		${STAGEDIR}${PREFIX}/etc/kleened/config.yaml.sample
+		${STAGEDIR}${ETCDIR}/config.yaml.sample
 	${INSTALL_DATA} ${WRKSRC}/example/pf.conf.kleene \
-		${STAGEDIR}${PREFIX}/etc/kleened/pf.conf.kleene.sample
-	${MKDIR} ${STAGEDIR}${PREFIX}/libexec/kleened/bin
+		${STAGEDIR}${ETCDIR}/pf.conf.kleene.sample
+# the release
+	${CP} -a ${WRKSRC}/_build/prod/rel/kleened ${STAGEDIR}${PREFIX}/libexec/
 	${INSTALL_PROGRAM} ${WRKSRC}/priv/bin/kleened_pty \
-		${STAGEDIR}${PREFIX}/libexec/kleened/bin/kleened_pty
-	${INSTALL_SCRIPT} ${WRKSRC}/_build/prod/rel/kleened/bin/kleened \
 		${STAGEDIR}${PREFIX}/libexec/kleened/bin/
-	cd ${RELEASE_PATH}/lib && \
-		${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/libexec/kleened/lib
-	cd ${RELEASE_PATH} && \
-		${COPYTREE_SHARE} ./erts-* ${STAGEDIR}${PREFIX}/libexec/kleened/ && \
-		${CHMOD} +x ${STAGEDIR}${PREFIX}/libexec/kleened/erts-*/bin/*
-	cd ${RELEASE_PATH}/releases && \
-		${COPYTREE_SHARE} . ${STAGEDIR}${PREFIX}/libexec/kleened/releases
-	cd ${RELEASE_PATH}/releases && \
-		${INSTALL_DATA} ${WRKSRC}/_build/prod/rel/kleened/releases/start_erl.data ${STAGEDIR}${PREFIX}/libexec/kleened/releases/
-	${INSTALL_SCRIPT} ${RELEASE_PATH}/releases/0.0.1/elixir \
-		${STAGEDIR}${PREFIX}/libexec/kleened/releases/0.0.1/
-	${INSTALL_SCRIPT} ${RELEASE_PATH}/releases/0.0.1/iex \
-		${STAGEDIR}${PREFIX}/libexec/kleened/releases/0.0.1/
-	${STRIP_CMD} ${STAGEDIR}${PREFIX}/libexec/kleened/lib/asn1-*/priv/lib/asn1rt_nif.so
-	${STRIP_CMD} ${STAGEDIR}${PREFIX}/libexec/kleened/lib/crypto-*/priv/lib/*.so
-	${STRIP_CMD} ${STAGEDIR}${PREFIX}/libexec/kleened/lib/exqlite-0.20.0/priv/sqlite3_nif.so
-.for bin in ${RELEASE_BINARIES}
+	${RM} ${STAGEDIR}${PREFIX}/libexec/kleened/bin/*.src
+# strip binaries and objects
+	${FIND} ${STAGEDIR}${PREFIX}/libexec/kleened/lib -type f -name \
+		*.so -exec ${STRIP_CMD} {} \;
+.for bin in ${_RELEASE_BINARIES}
 	${STRIP_CMD} ${STAGEDIR}${PREFIX}/libexec/kleened/erts-*/bin/${bin}
 .endfor
 
 post-install:
 	@cd ${STAGEDIR}${PREFIX} && \
-		${FIND} libexec/kleened/erts-* -type f -o -type l | ${SORT} >> ${TMPPLIST}
+		${FIND} libexec/kleened/erts-* -type f -o -type l | \
+		${SORT} >> ${TMPPLIST}
 	@cd ${STAGEDIR}${PREFIX} && \
-		${FIND} libexec/kleened/lib/* -type f -o -type l | ${SORT} >> ${TMPPLIST}
+		${FIND} libexec/kleened/lib/* -type f -o -type l | \
+		${SORT} >> ${TMPPLIST}
 
 .include <bsd.port.post.mk>

@@ -1,5 +1,42 @@
 # Changelog
 
+## v2.9.0
+
+### Enhancements
+
+ * Implement `get_sock_data` from Plug
+ * Require Plug v1.18+
+
+## v2.8.1
+
+### Security fixes
+
+ * Fix atom conversion from string (CVE-2026-32688)
+
+## v2.8.0
+
+### Enhancements
+
+ * Remove supported for deprecated `next_protocols_advertised`
+
+## v2.7.5
+
+### Enhancements
+
+ * Ensure path too large request errors are correctly translated
+
+## v2.7.4
+
+### Enhancements
+
+ * Ensure errors from Ranch are correctly translated
+
+## v2.7.3
+
+### Enhancements
+
+ * Ensure errors from Cowboy 2.13 are correctly translated
+
 ## v2.7.2
 
 ### Bug fixes

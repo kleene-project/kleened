@@ -17,8 +17,10 @@ defmodule Kleened.Core.Image do
               workdir: nil
   end
 
-  @type t() :: %Schemas.Image{}
-  @spec build(%Schemas.ImageBuildConfig{}) :: {:ok, String.t(), pid()} | {:error, String.t()}
+  @type t() :: Schemas.Image.t()
+
+  @spec build(Schemas.ImageBuildConfig.t()) ::
+          {:ok, String.t(), pid()} | {:error, String.t()}
   def build(
         %Schemas.ImageBuildConfig{context: context, dockerfile: dockerfile, tag: tag} =
           build_config
@@ -87,7 +89,7 @@ defmodule Kleened.Core.Image do
     end
   end
 
-  @spec tag(String.t(), String.t()) :: {:ok, %Schemas.Image{}} | {:error, String.t()}
+  @spec tag(String.t(), String.t()) :: {:ok, t()} | {:error, String.t()}
   def tag(image_ident, nametag) do
     case MetaData.get_image(image_ident) do
       :not_found ->
@@ -101,7 +103,7 @@ defmodule Kleened.Core.Image do
     end
   end
 
-  @spec inspect_(String.t()) :: {:ok, %Schemas.Image{}} | {:error, String.t()}
+  @spec inspect_(String.t()) :: {:ok, t()} | {:error, String.t()}
   def inspect_(idname) do
     case MetaData.get_image(idname) do
       :not_found ->
@@ -192,7 +194,7 @@ defmodule Kleened.Core.Image do
     end)
   end
 
-  @spec prune(false | true) :: {:ok, [String.t()]}
+  @spec prune(boolean()) :: {:ok, [String.t()]}
   def prune(all \\ false) do
     images = MetaData.list_image_datasets()
     prune_images(all, images, [])
@@ -247,6 +249,8 @@ defmodule Kleened.Core.Image do
     Enum.reduce(processed_output, %{}, &create_dataset2clones_/2)
   end
 
+  @spec create_dataset2clones_([String.t()], %{optional(String.t()) => MapSet.t(String.t())}) ::
+          %{optional(String.t()) => MapSet.t(String.t())}
   def create_dataset2clones_([""], dataset2clones) do
     dataset2clones
   end

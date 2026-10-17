@@ -66,7 +66,7 @@ defmodule Plug.Static do
       that use etags. Defaults to `"public"`.
 
     * `:etag_generation` - specify a `{module, function, args}` to be used
-      to generate   an etag. The `path` of the resource will be passed to
+      to generate an etag. The `path` of the resource will be passed to
       the function, as well as the `args`. If this option is not supplied,
       etags will be generated based off of file size and modification time.
       Note it is [recommended for the etag value to be quoted](https://tools.ietf.org/html/rfc7232#section-2.3),
@@ -95,6 +95,12 @@ defmodule Plug.Static do
       be it "/images/foo.png", "/images-high/foo.png", "/favicon.ico"
       or "/favicon-high.ico". Such matches are useful when serving
       digested files at the root. Defaults to `nil` (no filtering).
+
+    * `:raise_on_missing_only` - when `true`, raises an exception if a static
+      file exists but does not match the `:only` list. This is useful in
+      development to catch missing entries, especially for digested files.
+      For example, if `favicon.ico` is in `:only` but the actual file is
+      `favicon-deadbeef.ico`, this option will raise an error. Defaults to `false`.
 
     * `:headers` - other headers to be set when serving static assets. Specify either
       an enum of key-value pairs or a `{module, function, args}` to return an enum. The
@@ -164,9 +170,17 @@ defmodule Plug.Static do
       |> maybe_add("br", ".br", Keyword.get(opts, :brotli, false))
       |> maybe_add("gzip", ".gz", Keyword.get(opts, :gzip, false))
 
+    only_status =
+      if Keyword.get(opts, :raise_on_missing_only, false) do
+        :raise
+      else
+        :forbidden
+      end
+
     %{
       encodings: encodings,
-      only_rules: {Keyword.get(opts, :only, []), Keyword.get(opts, :only_matching, [])},
+      only_rules:
+        {Keyword.get(opts, :only, []), Keyword.get(opts, :only_matching, []), only_status},
       qs_cache:
         Keyword.get(opts, :cache_control_for_vsn_requests, "public, max-age=31536000, immutable"),
       et_cache: Keyword.get(opts, :cache_control_for_etags, "public"),
@@ -186,19 +200,35 @@ defmodule Plug.Static do
       when meth in @allowed_methods do
     segments = subset(at, conn.path_info)
 
-    if allowed?(only_rules, segments) do
-      segments = Enum.map(segments, &uri_decode/1)
+    case path_status(only_rules, segments) do
+      :forbidden ->
+        conn
 
-      if invalid_path?(segments) do
-        raise InvalidPathError, "invalid path for static asset: #{conn.request_path}"
-      end
+      :allowed ->
+        segments = Enum.map(segments, &URI.decode/1)
 
-      path = path(from, segments)
-      range = get_req_header(conn, "range")
-      encoding = file_encoding(conn, path, range, encodings)
-      serve_static(encoding, conn, segments, range, options)
-    else
-      conn
+        if invalid_path?(segments) do
+          raise InvalidPathError, "invalid path for static asset: #{conn.request_path}"
+        end
+
+        path = path(from, segments)
+        range = get_req_header(conn, "range")
+
+        case file_encoding(conn, path, range, encodings) do
+          :error -> conn
+          triplet -> serve_static(triplet, conn, segments, range, options)
+        end
+
+      :raise ->
+        segments = Enum.map(segments, &URI.decode/1)
+
+        if not invalid_path?(segments) and regular_file_info(path(from, segments)) do
+          raise InvalidPathError,
+                "static file exists but is not in the :only list: #{Enum.join(segments, "/")}. " <>
+                  "Add it to the :only list or use :only_matching for prefix matching"
+        else
+          conn
+        end
     end
   end
 
@@ -206,21 +236,15 @@ defmodule Plug.Static do
     conn
   end
 
-  defp uri_decode(path) do
-    # TODO: Remove rescue as this can't fail from Elixir v1.13
-    try do
-      URI.decode(path)
-    rescue
-      ArgumentError ->
-        raise InvalidPathError
+  defp path_status(_only_rules, []), do: :forbidden
+  defp path_status({[], [], _}, _list), do: :allowed
+
+  defp path_status({full, prefix, status}, [h | _]) do
+    if h in full or (prefix != [] and match?({0, _}, :binary.match(h, prefix))) do
+      :allowed
+    else
+      status
     end
-  end
-
-  defp allowed?(_only_rules, []), do: false
-  defp allowed?({[], []}, _list), do: true
-
-  defp allowed?({full, prefix}, [h | _]) do
-    h in full or (prefix != [] and match?({0, _}, :binary.match(h, prefix)))
   end
 
   defp maybe_put_content_type(conn, false, _), do: conn
@@ -258,17 +282,16 @@ defmodule Plug.Static do
     end
   end
 
-  defp serve_static(:error, conn, _segments, _range, _options) do
-    conn
-  end
-
   defp serve_range(conn, file_info, path, [range], options) do
     file_info(size: file_size) = file_info
 
     with %{"bytes" => bytes} <- Plug.Conn.Utils.params(range),
+         # 41 bytes covers two 64 bit byte offsets, enough to address files up to 16 EiB.
+         true <- byte_size(bytes) <= 41,
          {range_start, range_end} <- start_and_end(bytes, file_size) do
       send_range(conn, path, range_start, range_end, file_size, options)
     else
+      :unsatisfiable -> send_unsatisfiable_range(conn, file_size, options)
       _ -> send_entire_file(conn, path, options)
     end
   end
@@ -276,6 +299,8 @@ defmodule Plug.Static do
   defp serve_range(conn, _file_info, path, _range, options) do
     send_entire_file(conn, path, options)
   end
+
+  defp start_and_end(_range, 0), do: :error
 
   defp start_and_end("-" <> rest, file_size) do
     case Integer.parse(rest) do
@@ -286,14 +311,17 @@ defmodule Plug.Static do
 
   defp start_and_end(range, file_size) do
     case Integer.parse(range) do
-      {first, "-"} when first >= 0 ->
+      {first, "-"} when first >= 0 and first < file_size ->
         {first, file_size - 1}
 
-      {first, "-" <> rest} when first >= 0 ->
+      {first, "-" <> rest} when first >= 0 and first < file_size ->
         case Integer.parse(rest) do
           {last, ""} when last >= first -> {first, min(last, file_size - 1)}
           _ -> :error
         end
+
+      {first, "-" <> _} when first >= file_size ->
+        :unsatisfiable
 
       _ ->
         :error
@@ -310,6 +338,14 @@ defmodule Plug.Static do
     conn
     |> put_resp_header("content-range", "bytes #{range_start}-#{range_end}/#{file_size}")
     |> send_file(206, path, range_start, length)
+    |> halt()
+  end
+
+  defp send_unsatisfiable_range(conn, file_size, options) do
+    conn
+    |> maybe_add_vary(options)
+    |> put_resp_header("content-range", "bytes */#{file_size}")
+    |> send_resp(416, "")
     |> halt()
   end
 

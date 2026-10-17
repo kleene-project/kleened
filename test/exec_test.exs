@@ -1,5 +1,4 @@
 defmodule ExecTest do
-  require Logger
   use Kleened.Test.ConnCase
   alias Kleened.Core.{Container, Exec, Utils, Network}
   alias Kleened.API.Schemas
@@ -7,9 +6,9 @@ defmodule ExecTest do
 
   @moduletag :capture_log
 
+  # Cleanup and the baseline check come from Kleened.Test.ConnCase; this only adds
+  # the network the exec tests attach their containers to.
   setup do
-    TestHelper.cleanup()
-
     {:ok, %Schemas.Network{name: "default"}} =
       Network.create(%Schemas.NetworkConfig{
         name: "default",
@@ -17,11 +16,6 @@ defmodule ExecTest do
         interface: "kleene1",
         type: "loopback"
       })
-
-    on_exit(fn ->
-      Logger.info("Cleaning up after test...")
-      TestHelper.cleanup()
-    end)
 
     :ok
   end
@@ -210,7 +204,11 @@ defmodule ExecTest do
     %{id: exec_id} = TestHelper.exec_create(%{container_id: "testcont"})
 
     assert {"succesfully started execution instance in detached mode", ""} ==
-             TestHelper.exec_valid_start(%{exec_id: exec_id, attach: false, start_container: true})
+             TestHelper.exec_valid_start(%{
+               exec_id: exec_id,
+               attach: false,
+               start_container: true
+             })
 
     # seems like '/usr/sbin/jail' returns before the kernel reports it as running?
     :timer.sleep(500)

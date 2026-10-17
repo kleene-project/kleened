@@ -32,35 +32,36 @@ defmodule EarmarkParser.Options do
             timeout: nil
 
   @type t :: %__MODULE__{
-            all: boolean(),
-            gfm: boolean(),
-            gfm_tables: boolean(),
-            breaks: boolean(),
-            footnotes: boolean(),
-            footnote_offset:  non_neg_integer(),
-            wikilinks: boolean(),
-            parse_inline: boolean(),
+          renderer: module(),
+          all: boolean(),
+          gfm: boolean(),
+          gfm_tables: boolean(),
+          breaks: boolean(),
+          footnotes: boolean(),
+          footnote_offset: non_neg_integer(),
+          wikilinks: boolean(),
+          parse_inline: boolean(),
 
-            # allow for annotations
-            annotations: nil | binary(),
-            # additional prefies for class of code blocks
-            code_class_prefix: nil | binary(),
+          # allow for annotations
+          annotations: nil | String.t() | Regex.t(),
+          # additional prefies for class of code blocks
+          code_class_prefix: nil | String.t(),
 
-            # Filename and initial line number of the markdown block passed in
-            # for meaningful error messages
-            file: binary(),
-            line: number(),
-            # [{:error|:warning, lnb, text},...]
-            messages: MapSet.t,
-            pure_links: boolean(),
-            sub_sup: boolean(),
+          # Filename and initial line number of the markdown block passed in
+          # for meaningful error messages
+          file: String.t(),
+          line: non_neg_integer(),
+          # [{:error|:warning, lnb, text},...]
+          messages: MapSet.t(EarmarkParser.Message.t()),
+          pure_links: boolean(),
+          sub_sup: boolean(),
+          math: boolean(),
 
-            # deprecated
-            pedantic: boolean(),
-            smartypants: boolean(),
-            timeout: nil | non_neg_integer()
-
-  }
+          # deprecated
+          pedantic: boolean(),
+          smartypants: boolean(),
+          timeout: nil | non_neg_integer()
+        }
 
   @doc false
   def add_deprecations(options, messages)
@@ -69,8 +70,7 @@ defmodule EarmarkParser.Options do
     add_deprecations(
       %{options | smartypants: false},
       [
-        {:deprecated, 0,
-         "The smartypants option has no effect anymore and will be removed in EarmarkParser 1.5"}
+        {:deprecated, 0, "The smartypants option has no effect anymore and will be removed in EarmarkParser 1.5"}
         | messages
       ]
     )
@@ -80,8 +80,7 @@ defmodule EarmarkParser.Options do
     add_deprecations(
       %{options | timeout: nil},
       [
-        {:deprecated, 0,
-         "The timeout option has no effect anymore and will be removed in EarmarkParser 1.5"}
+        {:deprecated, 0, "The timeout option has no effect anymore and will be removed in EarmarkParser 1.5"}
         | messages
       ]
     )
@@ -91,54 +90,61 @@ defmodule EarmarkParser.Options do
     add_deprecations(
       %{options | pedantic: false},
       [
-        {:deprecated, 0,
-         "The pedantic option has no effect anymore and will be removed in EarmarkParser 1.5"}
+        {:deprecated, 0, "The pedantic option has no effect anymore and will be removed in EarmarkParser 1.5"}
         | messages
       ]
     )
   end
 
-  def add_deprecations(_options, messages), do: messages
+  def add_deprecations(_options, messages) do
+    messages
+  end
 
   @doc ~S"""
   Use normalize before passing it into any API function
 
         iex(1)> options = normalize(annotations: "%%")
-        ...(1)> options.annotations
-        ~r{\A(.*)(%%.*)}
+        ...(1)> Regex.source(options.annotations)
+        "\\A(.*)(%%.*)"
   """
+  @spec normalize(t() | keyword()) :: t()
   def normalize(options)
 
   def normalize(%__MODULE__{} = options) do
-    case options.annotations do
-      %Regex{} ->
-        options
-
-      nil ->
-        options
-
-      _ ->
-        %{
-          options
-          | annotations: Regex.compile!("\\A(.*)(#{Regex.escape(options.annotations)}.*)")
-        }
-    end
+    options
+    |> _normalize_annotations()
     |> _set_all_if_applicable()
     |> _deprecate_old_messages()
   end
 
-  def normalize(options), do: struct(__MODULE__, options) |> normalize()
+  def normalize(options) do
+    struct(__MODULE__, options) |> normalize()
+  end
+
+  defp _normalize_annotations(%__MODULE__{annotations: %Regex{}} = options) do
+    options
+  end
+
+  defp _normalize_annotations(%__MODULE__{annotations: nil} = options) do
+    options
+  end
+
+  defp _normalize_annotations(%__MODULE__{annotations: annotations} = options) do
+    %{options | annotations: Regex.compile!("\\A(.*)(#{Regex.escape(annotations)}.*)")}
+  end
 
   defp _deprecate_old_messages(options)
-  defp _deprecate_old_messages(%__MODULE__{messages: %MapSet{}} = options), do: options
+
+  defp _deprecate_old_messages(%__MODULE__{messages: %MapSet{}} = options) do
+    options
+  end
 
   defp _deprecate_old_messages(%__MODULE__{} = options) do
     %{
       options
       | messages:
           MapSet.new([
-            {:deprecated, 0,
-             "messages is an internal option that is ignored and will be removed from the API in v1.5"}
+            {:deprecated, 0, "messages is an internal option that is ignored and will be removed from the API in v1.5"}
           ])
     }
   end
@@ -149,7 +155,9 @@ defmodule EarmarkParser.Options do
     %{options | breaks: true, footnotes: true, gfm_tables: true, sub_sup: true, wikilinks: true}
   end
 
-  defp _set_all_if_applicable(options), do: options
+  defp _set_all_if_applicable(options) do
+    options
+  end
 end
 
 # SPDX-License-Identifier: Apache-2.0

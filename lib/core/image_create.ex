@@ -4,10 +4,10 @@ defmodule Kleened.Core.ImageCreate do
   alias Schemas.ImageCreateConfig, as: Config
   require Logger
 
-  @type create_config() :: %Schemas.ImageCreateConfig{}
+  @type create_config() :: Schemas.ImageCreateConfig.t()
   @type freebsd_version() :: {String.t(), String.t(), String.t()}
 
-  @spec create(create_config()) :: {:ok, pid(), String.t()}
+  @spec create(create_config()) :: {:ok, String.t(), pid()}
   def create(config) do
     client = self()
     image_id = Utils.uuid()

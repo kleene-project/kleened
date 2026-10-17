@@ -14,7 +14,7 @@ defmodule Makeup.Lexers.ErlangLexer do
   # Step #1: tokenize the input (into a list of tokens)
   ###################################################################
 
-  whitespace = ascii_string([?\s, ?\f, ?\n, ?\t], min: 1) |> token(:whitespace)
+  whitespace = ascii_string([?\s, ?\f, ?\r, ?\n, ?\t], min: 1) |> token(:whitespace)
 
   # This is the combinator that ensures that the lexer will never reject a file
   # because of invalid input syntax
@@ -59,24 +59,29 @@ defmodule Makeup.Lexers.ErlangLexer do
     ])
 
   # Numbers
-  digits = ascii_string([?0..?9], min: 1)
+  #
+  # Erlang/OTP 27 added underscore separators in numeric literals
+  # (`1_000_000`, `16#FF_FF`, `0.1_5e1_0`). Lexer-tolerant: underscores are
+  # accepted anywhere inside the digit run; we don't validate position.
+  digits = ascii_string([?0..?9, ?_], min: 1)
 
   number_integer =
     optional(ascii_char([?+, ?-]))
-    |> concat(digits)
+    |> ascii_char([?0..?9])
+    |> optional(ascii_string([?0..?9, ?_], min: 1))
     |> token(:number_integer)
 
   number_integer_in_weird_base =
     optional(ascii_char([?+, ?-]))
     |> concat(numeric_base)
     |> string("#")
-    |> ascii_string([?0..?9, ?a..?z, ?A..?Z], min: 1)
+    |> ascii_string([?0..?9, ?a..?z, ?A..?Z, ?_], min: 1)
     |> token(:number_integer)
 
   # Floating point numbers
   float_scientific_notation_part =
     ascii_string([?e, ?E], 1)
-    |> optional(string("-"))
+    |> optional(ascii_char([?+, ?-]))
     |> concat(digits)
 
   number_float =
@@ -90,6 +95,16 @@ defmodule Makeup.Lexers.ErlangLexer do
   variable_name =
     ascii_string([?A..?Z, ?_], 1)
     |> optional(ascii_string([?a..?z, ?_, ?0..?9, ?A..?Z], min: 1))
+
+  # An underscore followed by at least one identifier character (`_5`,
+  # `_X`, `_unused`). Bare `_` stays as a punctuation token (the wildcard
+  # pattern), but `_<id>` is a variable in Erlang grammar and should
+  # render as `:name`. Without this rule the `_` is matched first by
+  # the `punctuation` rule and the rest of the identifier falls through.
+  underscore_identifier =
+    string("_")
+    |> ascii_string([?a..?z, ?_, ?0..?9, ?A..?Z], min: 1)
+    |> token(:name)
 
   simple_atom_name =
     ascii_string([?a..?z], 1)
@@ -141,6 +156,20 @@ defmodule Makeup.Lexers.ErlangLexer do
 
   macro_name = choice([variable_name, atom_name])
 
+  # Parameterised macro reference: `?FOO(arg1, arg2)`. Tokenised
+  # separately from the parameterless form so themes can render the two
+  # distinctly (matches `makeup_elixir`'s split between `@foo` and
+  # `@foo(...)`). The macro head emits as `:name_function`; the trailing
+  # `(` opens the standard punctuation group so paren matching still
+  # works.
+  macro_call =
+    string("?")
+    |> concat(macro_name)
+    |> token(:name_function)
+    |> concat(optional(whitespace))
+    |> concat(token("(", :punctuation))
+
+  # Parameterless macro: `?FOO`. Constants by convention.
   macro =
     string("?")
     |> concat(macro_name)
@@ -152,10 +181,23 @@ defmodule Makeup.Lexers.ErlangLexer do
     |> optional(string(".") |> concat(atom_name))
     |> token(:name_label)
 
+  # `$\xFF`, `$\x{1F600}`, `$\077`, `$\^A`, plus simple `$\n` / `$\t` / `$\\` /
+  # `$\"` / `$\'` etc. The structured escapes (octal, hex, ctrl) must be tried
+  # before the single-char fallback so multi-character sequences are consumed
+  # whole.
+  character_escape =
+    string("\\")
+    |> choice([
+      escape_hex,
+      escape_octal,
+      escape_ctrl,
+      utf8_char([])
+    ])
+
   character =
     string("$")
     |> choice([
-      string("\\") |> utf8_char([]),
+      character_escape,
       utf8_char(not: ?\\)
     ])
     |> token(:string_char)
@@ -166,18 +208,55 @@ defmodule Makeup.Lexers.ErlangLexer do
     |> ascii_char(to_charlist("~#+BPWXb-ginpswx"))
     |> token(:string_interpol)
 
-  escape_double_quote = string(~s/\\"/)
-  erlang_string = string_like(~s/"/, ~s/"/, [escape_double_quote, string_interpol], :string)
-
+  # Sub-token emitted inside string literals for escape sequences. Mirrors
+  # the `character_escape` shape so multi-character escapes (`\xFF`,
+  # `\x{1F600}`, `\077`, `\^A`) are consumed whole instead of getting
+  # cut at the first byte. Themes can render these distinctly.
   escaped_char =
     string("\\")
-    |> utf8_string([], 1)
+    |> choice([
+      escape_hex,
+      escape_octal,
+      escape_ctrl,
+      utf8_char([])
+    ])
     |> token(:string_escape)
+
+  erlang_string = string_like(~s/"/, ~s/"/, [escaped_char, string_interpol], :string)
+
+  # Multi-quoted strings (OTP 27+). The opening run of `"""` (or more) on
+  # its own line opens the string; a matching run on its own line closes
+  # it. Use a quadruple/quintuple opener when the body needs to contain
+  # `"""` literally. Each variant is a separate rule because NimbleParsec
+  # doesn't support dynamic delimiter lengths; longer-quote variants must
+  # be tried first so the triple-quote rule doesn't claim them prematurely.
+  quintuple_quoted_string =
+    lookahead_string(
+      string(~s/"""""\n/),
+      string(~s/\n"""""/),
+      [escaped_char, string_interpol]
+    )
+
+  quadruple_quoted_string =
+    lookahead_string(
+      string(~s/""""\n/),
+      string(~s/\n""""/),
+      [escaped_char, string_interpol]
+    )
 
   triple_quoted_string =
     lookahead_string(string(~s/"""\n/), string(~s/\n"""/), [escaped_char, string_interpol])
 
+  # Longer-quote variants must come first so the longest matching delimiter
+  # wins for sigils like `~"""""..."""""` (quintuple) or `~""""..."""" `
+  # (quadruple) — these are needed when the sigil body has to contain
+  # `"""` or `""""` literally, mirroring the rule for plain multi-quoted
+  # strings above.
   sigil_delimiters = [
+    {~s["""""\n], ~s[\n"""""]},
+    {"'''''\n", "\n'''''"},
+    {~s[""""\n], ~s[\n""""]},
+    {"''''\n", "\n''''"},
     {~s["""\n], ~s[\n"""]},
     {"'''\n", "\n'''"},
     {"\"", "\""},
@@ -212,18 +291,55 @@ defmodule Makeup.Lexers.ErlangLexer do
   # Combinators that highlight expressions surrounded by a pair of delimiters.
   punctuation =
     word_from_list(
-      [","] ++ ~w[\[ \] : _ @ \" . \#{ { } ( ) | ; => := << >> || -> \#],
+      [","] ++ ~w[\[ \] : _ @ \" . \#{ { } ( ) | ; => := << >> || -> \# &&],
       :punctuation
     )
 
   tuple = many_surrounded_by(parsec(:root_element), "{", "}")
 
   syntax_operators =
-    word_from_list(~W[+ - +? ++ = == -- * / < > /= =:= =/= =< >= ==? <- ! ? ?!], :operator)
+    word_from_list(
+      ~W[+ - +? ++ = == -- * / < > /= =:= =/= =< >= ==? <- <:- <= <:= ! ? ?! ?=],
+      :operator
+    )
+
+  # OTP 29 native records relax the record-name rule: per the spec
+  # (https://www.erlang.org/doc/system/data_types.html), "it is not necessary
+  # to quote atoms that look like variable names or keywords." So `#State{}`,
+  # `#div{}`, `#case{}` are all valid record references even though `State`
+  # is variable-shape and `div`/`case` are reserved words. Tuple-based records
+  # don't allow these forms, but the lexer can't tell the two record kinds
+  # apart from local context — so accept the union.
+  #
+  # The `record_name: true` meta marker tells postprocess to skip the
+  # keyword / builtin / word-operator conversion for this position. Without
+  # it, `#case{}` would tokenise as `[#, keyword case, {]` — visually
+  # confusing because `case` here names a record, not an expression keyword.
+  record_name =
+    choice([
+      token(atom_name, :string_symbol, %{record_name: true}),
+      token(variable_name, :string_symbol, %{record_name: true})
+    ])
+
+  # External native record construction / pattern / field access:
+  #     #Module:Name{F = V}
+  #     #Module:Name.field
+  # The `Module:Name` shape between `#` and `{` (or `.`) was added in OTP 29
+  # alongside native records. Local construction (`#Name{...}`) is identical
+  # in shape to a tuple-based record and is handled by the rule below.
+  native_record_external =
+    token(string("#"), :operator)
+    |> concat(token(atom_name, :name_class))
+    |> concat(token(":", :punctuation))
+    |> concat(record_name)
+    |> choice([
+      token("{", :punctuation),
+      token(".", :punctuation)
+    ])
 
   record =
     token(string("#"), :operator)
-    |> concat(atom)
+    |> concat(record_name)
     |> choice([
       token("{", :punctuation),
       token(".", :punctuation)
@@ -246,13 +362,26 @@ defmodule Makeup.Lexers.ErlangLexer do
     |> concat(token("/", :punctuation))
     |> concat(number_integer)
 
-  # Erlang prompt
+  # Erlang prompt. Anchored to a line boundary by requiring the leading
+  # whitespace to contain at least one `\n`. The original rule required
+  # the `\n` immediately before the prompt body, which broke when the
+  # generic `whitespace` rule had already consumed the trailing `\n` of
+  # a multi-character whitespace block (see makeup_elixir #28). Allowing
+  # any leading non-newline whitespace before the `\n` and any further
+  # whitespace after lets the rule match in those cases without
+  # false-positiving on `1 > 2` or `x. 1> a.` (neither contains a `\n`
+  # in the relevant position).
   erl_prompt =
-    string("\n")
-    |> optional(string("(") |> concat(atom_name) |> string(")"))
-    |> optional(digits)
-    |> string("> ")
-    |> token(:generic_prompt, %{selectable: false})
+    ascii_string([?\s, ?\f, ?\r, ?\t], min: 0)
+    |> string("\n")
+    |> optional(ascii_string([?\s, ?\f, ?\r, ?\n, ?\t], min: 1))
+    |> token(:whitespace)
+    |> concat(
+      optional(string("(") |> concat(atom_name) |> string(")"))
+      |> optional(digits)
+      |> string("> ")
+      |> token(:generic_prompt, %{selectable: false})
+    )
 
   # Error in shell
   erl_shell_error =
@@ -292,12 +421,21 @@ defmodule Makeup.Lexers.ErlangLexer do
         hashbang,
         whitespace,
         comment,
+        quintuple_quoted_string,
+        quadruple_quoted_string,
         triple_quoted_string,
         erlang_string
       ] ++
         all_sigils ++
         [
+          native_record_external,
           record,
+          underscore_identifier,
+          # Macros must be tried before `syntax_operators`, since the
+          # operator list contains `?` and `?=` and would otherwise eat the
+          # leading `?` of `?FOO` / `?FOO(X)`.
+          macro_call,
+          macro,
           punctuation,
           # `tuple` might be unnecessary
           tuple,
@@ -312,7 +450,6 @@ defmodule Makeup.Lexers.ErlangLexer do
           function_arity,
           function,
           atom,
-          macro,
           character,
           label,
           # If we can't parse any of the above, we highlight the next character as an error
@@ -346,36 +483,43 @@ defmodule Makeup.Lexers.ErlangLexer do
 
   @keywords ~W[after begin case catch cond end fun if let of query receive try when maybe else]
 
-  @builtins ~W[
-    abs append_element apply atom_to_list binary_to_list bitstring_to_list
-    binary_to_term bit_size bump_reductions byte_size cancel_timer
-    check_process_code delete_module demonitor disconnect_node display
-    element erase exit float float_to_list fun_info fun_to_list
-    function_exported garbage_collect get get_keys group_leader hash
-    hd integer_to_list iolist_to_binary iolist_size is_atom is_binary
-    is_bitstring is_boolean is_builtin is_float is_function is_integer
-    is_list is_number is_pid is_port is_process_alive is_record is_reference
-    is_tuple length link list_to_atom list_to_binary list_to_bitstring
-    list_to_existing_atom list_to_float list_to_integer list_to_pid
-    list_to_tuple load_module localtime_to_universaltime make_tuple
-    md5 md5_final md5_update memory module_loaded monitor monitor_node
-    node nodes open_port phash phash2 pid_to_list port_close port_command
-    port_connect port_control port_call port_info port_to_list
-    process_display process_flag process_info purge_module put read_timer
-    ref_to_list register resume_processround send send_after send_nosuspend
-    set_cookie setelement size spawn spawn_link spawn_monitor spawn_opt
-    split_binary start_timer statistics suspend_process system_flag
-    system_info system_monitor system_profile term_to_binary tl trace
-    trace_delivered trace_info trace_pattern trunc tuple_size tuple_to_list
-    universaltime_to_localtime unlink unregister whereis
-  ]
+  # Auto-imported BIFs, sourced at compile time from `erl_internal:bif/2` —
+  # the same predicate the Erlang compiler uses to decide what's auto-imported.
+  # Refreshed every time `makeup_erlang` is rebuilt, so the list stays in sync
+  # with the OTP version we compile against and never bit-rots.
+  @builtins :erlang.module_info(:exports)
+            |> Enum.filter(fn {name, arity} -> :erl_internal.bif(name, arity) end)
+            |> Enum.map(fn {name, _arity} -> Atom.to_string(name) end)
+            |> Enum.uniq()
+            |> Enum.sort()
 
   @word_operators ~W[and andalso band bnot bor bsl bsr bxor div not or orelse rem xor]
+
+  # Record names tagged by the `record_name` combinator should not be
+  # reclassified as keywords / builtins / word-operators even if their
+  # text happens to match. Strip the marker after acting on it so it
+  # doesn't leak into the rendered output.
+  defp postprocess_helper([{:string_symbol, %{record_name: true} = meta, value} | tokens]),
+    do: [{:string_symbol, Map.delete(meta, :record_name), value} | postprocess_helper(tokens)]
 
   defp postprocess_helper([{:string_symbol, meta, value} | tokens]) when value in @keywords,
     do: [{:keyword, meta, value} | postprocess_helper(tokens)]
 
+  # Keywords followed by `(` are first matched by the `function` rule and
+  # tagged `:name_function`. Recover them here. The most common case is
+  # `fun(X) -> ... end`; the rule also covers any other keyword that gets
+  # written next to `(` (e.g. `if(X)` in a teaching example of invalid
+  # syntax).
+  defp postprocess_helper([{:name_function, meta, value} | tokens]) when value in @keywords,
+    do: [{:keyword, meta, value} | postprocess_helper(tokens)]
+
   defp postprocess_helper([{:string_symbol, meta, value} | tokens]) when value in @builtins,
+    do: [{:name_builtin, meta, value} | postprocess_helper(tokens)]
+
+  # Same recovery for builtins: when a BIF is called as `length(L)` it is
+  # first matched by the `function` rule and tagged `:name_function`. Closes
+  # makeup_erlang #13.
+  defp postprocess_helper([{:name_function, meta, value} | tokens]) when value in @builtins,
     do: [{:name_builtin, meta, value} | postprocess_helper(tokens)]
 
   defp postprocess_helper([{:string_symbol, meta, value} | tokens]) when value in @word_operators,
@@ -407,6 +551,14 @@ defmodule Makeup.Lexers.ErlangLexer do
       ],
       close: [
         [{:punctuation, %{language: :erlang}, "]"}]
+      ]
+    ],
+    binary: [
+      open: [
+        [{:punctuation, %{language: :erlang}, "<<"}]
+      ],
+      close: [
+        [{:punctuation, %{language: :erlang}, ">>"}]
       ]
     ],
     tuple: [

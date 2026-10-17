@@ -41,15 +41,15 @@ mix dialyzer
   * `--no-check`                    - do not perform (quick) check to see if PLT needs to be updated.
   * `--ignore-exit-status`          - display warnings but do not halt the VM or return an exit status code.
   * `--list-unused-filters`         - list unused ignore filters useful for CI. do not use with `mix do`.
-  * `--plt` - only build the requir ed PLT(s) and exit.
+  * `--plt`                         - only build the required PLT(s) and exit.
   * `--format <name>`               - Specify the format for the warnings, can be specified multiple times to print warnings multiple times in different output formats. Defaults to `dialyxir`.
     * `--format short`              - format the warnings in a compact format, suitable for ignore file using Elixir term format.
     * `--format raw`                - format the warnings in format returned before Dialyzer formatting.
     * `--format dialyxir`           - format the warnings in a pretty printed format. (default)
     * `--format dialyzer`           - format the warnings in the original Dialyzer format, suitable for ignore file using simple string matches.
     * `--format github`             - format the warnings in the Github Actions message format.
-    * `--format ignore_file`        - format the warnings in {file, warning} format for Elixir Format ignore file.
-    * `--format ignore_file_strict` - format the warnings in {file, short_description} format for Elixir Format ignore file.
+    * `--format ignore_file`        - format warnings as `{file, warning_type}` entries for an Elixir term ignore file.
+    * `--format ignore_file_strict` - format warnings as `{file, warning_description}` entries for an Elixir term ignore file.
   * `--quiet`                       - suppress all informational messages.
   * `--quiet-with-result`           - suppress all informational messages except for the final result message.
 
@@ -174,7 +174,13 @@ Dialyxir supports formatting the errors in several different ways:
 
 ### Flags
 
-Dialyzer supports a number of warning flags used to enable or disable certain kinds of analysis features. Until version 0.4, `dialyxir` used by default the additional warning flags shown in the example below. However some of these create warnings that are often more confusing than helpful, particularly to new users of Dialyzer. As of 0.4, there are no longer any flags used by default. To get the old behavior, specify them in your Mix project file. For compatibility reasons you can use either the `-Wwarning` convention of the dialyzer CLI, or (preferred) the `WarnOpts` atoms supported by the [API](http://erlang.org/doc/man/dialyzer.html#gui-1).  e.g.
+Dialyzer supports a number of warning flags used to enable or disable certain kinds of analysis features.
+
+Until version 0.4, `dialyxir` used by default the additional warning flags shown in the example below. However some of these create warnings that are often more confusing than helpful, particularly to new users of Dialyzer.
+
+As of 0.4, there are no longer any flags used by default except for `:unknown` (See [Dialyxir Defaults](#dialyxir-defaults)).
+
+To get the old behavior, specify them in your Mix project file. For compatibility reasons you can use either the `-Wwarning` convention of the dialyzer CLI, or (preferred) the `WarnOpts` atoms supported by the [API](http://erlang.org/doc/man/dialyzer.html#gui-1). E.g.
 
 ```elixir
 def project do
@@ -307,9 +313,11 @@ applied to the *short-description* format of Dialyzer output (`mix dialyzer --fo
 
 _Note that `short_description` contains additional information that `warning_description` does not._
 
-Entries for existing warnings can be generated with one of the following:
+Entries for existing warnings can be generated with one of the following formatters:
 - `mix dialyzer --format ignore_file`
 - `mix dialyzer --format ignore_file_strict` (recommended)
+
+Both formatters emit lines that can be pasted into the list in `.dialyzer_ignore.exs`. The `ignore_file` formatter groups warnings by file and warning type, while `ignore_file_strict` includes the formatted warning description for more granular ignores.
 
 For example, if `mix dialyzer --format short` gives you a result like:
 ```

@@ -5,6 +5,13 @@ defmodule Kleened.Core.Config do
 
   @default_config_path "/usr/local/etc/kleened/config.yaml"
 
+  @typedoc "The configuration file, as loaded from YAML: string keys throughout."
+  @type config() :: %{optional(String.t()) => term()}
+
+  @typedoc "A cowboy listener as assembled by `bootstrap/0`."
+  @type listener() :: {:http | :https, keyword()}
+
+  @spec initialize_host(%{dry_run: boolean()}) :: :ok
   def initialize_host(options) do
     loader_conf = "/boot/loader.conf"
     rc_conf = "/etc/rc.conf"
@@ -27,6 +34,7 @@ defmodule Kleened.Core.Config do
     ensure_rctl()
   end
 
+  @spec bootstrap() :: [listener()]
   def bootstrap() do
     cfg = open_config_file()
     initialize_logging(cfg)
@@ -39,18 +47,22 @@ defmodule Kleened.Core.Config do
     add_api_listening_options(cfg, [])
   end
 
+  @spec start_link([]) :: Agent.on_start()
   def start_link([]) do
     Agent.start_link(&initialize/0, name: __MODULE__)
   end
 
+  @spec get(String.t(), term()) :: term()
   def get(key, default \\ nil) do
     Agent.get(__MODULE__, fn config -> Map.get(config, key, default) end)
   end
 
+  @spec put(String.t(), term()) :: :ok
   def put(key, value) do
     Agent.update(__MODULE__, fn config -> Map.put(config, key, value) end)
   end
 
+  @spec delete(String.t()) :: :ok
   def delete(key) do
     Agent.update(__MODULE__, fn config -> Map.delete(config, key) end)
   end
@@ -83,7 +95,16 @@ defmodule Kleened.Core.Config do
     end
 
     log_levels =
-      MapSet.new(["debug", "info", "notice", "warning", "error", "critical", "alert", "emergency"])
+      MapSet.new([
+        "debug",
+        "info",
+        "notice",
+        "warning",
+        "error",
+        "critical",
+        "alert",
+        "emergency"
+      ])
 
     if MapSet.member?(log_levels, config["log_level"]) do
       log_level = String.to_existing_atom(config["log_level"])
@@ -134,6 +155,7 @@ defmodule Kleened.Core.Config do
     end
   end
 
+  @spec rctl_loaded?() :: boolean()
   def rctl_loaded?() do
     detect_racct_cmd = "/bin/cat /boot/loader.conf | grep kern.racct.enable"
 
@@ -156,6 +178,7 @@ defmodule Kleened.Core.Config do
     end
   end
 
+  @spec kmod_load_or_error(String.t()) :: :ok | no_return()
   def kmod_load_or_error(module) do
     case System.cmd("/sbin/kldload", [module], stderr_to_stdout: true) do
       {_, 0} -> :ok
@@ -182,6 +205,7 @@ defmodule Kleened.Core.Config do
     end
   end
 
+  @spec error_if_not_defined(config(), String.t()) :: :ok | no_return()
   def error_if_not_defined(cfg, key) do
     case Map.get(cfg, key) do
       nil -> config_error("'#{key}' key not set in configuration file. Exiting.")
@@ -302,6 +326,7 @@ defmodule Kleened.Core.Config do
     config_error("could not parse value of 'api_listening_sockets'")
   end
 
+  @spec ip_options(String.t()) :: keyword() | no_return()
   def ip_options(ip) do
     ip_charlist = String.to_charlist(ip)
 
@@ -317,6 +342,7 @@ defmodule Kleened.Core.Config do
     end
   end
 
+  @spec tls_options(config()) :: keyword()
   def tls_options(config) do
     []
     |> parse_tls_file_option(config, :certfile)
@@ -326,6 +352,8 @@ defmodule Kleened.Core.Config do
     |> parse_tls_verify_option(config)
   end
 
+  @spec parse_tls_file_option(keyword(), config(), :certfile | :keyfile | :dhfile | :cacertfile) ::
+          keyword() | no_return()
   def parse_tls_file_option(options, config, name) do
     name_string =
       cond do
@@ -350,6 +378,7 @@ defmodule Kleened.Core.Config do
     tls_option
   end
 
+  @spec parse_tls_verify_option(keyword(), config()) :: keyword() | no_return()
   def parse_tls_verify_option(options, config) do
     case Map.get(config, "tlsverify") do
       nil ->
@@ -366,11 +395,13 @@ defmodule Kleened.Core.Config do
     end
   end
 
+  @spec config_error(String.t()) :: no_return()
   defp config_error(msg) do
     Logger.error("configuration error: #{msg}")
     raise RuntimeError, message: "failed to configure kleened"
   end
 
+  @spec init_error(String.t()) :: no_return()
   defp init_error(msg) do
     Logger.error("initialization error: #{msg}")
     raise RuntimeError, message: "failed to initialize kleened"

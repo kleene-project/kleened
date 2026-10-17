@@ -1,5 +1,5 @@
-%% Copyright (c) 2011-2024, Loïc Hoguin <essen@ninenines.eu>
-%% Copyright (c) 2011, Anthony Ramine <nox@dev-extend.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Anthony Ramine <nox@dev-extend.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -29,7 +29,9 @@
 -export([path_info/1]).
 -export([qs/1]).
 -export([parse_qs/1]).
+-export([parse_qs/2]).
 -export([match_qs/2]).
+-export([match_qs/3]).
 -export([uri/1]).
 -export([uri/2]).
 -export([binding/2]).
@@ -97,7 +99,10 @@
 -type read_body_opts() :: #{
 	length => non_neg_integer() | infinity,
 	period => non_neg_integer(),
-	timeout => timeout()
+	timeout => timeout(),
+
+	%% Only used in read_{and_match_}urlencoded_body.
+	max_keys => non_neg_integer()
 }.
 -export_type([read_body_opts/0]).
 
@@ -163,6 +168,10 @@
 }.
 -export_type([req/0]).
 
+-ifdef(TEST).
+-include_lib("stdlib/include/assert.hrl").
+-endif.
+
 %% Request.
 
 -spec method(req()) -> binary().
@@ -215,20 +224,38 @@ path_info(#{path_info := PathInfo}) ->
 qs(#{qs := Qs}) ->
 	Qs.
 
-%% @todo Might be useful to limit the number of keys.
--spec parse_qs(req()) -> [{binary(), binary() | true}].
-parse_qs(#{qs := Qs}) ->
+-spec parse_qs(req())
+	-> [{binary(), binary() | true}].
+
+parse_qs(Req) ->
+	parse_qs(Req, #{}).
+
+-spec parse_qs(req(), cow_qs:parse_opts())
+	-> [{binary(), binary() | true}].
+
+parse_qs(#{qs := Qs}, Opts) ->
 	try
-		cow_qs:parse_qs(Qs)
-	catch _:_:Stacktrace ->
-		erlang:raise(exit, {request_error, qs,
-			'Malformed query string; application/x-www-form-urlencoded expected.'
-		}, Stacktrace)
+		cow_qs:parse_qs(Qs, Opts)
+	catch
+		error:limit_reached:Stacktrace ->
+			erlang:raise(exit, {request_error, limit_reached,
+				'Limit reached while parsing query string.'
+			}, Stacktrace);
+		_:_:Stacktrace ->
+			erlang:raise(exit, {request_error, qs,
+				'Malformed query string; application/x-www-form-urlencoded expected.'
+			}, Stacktrace)
 	end.
 
 -spec match_qs(cowboy:fields(), req()) -> map().
+
 match_qs(Fields, Req) ->
-	case filter(Fields, kvlist_to_map(Fields, parse_qs(Req))) of
+	match_qs(Fields, Req, #{}).
+
+-spec match_qs(cowboy:fields(), req(), cow_qs:parse_opts()) -> map().
+
+match_qs(Fields, Req, Opts) ->
+	case filter(Fields, kvlist_to_map(Fields, parse_qs(Req, Opts))) of
 		{ok, Map} ->
 			Map;
 		{error, Errors} ->
@@ -352,9 +379,9 @@ uri2_test() ->
 	<<"http://localhost:8080/path?dummy=2785">> = iolist_to_binary(uri(Req, #{fragment => ""})),
 	<<"http://localhost:8080/path?dummy=2785">> = iolist_to_binary(uri(Req, #{fragment => [<<>>]})),
 	%% Port is integer() | undefined.
-	{'EXIT', _} = (catch iolist_to_binary(uri(Req, #{port => <<>>}))),
-	{'EXIT', _} = (catch iolist_to_binary(uri(Req, #{port => ""}))),
-	{'EXIT', _} = (catch iolist_to_binary(uri(Req, #{port => [<<>>]}))),
+	?assertError(badarg, iolist_to_binary(uri(Req, #{port => <<>>}))),
+	?assertError(badarg, iolist_to_binary(uri(Req, #{port => ""}))),
+	?assertError(badarg, iolist_to_binary(uri(Req, #{port => [<<>>]}))),
 	%% Update components.
 	<<"https://localhost:8080/path?dummy=2785">> = iolist_to_binary(uri(Req, #{scheme => "https"})),
 	<<"http://example.org:8080/path?dummy=2785">> = iolist_to_binary(uri(Req, #{host => "example.org"})),
@@ -445,6 +472,7 @@ parse_header_fun(<<"sec-websocket-protocol">>) -> fun cow_http_hd:parse_sec_webs
 parse_header_fun(<<"sec-websocket-version">>) -> fun cow_http_hd:parse_sec_websocket_version_req/1;
 parse_header_fun(<<"trailer">>) -> fun cow_http_hd:parse_trailer/1;
 parse_header_fun(<<"upgrade">>) -> fun cow_http_hd:parse_upgrade/1;
+parse_header_fun(<<"wt-available-protocols">>) -> fun cow_http_hd:parse_wt_available_protocols/1;
 parse_header_fun(<<"x-forwarded-for">>) -> fun cow_http_hd:parse_x_forwarded_for/1.
 
 parse_header(Name, Req, Default, ParseFun) ->
@@ -462,7 +490,7 @@ filter_cookies(Names0, Req=#{headers := Headers}) ->
 	case header(<<"cookie">>, Req) of
 		undefined -> Req;
 		Value0 ->
-			Cookies0 = binary:split(Value0, <<$;>>),
+			Cookies0 = binary:split(Value0, <<$;>>, [global]),
 			Cookies = lists:filter(fun(Cookie) ->
 				lists:member(cookie_name(Cookie), Names)
 			end, Cookies0),
@@ -553,7 +581,7 @@ read_urlencoded_body(Req0, Opts) ->
 	case read_body(Req0, Opts) of
 		{ok, Body, Req} ->
 			try
-				{ok, cow_qs:parse_qs(Body), Req}
+				{ok, cow_qs:parse_qs(Body, maps:with([max_keys], Opts)), Req}
 			catch _:_:Stacktrace ->
 				erlang:raise(exit, {request_error, urlencoded_body,
 					'Malformed body; application/x-www-form-urlencoded expected.'
@@ -611,11 +639,9 @@ read_part(Req, Opts) ->
 read_part(Buffer, Opts, Req=#{multipart := {Boundary, _}}) ->
 	try cow_multipart:parse_headers(Buffer, Boundary) of
 		more ->
-			{Data, Req2} = stream_multipart(Req, Opts, headers),
-			read_part(<< Buffer/binary, Data/binary >>, Opts, Req2);
+			read_part_more(Buffer, Opts, Req);
 		{more, Buffer2} ->
-			{Data, Req2} = stream_multipart(Req, Opts, headers),
-			read_part(<< Buffer2/binary, Data/binary >>, Opts, Req2);
+			read_part_more(Buffer2, Opts, Req);
 		{ok, Headers0, Rest} ->
 			Headers = maps:from_list(Headers0),
 			%% Reject multipart content containing duplicate headers.
@@ -629,6 +655,16 @@ read_part(Buffer, Opts, Req=#{multipart := {Boundary, _}}) ->
 			'Malformed body; multipart expected.'
 		}, Stacktrace)
 	end.
+
+%% We reject multipart header blocks that are twice the maximum
+%% size of the largest expected multipart header blocks.
+read_part_more(Buffer, _, _) when byte_size(Buffer) > 2048 ->
+	exit({request_error, {multipart, headers},
+		'Malformed body; multipart header block too large.'
+	});
+read_part_more(Buffer, Opts, Req0) ->
+	{Data, Req} = stream_multipart(Req0, Opts, headers),
+	read_part(<<Buffer/binary, Data/binary>>, Opts, Req).
 
 -spec read_part_body(Req)
 	-> {ok, binary(), Req} | {more, binary(), Req}
@@ -726,8 +762,10 @@ set_resp_header(Name, Value, Req=#{resp_headers := RespHeaders}) ->
 set_resp_header(Name,Value, Req) ->
 	Req#{resp_headers => #{Name => Value}}.
 
--spec set_resp_headers(cowboy:http_headers(), Req)
+-spec set_resp_headers(cowboy:http_headers() | [{binary(), iodata()}], Req)
 	-> Req when Req::req().
+set_resp_headers(Headers, Req) when is_list(Headers) ->
+	set_resp_headers_list(Headers, Req, #{});
 set_resp_headers(#{<<"set-cookie">> := _}, _) ->
 	exit({response_error, invalid_header,
 		'Response cookies must be set using cowboy_req:set_resp_cookie/3,4.'});
@@ -735,6 +773,19 @@ set_resp_headers(Headers, Req=#{resp_headers := RespHeaders}) ->
 	Req#{resp_headers => maps:merge(RespHeaders, Headers)};
 set_resp_headers(Headers, Req) ->
 	Req#{resp_headers => Headers}.
+
+set_resp_headers_list([], Req, Acc) ->
+	set_resp_headers(Acc, Req);
+set_resp_headers_list([{<<"set-cookie">>, _}|_], _, _) ->
+	exit({response_error, invalid_header,
+		'Response cookies must be set using cowboy_req:set_resp_cookie/3,4.'});
+set_resp_headers_list([{Name, Value}|Tail], Req, Acc) ->
+	case Acc of
+		#{Name := ValueAcc} ->
+			set_resp_headers_list(Tail, Req, Acc#{Name => [ValueAcc, <<", ">>, Value]});
+		_ ->
+			set_resp_headers_list(Tail, Req, Acc#{Name => Value})
+	end.
 
 -spec resp_header(binary(), req()) -> binary() | undefined.
 resp_header(Name, Req) ->

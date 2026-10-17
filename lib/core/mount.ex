@@ -4,10 +4,8 @@ defmodule Kleened.Core.Mount do
   require Config
   require Logger
 
-  @spec create(
-          %Schemas.Container{},
-          %Schemas.MountPointConfig{}
-        ) :: {:ok, %Schemas.MountPoint{}}
+  @spec create(Schemas.Container.t(), Schemas.MountPointConfig.t()) ::
+          {:ok, Schemas.MountPoint.t()} | {:error, String.t()}
   def create(container, %Schemas.MountPointConfig{type: "volume"} = config) do
     volume =
       case MetaData.get_volume(config.source) do
@@ -42,10 +40,6 @@ defmodule Kleened.Core.Mount do
     end
   end
 
-  @spec create(
-          %Schemas.Container{},
-          %Schemas.MountPointConfig{}
-        ) :: {:ok, %Schemas.MountPoint{}}
   def create(container, %Schemas.MountPointConfig{type: "nullfs"} = config) do
     mountpoint = ZFS.mountpoint(container.dataset)
     absolute_destination = Path.join(mountpoint, config.destination)
@@ -68,10 +62,7 @@ defmodule Kleened.Core.Mount do
     end
   end
 
-  @spec mount(
-          %Schemas.Container{},
-          %Schemas.MountPoint{}
-        ) :: :ok | {:error, String.t()}
+  @spec mount(Schemas.Container.t(), Schemas.MountPoint.t()) :: :ok | {:error, String.t()}
   def mount(container, %Schemas.MountPoint{type: "volume"} = mountpoint) do
     case MetaData.get_volume(mountpoint.source) do
       :not_found ->
@@ -90,7 +81,7 @@ defmodule Kleened.Core.Mount do
     create_nullfs_mount(container, mountpoint.source, mountpoint)
   end
 
-  @spec unmount(%Schemas.MountPoint{} | String.t()) :: {:error, String.t()} | :ok
+  @spec unmount(Schemas.MountPoint.t() | String.t()) :: :ok | {:error, String.t()}
   def unmount(%Schemas.MountPoint{container_id: container_id, destination: destination}) do
     %Schemas.Container{dataset: dataset} = MetaData.get_container(container_id)
     container_mountpoint = ZFS.mountpoint(dataset)
@@ -114,7 +105,7 @@ defmodule Kleened.Core.Mount do
     end
   end
 
-  @spec remove_mounts(%Schemas.Volume{} | %Schemas.Container{}) :: :ok
+  @spec remove_mounts(Schemas.Volume.t() | Schemas.Container.t()) :: :ok
   def remove_mounts(%Schemas.Volume{} = volume) do
     mounts = MetaData.remove_mounts(volume)
     Enum.map(mounts, fn mountpoint -> unmount(mountpoint) end)

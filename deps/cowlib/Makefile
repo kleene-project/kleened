@@ -2,16 +2,11 @@
 
 PROJECT = cowlib
 PROJECT_DESCRIPTION = Support library for manipulating Web protocols.
-PROJECT_VERSION = 2.13.0
+PROJECT_VERSION = 2.18.0
 
 # Options.
 
 #ERLC_OPTS += +bin_opt_info
-ifdef HIPE
-	ERLC_OPTS += -smp +native
-	TEST_ERLC_OPTS += -smp +native
-endif
-
 DIALYZER_OPTS = -Werror_handling -Wunmatched_returns
 
 # Dependencies.
@@ -34,10 +29,8 @@ dep_uritemplate-tests = git https://github.com/uri-templates/uritemplate-test ma
 dep_ci.erlang.mk = git https://github.com/ninenines/ci.erlang.mk master
 DEP_EARLY_PLUGINS = ci.erlang.mk
 
-AUTO_CI_OTP ?= OTP-21+
-AUTO_CI_HIPE ?= OTP-LATEST
-# AUTO_CI_ERLLVM ?= OTP-LATEST
-AUTO_CI_WINDOWS ?= OTP-21+
+AUTO_CI_OTP ?= OTP-LATEST-24+
+AUTO_CI_WINDOWS ?= OTP-LATEST-24+
 
 # Hex configuration.
 
@@ -45,7 +38,7 @@ define HEX_TARBALL_EXTRA_METADATA
 #{
 	licenses => [<<"ISC">>],
 	links => #{
-		<<"Function reference">> => <<"https://ninenines.eu/docs/en/cowlib/2.13/manual/">>,
+		<<"Function reference">> => <<"https://ninenines.eu/docs/en/cowlib/2.18/manual/">>,
 		<<"GitHub">> => <<"https://github.com/ninenines/cowlib">>,
 		<<"Sponsor">> => <<"https://github.com/sponsors/essen">>
 	}
@@ -113,6 +106,8 @@ prepare_tag:
 	$(verbose) grep -m1 PROJECT_VERSION Makefile
 	$(verbose) echo -n "APP:                 "
 	$(verbose) grep -m1 vsn ebin/$(PROJECT).app | sed 's/	//g'
+	$(verbose) echo
+	$(verbose) echo -n "LICENSE: " ; head -n1 LICENSE
 	$(verbose) echo
 	$(verbose) echo "Dependencies:"
 	$(verbose) grep ^DEPS Makefile || echo "DEPS ="

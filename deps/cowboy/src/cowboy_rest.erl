@@ -1,4 +1,4 @@
-%% Copyright (c) 2011-2024, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -130,7 +130,7 @@
 -optional_callbacks([languages_provided/2]).
 
 -callback last_modified(Req, State)
-	-> {calendar:datetime(), Req, State}
+	-> {calendar:datetime() | undefined, Req, State}
 	when Req::cowboy_req:req(), State::any().
 -optional_callbacks([last_modified/2]).
 
@@ -246,9 +246,6 @@
 	handler :: atom(),
 	handler_state :: any(),
 
-	%% Allowed methods. Only used for OPTIONS requests.
-	allowed_methods :: [binary()] | undefined,
-
 	%% Media type.
 	content_types_p = [] ::
 		[{binary() | {binary(), binary(), [{binary(), binary()}] | '*'},
@@ -307,17 +304,17 @@ known_methods(Req, State=#state{method=Method}) ->
 				Method =:= <<"POST">>; Method =:= <<"PUT">>;
 				Method =:= <<"PATCH">>; Method =:= <<"DELETE">>;
 				Method =:= <<"OPTIONS">> ->
-			next(Req, State, fun uri_too_long/2);
+			uri_too_long(Req, State);
 		no_call ->
-			next(Req, State, 501);
+			respond(Req, State, 501);
 		{stop, Req2, State2} ->
 			terminate(Req2, State2);
 		{Switch, Req2, State2} when element(1, Switch) =:= switch_handler ->
 			switch_handler(Switch, Req2, State2);
 		{List, Req2, State2} ->
 			case lists:member(Method, List) of
-				true -> next(Req2, State2, fun uri_too_long/2);
-				false -> next(Req2, State2, 501)
+				true -> uri_too_long(Req2, State2);
+				false -> respond(Req2, State2, 501)
 			end
 	end.
 
@@ -327,38 +324,25 @@ uri_too_long(Req, State) ->
 %% allowed_methods/2 should return a list of binary methods.
 allowed_methods(Req, State=#state{method=Method}) ->
 	case call(Req, State, allowed_methods) of
-		no_call when Method =:= <<"HEAD">>; Method =:= <<"GET">> ->
-			next(Req, State, fun malformed_request/2);
-		no_call when Method =:= <<"OPTIONS">> ->
-			next(Req, State#state{allowed_methods=
-				[<<"HEAD">>, <<"GET">>, <<"OPTIONS">>]},
-				fun malformed_request/2);
+		no_call when Method =:= <<"HEAD">>; Method =:= <<"GET">>; Method =:= <<"OPTIONS">> ->
+			Req2 = cowboy_req:set_resp_header(<<"allow">>, <<"HEAD, GET, OPTIONS">>, Req),
+			malformed_request(Req2, State);
 		no_call ->
-			method_not_allowed(Req, State,
-				[<<"HEAD">>, <<"GET">>, <<"OPTIONS">>]);
+			Req2 = cowboy_req:set_resp_header(<<"allow">>, <<"HEAD, GET, OPTIONS">>, Req),
+			respond(Req2, State, 405);
 		{stop, Req2, State2} ->
 			terminate(Req2, State2);
 		{Switch, Req2, State2} when element(1, Switch) =:= switch_handler ->
 			switch_handler(Switch, Req2, State2);
 		{List, Req2, State2} ->
+			Req3 = cowboy_req:set_resp_header(<<"allow">>, cow_http_hd:allow(List), Req2),
 			case lists:member(Method, List) of
-				true when Method =:= <<"OPTIONS">> ->
-					next(Req2, State2#state{allowed_methods=List},
-						fun malformed_request/2);
 				true ->
-					next(Req2, State2, fun malformed_request/2);
+					malformed_request(Req3, State2);
 				false ->
-					method_not_allowed(Req2, State2, List)
+					respond(Req3, State2, 405)
 			end
 	end.
-
-method_not_allowed(Req, State, []) ->
-	Req2 = cowboy_req:set_resp_header(<<"allow">>, <<>>, Req),
-	respond(Req2, State, 405);
-method_not_allowed(Req, State, Methods) ->
-	<< ", ", Allow/binary >> = << << ", ", M/binary >> || M <- Methods >>,
-	Req2 = cowboy_req:set_resp_header(<<"allow">>, Allow, Req),
-	respond(Req2, State, 405).
 
 malformed_request(Req, State) ->
 	expect(Req, State, malformed_request, false, fun is_authorized/2, 400).
@@ -413,16 +397,10 @@ valid_entity_length(Req, State) ->
 
 %% If you need to add additional headers to the response at this point,
 %% you should do it directly in the options/2 call using set_resp_headers.
-options(Req, State=#state{allowed_methods=Methods, method= <<"OPTIONS">>}) ->
+options(Req, State=#state{method= <<"OPTIONS">>}) ->
 	case call(Req, State, options) of
-		no_call when Methods =:= [] ->
-			Req2 = cowboy_req:set_resp_header(<<"allow">>, <<>>, Req),
-			respond(Req2, State, 200);
 		no_call ->
-			<< ", ", Allow/binary >>
-				= << << ", ", M/binary >> || M <- Methods >>,
-			Req2 = cowboy_req:set_resp_header(<<"allow">>, Allow, Req),
-			respond(Req2, State, 200);
+			respond(Req, State, 200);
 		{stop, Req2, State2} ->
 			terminate(Req2, State2);
 		{Switch, Req2, State2} when element(1, Switch) =:= switch_handler ->
@@ -471,7 +449,7 @@ content_types_provided(Req, State) ->
 		{[], Req2, State2} ->
 			not_acceptable(Req2, State2);
 		{CTP, Req2, State2} ->
-			CTP2 = [normalize_content_types(P) || P <- CTP],
+			CTP2 = [normalize_content_types(P, provide) || P <- CTP],
 			State3 = State2#state{content_types_p=CTP2},
 			try cowboy_req:parse_header(<<"accept">>, Req2) of
 				undefined ->
@@ -491,10 +469,14 @@ content_types_provided(Req, State) ->
 			end
 	end.
 
-normalize_content_types({ContentType, Callback})
+normalize_content_types({ContentType, Callback}, _)
 		when is_binary(ContentType) ->
 	{cow_http_hd:parse_content_type(ContentType), Callback};
-normalize_content_types(Normalized) ->
+normalize_content_types(Normalized = {{Type, SubType, _}, _}, _)
+		when is_binary(Type), is_binary(SubType) ->
+	Normalized;
+%% Wildcard for content_types_accepted.
+normalize_content_types(Normalized = {'*', _}, accept) ->
 	Normalized.
 
 prioritize_accept(Accept) ->
@@ -1059,7 +1041,7 @@ accept_resource(Req, State) ->
 		{Switch, Req2, State2} when element(1, Switch) =:= switch_handler ->
 			switch_handler(Switch, Req2, State2);
 		{CTA, Req2, State2} ->
-			CTA2 = [normalize_content_types(P) || P <- CTA],
+			CTA2 = [normalize_content_types(P, accept) || P <- CTA],
 			try cowboy_req:parse_header(<<"content-type">>, Req2) of
 				%% We do not match against the boundary parameter for multipart.
 				{Type = <<"multipart">>, SubType, Params} ->
@@ -1099,9 +1081,9 @@ process_content_type(Req, State=#state{method=Method, exists=Exists}, Fun) ->
 		{Switch, Req2, State2} when element(1, Switch) =:= switch_handler ->
 			switch_handler(Switch, Req2, State2);
 		{true, Req2, State2} when Exists ->
-			next(Req2, State2, fun has_resp_body/2);
+			has_resp_body(Req2, State2);
 		{true, Req2, State2} ->
-			next(Req2, State2, fun maybe_created/2);
+			maybe_created(Req2, State2);
 		{false, Req2, State2} ->
 			respond(Req2, State2, 400);
 		{{created, ResURL}, Req2, State2} when Method =:= <<"POST">> ->
@@ -1549,6 +1531,11 @@ last_modified(Req, State=#state{last_modified=undefined}) ->
 	case unsafe_call(Req, State, last_modified) of
 		no_call ->
 			{undefined, Req, State#state{last_modified=no_call}};
+		%% We allow the callback to return 'undefined',
+		%% in which case the generated header would be missing
+		%% as if the callback was not called.
+		{undefined, Req2, State2} ->
+			{undefined, Req2, State2#state{last_modified=no_call}};
 		{LastModified, Req2, State2} ->
 			{LastModified, Req2, State2#state{last_modified=LastModified}}
 	end;
@@ -1640,5 +1627,6 @@ error_terminate(Req, #state{handler=Handler, handler_state=HandlerState}, Class,
 	erlang:raise(Class, Reason, Stacktrace).
 
 terminate(Req, #state{handler=Handler, handler_state=HandlerState}) ->
+	%% @todo I don't think the result is used anywhere?
 	Result = cowboy_handler:terminate(normal, Req, HandlerState, Handler),
 	{ok, Req, Result}.

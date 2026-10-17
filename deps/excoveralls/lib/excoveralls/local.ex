@@ -44,8 +44,10 @@ defmodule ExCoveralls.Local do
   """
   def print_summary(stats, options \\ []) do
     enabled = ExCoveralls.Settings.get_print_summary
-    if enabled do
-      coverage(stats, options) |> IO.puts
+    if enabled and not ExCoveralls.ConfServer.summary_printed?() do
+      coverage(stats, options) |> IO.puts()
+      warnings(stats) |> IO.write()
+      ExCoveralls.ConfServer.summary_printed()
     end
   end
 
@@ -91,6 +93,12 @@ defmodule ExCoveralls.Local do
     end
   end
 
+  def warnings(stats) do
+    for stat <- stats, {line_num, message} <- stat[:warnings], into: "" do
+      print_string("\e[33mwarning:\e[m ~s\n  ~s:~b\n", [message, stat[:name], line_num + 1])
+    end
+  end
+
   defp sort(count_info, options) do
     if options[:sort] do
       sort_order = parse_sort_options(options)
@@ -99,7 +107,7 @@ defmodule ExCoveralls.Local do
         Enum.map(count_info, fn original ->
           [stat, count] = original
           %{
-            "cov" => get_coverage(count),
+            "cov" => ExCoveralls.Stats.get_coverage(count.relevant, count.covered),
             "file" => stat[:name],
             "lines" => count.lines,
             "relevant" => count.relevant,
@@ -142,16 +150,16 @@ defmodule ExCoveralls.Local do
   end
 
   defp format_info([stat, count]) do
-    coverage = get_coverage(count)
+    coverage = ExCoveralls.Stats.get_coverage(count.relevant, count.covered)
     file_width = ExCoveralls.Settings.get_file_col_width
-    print_string("~5.1f% ~-#{file_width}s ~8w ~8w ~8w",
+    print_string("~5w% ~-#{file_width}s ~8w ~8w ~8w",
       [coverage, stat[:name], count.lines, count.relevant, count.relevant - count.covered])
   end
 
   defp format_total(info) do
     totals   = Enum.reduce(info, %Count{}, fn([_, count], acc) -> append(count, acc) end)
-    coverage = get_coverage(totals)
-    print_string("[TOTAL] ~5.1f%", [coverage])
+    coverage = ExCoveralls.Stats.get_coverage(totals.relevant, totals.covered)
+    print_string("[TOTAL] ~5w%", [coverage])
   end
 
   defp append(a, b) do
@@ -160,21 +168,6 @@ defmodule ExCoveralls.Local do
       relevant: a.relevant + b.relevant,
       covered: a.covered  + b.covered
     }
-  end
-
-  defp get_coverage(count) do
-    case count.relevant do
-      0 -> default_coverage_value()
-      _ -> (count.covered / count.relevant) * 100
-    end
-  end
-
-  defp default_coverage_value do
-    options = ExCoveralls.Settings.get_coverage_options
-    case Map.fetch(options, "treat_no_relevant_lines_as_covered") do
-      {:ok, false} -> 0.0
-      _            -> 100.0
-    end
   end
 
   @doc """

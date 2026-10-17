@@ -7,12 +7,15 @@ defmodule Kleened.Core.Network do
 
   alias __MODULE__, as: Network
 
-  @type t() :: %Schemas.Network{}
+  @type t() :: Schemas.Network.t()
   @type network_id() :: String.t()
-  @type network_config() :: %Schemas.NetworkConfig{}
-  @type endpoint() :: %Schemas.EndPoint{}
-  @type protocol() :: String.t()
+  @type network_config() :: Schemas.NetworkConfig.t()
+  @type endpoint() :: Schemas.EndPoint.t()
 
+  @typedoc "Defined by `Kleened.Core.FreeBSD`; re-exported here for convenience."
+  @type protocol() :: FreeBSD.protocol()
+
+  @spec start_link([]) :: GenServer.on_start()
   def start_link([]) do
     GenServer.start_link(__MODULE__, [], name: __MODULE__)
   end
@@ -24,7 +27,7 @@ defmodule Kleened.Core.Network do
     GenServer.call(__MODULE__, {:create, config})
   end
 
-  @spec connect(%Schemas.EndPointConfig{}) ::
+  @spec connect(Schemas.EndPointConfig.t()) ::
           {:ok, endpoint()} | {:error, String.t()}
   def connect(config) do
     GenServer.call(__MODULE__, {:connect, config}, 30_000)
@@ -55,16 +58,18 @@ defmodule Kleened.Core.Network do
     GenServer.call(__MODULE__, :prune, 30_000)
   end
 
-  @spec inspect_(String.t()) :: {:ok, %Schemas.NetworkInspect{}} | {:error, String.t()}
+  @spec inspect_(String.t()) :: {:ok, Schemas.NetworkInspect.t()} | {:error, String.t()}
   def inspect_(network_idname) do
     GenServer.call(__MODULE__, {:inspect, network_idname})
   end
 
+  @spec inspect_endpoint(Container.container_id(), network_id()) ::
+          {:ok, endpoint()} | {:error, String.t()}
   def inspect_endpoint(container_id, network_id) do
     GenServer.call(__MODULE__, {:inspect_endpoint, container_id, network_id})
   end
 
-  @spec validate_pubports([%Schemas.PublishedPort{}]) :: :ok | {:error, String.t()}
+  @spec validate_pubports([Schemas.PublishedPort.t()]) :: :ok | {:error, String.t()}
   def validate_pubports([pub_port | rest]) do
     with :ok <- verify_port_value(pub_port.host_port, :source),
          :ok <- verify_port_value(pub_port.container_port, :dest) do
@@ -262,6 +267,7 @@ defmodule Kleened.Core.Network do
   ##########################
   ### Internal functions ###
   ##########################
+  @spec validate_create_config(network_config()) :: :ok | {:error, String.t()}
   def validate_create_config(%Schemas.NetworkConfig{
         name: name,
         subnet: subnet,
@@ -293,6 +299,7 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec setup_network(t()) :: :ok | OS.cmd_result() | {:error, String.t()}
   def setup_network(network) do
     case network.type do
       "loopback" ->
@@ -325,6 +332,7 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec create_interface(String.t(), FreeBSD.interface()) :: OS.cmd_result()
   def create_interface(if_type, interface) do
     if interface_exists(interface) do
       destroy_interface(interface)
@@ -416,6 +424,7 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec _remove_metadata_and_pf(t()) :: :ok | {:error, String.t()}
   def _remove_metadata_and_pf(%Schemas.Network{id: id}) do
     container_ids = MetaData.connected_containers(id)
     Enum.map(container_ids, &disconnect_(&1, id))
@@ -481,6 +490,7 @@ defmodule Kleened.Core.Network do
     {:error, "unknown error"}
   end
 
+  @spec disconnect_(String.t(), String.t()) :: :ok | {:error, String.t()}
   def disconnect_(con_ident, net_ident) do
     with {:container, container = %Schemas.Container{}} <-
            {:container, MetaData.get_container(con_ident)},
@@ -517,7 +527,7 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  @spec allocate_ip_address(String.t(), %Schemas.Network{}, protocol()) ::
+  @spec allocate_ip_address(String.t(), t(), protocol()) ::
           {:ok, String.t()} | {:error, String.t()}
   defp allocate_ip_address("", _network, _protocol) do
     {:ok, ""}
@@ -564,7 +574,7 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  @spec add_container_ipnet_alias(String.t(), %Schemas.Container{}, %Schemas.Network{}, protocol) ::
+  @spec add_container_ipnet_alias(String.t(), Schemas.Container.t(), t(), protocol()) ::
           :ok | {:error, String.t()}
   defp add_container_ipnet_alias("", _container, _network, _protocol) do
     :ok
@@ -581,6 +591,8 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec decode_ip(String.t(), protocol()) ::
+          {:ok, :inet.ip_address()} | {:error, :einval}
   def decode_ip(ip, protocol) do
     ip_charlist = String.to_charlist(ip)
 
@@ -607,6 +619,7 @@ defmodule Kleened.Core.Network do
     Enum.map(lines, remove_if_member)
   end
 
+  @spec configure_pf() :: :ok | {:error, String.t()}
   def configure_pf() do
     case create_pf_config() do
       {:ok, pf_config} ->
@@ -621,53 +634,118 @@ defmodule Kleened.Core.Network do
     "kleenet_#{network_id}"
   end
 
+  # Impure shell: gather everything the ruleset depends on, persist the published
+  # ports now that their addresses are known, and hand the data to build_pf_config/1.
   defp create_pf_config() do
-    networks = MetaData.list_networks()
-    containers = MetaData.list_containers()
+    template_path = Config.get("pf_config_template_path")
 
+    case File.read(template_path) do
+      {:ok, template} ->
+        networks = MetaData.list_networks()
+
+        containers =
+          MetaData.list_containers() |> Enum.map(&resolve_container_published_ports/1)
+
+        Enum.each(containers, &MetaData.add_container/1)
+
+        {:ok,
+         build_pf_config(%{
+           networks: networks,
+           network_endpoints:
+             Map.new(networks, &{&1.id, MetaData.get_endpoints_from_network(&1.id)}),
+           containers: containers,
+           host_gateway: Config.get("host_gateway"),
+           host_gw: Config.get("host_gw"),
+           template: template
+         })}
+
+      {:error, msg} ->
+        Logger.error("could not read the pf.conf-template  at #{template_path}: #{msg}")
+        {:error, msg}
+    end
+  end
+
+  @doc """
+  Render the complete pf.conf body from explicit inputs.
+
+  Pure: touches no MetaData, no Config and no filesystem.
+  """
+  @spec build_pf_config(%{
+          networks: [Schemas.Network.t()],
+          network_endpoints: %{String.t() => [endpoint()]},
+          containers: [Schemas.Container.t()],
+          host_gateway: String.t() | nil,
+          host_gw: String.t() | nil,
+          template: String.t()
+        }) :: String.t()
+  def build_pf_config(%{
+        networks: networks,
+        network_endpoints: network_endpoints,
+        containers: containers,
+        host_gateway: host_gateway,
+        host_gw: host_gw,
+        template: template
+      }) do
     state = %{
-      :macros => host_gw_macro() ++ network_interfaces_macro(networks),
+      :macros => host_gw_macro(host_gateway) ++ network_interfaces_macro(networks),
       :translation => [],
       :filtering => []
     }
 
-    state = create_pf_network_config(networks, state)
+    state = create_pf_network_config(networks, host_gw, network_endpoints, state)
     state = create_pf_public_ports_config(containers, state)
-    render_pf_config(state)
+    render_pf_config(state, template)
   end
 
-  defp create_pf_public_ports_config(
-         [%{public_ports: public_ports} = container | rest],
-         state
-       ) do
+  @doc """
+  Fill in each of a container's published ports with the addresses of its endpoints.
+  """
+  @spec resolve_container_published_ports(Schemas.Container.t()) :: Schemas.Container.t()
+  def resolve_container_published_ports(%Schemas.Container{} = container) do
     endpoints = MetaData.get_endpoints_from_container(container.id)
-    ip4 = extract_ip(endpoints, "inet")
-    ip6 = extract_ip(endpoints, "inet6")
 
+    %Schemas.Container{
+      container
+      | public_ports:
+          resolve_published_ports(
+            container.public_ports,
+            extract_ip(endpoints, "inet"),
+            extract_ip(endpoints, "inet6")
+          )
+    }
+  end
+
+  @doc """
+  Pure counterpart of `resolve_container_published_ports/1`: apply the given
+  addresses to a list of published ports, skipping a protocol with no address.
+  """
+  @spec resolve_published_ports([Schemas.PublishedPort.t()], String.t(), String.t()) ::
+          [Schemas.PublishedPort.t()]
+  def resolve_published_ports(public_ports, ip4, ip6) do
     update_port = fn
-      pub_port, ip4, "inet" -> %Schemas.PublishedPort{pub_port | ip_address: ip4}
-      pub_port, ip6, "inet6" -> %Schemas.PublishedPort{pub_port | ip_address6: ip6}
+      pub_port, ip, "inet" -> %Schemas.PublishedPort{pub_port | ip_address: ip}
+      pub_port, ip, "inet6" -> %Schemas.PublishedPort{pub_port | ip_address6: ip}
     end
 
-    new_pub_ports =
-      case {ip4, ip6} do
-        {"", ""} ->
-          public_ports
+    case {ip4, ip6} do
+      {"", ""} ->
+        public_ports
 
-        {ip4, ""} ->
-          public_ports |> Enum.map(&update_port.(&1, ip4, "inet"))
+      {ip4, ""} ->
+        public_ports |> Enum.map(&update_port.(&1, ip4, "inet"))
 
-        {"", ip6} ->
-          public_ports |> Enum.map(&update_port.(&1, ip6, "inet6"))
+      {"", ip6} ->
+        public_ports |> Enum.map(&update_port.(&1, ip6, "inet6"))
 
-        {ip4, ip6} ->
-          public_ports
-          |> Enum.map(&update_port.(&1, ip4, "inet"))
-          |> Enum.map(&update_port.(&1, ip6, "inet6"))
-      end
+      {ip4, ip6} ->
+        public_ports
+        |> Enum.map(&update_port.(&1, ip4, "inet"))
+        |> Enum.map(&update_port.(&1, ip6, "inet6"))
+    end
+  end
 
-    MetaData.add_container(%Schemas.Container{container | public_ports: new_pub_ports})
-    new_state = create_pf_port_config(new_pub_ports, state)
+  defp create_pf_public_ports_config([container | rest], state) do
+    new_state = create_pf_port_config(container.public_ports, state)
     create_pf_public_ports_config(rest, new_state)
   end
 
@@ -765,6 +843,10 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @doc """
+  First non-empty address of the given family among `endpoints`, or `""`.
+  """
+  @spec extract_ip([endpoint()], protocol()) :: String.t()
   def extract_ip([endpoint | rest], ip_type) do
     case select_ip(endpoint, ip_type) do
       non_ip when is_nil(non_ip) or non_ip == "" ->
@@ -787,13 +869,14 @@ defmodule Kleened.Core.Network do
     endpoint.ip_address6
   end
 
-  defp create_pf_network_config([network | rest], state) do
-    updated_macros = state.macros ++ network_macros(network)
+  defp create_pf_network_config([network | rest], host_gw, network_endpoints, state) do
+    endpoints = Map.get(network_endpoints, network.id, [])
+    updated_macros = state.macros ++ network_macros(network, endpoints)
     updated_translation = state.translation ++ network_translation(network)
 
     updated_filtering =
       state.filtering ++
-        block_incoming_traffic_to_network(network) ++ network_filtering(network)
+        block_incoming_traffic_to_network(network) ++ network_filtering(network, host_gw)
 
     new_state = %{
       state
@@ -802,35 +885,26 @@ defmodule Kleened.Core.Network do
         filtering: updated_filtering
     }
 
-    create_pf_network_config(rest, new_state)
+    create_pf_network_config(rest, host_gw, network_endpoints, new_state)
   end
 
-  defp create_pf_network_config([], state) do
+  defp create_pf_network_config([], _host_gw, _network_endpoints, state) do
     state
   end
 
-  defp render_pf_config(%{
-         :macros => macros,
-         :translation => translation,
-         :filtering => filtering
-       }) do
-    template_path = Config.get("pf_config_template_path")
-
-    case File.read(template_path) do
-      {:ok, config_template} ->
-        config =
-          EEx.eval_string(config_template,
-            kleene_macros: Enum.join(macros, "\n"),
-            kleene_translation: Enum.join(translation, "\n"),
-            kleene_filtering: Enum.join(filtering, "\n")
-          )
-
-        {:ok, config}
-
-      {:error, msg} ->
-        Logger.error("could not read the pf.conf-template  at #{template_path}: #{msg}")
-        {:error, msg}
-    end
+  defp render_pf_config(
+         %{
+           :macros => macros,
+           :translation => translation,
+           :filtering => filtering
+         },
+         config_template
+       ) do
+    EEx.eval_string(config_template,
+      kleene_macros: Enum.join(macros, "\n"),
+      kleene_translation: Enum.join(translation, "\n"),
+      kleene_filtering: Enum.join(filtering, "\n")
+    )
   end
 
   defp block_incoming_traffic_to_network(network) do
@@ -843,17 +917,17 @@ defmodule Kleened.Core.Network do
     use_necessary_ip_protocols(network, [ipv4_rule], [ipv6_rule])
   end
 
-  defp network_filtering(%Schemas.Network{internal: false, icc: true} = network) do
+  defp network_filtering(%Schemas.Network{internal: false, icc: true} = network, _host_gw) do
     use_necessary_ip_protocols(network, [icc_allow(network, "inet")], [
       icc_allow(network, "inet6")
     ])
   end
 
-  defp network_filtering(%Schemas.Network{internal: false, icc: false} = network) do
+  defp network_filtering(%Schemas.Network{internal: false, icc: false} = network, _host_gw) do
     use_necessary_ip_protocols(network, [], [])
   end
 
-  defp network_filtering(%Schemas.Network{internal: true, icc: true, nat: ""} = network) do
+  defp network_filtering(%Schemas.Network{internal: true, icc: true, nat: ""} = network, host_gw) do
     {subnet, subnet6, _interface, _nat_interface, host_gateway_interface} =
       defined_network_macros(network.id)
 
@@ -864,7 +938,7 @@ defmodule Kleened.Core.Network do
     ip6_rules = [icc_allow(network, "inet6"), outgoing_deny(subnet6), ipv6_internal_nat_rule]
 
     ip6_rules =
-      case Config.get("host_gw") do
+      case host_gw do
         nil -> List.delete_at(ip6_rules, -1)
         _ -> ip6_rules
       end
@@ -872,7 +946,10 @@ defmodule Kleened.Core.Network do
     use_necessary_ip_protocols(network, ip4_rules, ip6_rules)
   end
 
-  defp network_filtering(%Schemas.Network{internal: true, icc: true, nat: _nat_if} = network) do
+  defp network_filtering(
+         %Schemas.Network{internal: true, icc: true, nat: _nat_if} = network,
+         host_gw
+       ) do
     {subnet, subnet6, _interface, nat_interface, host_gateway_interface} =
       defined_network_macros(network.id)
 
@@ -883,7 +960,7 @@ defmodule Kleened.Core.Network do
     ip6_rules = [icc_allow(network, "inet6"), outgoing_deny(subnet6), ipv6_internal_nat_rule]
 
     ip6_rules =
-      case Config.get("host_gw") do
+      case host_gw do
         nil -> List.delete_at(ip6_rules, -1)
         _ -> ip6_rules
       end
@@ -891,7 +968,10 @@ defmodule Kleened.Core.Network do
     use_necessary_ip_protocols(network, ip4_rules, ip6_rules)
   end
 
-  defp network_filtering(%Schemas.Network{internal: true, icc: false, nat: ""} = network) do
+  defp network_filtering(
+         %Schemas.Network{internal: true, icc: false, nat: ""} = network,
+         _host_gw
+       ) do
     {subnet, subnet6, _interface, _nat_interface, _host_gateway_interface} =
       defined_network_macros(network.id)
 
@@ -900,7 +980,10 @@ defmodule Kleened.Core.Network do
     ])
   end
 
-  defp network_filtering(%Schemas.Network{internal: true, icc: false, nat: _nat_if} = network) do
+  defp network_filtering(
+         %Schemas.Network{internal: true, icc: false, nat: _nat_if} = network,
+         host_gw
+       ) do
     {subnet, subnet6, _interface, nat_interface, host_gateway_interface} =
       defined_network_macros(network.id)
 
@@ -911,7 +994,7 @@ defmodule Kleened.Core.Network do
     ip6_rules = [outgoing_deny(subnet6), ipv6_internal_nat_rule]
 
     ip6_rules =
-      case Config.get("host_gw") do
+      case host_gw do
         nil -> List.delete_at(ip6_rules, -1)
         _ -> ip6_rules
       end
@@ -987,7 +1070,7 @@ defmodule Kleened.Core.Network do
     end
   end
 
-  defp network_macros(network) do
+  defp network_macros(network, endpoints) do
     prefix = prefix(network.id)
 
     # Only set macros for stuff that is defined on the network
@@ -1001,14 +1084,14 @@ defmodule Kleened.Core.Network do
       |> Enum.filter(fn {_, value} -> value != "" end)
       |> Enum.map(fn {type, value} -> "#{prefix}_#{type}=\"#{value}\"" end)
 
-    basic_macros ++ [all_network_interfaces(network)]
+    basic_macros ++ [all_network_interfaces(network, endpoints)]
   end
 
-  defp all_network_interfaces(network) do
+  defp all_network_interfaces(network, endpoints) do
     prefix = prefix(network.id)
 
     epairs =
-      MetaData.get_endpoints_from_network(network.id)
+      endpoints
       |> Enum.filter(&(&1.epair != nil and &1.epair != ""))
       |> Enum.map(&"#{&1.epair}a")
 
@@ -1017,29 +1100,34 @@ defmodule Kleened.Core.Network do
     "#{prefix}_all_interfaces=\"{#{all_interfaces}}\""
   end
 
-  defp network_interfaces_macro(networks) do
-    case length(networks) do
-      0 ->
-        []
-
-      _ ->
-        interfaces = Enum.map(networks, & &1.interface) |> Enum.join(",")
-
-        ["kleenet_network_interfaces=\"{lo0, #{interfaces}}\""]
-    end
+  # Always defined, even with no networks. The filter rules generated for a
+  # container's published ports reference this macro unconditionally, and pf
+  # rejects the *entire* ruleset if a referenced macro is undefined -- so a
+  # container publishing a port while no network exists used to produce a config
+  # that would not load at all.
+  defp network_interfaces_macro([]) do
+    ["kleenet_network_interfaces=\"{lo0}\""]
   end
 
-  defp host_gw_macro() do
-    case Config.get("host_gateway") do
+  defp network_interfaces_macro(networks) do
+    interfaces = Enum.map(networks, & &1.interface) |> Enum.join(",")
+
+    ["kleenet_network_interfaces=\"{lo0, #{interfaces}}\""]
+  end
+
+  defp host_gw_macro(host_gateway) do
+    case host_gateway do
       nil -> []
       host_gateway -> ["kleenet_host_gw_if=\"#{host_gateway}\""]
     end
   end
 
+  @spec enable_pf() :: OS.cmd_result()
   def enable_pf() do
     OS.cmd(~w"/sbin/pfctl -e", %{suppress_warning: true})
   end
 
+  @spec load_pf_config(String.t()) :: :ok | {:error, String.t()}
   def load_pf_config(config) do
     # For debugging purposes:
     # Logger.debug("PF Config:\n#{config}")
@@ -1083,12 +1171,14 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec destroy_interface(FreeBSD.interface()) :: OS.cmd_result() | nil
   def destroy_interface(kleene_if) do
     if interface_exists(kleene_if) do
       {"", _exitcode} = System.cmd("ifconfig", [kleene_if, "destroy"])
     end
   end
 
+  @spec interface_exists(FreeBSD.interface()) :: boolean()
   def interface_exists(kleene_if) do
     case FreeBSD.get_interface_addresses(kleene_if) do
       [] -> false
@@ -1124,11 +1214,13 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec add_jail_ip(Container.container_id(), String.t()) :: :ok | {:error, String.t()}
   def add_jail_ip(container_id, ip) do
     ips = get_jail_ips(container_id)
     jail_modify_ips(container_id, [ip | ips])
   end
 
+  @spec remove_jail_ips(Container.container_id(), String.t()) :: :ok | {:error, String.t()}
   def remove_jail_ips(container_id, ip) do
     ips = MapSet.new([ip])
     ips_old = MapSet.new(get_jail_ips(container_id))
@@ -1149,6 +1241,7 @@ defmodule Kleened.Core.Network do
     end
   end
 
+  @spec jail_modify_ips(String.t(), [String.t()]) :: :ok | {:error, String.t()}
   def jail_modify_ips(jail_name, ips) do
     ips = Enum.join(ips, ",")
 
@@ -1170,6 +1263,8 @@ defmodule Kleened.Core.Network do
     FreeBSD.ifconfig_subnet_alias(ip, mask, interface, protocol)
   end
 
+  @spec ifconfig_alias_remove(String.t(), FreeBSD.interface(), protocol()) ::
+          :ok | {:error, String.t()}
   def ifconfig_alias_remove("", _interface, _protocol) do
     :ok
   end
@@ -1207,11 +1302,13 @@ defmodule Kleened.Core.Network do
     generate_ip(first_ip, last_ip, ips_in_use, protocol)
   end
 
+  @spec first_ip_address(String.t(), protocol()) :: String.t()
   def first_ip_address(subnet, protocol) do
     %CIDR{:first => first_ip} = CIDR.parse(subnet)
     first_ip |> ip2int(protocol) |> (&(&1 + 1)).() |> int2ip(protocol)
   end
 
+  @spec ips_from_endpoints(network_id(), protocol()) :: [String.t()]
   def ips_from_endpoints(network_id, protocol) do
     configs = MetaData.get_endpoints_from_network(network_id)
 

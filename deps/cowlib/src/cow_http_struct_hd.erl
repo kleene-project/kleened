@@ -1,4 +1,4 @@
-%% Copyright (c) 2019-2023, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -56,6 +56,10 @@
 	(C =:= $u) or (C =:= $v) or (C =:= $w) or (C =:= $x) or (C =:= $y) or
 	(C =:= $z)
 ).
+
+-ifdef(TEST).
+-include_lib("stdlib/include/assert.hrl").
+-endif.
 
 %% Parsing.
 
@@ -266,24 +270,25 @@ parse_struct_hd_test_() ->
 				Raw = raw_to_binary(Raw0),
 				case HeaderType of
 					<<"dictionary">> when MustFail; CanFail ->
-						{'EXIT', _} = (catch parse_dictionary(Raw));
+						?assertError(_, parse_dictionary(Raw));
 					%% The test "binary.json: non-zero pad bits" does not fail
 					%% due to our reliance on Erlang/OTP's base64 module.
 					<<"item">> when CanFail ->
-						case (catch parse_item(Raw)) of
-							{'EXIT', _} -> ok;
+						try parse_item(Raw) of
 							Expected -> ok
+						catch error:_ ->
+							ok
 						end;
 					<<"item">> when MustFail ->
-						{'EXIT', _} = (catch parse_item(Raw));
+						?assertError(_, parse_item(Raw));
 					<<"list">> when MustFail; CanFail ->
-						{'EXIT', _} = (catch parse_list(Raw));
+						?assertError(_, parse_list(Raw));
 					<<"dictionary">> ->
-						Expected = (catch parse_dictionary(Raw));
+						Expected = parse_dictionary(Raw);
 					<<"item">> ->
-						Expected = (catch parse_item(Raw));
+						Expected = parse_item(Raw);
 					<<"list">> ->
-						Expected = (catch parse_list(Raw))
+						Expected = parse_list(Raw)
 				end
 			end}
 		|| Test=#{
@@ -409,8 +414,8 @@ inner_list({list, List, Params}) ->
 
 bare_item({string, String}) ->
 	[$", escape_string(String, <<>>), $"];
-%% @todo Must fail if Token has invalid characters.
 bare_item({token, Token}) ->
+	ok = validate_token(Token),
 	Token;
 bare_item({binary, Binary}) ->
 	[$:, base64:encode(Binary), $:];
@@ -478,6 +483,16 @@ bare_item(true) ->
 bare_item(false) ->
 	<<"?0">>.
 
+validate_token(<<C,R/bits>>)
+		when ?IS_ALPHA(C) or (C =:= $*) ->
+	validate_token1(R).
+
+validate_token1(<<C,R/bits>>)
+		when ?IS_TOKEN(C) or (C =:= $:) or (C =:= $/) ->
+	validate_token1(R);
+validate_token1(<<>>) ->
+	ok.
+
 exp_div(0) -> 1;
 exp_div(N) -> 10 * exp_div(N + 1).
 
@@ -519,4 +534,9 @@ struct_hd_identity_test_() ->
 			<<"expected">> := Expected0
 		} <- Tests]
 	end || File <- Files]).
+
+struct_hd_item_test() ->
+	<<"token">> = iolist_to_binary(item({item, {token, <<"token">>}, []})),
+	?assertError(_, item({item, {token, <<"tok\0en">>}, []})),
+	ok.
 -endif.

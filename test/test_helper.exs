@@ -17,7 +17,13 @@ ExUnit.configure(
   max_failures: 1
 )
 
-Kleened.Test.Utils.create_test_base_image()
+# Creating the base image needs the running application, and hence ZFS and root.
+# Keyed off whether the supervision tree is actually up rather than off a flag:
+# 'mix test --no-start' leaves it down, which is how the fast :unit tier runs on an
+# unprivileged, unprovisioned checkout.
+if Process.whereis(Kleened.Core.Config) != nil do
+  Kleened.Test.Utils.create_test_base_image()
+end
 
 defmodule TestHelper do
   import ExUnit.Assertions
@@ -28,64 +34,10 @@ defmodule TestHelper do
   @kleened_host "/var/run/kleened.sock"
   @opts Router.init([])
 
-  def compare_to_baseline_environment(%{
-        addresses: before_addresses,
-        mount_devfs: before_mount_devfs
-      }) do
-    %{
-      addresses: after_addresses,
-      mount_devfs: after_mount_devfs,
-      datasets: after_datasets
-    } = Kleened.Test.Utils.get_host_state()
-
-    %Schemas.Image{dataset: test_dataset} = MetaData.get_image("FreeBSD:testing")
-
-    before_datasets =
-      MapSet.new([
-        test_dataset,
-        "",
-        "zroot/kleene",
-        "zroot/kleene/container",
-        "zroot/kleene/image",
-        "zroot/kleene/volumes"
-      ])
-
-    assert before_addresses == after_addresses
-    assert before_mount_devfs == after_mount_devfs
-
-    assert before_datasets == after_datasets
-  end
-
-  def ignore_test_images(test_images, datasets) do
-    test_images = MapSet.new(test_images)
-    MapSet.difference(datasets, test_images)
-  end
-
-  def cleanup() do
-    runnning_containers = Container.list(all: false)
-
-    case length(runnning_containers) do
-      0 ->
-        :ok
-
-      _ ->
-        runnning_containers |> Enum.map(fn %{id: id} -> Container.stop(id) end)
-
-        :timer.sleep(500)
-    end
-
-    MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
-
-    MetaData.list_volumes() |> Enum.map(&Volume.remove(&1.name))
-
-    MetaData.list_networks() |> Enum.map(fn %{id: id} -> Network.remove(id) end)
-
-    MetaData.list_images()
-    |> Enum.filter(fn image ->
-      not (image.name == "FreeBSD" and image.tag == "testing")
-    end)
-    |> Enum.map(fn image -> Image.remove(image.id) end)
-  end
+  # 'cleanup/0' and 'compare_to_baseline_environment/1' moved to
+  # 'Kleened.Test.Utils', where 'Kleened.Test.ConnCase' can reach them. Tests do
+  # not call them directly any more -- ConnCase does it for every test.
+  defdelegate cleanup(), to: Kleened.Test.Utils
 
   def deployment_diff(config) do
     api_spec = Kleened.API.Spec.spec()
@@ -628,25 +580,6 @@ defmodule TestHelper do
     end
   end
 
-  def base_image_create(%{method: method} = config) do
-    case method do
-      "zfs-copy" ->
-        dataset = config.zfs_dataset
-        ZFS.create(dataset)
-
-        {_, 0} =
-          OS.cmd(["/usr/bin/tar", "-xf", "./test/data/minimal_testjail.txz", "-C", "/#{dataset}"])
-
-      _ ->
-        :ok
-    end
-
-    frames = TestHelper.image_create(config)
-    {{1000, closing_msg}, _rest} = List.pop_at(frames, -1)
-    assert %Msg{data: _, message: "image created", msg_type: "closing"} = closing_msg
-    closing_msg.data
-  end
-
   def image_list(api_spec) do
     response =
       conn(:get, "/images/list")
@@ -959,17 +892,6 @@ defmodule TestHelper do
   def now() do
     :timer.sleep(10)
     DateTime.to_iso8601(DateTime.utc_now())
-  end
-
-  def devfs_mounted(%Schemas.Container{dataset: dataset}) do
-    :timer.sleep(500)
-    mountpoint = ZFS.mountpoint(dataset)
-    devfs_path = Path.join(mountpoint, "dev")
-
-    case System.cmd("sh", ["-c", "mount | grep \"devfs on #{devfs_path}\""]) do
-      {"", 1} -> false
-      {_output, 0} -> true
-    end
   end
 
   def create_tmp_dockerfile(content, dockerfile, context \\ "./") do

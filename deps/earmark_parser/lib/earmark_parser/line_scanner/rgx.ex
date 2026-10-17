@@ -6,79 +6,92 @@ defmodule EarmarkParser.LineScanner.Rgx do
   """
 
   @compile {:inline,
-    block_quote_matches: 1,
-    bullet_list_item_matches: 1,
-    dash_ruler_matches: 1,
-    fence_matches: 1,
-    footnote_def_matches: 1,
-    heading_matches: 1,
-    html_close_tag_matches: 1,
-    html_comment_matches: 1,
-    html_comment_start_matches: 1,
-    html_one_line_matches: 1,
-    html_open_tag_matches: 1,
-    html_self_closing_matches: 1,
-    ial_matches: 1,
-    id_def_matches: 1,
-    indent_matches: 1,
-    numbered_list_item_matches: 1,
-    set_ext_underline_matches: 1,
-    star_ruler_matches: 1,
-    table_column_rgx: 0,
-    table_first_column_rgx: 0,
-    table_header_rgx: 0,
-    table_line_matches: 1,
-    underline_ruler_matches: 1,
-    void_tag_matches: 1,
-    void_tag_rgx: 0,
-  }
+            block_quote_matches: 1,
+            bullet_list_item_matches: 1,
+            dash_ruler_matches: 1,
+            fence_matches: 1,
+            footnote_def_matches: 1,
+            heading_matches: 1,
+            html_close_tag_matches: 1,
+            html_comment_matches: 1,
+            html_comment_start_matches: 1,
+            html_one_line_matches: 1,
+            html_open_tag_matches: 1,
+            html_self_closing_matches: 1,
+            ial_matches: 1,
+            id_def_matches: 1,
+            indent_matches: 1,
+            numbered_list_item_matches: 1,
+            set_ext_underline_matches: 1,
+            star_ruler_matches: 1,
+            table_column_rgx: 0,
+            table_first_column_rgx: 0,
+            table_header_rgx: 0,
+            table_line_matches: 1,
+            underline_ruler_matches: 1,
+            void_tag_matches: 1,
+            void_tag_rgx: 0}
 
-  @block_quote ~r/\A > \s? (.*)/x
-  def block_quote_matches(content), do: Regex.run(@block_quote, content)
+  def block_quote_matches(content) do
+    Regex.run(~r/\A > \s? (.*)/x, content)
+  end
 
-  @bullet_list_item ~r/\A ([-*+]) \s (\s*) (.*)/x
-  def bullet_list_item_matches(content), do: Regex.run(@bullet_list_item, content)
+  def bullet_list_item_matches(content) do
+    Regex.run(~r/\A ([-*+]) \s (\s*) (.*)/x, content)
+  end
 
-  @dash_ruler ~r/\A (?:-\s?){3,} \z/x
-  def dash_ruler_matches(content), do: Regex.run(@dash_ruler, content)
-  
-  @fence ~r/\A (\s*) (`{3,} | ~{3,}) \s* ([^`\s]*) \s* \z/ux
-  def fence_matches(content), do: Regex.run(@fence, content)
+  def dash_ruler_matches(content) do
+    Regex.run(~r/\A (?:-\s?){3,} \z/x, content)
+  end
 
-  @footnote_def ~r/\A \[\^([^\s\]]+)\] : \s+ (.*)/x
-  def footnote_def_matches(content), do: Regex.run(@footnote_def, content)
+  def fence_matches(content) do
+    Regex.run(~r/\A (\s*) (`{3,} | ~{3,}) \s* ([^`\s]*) \s* \z/ux, content)
+  end
 
-  @heading ~r/\A(\#{1,6})\s+(?|(.*?)\s*#*\s*\z|(.*))/u
+  def footnote_def_matches(content) do
+    Regex.run(~r/\A \[\^([^\s\]]+)\] : \s+ (.*)/x, content)
+  end
+
   # @heading ~r/\A
-  # (\#{1,6}) \s+ 
+  # (\#{1,6}) \s+
   #   (?|(.*?) \s* #* \s* \z
   #   |
   #   (.*))/ux
-  def heading_matches(content), do: Regex.run(@heading, content)
+  def heading_matches(content) do
+    Regex.run(~r/\A(\#{1,6})\s+(?|(.*?)\s*#*\s*\z|(.*))/u, content)
+  end
 
-  @html_close_tag ~r/\A < \/ ([-\w]+?) >/x
-  def html_close_tag_matches(content), do: Regex.run(@html_close_tag, content)
+  def html_close_tag_matches(content) do
+    Regex.run(~r/\A < \/ ([-\w]+?) >/x, content)
+  end
 
-  @html_comment_start ~r/\A <!-- .*? \z/x
-  def html_comment_start_matches(content), do: Regex.run(@html_comment_start, content)
-  
-  @html_comment ~r/\A <! (?: -- .*? -- \s* )+ > \z/x
-  def html_comment_matches(content), do: Regex.run(@html_comment, content)
-  
-  @html_one_line ~r/\A < ([-\w]+?) (?:\s.*)? > .* <\/\1>/x
-  def html_one_line_matches(content), do: Regex.run(@html_one_line, content)
+  def html_comment_start_matches(content) do
+    Regex.run(~r/\A <!-- .*? \z/x, content)
+  end
 
-  @html_open_tag ~r/\A < ([-\w]+?) (?:\s.*)? >/x
-  def html_open_tag_matches(content), do: Regex.run(@html_open_tag, content)
+  def html_comment_matches(content) do
+    Regex.run(~r/\A <! (?: -- .*? -- \s* )+ > \z/x, content)
+  end
 
-  @html_self_closing ~r/\A < ([-\w]+?) (?:\s.*)? \/> .*/x
-  def html_self_closing_matches(content), do: Regex.run(@html_self_closing, content)
+  def html_one_line_matches(content) do
+    Regex.run(~r/\A < ([-\w]+?) (?:\s.*)? > .* <\/\1>/x, content)
+  end
 
-  @set_ext_underline ~r/\A (=|-)+ \s* \z/x
-  def set_ext_underline_matches(content), do: Regex.run(@set_ext_underline, content)
+  def html_open_tag_matches(content) do
+    Regex.run(~r/\A < ([-\w]+?) (?:\s.*)? >/x, content)
+  end
 
-  @ial ~r/\A {: (\s*[^}]+) } \s* \z/x
-  def ial_matches(content), do: Regex.run(@ial, content)
+  def html_self_closing_matches(content) do
+    Regex.run(~r/\A < ([-\w]+?) (?:\s.*)? \/> .*/x, content)
+  end
+
+  def set_ext_underline_matches(content) do
+    Regex.run(~r/\A (=|-)+ \s* \z/x, content)
+  end
+
+  def ial_matches(content) do
+    Regex.run(~r/\A {: (\s*[^}]+) } \s* \z/x, content)
+  end
 
   @id_title_part ~S"""
         (?|
@@ -87,56 +100,77 @@ defmodule EarmarkParser.LineScanner.Rgx do
           | \( (.*) \)         # in parens
         )
   """
-  @id_def ~r'''
-     ^\[([^^].*?)\]:            # [someid]:
-     \s+
-     (?|
-         < (\S+) >          # url in <>s
-       |   (\S+)            # or without
-     )
-     (?:
-        \s+                   # optional title
-        #{@id_title_part}
-     )?
-     \s*
-  $
-  '''x
-  def id_def_matches(content), do: Regex.run(@id_def, content)
 
-  @indent ~r'''
-    \A ( (?: \s{4})+ ) (\s*)                       # 4 or more leading spaces
-    (.*)                                  # the rest
-  '''x
-  def indent_matches(content), do: Regex.run(@indent, content)
+  def id_def_matches(content) do
+    Regex.run(
+      ~r'''
+        ^\[([^^].*?)\]:            # [someid]:
+        \s+
+        (?|
+            < (\S+) >          # url in <>s
+          |   (\S+)            # or without
+        )
+        (?:
+            \s+                   # optional title
+            #{@id_title_part}
+        )?
+        \s*
+      $
+      '''x,
+      content
+    )
+  end
 
-  @numbered_list_item ~r/\A (\d{1,9} [.)] ) \s (\s*) (.*)/x
-  def numbered_list_item_matches(content), do: Regex.run(@numbered_list_item, content)
+  def indent_matches(content) do
+    Regex.run(
+      ~r'''
+        \A ( (?: \s{4})+ ) (\s*)                       # 4 or more leading spaces
+        (.*)                                  # the rest
+      '''x,
+      content
+    )
+  end
 
-  @star_ruler ~r/\A (?:\*\s?){3,} \z/x
-  def star_ruler_matches(content), do: Regex.run(@star_ruler, content)
+  def numbered_list_item_matches(content) do
+    Regex.run(~r/\A (\d{1,9} [.)] ) \s (\s*) (.*)/x, content)
+  end
 
-  @table_column ~r/\A (\s*) .* \| /x
-  def table_column_rgx, do: @table_column
+  def star_ruler_matches(content) do
+    Regex.run(~r/\A (?:\*\s?){3,} \z/x, content)
+  end
 
-  @table_first_column ~r/\A (\s*) .* \s \| \s /x
-  def table_first_column_rgx, do: @table_first_column
+  def table_column_rgx do
+    ~r/\A (\s*) .* \| /x
+  end
 
-  @table_header ~r/\[\[ .*? \]\]/x
-  def table_header_rgx, do: @table_header
+  def table_first_column_rgx do
+    ~r/\A (\s*) .* \s \| \s /x
+  end
 
-  @table_line ~r/\A \| (?: [^|]+ \|)+ \s* \z/x
-  def table_line_matches(content), do: Regex.run(@table_line, content)
+  def table_header_rgx do
+    ~r/\[\[ .*? \]\]/x
+  end
 
-  @underline_ruler ~r/\A (?:_\s?){3,} \z/x
-  def underline_ruler_matches(content), do: Regex.run(@underline_ruler, content)
+  def table_line_matches(content) do
+    Regex.run(~r/\A \| (?: [^|]+ \|)+ \s* \z/x, content)
+  end
 
-  @void_tags ~w{area br hr img wbr}
-  @void_tag ~r'''
-      ^<( #{Enum.join(@void_tags, "|")} )
-        .*?
-        >
-  '''x
-  def void_tag_rgx, do: @void_tag
-  def void_tag_matches(content), do: Regex.run(@void_tag, content)
+  def underline_ruler_matches(content) do
+    Regex.run(~r/\A (?:_\s?){3,} \z/x, content)
+  end
+
+  @void_tags ~w{area base br col embed hr img input link meta param source track wbr}
+  def void_tag_rgx do
+    ~r'''
+    ^<( #{Enum.join(@void_tags, "|")} )
+      .*?
+      >
+    '''x
+  end
+
+  def void_tag_matches(content) do
+    Regex.run(void_tag_rgx(), content)
+  end
 end
+
 # SPDX-License-Identifier: Apache-2.0

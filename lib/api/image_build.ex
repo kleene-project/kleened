@@ -141,7 +141,7 @@ defmodule Kleened.API.ImageBuild do
     Core.Network.remove("buildnet_" <> image_id)
   end
 
-  @spec cast_endpoints([%{}]) :: {:ok, [%Schemas.EndPointConfig{}]} | {:error, term()}
+  @spec cast_endpoints([map()]) :: {:ok, [Schemas.EndPointConfig.t()]} | {:error, term()}
   defp cast_endpoints(endpoints) do
     cast_endpoints(endpoints, [])
   end

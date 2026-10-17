@@ -1,7 +1,7 @@
 Nonterminals
 
 assignment
-atom
+atom atom_simple
 binary binary_items binary_part
 byte
 byte_list byte_items
@@ -18,7 +18,8 @@ rest
 tuple
 type
 value_items
-values value.
+values value
+base_value.
 
 Terminals
 
@@ -44,6 +45,16 @@ int
 
 Rootsymbol document.
 
+Right 100 '|'.
+Right 90 '='.
+Nonassoc 80 '::'.
+Nonassoc 70 ':'.
+Nonassoc 60 when.
+Left 50 atom_simple integer list.
+Right 40 ','.
+Right 30 '>' '#'.
+Nonassoc 20 '(' '['.
+
 document -> values : '$1'.
 
 values -> value : ['$1'].
@@ -51,20 +62,22 @@ values -> value values : ['$1'] ++ '$2'.
 
 value -> '\'' value '\'' : '$2'.
 value -> assignment : '$1'.
-value -> atom : {atom, '$1'}.
-value -> binary : '$1'.
-value -> byte_list : '$1'.
-value -> contract : '$1'.
-value -> function : '$1'.
-value -> integer : '$1'.
-value -> list : '$1'.
-value -> map : '$1'.
-value -> pattern : '$1'.
 value -> pipe_list : '$1'.
-value -> range : '$1'.
-value -> rest : '$1'.
-value -> tuple : '$1'.
-value -> type : '$1'.
+value -> base_value : '$1'.
+
+base_value -> atom : {atom, '$1'}.
+base_value -> binary : '$1'.
+base_value -> byte_list : '$1'.
+base_value -> contract : '$1'.
+base_value -> function : '$1'.
+base_value -> integer : '$1'.
+base_value -> list : '$1'.
+base_value -> map : '$1'.
+base_value -> range : '$1'.
+base_value -> rest : '$1'.
+base_value -> tuple : '$1'.
+base_value -> type : '$1'.
+base_value -> pattern : '$1'.
 
 binary -> '<' '<' '>' '>' : {binary, []}.
 binary -> '<' '<' binary_items '>' '>' : {binary, '$3'}.
@@ -112,12 +125,13 @@ range -> integer '..' integer : {range, '$1', '$3'}.
 
 rest -> '...' : {rest}.
 
-atom -> atom_full : unwrap('$1').
-atom -> atom_part : [unwrap('$1')].
-atom -> '_' : ['_'].
-atom -> atom integer : '$1' ++ ['$2'].
-atom -> atom atom : '$1' ++ '$2'.
+atom_simple -> atom_full : unwrap('$1').
+atom_simple -> atom_part : [unwrap('$1')].
+atom_simple -> '_' : ['_'].
 
+atom -> atom_simple : '$1'.
+atom -> atom atom_simple : '$1' ++ '$2'.
+atom -> atom integer : '$1' ++ ['$2'].
 type -> atom ':' type : {type, {atom, '$1'}, '$3'}.
 type -> atom '::' value : {named_type, {atom, '$1'}, '$3'}.
 type -> atom list : {type_list, '$1', '$2'}.

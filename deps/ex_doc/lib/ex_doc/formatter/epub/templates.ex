@@ -3,21 +3,16 @@ defmodule ExDoc.Formatter.EPUB.Templates do
 
   require EEx
 
-  import ExDoc.Utils,
-    only: [before_closing_body_tag: 2, before_closing_head_tag: 2, h: 1, text_to_id: 1]
+  import ExDoc.Utils, only: [h: 1, text_to_id: 1]
 
   alias ExDoc.Formatter.HTML.Templates, as: H
+  alias ExDoc.Formatter.EPUB.Assets
+
+  # The actual rendering happens here
+  defp render_doc(ast), do: ast && ExDoc.DocAST.to_html(ast)
 
   @doc """
-  Generate content from the module template for a given `node`
-  """
-  def module_page(config, module_node) do
-    summary = H.module_summary(module_node)
-    module_template(config, module_node, summary)
-  end
-
-  @doc """
-  Generated ID for static file
+  Generated ID for static file.
   """
   def static_file_to_id(static_file) do
     static_file |> Path.basename() |> text_to_id()
@@ -36,7 +31,7 @@ defmodule ExDoc.Formatter.EPUB.Templates do
     :def,
     :content_template,
     Path.expand("templates/content_template.eex", __DIR__),
-    [:config, :nodes, :uuid, :datetime, :static_files],
+    [:config, :modules, :tasks, :extras, :uuid, :datetime, :static_files],
     trim: true
   )
 
@@ -49,7 +44,7 @@ defmodule ExDoc.Formatter.EPUB.Templates do
     :def,
     :module_template,
     Path.expand("templates/module_template.eex", __DIR__),
-    [:config, :module, :summary],
+    [:config, :module],
     trim: true
   )
 
@@ -64,7 +59,7 @@ defmodule ExDoc.Formatter.EPUB.Templates do
     :def,
     :nav_template,
     Path.expand("templates/nav_template.eex", __DIR__),
-    [:config, :nodes],
+    [:config, :modules, :tasks, :extras],
     trim: true
   )
 
@@ -75,7 +70,7 @@ defmodule ExDoc.Formatter.EPUB.Templates do
     :def,
     :extra_template,
     Path.expand("templates/extra_template.eex", __DIR__),
-    [:config, :title, :title_content, :content],
+    [:config, :node],
     trim: true
   )
 
@@ -94,15 +89,7 @@ defmodule ExDoc.Formatter.EPUB.Templates do
     :defp,
     :head_template,
     Path.expand("templates/head_template.eex", __DIR__),
-    [:config, :page],
-    trim: true
-  )
-
-  EEx.function_from_file(
-    :defp,
-    :nav_item_template,
-    Path.expand("templates/nav_item_template.eex", __DIR__),
-    [:name, :nodes],
+    [:config, :title],
     trim: true
   )
 

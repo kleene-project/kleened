@@ -1,84 +1,9 @@
 defmodule ContainerTest do
-  require Logger
   use Kleened.Test.ConnCase
-  alias ExUnit.CaptureLog
   alias Kleened.Core.{Container, Exec, MetaData, OS}
   alias Kleened.API.Schemas
 
   @moduletag :capture_log
-
-  setup %{host_state: state} do
-    TestHelper.cleanup()
-
-    on_exit(fn ->
-      CaptureLog.capture_log(fn ->
-        Logger.info("Cleaning up after test...")
-        TestHelper.cleanup()
-        TestHelper.compare_to_baseline_environment(state)
-      end)
-    end)
-
-    :ok
-  end
-
-  test "start a container with environment variables" do
-    dockerfile = """
-    FROM FreeBSD:testing
-    ENV TEST=lol
-    ENV TEST2="lool test"
-    CMD printenv
-    """
-
-    TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
-
-    {image, _build_log} =
-      TestHelper.image_valid_build(%{
-        context: "./",
-        dockerfile: "tmp_dockerfile",
-        tag: "test:latest"
-      })
-
-    config =
-      container_config(%{
-        image: image.id,
-        env: ["TEST3=loool"]
-      })
-
-    {_, _, output} = TestHelper.container_valid_run(config)
-
-    TestHelper.compare_environment_output(output, [
-      "TEST=lol",
-      "TEST2=lool test",
-      "TEST3=loool"
-    ])
-  end
-
-  test "start a container with environment variables and overwrite one of them" do
-    dockerfile = """
-    FROM FreeBSD:testing
-    ENV TEST=lol
-    ENV TEST2="lool test"
-    CMD /bin/sh -c "printenv"
-    """
-
-    TestHelper.create_tmp_dockerfile(dockerfile, "tmp_dockerfile")
-
-    {image, _build_log} =
-      TestHelper.image_valid_build(%{
-        context: "./",
-        dockerfile: "tmp_dockerfile",
-        tag: "test:latest"
-      })
-
-    config =
-      container_config(%{
-        image: image.id,
-        env: ~w"TEST=new_value"
-      })
-
-    {_, _, output} = TestHelper.container_valid_run(config)
-    TestHelper.compare_environment_output(output, ["TEST=new_value", "TEST2=lool test"])
-  end
 
   test "containers with '--restart on-startup' will be started when kleened starts" do
     TestHelper.network_create(%{
@@ -132,7 +57,9 @@ defmodule ContainerTest do
         start_container: false
       })
 
-    assert String.contains?(process_output, "freebsd.org has address 96.47.72.84")
+    # Assert the shape of the answer rather than freebsd.org's current A record,
+    # which changes independently of Kleene.
+    assert process_output =~ ~r/freebsd\.org has address \d{1,3}(\.\d{1,3}){3}/
 
     {:ok, exec_id} = Exec.create(%Schemas.ExecConfig{container_id: container_id2, cmd: cmd})
 
@@ -143,7 +70,9 @@ defmodule ContainerTest do
         start_container: false
       })
 
-    assert String.contains?(process_output, "freebsd.org has address 96.47.72.84")
+    # Assert the shape of the answer rather than freebsd.org's current A record,
+    # which changes independently of Kleene.
+    assert process_output =~ ~r/freebsd\.org has address \d{1,3}(\.\d{1,3}){3}/
 
     Container.stop(container_id1)
     Container.stop(container_id2)

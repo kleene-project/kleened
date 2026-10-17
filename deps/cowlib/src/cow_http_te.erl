@@ -1,4 +1,4 @@
-%% Copyright (c) 2014-2023, Loïc Hoguin <essen@ninenines.eu>
+%% Copyright (c) Loïc Hoguin <essen@ninenines.eu>
 %%
 %% Permission to use, copy, modify, and/or distribute this software for any
 %% purpose with or without fee is hereby granted, provided that the above
@@ -38,6 +38,8 @@
 -include("cow_parse.hrl").
 
 -ifdef(TEST).
+-include_lib("stdlib/include/assert.hrl").
+
 dripfeed(<< C, Rest/bits >>, Acc, State, F) ->
 	case F(<< Acc/binary, C >>, State) of
 		more ->
@@ -60,7 +62,7 @@ dripfeed(<< C, Rest/bits >>, Acc, State, F) ->
 %% @doc Decode an identity stream.
 
 -spec stream_identity(Data, State)
-	-> {more, Data, Len, State} | {done, Data, Len, Data}
+	-> {more, Data, Len, State} | {done, Data, no_trailers, Data}
 	when Data::binary(), State::state(), Len::non_neg_integer().
 stream_identity(Data, {Streamed, Total}) ->
 	Streamed2 = Streamed + byte_size(Data),
@@ -70,7 +72,7 @@ stream_identity(Data, {Streamed, Total}) ->
 		true ->
 			Size = Total - Streamed,
 			<< Data2:Size/binary, Rest/bits >> = Data,
-			{done, Data2, Total, Rest}
+			{done, Data2, no_trailers, Rest}
 	end.
 
 -spec identity(Data) -> Data when Data::iodata().
@@ -79,11 +81,11 @@ identity(Data) ->
 
 -ifdef(TEST).
 stream_identity_test() ->
-	{done, <<>>, 0, <<>>}
+	{done, <<>>, no_trailers, <<>>}
 		= stream_identity(identity(<<>>), {0, 0}),
-	{done, <<"\r\n">>, 2, <<>>}
+	{done, <<"\r\n">>, no_trailers, <<>>}
 		= stream_identity(identity(<<"\r\n">>), {0, 2}),
-	{done, << 0:80000 >>, 10000, <<>>}
+	{done, << 0:80000 >>, no_trailers, <<>>}
 		= stream_identity(identity(<< 0:80000 >>), {0, 10000}),
 	ok.
 
@@ -92,7 +94,7 @@ stream_identity_parts_test() ->
 		= stream_identity(<< 0:8000 >>, {0, 2999}),
 	{more, << 0:8000 >>, 999, S2}
 		= stream_identity(<< 0:8000 >>, S1),
-	{done, << 0:7992 >>, 2999, <<>>}
+	{done, << 0:7992 >>, no_trailers, <<>>}
 		= stream_identity(<< 0:7992 >>, S2),
 	ok.
 
@@ -138,7 +140,7 @@ stream_chunked(Data, State) ->
 
 %% New chunk.
 stream_chunked(Data = << C, _/bits >>, {0, Streamed}, Acc) when C =/= $\r ->
-	case chunked_len(Data, Streamed, Acc, 0) of
+	case chunked_len(Data, Streamed, Acc, 0, 0) of
 		{next, Rest, State, Acc2} ->
 			stream_chunked(Rest, State, Acc2);
 		{more, State, Acc2} ->
@@ -174,54 +176,54 @@ stream_chunked(Data, {Rem, Streamed}, Acc) when Rem > 2 ->
 			{more, << Acc/binary, Data/binary >>, Rem2, {Rem2, Streamed + DataSize}}
 	end.
 
-chunked_len(<< $0, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16);
-chunked_len(<< $1, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 1);
-chunked_len(<< $2, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 2);
-chunked_len(<< $3, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 3);
-chunked_len(<< $4, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 4);
-chunked_len(<< $5, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 5);
-chunked_len(<< $6, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 6);
-chunked_len(<< $7, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 7);
-chunked_len(<< $8, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 8);
-chunked_len(<< $9, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 9);
-chunked_len(<< $A, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 10);
-chunked_len(<< $B, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 11);
-chunked_len(<< $C, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 12);
-chunked_len(<< $D, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 13);
-chunked_len(<< $E, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 14);
-chunked_len(<< $F, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 15);
-chunked_len(<< $a, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 10);
-chunked_len(<< $b, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 11);
-chunked_len(<< $c, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 12);
-chunked_len(<< $d, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 13);
-chunked_len(<< $e, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 14);
-chunked_len(<< $f, R/bits >>, S, A, Len) -> chunked_len(R, S, A, Len * 16 + 15);
+chunked_len(<< $0, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16, D + 1);
+chunked_len(<< $1, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 1, D + 1);
+chunked_len(<< $2, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 2, D + 1);
+chunked_len(<< $3, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 3, D + 1);
+chunked_len(<< $4, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 4, D + 1);
+chunked_len(<< $5, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 5, D + 1);
+chunked_len(<< $6, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 6, D + 1);
+chunked_len(<< $7, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 7, D + 1);
+chunked_len(<< $8, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 8, D + 1);
+chunked_len(<< $9, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 9, D + 1);
+chunked_len(<< $A, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 10, D + 1);
+chunked_len(<< $B, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 11, D + 1);
+chunked_len(<< $C, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 12, D + 1);
+chunked_len(<< $D, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 13, D + 1);
+chunked_len(<< $E, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 14, D + 1);
+chunked_len(<< $F, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 15, D + 1);
+chunked_len(<< $a, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 10, D + 1);
+chunked_len(<< $b, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 11, D + 1);
+chunked_len(<< $c, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 12, D + 1);
+chunked_len(<< $d, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 13, D + 1);
+chunked_len(<< $e, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 14, D + 1);
+chunked_len(<< $f, R/bits >>, S, A, Len, D) when D < 16 -> chunked_len(R, S, A, Len * 16 + 15, D + 1);
 %% Chunk extensions.
 %%
 %% Note that we currently skip the first character we encounter here,
 %% and not in the skip_chunk_ext function. If we latter implement
 %% chunk extensions (unlikely) we will need to change this clause too.
-chunked_len(<< C, R/bits >>, S, A, Len) when ?IS_WS(C); C =:= $; -> skip_chunk_ext(R, S, A, Len, 0);
+chunked_len(<< C, R/bits >>, S, A, Len, _) when ?IS_WS(C); C =:= $; -> skip_chunk_ext(R, S, A, Len, 0);
 %% Final chunk.
 %%
 %% When trailers are following we simply return them as the Rest.
 %% Then the user code can decide to call the stream_trailers function
 %% to parse them. The user can therefore ignore trailers as necessary
 %% if they do not wish to handle them.
-chunked_len(<< "\r\n\r\n", R/bits >>, _, <<>>, 0) -> {done, no_trailers, R};
-chunked_len(<< "\r\n\r\n", R/bits >>, _, A, 0) -> {done, A, no_trailers, R};
-chunked_len(<< "\r\n", R/bits >>, _, <<>>, 0) when byte_size(R) > 2 -> {done, trailers, R};
-chunked_len(<< "\r\n", R/bits >>, _, A, 0) when byte_size(R) > 2 -> {done, A, trailers, R};
-chunked_len(_, _, _, 0) -> more;
+chunked_len(<< "\r\n\r\n", R/bits >>, _, <<>>, 0, _) -> {done, no_trailers, R};
+chunked_len(<< "\r\n\r\n", R/bits >>, _, A, 0, _) -> {done, A, no_trailers, R};
+chunked_len(<< "\r\n", R/bits >>, _, <<>>, 0, _) when byte_size(R) > 2 -> {done, trailers, R};
+chunked_len(<< "\r\n", R/bits >>, _, A, 0, _) when byte_size(R) > 2 -> {done, A, trailers, R};
+chunked_len(_, _, _, 0, _) -> more;
 %% Normal chunk. Add 2 to Len for the trailing \r\n.
-chunked_len(<< "\r\n", R/bits >>, S, A, Len) -> {next, R, {Len + 2, S}, A};
-chunked_len(<<"\r">>, _, <<>>, _) -> more;
-chunked_len(<<"\r">>, S, A, _) -> {more, {0, S}, A};
-chunked_len(<<>>, _, <<>>, _) -> more;
-chunked_len(<<>>, S, A, _) -> {more, {0, S}, A}.
+chunked_len(<< "\r\n", R/bits >>, S, A, Len, _) -> {next, R, {Len + 2, S}, A};
+chunked_len(<<"\r">>, _, <<>>, _, _) -> more;
+chunked_len(<<"\r">>, S, A, _, _) -> {more, {0, S}, A};
+chunked_len(<<>>, _, <<>>, _, _) -> more;
+chunked_len(<<>>, S, A, _, _) -> {more, {0, S}, A}.
 
-skip_chunk_ext(R = << "\r", _/bits >>, S, A, Len, _) -> chunked_len(R, S, A, Len);
-skip_chunk_ext(R = <<>>, S, A, Len, _) -> chunked_len(R, S, A, Len);
+skip_chunk_ext(R = << "\r", _/bits >>, S, A, Len, _) -> chunked_len(R, S, A, Len, 0);
+skip_chunk_ext(R = <<>>, S, A, Len, _) -> chunked_len(R, S, A, Len, 0);
 %% We skip up to 128 characters of chunk extensions. The value
 %% is hardcoded: chunk extensions are very rarely seen in the
 %% wild and Cowboy doesn't do anything with them anyway.
@@ -305,6 +307,7 @@ stream_chunked_n_passes_test() ->
 	{more, <<"abc">>, 2, {2, 3}} = stream_chunked(<<"\n3\r\nabc">>, {1, 0}),
 	{more, <<"abc">>, {1, 3}} = stream_chunked(<<"3\r\nabc\r">>, {0, 0}),
 	{more, <<"abc">>, <<"123">>, {0, 3}} = stream_chunked(<<"3\r\nabc\r\n123">>, {0, 0}),
+	{more, <<>>, 18446744073709551617, _} = stream_chunked(<<"FFFFFFFFFFFFFFFF\r\n">>, {0, 0}),
 	ok.
 
 stream_chunked_dripfeed_test() ->
@@ -339,10 +342,11 @@ stream_chunked_dripfeed2_test() ->
 stream_chunked_error_test_() ->
 	Tests = [
 		{<<>>, undefined},
-		{<<"\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">>, {2, 0}}
+		{<<"\n\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa">>, {2, 0}},
+		{<<"10000000000000000\r\n">>, {0, 0}}
 	],
 	[{lists:flatten(io_lib:format("value ~p state ~p", [V, S])),
-		fun() -> {'EXIT', _} = (catch stream_chunked(V, S)) end}
+		fun() -> ?assertError(_, stream_chunked(V, S)) end}
 			|| {V, S} <- Tests].
 
 horse_stream_chunked() ->
