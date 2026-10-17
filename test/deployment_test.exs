@@ -2,6 +2,7 @@ defmodule DeploymentTest do
   require Logger
   use Kleened.Test.ConnCase
   alias ExUnit.CaptureLog
+  alias Kleened.API.Schemas
 
   @moduletag :capture_log
 
@@ -12,16 +13,16 @@ defmodule DeploymentTest do
       CaptureLog.capture_log(fn ->
         Logger.info("Cleaning up after test...")
         TestHelper.cleanup()
-        TestHelper.compare_to_baseline_environment(state)
+        Kleened.Test.Utils.compare_to_baseline_environment(state)
       end)
     end)
 
     :ok
   end
 
-  test "testing schema" do
-    {:ok, config} =
-      YamlElixir.read_from_string("""
+  test "deployment diff of a spec whose objects all exist" do
+    config =
+      YamlElixir.read_from_string!("""
       ---
       containers:
         - name: "postgres1"
@@ -41,12 +42,19 @@ defmodule DeploymentTest do
         - name: "database-storage"
       """)
 
-    case TestHelper.deployment_diff(config) do
-      {:ok, json_output} ->
-        Logger.warning("Deployment testing SUCCES: #{json_output}")
+    [_, _, _, closing_message] =
+      TestHelper.image_create(%{
+        tag: "FreeBSD:latest",
+        method: "zfs-clone",
+        zfs_dataset: "zroot/kleene_basejail"
+      })
 
-      {:error, message} ->
-        Logger.warning("Deployment testing FAILURE: #{message}")
-    end
+    assert {1000,
+            %Schemas.WebSocketMessage{
+              msg_type: "closing",
+              message: "image created"
+            }} = closing_message
+
+    assert {:ok, _json} = TestHelper.deployment_diff(config)
   end
 end

@@ -6,7 +6,7 @@ defmodule Kleened.Test.Utils do
 
   @creation_time "2023-09-14T21:21:57.990515Z"
   def create_test_base_image() do
-    creator_pid =
+    {:ok, _image_id, creator_pid} =
       ImageCreate.create(%Schemas.ImageCreateConfig{
         method: "zfs-clone",
         tag: "FreeBSD:testing",
