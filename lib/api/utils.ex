@@ -84,6 +84,44 @@ defmodule Kleened.API.Utils do
     """
   end
 
+  # Components registry needed to resolve $ref/module schemas in direct casts
+  # (outside the CastAndValidate plug, OpenApiSpex has no schemas context).
+  @spec schemas() :: map()
+  defp schemas, do: Kleened.API.Spec.spec().components.schemas
+
+  # Schemas may embed bare schema *modules* (e.g. ContainerConfig.mounts.items is
+  # `Kleened.API.Schemas.MountPointConfig`). The spec generator resolves these, but
+  # OpenApiSpex.Cast only understands %Schema{}/%Reference{} -- a bare module makes
+  # the cast crash. Resolve any embedded module into its %Schema{} before casting.
+  @spec resolve_schema_modules(term()) :: term()
+  def resolve_schema_modules(%OpenApiSpex.Schema{} = schema) do
+    %OpenApiSpex.Schema{
+      schema
+      | items: resolve_schema_modules(schema.items),
+        additionalProperties: resolve_schema_modules(schema.additionalProperties),
+        allOf: resolve_schema_modules(schema.allOf),
+        oneOf: resolve_schema_modules(schema.oneOf),
+        anyOf: resolve_schema_modules(schema.anyOf),
+        properties: resolve_schema_properties(schema.properties)
+    }
+  end
+
+  defp resolve_schema_properties(nil), do: nil
+
+  defp resolve_schema_properties(properties) do
+    Map.new(properties, fn {key, value} -> {key, resolve_schema_modules(value)} end)
+  end
+
+  def resolve_schema_modules(module) when is_atom(module) and not is_nil(module) do
+    module.schema()
+  end
+
+  def resolve_schema_modules(list) when is_list(list) do
+    Enum.map(list, &resolve_schema_modules/1)
+  end
+
+  def resolve_schema_modules(other), do: other
+
   @spec cast_deploy_config(%{}) :: {:ok, %Schemas.DeploymentConfig{}} | {:error, term()}
   def cast_deploy_config(deploy) do
     Logger.debug("Casting deploy-config: #{inspect(deploy)}")
@@ -94,7 +132,15 @@ defmodule Kleened.API.Utils do
              Schemas.DeploymentConfig.schema(),
              Kleened.API.Spec.spec()
            ),
-         Cast.cast(%Reference{"$ref": "#/components/schemas/DeploymentConfig"}, deploy),
+         _validation <-
+           (case Cast.cast(
+                   %Reference{"$ref": "#/components/schemas/DeploymentConfig"},
+                   deploy,
+                   schemas()
+                 ) do
+              {:ok, _} -> :ok
+              {:error, error} -> {:error, error}
+            end),
          {:ok, deploy_images} <- cast_deploy_images(deploy.images),
          {:ok, deploy_containers} <- cast_deploy_containers(deploy.containers) do
       {:ok,
@@ -106,9 +152,14 @@ defmodule Kleened.API.Utils do
   end
 
   def cast_image_build_config(config) do
-    with {:ok, config} <- Cast.cast(Schemas.ImageBuildConfig.schema(), config),
+    with {:ok, config} <-
+           Cast.cast(resolve_schema_modules(Schemas.ImageBuildConfig.schema()), config),
          {:ok, container_config} <-
-           Cast.cast(Schemas.ContainerConfig.schema(), config.container_config),
+           Cast.cast(
+             resolve_schema_modules(Schemas.ContainerConfig.schema()),
+             config.container_config,
+             schemas()
+           ),
          {:ok, networks} <- cast_endpoints(config.networks),
          {:ok, mounts} <- cast_mountpoints(container_config.mounts) do
       config = %Schemas.ImageBuildConfig{
@@ -137,9 +188,18 @@ defmodule Kleened.API.Utils do
   end
 
   def cast_deploy_containers([config | rest], containers) do
-    case Cast.cast(Schemas.ContainerConfig.schema(), config) do
-      {:ok, container_config} -> cast_deploy_containers(rest, [container_config | containers])
-      {:error, msg} -> {:error, msg}
+    case Cast.cast(resolve_schema_modules(Schemas.ContainerConfig.schema()), config, schemas()) do
+      {:ok, container_config} ->
+        # The deployment schema defines containers as
+        # allOf: [ContainerConfig, {endpoints: [...]}]; the endpoints key is
+        # lost when casting to the ContainerConfig struct, so it is carried
+        # over explicitly for the diff/create logic.
+        endpoints = Map.get(config, :endpoints, [])
+        container_config = %{container_config | endpoints: endpoints}
+        cast_deploy_containers(rest, [container_config | containers])
+
+      {:error, msg} ->
+        {:error, msg}
     end
   end
 
@@ -155,8 +215,19 @@ defmodule Kleened.API.Utils do
   end
 
   defp cast_deploy_images([image_config_raw | rest], casted) do
-    cast_build = Cast.cast(Schemas.ImageBuildConfig.schema(), image_config_raw)
-    cast_create = Cast.cast(Schemas.ImageCreateConfig.schema(), image_config_raw)
+    cast_build =
+      Cast.cast(
+        resolve_schema_modules(Schemas.ImageBuildConfig.schema()),
+        image_config_raw,
+        schemas()
+      )
+
+    cast_create =
+      Cast.cast(
+        resolve_schema_modules(Schemas.ImageCreateConfig.schema()),
+        image_config_raw,
+        schemas()
+      )
 
     case {cast_build, cast_create} do
       {{:ok, build_config}, _} -> cast_deploy_images(rest, [build_config | casted])
