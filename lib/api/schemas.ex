@@ -169,6 +169,17 @@ defmodule Kleened.API.Schemas do
           example: "host",
           enum: ["ipnet", "host", "vnet", "disabled"]
         },
+        endpoints: %Schema{
+          description: """
+          Network endpoints for the container. Only used in deployment
+          specifications, where the endpoints refer to networks defined in the
+          deployment's `networks` section.
+          """,
+          type: :array,
+          nullable: true,
+          default: [],
+          items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/EndPointConfig"}
+        },
         public_ports: %Schema{
           description:
             "Listening ports on network interfaces that redirect incoming traffic to the container.",

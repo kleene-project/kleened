@@ -154,6 +154,7 @@ defmodule Kleened.Core.Deployment do
 
   defp diff_object(:container, {name, container_spec, container}) do
     container = Map.from_struct(container)
+    container_spec = Map.from_struct(container_spec)
 
     {image_result, container_spec} = verify_container_image(container_spec)
     {endpoints_result, container_spec} = diff_endpoints(container_spec, container)
@@ -295,6 +296,10 @@ defmodule Kleened.Core.Deployment do
 
     result = diff_endpoints(endpoints_spec, container.id, ident2endpoints, [])
     {result, container_spec}
+  end
+
+  defp diff_endpoints(nil, _container_id, _ident2endpoints, _result) do
+    []
   end
 
   defp diff_endpoints([endpoint_spec | rest], container_id, ident2endpoints, result) do
