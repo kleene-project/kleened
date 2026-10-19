@@ -7,33 +7,35 @@ defmodule Kleened.Core.ImageCreate do
   @type create_config() :: Schemas.ImageCreateConfig.t()
   @type freebsd_version() :: {String.t(), String.t(), String.t()}
 
-  @spec start_image_creation(create_config()) :: pid()
-  def start_image_creation(%Config{method: "fetch-auto"} = config) do
-    receiver = self()
-    Process.spawn(fn -> create_image_using_fetch_automatically(receiver, config) end, [:link])
-  end
+  @spec create(create_config()) :: {:ok, String.t(), pid()}
+  def create(config) do
+    client = self()
+    image_id = Utils.uuid()
 
-  def start_image_creation(%Config{method: "fetch"} = config) do
-    receiver = self()
-    Process.spawn(fn -> create_image_using_fetch(receiver, config) end, [:link])
-  end
+    worker =
+      case config.method do
+        "zfs-clone" ->
+          fn -> create_using_zfs_clone(client, image_id, config) end
 
-  def start_image_creation(%Config{method: "zfs-copy"} = config) do
-    receiver = self()
-    Process.spawn(fn -> create_using_zfs_copy(receiver, config) end, [:link])
-  end
+        "zfs-copy" ->
+          fn -> create_using_zfs_copy(client, image_id, config) end
 
-  def start_image_creation(%Config{method: "zfs-clone"} = config) do
-    receiver = self()
-    Process.spawn(fn -> create_using_zfs_clone(receiver, config) end, [:link])
+        "fetch" ->
+          fn -> create_image_using_fetch(client, image_id, config) end
+
+        "fetch-auto" ->
+          fn -> create_image_using_fetch_auto(client, image_id, config) end
+      end
+
+    {:ok, image_id, Process.spawn(worker, [:link])}
   end
 
   defp create_using_zfs_copy(
          receiver,
+         image_id,
          %Config{zfs_dataset: dataset_parent, tag: tag} = config
        ) do
     # Initialize
-    image_id = Utils.uuid()
     validate_dataset(config.zfs_dataset, receiver)
     image_dataset = Const.image_dataset(image_id)
     image = create_image_metadata(image_id, image_dataset, tag)
@@ -49,16 +51,16 @@ defmodule Kleened.Core.ImageCreate do
     copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
     copy_localtime_if_enabled(receiver, image_mountpoint, config)
     freebsd_update(receiver, image_mountpoint, config)
-    create_snapshot(image_dataset <> Const.image_snapshot(), receiver)
+    create_snapshot(Const.image_snapshot(image_dataset), receiver)
     send_msg(receiver, {:ok, image})
     ZFS.destroy(snapshot_parent)
   end
 
   defp create_using_zfs_clone(
          receiver,
+         image_id,
          %Config{zfs_dataset: dataset_parent, tag: tag} = config
        ) do
-    image_id = Utils.uuid()
     validate_dataset(config.zfs_dataset, receiver)
     image_dataset = Const.image_dataset(image_id)
     image = create_image_metadata(image_id, image_dataset, tag)
@@ -74,16 +76,16 @@ defmodule Kleened.Core.ImageCreate do
     copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
     copy_localtime_if_enabled(receiver, image_mountpoint, config)
     freebsd_update(receiver, image_mountpoint, config)
-    create_snapshot(image_dataset <> Const.image_snapshot(), receiver)
+    create_snapshot(Const.image_snapshot(image_dataset), receiver)
     send_msg(receiver, {:ok, image})
   end
 
-  defp create_image_using_fetch(receiver, config) do
-    image = create_image_using_fetch_(receiver, config)
+  defp create_image_using_fetch(receiver, image_id, config) do
+    image = create_image_using_fetch_(receiver, image_id, config)
     send_msg(receiver, {:ok, image})
   end
 
-  defp create_image_using_fetch_automatically(receiver, config) do
+  defp create_image_using_fetch_auto(receiver, image_id, config) do
     {"FreeBSD", version, arch} = detect_freebsd_version()
 
     tag =
@@ -93,15 +95,14 @@ defmodule Kleened.Core.ImageCreate do
       end
 
     url = version2url(version, arch, "base.txz", receiver)
-    image = create_image_using_fetch_(receiver, %Config{config | url: url, tag: tag})
+    image = create_image_using_fetch_(receiver, image_id, %Config{config | url: url, tag: tag})
 
     msg = "Created image from the automatically detected version: FreeBSD-#{version} #{arch}.\n"
     send_msg(receiver, {:info, msg})
     send_msg(receiver, {:ok, image})
   end
 
-  defp create_image_using_fetch_(receiver, %Config{url: url, tag: tag} = config) do
-    image_id = Utils.uuid()
+  defp create_image_using_fetch_(receiver, image_id, %Config{url: url, tag: tag} = config) do
     image_dataset = Const.image_dataset(image_id)
     tar_archive = Path.join("/", Kleened.Core.Config.get("kleene_root")) |> Path.join("base.txz")
 
@@ -116,7 +117,7 @@ defmodule Kleened.Core.ImageCreate do
     copy_resolv_conf_if_dns_enabled(receiver, image_mountpoint, config)
     copy_localtime_if_enabled(receiver, image_mountpoint, config)
     freebsd_update(receiver, image_mountpoint, config)
-    create_snapshot(image_dataset <> Const.image_snapshot(), receiver)
+    create_snapshot(Const.image_snapshot(image_dataset), receiver)
 
     image = create_image_metadata(image_id, image_dataset, tag)
     File.rm(tar_archive)

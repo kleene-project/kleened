@@ -66,6 +66,16 @@ defmodule Kleened.Core.Utils do
   end
 
   @doc """
+  Normalize an image reference to `name:tag`, defaulting the tag to `latest`.
+  """
+  @spec normalize_nametag(String.t()) :: String.t()
+  def normalize_nametag(nametag) do
+    # Converts 'Name' to 'Name:latest'
+    {name, tag} = decode_tagname(nametag)
+    "#{name}:#{tag}"
+  end
+
+  @doc """
   Split a `name:tag` reference, defaulting the tag to `latest`.
   """
   @spec decode_tagname(String.t()) :: {String.t(), String.t()}

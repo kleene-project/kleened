@@ -1,7 +1,8 @@
 defmodule Kleened.API.Utils do
-  alias OpenApiSpex.Cast
+  alias OpenApiSpex.{Cast, Reference}
   alias Kleened.API.Schemas
   alias Kleened.API.Schemas.WebSocketMessage, as: Message
+  require Logger
   # Remember that control-frames, such as Close frames must not exceed 125 bytes
 
   def error_response(msg) do
@@ -51,9 +52,9 @@ defmodule Kleened.API.Utils do
     The specifics of the particular endpoint is described below the generic description of the
     protocol.
 
-    Once the websocket is established, Kleened expects a configuration-frame, which is given by
-    the specified request body schema. Thus, the contents of request body should be sent as the
-    initial websocket frame instead of being contained in initiating request.
+    Once the websocket is established Kleened expects a configuration-frame which is given by
+    the specified request body schema. The contents of the request body should be sent as an
+    initial websocket frame instead of being contained in the initiating request.
 
     When the config is received, Kleened sends a 'starting-message' back to the client, indicating
     that Kleened has begun processing the request.
@@ -83,22 +84,192 @@ defmodule Kleened.API.Utils do
     """
   end
 
-  @spec cast_mountpoints([map()]) :: {:ok, [Schemas.MountPointConfig.t()]} | {:error, term()}
-  def cast_mountpoints(mountpoints) do
-    cast_mountpoints(mountpoints, [])
+  # Components registry needed to resolve $ref/module schemas in direct casts
+  # (outside the CastAndValidate plug, OpenApiSpex has no schemas context).
+  @spec schemas() :: map()
+  defp schemas, do: Kleened.API.Spec.spec().components.schemas
+
+  # Schemas may embed bare schema *modules* (e.g. ContainerConfig.mounts.items is
+  # `Kleened.API.Schemas.MountPointConfig`). The spec generator resolves these, but
+  # OpenApiSpex.Cast only understands %Schema{}/%Reference{} -- a bare module makes
+  # the cast crash. Resolve any embedded module into its %Schema{} before casting.
+  @spec resolve_schema_modules(term()) :: term()
+  def resolve_schema_modules(%OpenApiSpex.Schema{} = schema) do
+    %OpenApiSpex.Schema{
+      schema
+      | items: resolve_schema_modules(schema.items),
+        additionalProperties: resolve_schema_modules(schema.additionalProperties),
+        allOf: resolve_schema_modules(schema.allOf),
+        oneOf: resolve_schema_modules(schema.oneOf),
+        anyOf: resolve_schema_modules(schema.anyOf),
+        properties: resolve_schema_properties(schema.properties)
+    }
   end
 
-  def cast_mountpoints([mountpoint | rest], mountpoints) do
-    case Cast.cast(Schemas.MountPointConfig.schema(), mountpoint) do
-      {:ok, mountpoint_casted} ->
-        cast_mountpoints(rest, [mountpoint_casted | mountpoints])
+  defp resolve_schema_properties(nil), do: nil
+
+  defp resolve_schema_properties(properties) do
+    Map.new(properties, fn {key, value} -> {key, resolve_schema_modules(value)} end)
+  end
+
+  def resolve_schema_modules(module) when is_atom(module) and not is_nil(module) do
+    module.schema()
+  end
+
+  def resolve_schema_modules(list) when is_list(list) do
+    Enum.map(list, &resolve_schema_modules/1)
+  end
+
+  def resolve_schema_modules(other), do: other
+
+  @spec cast_deploy_config(%{}) :: {:ok, %Schemas.DeploymentConfig{}} | {:error, term()}
+  def cast_deploy_config(deploy) do
+    Logger.debug("Casting deploy-config: #{inspect(deploy)}")
+
+    with {:ok, deploy} <-
+           OpenApiSpex.cast_value(
+             deploy,
+             Schemas.DeploymentConfig.schema(),
+             Kleened.API.Spec.spec()
+           ),
+         _validation <-
+           (case Cast.cast(
+                   %Reference{"$ref": "#/components/schemas/DeploymentConfig"},
+                   deploy,
+                   schemas()
+                 ) do
+              {:ok, _} -> :ok
+              {:error, error} -> {:error, error}
+            end),
+         {:ok, deploy_images} <- cast_deploy_images(deploy.images),
+         {:ok, deploy_containers} <- cast_deploy_containers(deploy.containers) do
+      {:ok,
+       %Schemas.DeploymentConfig{deploy | images: deploy_images, containers: deploy_containers}}
+    else
+      {:error, msg} ->
+        {:error, msg}
+    end
+  end
+
+  def cast_image_build_config(config) do
+    with {:ok, config} <-
+           Cast.cast(resolve_schema_modules(Schemas.ImageBuildConfig.schema()), config),
+         {:ok, container_config} <-
+           Cast.cast(
+             resolve_schema_modules(Schemas.ContainerConfig.schema()),
+             config.container_config,
+             schemas()
+           ),
+         {:ok, networks} <- cast_endpoints(config.networks),
+         {:ok, mounts} <- cast_mountpoints(container_config.mounts) do
+      config = %Schemas.ImageBuildConfig{
+        config
+        | container_config: %Schemas.ContainerConfig{container_config | mounts: mounts},
+          networks: networks
+      }
+
+      {:ok, config}
+    else
+      {:error, msg} ->
+        {:error, msg}
+    end
+  end
+
+  @spec cast_deploy_containers([%{}]) ::
+          {:ok, [%Schemas.ContainerConfig{}]} | {:error, term()}
+  def cast_deploy_containers(container_configs) do
+    Logger.debug("Casting deploy containers: #{inspect(container_configs)}")
+
+    cast_deploy_containers(container_configs, [])
+  end
+
+  def cast_deploy_containers([], containers) do
+    {:ok, containers}
+  end
+
+  def cast_deploy_containers([config | rest], containers) do
+    case Cast.cast(resolve_schema_modules(Schemas.ContainerConfig.schema()), config, schemas()) do
+      {:ok, container_config} ->
+        # The deployment schema defines containers as
+        # allOf: [ContainerConfig, {endpoints: [...]}]; the endpoints key is
+        # lost when casting to the ContainerConfig struct, so the endpoints
+        # are cast separately and carried over explicitly for the diff/create
+        # logic.
+        endpoints = Map.get(config, :endpoints, [])
+
+        with {:ok, endpoints} <- cast_endpoints(endpoints) do
+          container_config = %{container_config | endpoints: endpoints}
+          cast_deploy_containers(rest, [container_config | containers])
+        end
 
       {:error, msg} ->
         {:error, msg}
     end
   end
 
-  def cast_mountpoints([], mountpoints) do
+  @spec cast_deploy_images([%{}]) ::
+          {:ok, [%Schemas.ImageBuildConfig{} | %Schemas.ImageCreateConfig{}]} | {:error, term()}
+  def cast_deploy_images(images) do
+    Logger.debug("Casting deploy images: #{inspect(images)}")
+    cast_deploy_images(images, [])
+  end
+
+  defp cast_deploy_images([], casted) do
+    {:ok, casted}
+  end
+
+  defp cast_deploy_images([image_config_raw | rest], casted) do
+    cast_build =
+      Cast.cast(
+        resolve_schema_modules(Schemas.ImageBuildConfig.schema()),
+        image_config_raw,
+        schemas()
+      )
+
+    cast_create =
+      Cast.cast(
+        resolve_schema_modules(Schemas.ImageCreateConfig.schema()),
+        image_config_raw,
+        schemas()
+      )
+
+    case {cast_build, cast_create} do
+      {{:ok, build_config}, _} -> cast_deploy_images(rest, [build_config | casted])
+      {_, {:ok, create_config}} -> cast_deploy_images(rest, [create_config | casted])
+      # If both faild to be casted, use the errors from the ImageBuildConfig config
+      {{:error, msg}, _} -> {:error, msg}
+    end
+  end
+
+  @spec cast_endpoints([%{}]) :: {:ok, [%Schemas.EndPointConfig{}]} | {:error, term()}
+  def cast_endpoints(endpoints) do
+    cast_endpoints(endpoints, [])
+  end
+
+  defp cast_endpoints([endpoint_raw | rest], endpoints) do
+    case Cast.cast(Schemas.EndPointConfig.schema(), endpoint_raw) do
+      {:ok, endpoint} -> cast_endpoints(rest, [endpoint | endpoints])
+      {:error, msg} -> {:error, msg}
+    end
+  end
+
+  defp cast_endpoints([], endpoints) do
+    {:ok, endpoints}
+  end
+
+  @spec cast_mountpoints([%{}]) :: {:ok, [%Schemas.MountPointConfig{}]} | {:error, term()}
+  def cast_mountpoints(mountpoints) do
+    cast_mountpoints(mountpoints, [])
+  end
+
+  defp cast_mountpoints([mountpoint_raw | rest], mountpoints) do
+    case Cast.cast(Schemas.MountPointConfig.schema(), mountpoint_raw) do
+      {:ok, mountpoint} -> cast_mountpoints(rest, [mountpoint | mountpoints])
+      {:error, msg} -> {:error, msg}
+    end
+  end
+
+  defp cast_mountpoints([], mountpoints) do
     {:ok, mountpoints}
   end
 end

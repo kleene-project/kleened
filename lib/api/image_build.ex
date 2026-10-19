@@ -43,13 +43,26 @@ defmodule Kleened.API.ImageBuild do
   end
 
   # Ignore messages from the client: No interactive possibility atm.
+  # Components registry needed to resolve $ref/module schemas in direct casts
+  # (outside the CastAndValidate plug, OpenApiSpex has no schemas context).
+  defp schemas, do: Kleened.API.Spec.spec().components.schemas
+
   def websocket_handle({:text, message_raw}, %{handshaking: true} = state) do
     Logger.debug("receiving build config: #{message_raw}")
 
     with {:json, {:ok, message}} <- {:json, Jason.decode(message_raw)},
-         {:ok, config} <- Cast.cast(Schemas.ImageBuildConfig.schema(), message),
+         {:ok, config} <-
+           Cast.cast(
+             Utils.resolve_schema_modules(Schemas.ImageBuildConfig.schema()),
+             message,
+             schemas()
+           ),
          {:ok, container_config} <-
-           Cast.cast(Schemas.ContainerConfig.schema(), config.container_config),
+           Cast.cast(
+             Utils.resolve_schema_modules(Schemas.ContainerConfig.schema()),
+             config.container_config,
+             schemas()
+           ),
          {:ok, networks} <- cast_endpoints(config.networks),
          {:ok, mounts} <- Utils.cast_mountpoints(container_config.mounts),
          buildargs = Core.Utils.map2envlist(config.buildargs),

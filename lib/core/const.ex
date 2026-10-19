@@ -1,7 +1,16 @@
 defmodule Kleened.Core.Const do
-  @spec image_snapshot() :: String.t()
-  def image_snapshot() do
-    "@image"
+  @spec image_snapshot(String.t(), String.t()) :: String.t()
+  def image_snapshot(dataset, "") do
+    "#{dataset}@image"
+  end
+
+  def image_snapshot(dataset, snapshot) do
+    "#{dataset}#{snapshot}"
+  end
+
+  @spec image_snapshot(String.t()) :: String.t()
+  def image_snapshot(dataset) do
+    "#{dataset}@image"
   end
 
   @spec image_dataset(String.t()) :: Kleened.Core.ZFS.dataset()

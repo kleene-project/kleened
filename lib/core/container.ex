@@ -182,23 +182,12 @@ defmodule Kleened.Core.Container do
   end
 
   defp create_dataset(potential_image_snapshot, container_id, image) do
-    parent_snapshot =
-      case potential_image_snapshot do
-        "" ->
-          snapshot = "#{image.dataset}#{Const.image_snapshot()}"
-          Logger.info("Creating container from image #{snapshot}")
-          snapshot
+    parent_snapshot = Const.image_snapshot(image.dataset, potential_image_snapshot)
+    new_dataset = Path.join([Config.get("kleene_root"), "container", container_id])
+    Logger.info("Creating container from image snapshot #{parent_snapshot}")
 
-        snapshot ->
-          snapshot = "#{image.dataset}#{snapshot}"
-          Logger.info("Creating container from image snapshot #{snapshot}")
-          snapshot
-      end
-
-    dataset = Path.join([Config.get("kleene_root"), "container", container_id])
-
-    case Kleened.Core.ZFS.clone(parent_snapshot, dataset) do
-      {_, 0} -> {:ok, dataset}
+    case Kleened.Core.ZFS.clone(parent_snapshot, new_dataset) do
+      {_, 0} -> {:ok, new_dataset}
       {reason, _nonzero_exit} -> {:error, reason}
     end
   end
@@ -343,6 +332,7 @@ defmodule Kleened.Core.Container do
         {:ok, container}
 
       {:error, reason} ->
+        Kleened.Core.ZFS.destroy_force(container.dataset)
         {:error, reason}
     end
   end

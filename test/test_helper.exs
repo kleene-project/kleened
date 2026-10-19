@@ -39,6 +39,26 @@ defmodule TestHelper do
   # not call them directly any more -- ConnCase does it for every test.
   defdelegate cleanup(), to: Kleened.Test.Utils
 
+  def deployment_diff(config) do
+    api_spec = Kleened.API.Spec.spec()
+
+    response =
+      conn(:post, "/deployment/diff", config)
+      |> put_req_header("content-type", "application/json")
+      |> Router.call(@opts)
+
+    case validate_response(api_spec, response, %{
+           201 => :json,
+           404 => "ErrorResponse"
+         }) do
+      %{message: error_msg} ->
+        {:error, error_msg}
+
+      json_output ->
+        {:ok, json_output}
+    end
+  end
+
   def container_valid_run(config) do
     {container_id, exec_config, expected_exit} = prepare_container_run(config)
 
@@ -763,6 +783,9 @@ defmodule TestHelper do
     response_spec = Map.get(statuscodes_to_specs, status)
 
     cond do
+      response_spec == :json ->
+        resp_body
+
       response_spec == nil ->
         assert false
 

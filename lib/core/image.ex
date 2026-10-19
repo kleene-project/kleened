@@ -19,61 +19,59 @@ defmodule Kleened.Core.Image do
 
   @type t() :: Schemas.Image.t()
 
-  @spec build(Schemas.ImageBuildConfig.t()) :: {:ok, pid()} | {:error, String.t()}
+  @spec build(Schemas.ImageBuildConfig.t()) ::
+          {:ok, String.t(), pid()} | {:error, String.t()}
   def build(
-        %Schemas.ImageBuildConfig{
-          context: context,
-          dockerfile: dockerfile,
-          tag: tag
-        } = build_config
+        %Schemas.ImageBuildConfig{context: context, dockerfile: dockerfile, tag: tag} =
+          build_config
       ) do
     {_name, _tag} = Kleened.Core.Utils.decode_tagname(tag)
+
+    case load_and_parse_dockerfile(dockerfile, context) do
+      {:ok, instructions} ->
+        image_id = Kleened.Core.Utils.uuid()
+
+        updated_config = %Schemas.ImageBuildConfig{
+          build_config
+          | container_config: %Schemas.ContainerConfig{
+              build_config.container_config
+              | name: "builder_#{image_id}"
+            }
+        }
+
+        state = %State{
+          build_config: updated_config,
+          image_id: image_id,
+          buildargs_collected: [],
+          msg_receiver: self(),
+          current_step: 1,
+          instructions: instructions,
+          processed_instructions: [],
+          snapshots: [],
+          total_steps: length(instructions),
+          container: %Schemas.Container{env: []},
+          workdir: "/"
+        }
+
+        pid = Process.spawn(fn -> process_instructions(state) end, [:link])
+        {:ok, image_id, pid}
+
+      {:error, error_msg} ->
+        {:error, error_msg}
+    end
+  end
+
+  @spec load_and_parse_dockerfile(String.t(), String.t()) :: {:ok, list()} | {:error, String.t()}
+  def load_and_parse_dockerfile(dockerfile, context) do
     dockerfile_path = Path.join(context, dockerfile)
 
-    case File.read(dockerfile_path) do
-      {:ok, dockerfile} ->
-        case Kleened.Core.Dockerfile.parse(dockerfile) do
-          {:ok, instructions} ->
-            case starts_with_from_instruction(instructions) do
-              :ok ->
-                image_id = Kleened.Core.Utils.uuid()
-
-                build_config = %Schemas.ImageBuildConfig{
-                  build_config
-                  | container_config: %Schemas.ContainerConfig{
-                      build_config.container_config
-                      | name: "builder_#{image_id}"
-                    }
-                }
-
-                state = %State{
-                  build_config: build_config,
-                  image_id: image_id,
-                  buildargs_collected: [],
-                  msg_receiver: self(),
-                  current_step: 1,
-                  instructions: instructions,
-                  processed_instructions: [],
-                  snapshots: [],
-                  total_steps: length(instructions),
-                  container: %Schemas.Container{env: []},
-                  workdir: "/"
-                }
-
-                pid = Process.spawn(fn -> process_instructions(state) end, [:link])
-                {:ok, image_id, pid}
-
-              {:error, error_msg} ->
-                {:error, error_msg}
-            end
-
-          {:error, error_msg} ->
-            {:error, error_msg}
-        end
-
-      {:error, reason} ->
-        msg = "Could not open Docker file #{dockerfile_path}: #{inspect(reason)}"
-        {:error, msg}
+    with {:ok, dockerfile} <- File.read(dockerfile_path),
+         {:ok, instructions} <- Kleened.Core.Dockerfile.parse(dockerfile),
+         :ok <- starts_with_from_instruction(instructions) do
+      {:ok, instructions}
+    else
+      {:error, error_msg} ->
+        {:error, error_msg}
     end
   end
 
@@ -83,9 +81,6 @@ defmodule Kleened.Core.Image do
         starts_with_from_instruction(rest)
 
       {_line, {:from, _}} ->
-        :ok
-
-      {_line, {:from, _, _}} ->
         :ok
 
       {line, _illegal_instruction} ->
@@ -570,8 +565,7 @@ defmodule Kleened.Core.Image do
     image_dataset = Const.image_dataset(image_id)
     {_, 0} = Kleened.Core.ZFS.rename(container_dataset, image_dataset)
 
-    image_snapshot = image_dataset <> Const.image_snapshot()
-    {_, 0} = Kleened.Core.ZFS.snapshot(image_snapshot)
+    {_, 0} = Kleened.Core.ZFS.snapshot(Const.image_snapshot(image_dataset))
 
     :ok
   end
@@ -634,6 +628,11 @@ defmodule Kleened.Core.Image do
   defp merge_buildargs(args_supplied, args_collected) when is_list(args_collected) do
     args_collected = Utils.envlist2map(args_collected)
     merge_buildargs(args_supplied, args_collected)
+  end
+
+  defp merge_buildargs(%{} = args_supplied, %{} = args_collected) do
+    args_collected = Map.merge(args_supplied, args_collected)
+    Utils.map2envlist(args_collected)
   end
 
   defp merge_buildargs([arg_supplied | rest], args_collected) when is_map(args_collected) do
@@ -701,6 +700,8 @@ defmodule Kleened.Core.Image do
   end
 
   defp determine_parent_image(image_from_dockerfile, state) do
+    # If there is an image supplied from the ContainerConfig,
+    # ignore the image from the FROM-instruction
     case state.build_config.container_config.image do
       nil ->
         environment_replacement(image_from_dockerfile, state)

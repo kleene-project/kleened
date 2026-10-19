@@ -48,7 +48,7 @@ defmodule Kleened.API.ImageCreate do
       {:ok, message} ->
         case Cast.cast(Schemas.ImageCreateConfig.schema(), message) do
           {:ok, config} ->
-            Core.ImageCreate.start_image_creation(config)
+            Core.ImageCreate.create(config)
             Logger.debug("Creating image with config #{inspect(config)}. Await output.")
             {[{:text, Utils.starting_message()}], %{handshaking: false}}
 

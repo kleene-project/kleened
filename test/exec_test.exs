@@ -204,7 +204,11 @@ defmodule ExecTest do
     %{id: exec_id} = TestHelper.exec_create(%{container_id: "testcont"})
 
     assert {"succesfully started execution instance in detached mode", ""} ==
-             TestHelper.exec_valid_start(%{exec_id: exec_id, attach: false, start_container: true})
+             TestHelper.exec_valid_start(%{
+               exec_id: exec_id,
+               attach: false,
+               start_container: true
+             })
 
     # seems like '/usr/sbin/jail' returns before the kernel reports it as running?
     :timer.sleep(500)

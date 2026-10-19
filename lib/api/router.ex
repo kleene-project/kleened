@@ -9,6 +9,12 @@ defmodule Kleened.API.Router do
   plug(:match)
   plug(:dispatch)
 
+  # Deployment:
+  post("/deployment/diff", to: API.Deployment.Diff)
+  post("/deployment/create/containers", to: API.Deployment.CreateContainers)
+  post("/deployment/create/networks", to: API.Deployment.CreateNetworks)
+  post("/deployment/create/volumes", to: API.Deployment.CreateVolumes)
+
   # Containers:
   get("/containers/list", to: API.Container.List)
   post("/containers/create", to: API.Container.Create)
@@ -58,6 +64,7 @@ defmodule Kleened.API.Router do
          {"/exec/start", API.ExecStartWebSocket, []},
          {"/images/build", API.ImageBuild, []},
          {"/images/create", API.ImageCreate, []},
+         {"/deployment/build", API.DeploymentBuild, []},
          {:_, Plug.Cowboy.Handler, {Kleened.API.Router, []}}
        ]}
     ]

@@ -1,6 +1,71 @@
 defmodule Kleened.API.Schemas do
   require OpenApiSpex
   alias OpenApiSpex.Schema
+  # alias OpenApiSpex.Reference
+
+  defmodule DeploymentConfig do
+    OpenApiSpex.schema(%{
+      summary: "Deployment specification",
+      type: :object,
+      properties: %{
+        images: %Schema{
+          description: "Deployment images.",
+          type: :array,
+          items: %Schema{
+            type: :object,
+            anyOf: [
+              %OpenApiSpex.Reference{"$ref": "#/components/schemas/ImageBuildConfig"},
+              %OpenApiSpex.Reference{"$ref": "#/components/schemas/ImageCreateConfig"}
+            ]
+          },
+          default: []
+        },
+        build_workers: %Schema{
+          type: :integer,
+          description: "Number of concurrent build-workers used when building images.",
+          nullable: false,
+          default: 1
+        },
+        volumes: %Schema{
+          description: "Deployment volumes",
+          type: :array,
+          # items: Kleened.API.Schemas.VolumeConfig,
+          items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/VolumeConfig"},
+          default: []
+        },
+        networks: %Schema{
+          description: "Deployment networks",
+          type: :array,
+          # items: Kleened.API.Schemas.NetworkConfig,
+          items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/NetworkConfig"},
+          default: []
+        },
+        containers: %Schema{
+          description: "Deployment containers",
+          type: :array,
+          items: %Schema{
+            type: :object,
+            allOf: [
+              # A container is defined by a ContainerConfig (which includes mounpoints)
+              # + a list of endpoints (that can refer to networks defined in the network section)
+              %OpenApiSpex.Reference{"$ref": "#/components/schemas/ContainerConfig"},
+              %Schema{
+                type: :object,
+                properties: %{
+                  endpoints: %Schema{
+                    description: "Network endpoints for the container.",
+                    type: :array,
+                    items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/EndPointConfig"}
+                  }
+                }
+              }
+            ]
+          },
+          default: []
+        }
+      }
+    })
+  end
 
   defmodule ContainerConfig do
     OpenApiSpex.schema(%{
@@ -65,7 +130,7 @@ defmodule Kleened.API.Schemas do
           description:
             "List of files/directories/volumes on the host filesystem that should be mounted into the container.",
           type: :array,
-          items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/MountPointConfig"},
+          items: Kleened.API.Schemas.MountPointConfig,
           nullable: true,
           default: [],
           example: [
@@ -102,6 +167,17 @@ defmodule Kleened.API.Schemas do
           default: "ipnet",
           example: "host",
           enum: ["ipnet", "host", "vnet", "disabled"]
+        },
+        endpoints: %Schema{
+          description: """
+          Network endpoints for the container. Only used in deployment
+          specifications, where the endpoints refer to networks defined in the
+          deployment's `networks` section.
+          """,
+          type: :array,
+          nullable: true,
+          default: [],
+          items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/EndPointConfig"}
         },
         public_ports: %Schema{
           description:
@@ -361,6 +437,7 @@ defmodule Kleened.API.Schemas do
       description:
         "Configuration for an image build, including container configuration for the build container.",
       type: :object,
+      required: [:context],
       properties: %{
         context: %Schema{
           type: :string,
@@ -407,8 +484,7 @@ defmodule Kleened.API.Schemas do
           items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/EndPointConfig"},
           default: []
         }
-      },
-      required: [:context, :container_config]
+      }
     })
   end
 
@@ -536,6 +612,30 @@ defmodule Kleened.API.Schemas do
       description: "List of images.",
       type: :array,
       items: Kleened.API.Schemas.Image
+    })
+  end
+
+  defmodule ContainerList do
+    OpenApiSpex.schema(%{
+      description: "List of images.",
+      type: :array,
+      items: Kleened.API.Schemas.Container
+    })
+  end
+
+  defmodule NetworkList do
+    OpenApiSpex.schema(%{
+      description: "List of networks.",
+      type: :array,
+      items: Kleened.API.Schemas.Network
+    })
+  end
+
+  defmodule VolumeList do
+    OpenApiSpex.schema(%{
+      description: "List of volumes.",
+      type: :array,
+      items: Kleened.API.Schemas.Volume
     })
   end
 
@@ -704,14 +804,6 @@ defmodule Kleened.API.Schemas do
           default: true
         }
       }
-    })
-  end
-
-  defmodule NetworkList do
-    OpenApiSpex.schema(%{
-      description: "List of networks.",
-      type: :array,
-      items: Kleened.API.Schemas.Network
     })
   end
 
@@ -958,7 +1050,8 @@ defmodule Kleened.API.Schemas do
           description: "Whether the mountpoint should be read-only.",
           default: false
         }
-      }
+      },
+      required: [:type]
     })
   end
 
@@ -993,7 +1086,7 @@ defmodule Kleened.API.Schemas do
           Source used for the mount. Depends on `method`:
 
           - If `method` is `"volume"` then `source` should be a volume name
-          - If `method`is `"nullfs"` then `source` should be an absolute path on the host
+          - If `method` is `"nullfs"` then `source` should be an absolute path on the host
           """
         },
         read_only: %Schema{type: :boolean, description: "Whether this mountpoint is read-only."}
@@ -1013,14 +1106,6 @@ defmodule Kleened.API.Schemas do
           items: Kleened.API.Schemas.MountPoint
         }
       }
-    })
-  end
-
-  defmodule VolumeList do
-    OpenApiSpex.schema(%{
-      description: "List of volumes.",
-      type: :array,
-      items: Kleened.API.Schemas.Volume
     })
   end
 
