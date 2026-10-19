@@ -1,0 +1,3213 @@
+{
+  "components": {
+    "responses": {},
+    "schemas": {
+      "Container": {
+        "description": "Kleene container",
+        "properties": {
+          "cmd": {
+            "default": [],
+            "description": "Command used when starting the container",
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "created": {
+            "description": "When the container was created",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "dataset": {
+            "description": "ZFS dataset of the container",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "env": {
+            "default": [],
+            "description": "List of environment variables. The list will be merged with environment variables defined by the image. The values in this list takes precedence if the variable is defined in both.",
+            "example": [
+              "DEBUG=0",
+              "LANG=da_DK.UTF-8"
+            ],
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "id": {
+            "description": "The id of the container",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "image_id": {
+            "description": "ID of the image that this container was created from",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "jail_param": {
+            "default": [],
+            "description": "List of jail parameters to use for the container.\nSee the [jails manual page](https://man.freebsd.org/cgi/man.cgi?query=jail) for an explanation of what jail parameters is,\nand the [Kleene documentation](/run/jail-parameters/) for an explanation of how they are used by Kleene.\n",
+            "example": [
+              "allow.raw_sockets=true",
+              "osrelease=kleenejail"
+            ],
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "name": {
+            "description": "Name of the container.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "network_driver": {
+            "description": "What kind of network driver the container uses.\nPossible values are `ipnet`, `host`, `vnet`, `disabled`.\n",
+            "enum": [
+              "ipnet",
+              "host",
+              "vnet",
+              "disabled"
+            ],
+            "example": "ipnet",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "persist": {
+            "default": false,
+            "description": "Whether or not this container will be removed by pruning.",
+            "example": true,
+            "nullable": true,
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "public_ports": {
+            "default": [],
+            "description": "Listening ports on network interfaces that redirect incoming traffic to the container.",
+            "example": [
+              {
+                "container_port": "8000",
+                "host_port": "8080",
+                "interfaces": [
+                  "em0"
+                ],
+                "properties": "tcp"
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PublishedPort"
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "restart_policy": {
+            "default": "no",
+            "description": "Restarting behavior of the container:\n\n- `\"no\"`: There is no automatic restart of the container\n- `\"on-startup\"`: The container is started each time Kleened is.\n",
+            "enum": [
+              "no",
+              "on-startup"
+            ],
+            "example": "on-startup",
+            "nullable": true,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "running": {
+            "description": "whether or not the container is running",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "user": {
+            "description": "Default user used when creating execution instances in the container.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "title": "Container",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.Container",
+        "x-validate": null
+      },
+      "ContainerConfig": {
+        "properties": {
+          "cmd": {
+            "default": [],
+            "description": "Command to execute when the container is started. If `[]` is specified the command from the image is used.",
+            "example": [
+              "/bin/sh",
+              "-c",
+              "ls /"
+            ],
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "nullable": true,
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "endpoints": {
+            "default": [],
+            "description": "Network endpoints for the container. Only used in deployment\nspecifications, where the endpoints refer to networks defined in the\ndeployment's `networks` section.\n",
+            "items": {
+              "$ref": "#/components/schemas/EndPointConfig"
+            },
+            "nullable": true,
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "env": {
+            "default": [],
+            "description": "List of environment variables when using the container. This list will be merged with environment variables defined by the image. The values in this list takes precedence if the variable is defined in both.",
+            "example": [
+              "DEBUG=0",
+              "LANG=da_DK.UTF-8"
+            ],
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "nullable": true,
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "image": {
+            "description": "The name or id and possibly a snapshot of the image used for creating the container.\nThe parameter uses the followinge format:\n\n- `<image_id>[@<snapshot_id>]` or\n- `<name>[:<tag>][@<snapshot_id>]`.\n\nIf `<tag>` is omitted, `latest` is assumed.\n",
+            "example": [
+              "FreeBSD:13.2-STABLE",
+              "FreeBSD:13.2-STABLE@6b3c821605d4",
+              "48fa55889b0f",
+              "48fa55889b0f@2028818d6f06"
+            ],
+            "nullable": true,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "jail_param": {
+            "default": [],
+            "description": "List of jail parameters to use for the container.\nSee the [jails manual page](https://man.freebsd.org/cgi/man.cgi?query=jail) for an explanation of what jail parameters is,\nand the [Kleene documentation](/run/jail-parameters/) for an explanation of how they are used by Kleene.\n",
+            "example": [
+              "allow.raw_sockets=true",
+              "osrelease=kleenejail"
+            ],
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "nullable": true,
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "mounts": {
+            "default": [],
+            "description": "List of files/directories/volumes on the host filesystem that should be mounted into the container.",
+            "example": [
+              {
+                "destination": "/mnt/db",
+                "source": "database",
+                "type": "volume"
+              },
+              {
+                "destination": "/webapp",
+                "source": "/home/me/develop/webapp",
+                "type": "nullfs"
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/MountPointConfig"
+            },
+            "nullable": true,
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "name": {
+            "description": "Name of the container. Must match `/?[a-zA-Z0-9][a-zA-Z0-9_.-]+`.",
+            "nullable": true,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "network_driver": {
+            "default": "ipnet",
+            "description": "What kind of network driver should the container use.\nPossible values are `ipnet`, `host`, `vnet`, `disabled`.\n",
+            "enum": [
+              "ipnet",
+              "host",
+              "vnet",
+              "disabled"
+            ],
+            "example": "host",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "persist": {
+            "default": false,
+            "description": "Whether or not this container will be removed by pruning.",
+            "example": true,
+            "nullable": true,
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "public_ports": {
+            "default": [],
+            "description": "Listening ports on network interfaces that redirect incoming traffic to the container.",
+            "example": [
+              {
+                "container_port": "8000",
+                "host_port": "8080",
+                "interfaces": [
+                  "em0"
+                ],
+                "properties": "tcp"
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PublishedPortConfig"
+            },
+            "nullable": true,
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "restart_policy": {
+            "default": "no",
+            "description": "Restarting policy of the container:\n\n- `\"no\"`: There is no automatic restart of the container\n- `\"on-startup\"`: The container is started each time Kleened is.\n",
+            "enum": [
+              "no",
+              "on-startup"
+            ],
+            "example": "on-startup",
+            "nullable": true,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "user": {
+            "default": "",
+            "description": "User that executes the command (cmd).\nIf user is set to `\"\"`, the user from the image will be used, which in turn is 'root' if no user is specified there.\n\nThis parameter will be overwritten by the jail parameter `exec.jail_user` if it is set.\n",
+            "nullable": true,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "title": "ContainerConfig",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.ContainerConfig",
+        "x-validate": null
+      },
+      "ContainerInspect": {
+        "description": "Detailed information on a container.",
+        "properties": {
+          "container": {
+            "$ref": "#/components/schemas/Container"
+          },
+          "container_endpoints": {
+            "description": "Endpoints of the container.",
+            "items": {
+              "$ref": "#/components/schemas/EndPoint"
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "container_mountpoints": {
+            "description": "Mountpoints of the container.",
+            "items": {
+              "$ref": "#/components/schemas/MountPoint"
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "title": "ContainerInspect",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.ContainerInspect",
+        "x-validate": null
+      },
+      "ContainerList": {
+        "description": "List of images.",
+        "items": {
+          "$ref": "#/components/schemas/Container"
+        },
+        "title": "ContainerList",
+        "type": "array",
+        "x-struct": "Elixir.Kleened.API.Schemas.ContainerList",
+        "x-validate": null
+      },
+      "ContainerSummary": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Container"
+          },
+          {
+            "properties": {
+              "image_name": {
+                "description": "Name of the image that this container was created from",
+                "type": "string",
+                "x-struct": null,
+                "x-validate": null
+              },
+              "image_tag": {
+                "description": "Tag of the image that this container was created from",
+                "type": "string",
+                "x-struct": null,
+                "x-validate": null
+              },
+              "jid": {
+                "description": "Jail ID if it is a running container",
+                "nullable": true,
+                "type": "integer",
+                "x-struct": null,
+                "x-validate": null
+              }
+            },
+            "type": "object",
+            "x-struct": null,
+            "x-validate": null
+          }
+        ],
+        "description": "Summary description of a container",
+        "title": "ContainerSummary",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.ContainerSummary",
+        "x-validate": null
+      },
+      "ContainerSummaryList": {
+        "description": "List of summarised containers.",
+        "items": {
+          "$ref": "#/components/schemas/ContainerSummary"
+        },
+        "title": "ContainerSummaryList",
+        "type": "array",
+        "x-struct": "Elixir.Kleened.API.Schemas.ContainerSummaryList",
+        "x-validate": null
+      },
+      "DeploymentConfig": {
+        "properties": {
+          "build_workers": {
+            "default": 1,
+            "description": "Number of concurrent build-workers used when building images.",
+            "nullable": false,
+            "type": "integer",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "containers": {
+            "default": [],
+            "description": "Deployment containers",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ContainerConfig"
+                },
+                {
+                  "properties": {
+                    "endpoints": {
+                      "description": "Network endpoints for the container.",
+                      "items": {
+                        "$ref": "#/components/schemas/EndPointConfig"
+                      },
+                      "type": "array",
+                      "x-struct": null,
+                      "x-validate": null
+                    }
+                  },
+                  "type": "object",
+                  "x-struct": null,
+                  "x-validate": null
+                }
+              ],
+              "type": "object",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "images": {
+            "default": [],
+            "description": "Deployment images.",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ImageBuildConfig"
+                },
+                {
+                  "$ref": "#/components/schemas/ImageCreateConfig"
+                }
+              ],
+              "type": "object",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "networks": {
+            "default": [],
+            "description": "Deployment networks",
+            "items": {
+              "$ref": "#/components/schemas/NetworkConfig"
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "volumes": {
+            "default": [],
+            "description": "Deployment volumes",
+            "items": {
+              "$ref": "#/components/schemas/VolumeConfig"
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "title": "DeploymentConfig",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.DeploymentConfig",
+        "x-validate": null
+      },
+      "EndPoint": {
+        "description": "Endpoint connecting a container to a network.",
+        "properties": {
+          "container_id": {
+            "description": "ID of the container that this endpoint belongs to.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "epair": {
+            "description": "**`vnet` containers only**\n\n`epair(4)` interfaces connecting the container to the network.\n",
+            "nullable": true,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "id": {
+            "description": "Endpoint ID",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "ip_address": {
+            "description": "The IPv4 address of the container.",
+            "example": "10.13.37.33",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "ip_address6": {
+            "description": "The IPv6 address of the container.",
+            "example": "2610:1c1:1:606c::50:15",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "network_id": {
+            "description": "Name of the network that this endpoint belongs to.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "title": "EndPoint",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.EndPoint",
+        "x-validate": null
+      },
+      "EndPointConfig": {
+        "description": "Configuration of a connection between a network to a container.",
+        "properties": {
+          "container": {
+            "description": "Container identifier, i.e., the name, ID, or an initial unique segment of the ID.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "ip_address": {
+            "default": "",
+            "description": "IPv4 address for the container. If set to `\"<auto>\"` an unused ip from the subnet will be used. If set to `\"\"` no address will be set.",
+            "example": "10.13.37.33",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "ip_address6": {
+            "default": "",
+            "description": "IPv6 address for the container. If set to `\"<auto>\"` an unused ip from the subnet will be used. If set to `\"\"` no address will be set.",
+            "example": "2001:db8:8a2e:370:7334::2",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "network": {
+            "description": "Network identifier, i.e., the name, ID, or an initial unique segment of the ID.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "container",
+          "network"
+        ],
+        "title": "EndPointConfig",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.EndPointConfig",
+        "x-validate": null
+      },
+      "ErrorResponse": {
+        "description": "Represents an error and (possibly) its reason.",
+        "example": {
+          "message": "Something went wrong."
+        },
+        "properties": {
+          "message": {
+            "description": "The error message, if any.",
+            "nullable": false,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "title": "ErrorResponse",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.ErrorResponse",
+        "x-validate": null
+      },
+      "ExecConfig": {
+        "description": "Configuration of an executable to run within a container. Some of the configuration parameters will overwrite the corresponding parameters if they are defined in the container.",
+        "properties": {
+          "cmd": {
+            "default": [],
+            "description": "Command to execute whithin the container. If `cmd` is set to `[]` the command will be inherited from the container.",
+            "example": [
+              "/bin/sh",
+              "-c",
+              "ls /"
+            ],
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "container_id": {
+            "description": "Identifier of the container used as environemnt for the exec instance.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "env": {
+            "default": [],
+            "description": "A list of environment variables in the form `[\"VAR=value\", ...]` that is set when the command is executed.\nThis list will be merged with environment variables defined in the container.\nThe values in this list takes precedence if the variable is defined in both.\n",
+            "example": [
+              "DEBUG=0",
+              "LANG=da_DK.UTF-8"
+            ],
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "tty": {
+            "default": false,
+            "description": "Allocate a pseudo-TTY for the process.",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "user": {
+            "default": "",
+            "description": "User that executes the command in the container. If the user is set to `\"\"`, the user will be inherited from the container.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "title": "ExecConfig",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.ExecConfig",
+        "x-validate": null
+      },
+      "ExecStartConfig": {
+        "description": "Options for starting an execution instance.",
+        "properties": {
+          "attach": {
+            "description": "Whether to receive output from `stdin` and `stderr`.",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "exec_id": {
+            "description": "ID of the execution instance to start",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "start_container": {
+            "description": "Whether to start the container if it is not already running.",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "exec_id",
+          "attach",
+          "start_container"
+        ],
+        "title": "ExecStartConfig",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.ExecStartConfig",
+        "x-validate": null
+      },
+      "IdListResponse": {
+        "description": "Response to an API call that returns just an Id",
+        "items": {
+          "type": "string",
+          "x-struct": null,
+          "x-validate": null
+        },
+        "title": "IdListResponse",
+        "type": "array",
+        "x-struct": "Elixir.Kleened.API.Schemas.IdListResponse",
+        "x-validate": null
+      },
+      "IdResponse": {
+        "description": "Response to an API call that returns just an Id",
+        "properties": {
+          "id": {
+            "description": "ID of the created/modified/removed object.",
+            "nullable": false,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "IdResponse",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.IdResponse",
+        "x-validate": null
+      },
+      "Image": {
+        "description": "the image metadata",
+        "properties": {
+          "cmd": {
+            "default": [],
+            "description": "Default command used when creating a container from this image",
+            "example": [
+              "/bin/sh",
+              "-c",
+              "/bin/ls"
+            ],
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "created": {
+            "description": "When the image was created",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "dataset": {
+            "description": "ZFS dataset of the image",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "env": {
+            "default": [],
+            "description": "Environment variables and their values to set before running command.",
+            "example": [
+              "PWD=/roo/",
+              "JAIL_MGMT_ENGINE=kleene"
+            ],
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "id": {
+            "description": "The id of the image",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "instructions": {
+            "default": [],
+            "description": "Instructions and their corresponding snapshots (if they exist) that were used to build the image.\nEach item in the array consists of a 2-element array `[\"<instruction>\",\"<snapshot>\"]`\ncontaining one instruction and possibly its snapshot.\nThe latter is only be present with `RUN` or `COPY` instructions that ran succesfully.\nOtherwise `<snapshot>` is empty.\n",
+            "example": [],
+            "items": {
+              "items": {
+                "type": "string",
+                "x-struct": null,
+                "x-validate": null
+              },
+              "type": "array",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "name": {
+            "description": "Name of the image",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "tag": {
+            "description": "Tag of the image",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "user": {
+            "description": "User used for running `cmd`",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "title": "Image",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.Image",
+        "x-validate": null
+      },
+      "ImageBuildConfig": {
+        "description": "Configuration for an image build, including container configuration for the build container.",
+        "properties": {
+          "buildargs": {
+            "default": {},
+            "description": "Additional `ARG`-variables given as an object of string pairs.\nSee the [`ARG` instruction documentation](/reference/dockerfile/#arg) for details.\n",
+            "example": {
+              "JAIL_MGMT_ENGINE": "kleene",
+              "USERNAME": "Stephen"
+            },
+            "type": "object",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "cleanup": {
+            "default": true,
+            "description": "Whether or not to remove the image in case of a build failure.",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "container_config": {
+            "$ref": "#/components/schemas/ContainerConfig"
+          },
+          "context": {
+            "description": "Location path on the Kleened host of the context used for the image build.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "dockerfile": {
+            "default": "Dockerfile",
+            "description": "Path of the Dockerfile used for the build. The path is relative to the context path.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "networks": {
+            "default": [],
+            "description": "List of endpoint-configs for the networks that the build container will be connected to.",
+            "items": {
+              "$ref": "#/components/schemas/EndPointConfig"
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "quiet": {
+            "default": false,
+            "description": "Whether or not to send status messages of the build process to the client.",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "tag": {
+            "default": "",
+            "description": "A name and optional tag to apply to the image in the `name:tag` format. If `tag` is omitted, the default value `latest` is used.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "context"
+        ],
+        "title": "ImageBuildConfig",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.ImageBuildConfig",
+        "x-validate": null
+      },
+      "ImageCreateConfig": {
+        "description": "Configuration for the creation of base images.",
+        "properties": {
+          "autotag": {
+            "default": false,
+            "description": "**`fetch-auto` method only**\n\nWhether or not to auto-genereate a nametag `FreeBSD-<version>:latest` based on `uname(1)`.\nOverrides `tag` if set to `true`.\n",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "dns": {
+            "default": true,
+            "description": "Whether or not to copy `/etc/resolv.conf` from the host to the new image.",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "localtime": {
+            "default": true,
+            "description": "Whether or not to copy `/etc/localtime` from the host to the new image, if it exists.",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "method": {
+            "description": "There are four methods for creating a new base image:\n\n- `fetch`: Fetch a release/snapshot of the base system from `url` and use it for image creation.\n- `fetch-auto`: Automatically fetch a release/snapshot from the offical FreeBSD mirrors, based on information from `uname(1)`.\n- `zfs-copy`: Create the base image based on a copy of `zfs_dataset`.\n- `zfs-clone`: Create the base image based on a clone of `zfs_dataset`.\n",
+            "enum": [
+              "fetch",
+              "fetch-auto",
+              "zfs-copy",
+              "zfs-clone"
+            ],
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "tag": {
+            "default": "",
+            "description": "Name and optionally a tag in the `name:tag` format. If `tag` is omitted, the default value `latest` is used.\n",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "update": {
+            "default": false,
+            "description": "Update the base image to the lastest patch-level using `freebsd-update(8)`.\nSee the [man-pages](https://man.freebsd.org/cgi/man.cgi?query=freebsd-update) for details about which FreeBSD versions can be updated.\",\n",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "url": {
+            "default": "",
+            "description": "**`fetch` method only**\n\nURL to the base system (a `base.txz` file) that Kleened should use to create the base image.\n",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "zfs_dataset": {
+            "default": "",
+            "description": "**`zfs-*` methods only**\n\nZFS dataset that the image should be based on.\n",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "method"
+        ],
+        "title": "ImageCreateConfig",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.ImageCreateConfig",
+        "x-validate": null
+      },
+      "ImageList": {
+        "description": "List of images.",
+        "items": {
+          "$ref": "#/components/schemas/Image"
+        },
+        "title": "ImageList",
+        "type": "array",
+        "x-struct": "Elixir.Kleened.API.Schemas.ImageList",
+        "x-validate": null
+      },
+      "MountPoint": {
+        "description": "Mount point between the host file system and a container.\n\nThere are two types of mount points:\n\n- `nullfs`: Mount a user-specified file or directory from the host machine into the container.\n- `volume`: Mount a Kleene volume into the container.\n",
+        "properties": {
+          "container_id": {
+            "description": "ID of the container that the mountpoint belongs to.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "destination": {
+            "description": "Destination path of the mountpoint within the container.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "read_only": {
+            "description": "Whether this mountpoint is read-only.",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "source": {
+            "description": "Source used for the mount. Depends on `method`:\n\n- If `method` is `\"volume\"` then `source` should be a volume name\n- If `method` is `\"nullfs\"` then `source` should be an absolute path on the host\n",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "type": {
+            "description": "Mounpoint type.",
+            "enum": [
+              "volume",
+              "nullfs"
+            ],
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "title": "MountPoint",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.MountPoint",
+        "x-validate": null
+      },
+      "MountPointConfig": {
+        "description": "Configuration for a mount point between the host file system and a container.\n\nThere are two types of mount points:\n\n- `nullfs`: Mount a user-specified file or directory from the host machine into the container.\n- `volume`: Mount a Kleene volume into the container.\n",
+        "properties": {
+          "destination": {
+            "description": "Destination path of the mount within the container.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "read_only": {
+            "default": false,
+            "description": "Whether the mountpoint should be read-only.",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "source": {
+            "description": "Source used for the mount. Depends on `method`:\n\n- If `method` is `\"volume\"` then `source` should be a volume name\n- If `method`is `\"nullfs\"` then `source` should be an absolute path on the host\n",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "type": {
+            "description": "Type of mountpoint to create.",
+            "enum": [
+              "volume",
+              "nullfs"
+            ],
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "MountPointConfig",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.MountPointConfig",
+        "x-validate": null
+      },
+      "Network": {
+        "description": "Kleene network",
+        "properties": {
+          "gateway": {
+            "default": "",
+            "description": "The default IPv4 router that is added to `vnet` containers connecting to the network.\nIf `\"\"` no gateway is used.\n",
+            "example": "192.168.1.1",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "gateway6": {
+            "default": "",
+            "description": "The default IPv6 router that is added to 'vnet' containers connecting to the network.\nIf `\"\"` no gateway is used.\n",
+            "example": "2001:db8:8a2e:370:7334::1",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "icc": {
+            "default": true,
+            "description": "Inter-container connectvity: Whether or not to enable connectivity between containers within the network.",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "id": {
+            "description": "ID of the network",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "interface": {
+            "default": "",
+            "description": "Name for the interface that is being used for the network.\n",
+            "example": "kleene0",
+            "maxLength": 15,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "internal": {
+            "default": true,
+            "description": "Whether or not outgoing traffic is allowed on the network.",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "name": {
+            "description": "Name of the network.",
+            "example": "westnet",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "nat": {
+            "default": "",
+            "description": "Which interface should be used for NAT'ing outgoing traffic from the network.\nIf set to `\"\"` no NAT'ing is configured.\n",
+            "example": "igb0",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "subnet": {
+            "description": "The IPv4 subnet (in CIDR-format) that is used for the network.",
+            "example": "10.13.37.0/24",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "subnet6": {
+            "description": "The IPv6 subnet (in CIDR-format) that is used for the network.",
+            "example": "2001:db8:8a2e:370:7334::/64",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "type": {
+            "description": "Network type.",
+            "enum": [
+              "bridge",
+              "loopback",
+              "custom"
+            ],
+            "example": "bridge",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "title": "Network",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.Network",
+        "x-validate": null
+      },
+      "NetworkConfig": {
+        "description": "Network configuration",
+        "properties": {
+          "gateway": {
+            "default": "",
+            "description": "**`bridge` networks only**\n\nThe default (IPv4) router that is added to `vnet` containers connecting to bridged networks.\nIf set to `\"\"` no gateway is used. If set to `\"<auto>\"` the first IP of the subnet is added to `interface` and used as gateway.\n",
+            "example": "192.168.1.1",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "gateway6": {
+            "default": "",
+            "description": "**`bridge` networks only**\n\nThe default IPv6 router that is added to `vnet` containers connecting to bridged networks.\nSee `gateway` for details.\n",
+            "example": "2001:db8:8a2e:370:7334::1",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "icc": {
+            "default": true,
+            "description": "Inter-container connectvity: Whether or not to enable connectivity between containers within the same network.",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "interface": {
+            "default": "",
+            "description": "Name of the host interface used for the network.\nIf set to `\"\"` the name is set to `kleened` postfixed with an integer.\nIf `type` is set to `custom` the value of `interface` must refer to an existing interface,\notherwise it is created by Kleened.\n",
+            "example": "kleene0",
+            "maxLength": 15,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "internal": {
+            "default": false,
+            "description": "Whether or not outgoing traffic is allowed on the network.",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "name": {
+            "description": "Name of the network.",
+            "example": "westnet",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "nat": {
+            "default": "<host-gateway>",
+            "description": "Interface used for NAT'ing outgoing traffic from the network.\nIf set to `\"<host-gateway>\"` the hosts gateway interface is used, if it exists.\nIf set to `\"\"` no NAT'ing is configured.\n",
+            "example": "igb0",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "subnet": {
+            "default": "",
+            "description": "The IPv4 subnet (in CIDR-format) that is used for the network. If set to `\"\"` no IPv4 subnet is used.",
+            "example": "10.13.37.0/24",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "subnet6": {
+            "default": "",
+            "description": "The IPv6 subnet (in CIDR-format) that is used for the network. If set to `\"\"` no IPv6 subnet is used.",
+            "example": "2001:db8:8a2e:370:7334::/64",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "type": {
+            "description": "What kind of network should be created.",
+            "enum": [
+              "bridge",
+              "loopback",
+              "custom"
+            ],
+            "example": "bridge",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "name",
+          "type"
+        ],
+        "title": "NetworkConfig",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.NetworkConfig",
+        "x-validate": null
+      },
+      "NetworkInspect": {
+        "description": "Detailed information on a network.",
+        "properties": {
+          "network": {
+            "$ref": "#/components/schemas/Network"
+          },
+          "network_endpoints": {
+            "description": "Endpoints of the network.",
+            "items": {
+              "$ref": "#/components/schemas/EndPoint"
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "title": "NetworkInspect",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.NetworkInspect",
+        "x-validate": null
+      },
+      "NetworkList": {
+        "description": "List of networks.",
+        "items": {
+          "$ref": "#/components/schemas/Network"
+        },
+        "title": "NetworkList",
+        "type": "array",
+        "x-struct": "Elixir.Kleened.API.Schemas.NetworkList",
+        "x-validate": null
+      },
+      "PublishedPort": {
+        "description": "A published port of a container, i.e., opening up the port for incoming traffic from external sources.",
+        "properties": {
+          "container_port": {
+            "description": "Destination port (or portrange) of the container that accepts traffic from `host_port`.\n\n`container_port` can take two forms, depending on `host_port`:\n- A single portnumber `\"PORTNUMBER\"` if `host_port` is a single port number\n- A portrange `\"PORTNUMBER_START:*\"` if `host_port` is a port range\n",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "host_port": {
+            "description": "Source port (or portrange) on the host where incoming traffic is redirected.\n\n`host_port` can take one of two forms:\n- A single portnumber `\"PORTNUMBER\"`\n- A portrange `\"PORTNUMBER_START:PORTNUMBER_END\"`\n",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "interfaces": {
+            "default": [],
+            "description": "List of host interfaces where incoming traffic to `host_port` is redirected to the container at `ip_address` and/or `ip_address6` on `container_port`.\n",
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "ip_address": {
+            "description": "ipv4 address within the container that receives traffic to `container_port`",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "ip_address6": {
+            "description": "ipv6 address within the container that receives traffic to `container_port`",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "protocol": {
+            "description": "tcp or udp",
+            "enum": [
+              "tcp",
+              "udp"
+            ],
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "interfaces",
+          "host_port",
+          "container_port",
+          "protocol",
+          "ip_address",
+          "ip_address6"
+        ],
+        "title": "PublishedPort",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.PublishedPort",
+        "x-validate": null
+      },
+      "PublishedPortConfig": {
+        "description": "Configuration for publishing a port of a container.",
+        "properties": {
+          "container_port": {
+            "description": "Destination port (or portrange) of the container that accepts traffic from `host_port`.\n\n`container_port` can take two forms, depending on `host_port`:\n- A single portnumber `\"PORTNUMBER\"` if `host_port` is a single port number\n- A portrange `\"PORTNUMBER_START:*\"` if `host_port` is a port range\n",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "host_port": {
+            "description": "Source port (or portrange) on the host where incoming traffic is redirected.\n\n`host_port` can take one of two forms:\n- A single portnumber `\"PORTNUMBER\"`\n- A portrange `\"PORTNUMBER_START:PORTNUMBER_END\"`\n",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "interfaces": {
+            "default": [],
+            "description": "List of host interfaces where the port is published, i.e.,\nwhere traffic to `host_port` is redirected to `container_port` (on a random IP-address).\nIf set to `[]` the host's gateway interface is used.\n",
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "protocol": {
+            "default": "tcp",
+            "description": "Whether to use TCP or UDP as transport protocol",
+            "enum": [
+              "tcp",
+              "udp"
+            ],
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "interfaces",
+          "host_port",
+          "container_port"
+        ],
+        "title": "PublishedPortConfig",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.PublishedPortConfig",
+        "x-validate": null
+      },
+      "Volume": {
+        "description": "Volume object used for persistent storage in containers.",
+        "properties": {
+          "created": {
+            "description": "When the volume was created",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "dataset": {
+            "description": "ZFS dataset of the volume",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "mountpoint": {
+            "description": "Mountpoint of `dataset`",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "name": {
+            "description": "Name of the volume",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "title": "Volume",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.Volume",
+        "x-validate": null
+      },
+      "VolumeConfig": {
+        "description": "Volume configuration",
+        "properties": {
+          "name": {
+            "description": "Name of the volume.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "VolumeConfig",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.VolumeConfig",
+        "x-validate": null
+      },
+      "VolumeInspect": {
+        "description": "Detailed information on a volume.",
+        "properties": {
+          "mountpoints": {
+            "description": "Mountpoints of the volume.",
+            "items": {
+              "$ref": "#/components/schemas/MountPoint"
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "volume": {
+            "$ref": "#/components/schemas/Volume"
+          }
+        },
+        "title": "VolumeInspect",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.VolumeInspect",
+        "x-validate": null
+      },
+      "VolumeList": {
+        "description": "List of volumes.",
+        "items": {
+          "$ref": "#/components/schemas/Volume"
+        },
+        "title": "VolumeList",
+        "type": "array",
+        "x-struct": "Elixir.Kleened.API.Schemas.VolumeList",
+        "x-validate": null
+      },
+      "WebSocketMessage": {
+        "description": "Protocol messages sent from Kleened's websocket endpoints",
+        "example": {
+          "data": "",
+          "message": "succesfully started execution instance in detached mode",
+          "msg_type": "closing"
+        },
+        "properties": {
+          "data": {
+            "default": "",
+            "description": "Any data that might have been created by the process such as an image ID.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "message": {
+            "default": "",
+            "description": "A useful message to tell the client what has happened.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "msg_type": {
+            "description": "Which type of message.",
+            "enum": [
+              "starting",
+              "closing",
+              "error"
+            ],
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "msg_type",
+          "message",
+          "data"
+        ],
+        "title": "WebSocketMessage",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.WebSocketMessage",
+        "x-validate": null
+      }
+    }
+  },
+  "info": {
+    "description": "HTTP API for communicating with Kleened",
+    "title": "Kleened API",
+    "version": "0.1.1"
+  },
+  "openapi": "3.0.0",
+  "paths": {
+    "/containers/create": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Create a container.\n\nNote that it is not possible to set any of the properties in the request body to `null`.\nThis is only possible when updating containers using the [Container.Update](#operation/Container.Update) endpoint.\n",
+        "operationId": "Container.Create",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContainerConfig"
+              }
+            }
+          },
+          "description": "Container configuration.",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such image"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "container create",
+        "tags": []
+      }
+    },
+    "/containers/list": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Returns a list of container summaries. For detailed information about a container,\nuse [Container.Inspect](#operation/Container.Inspect).\n",
+        "operationId": "Container.List",
+        "parameters": [
+          {
+            "description": "Return all containers. By default, only running containers are shown.",
+            "in": "query",
+            "name": "all",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContainerSummaryList"
+                }
+              }
+            },
+            "description": "no error"
+          }
+        },
+        "summary": "container list",
+        "tags": []
+      }
+    },
+    "/containers/prune": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Remove all stopped containers.",
+        "operationId": "Container.Prune",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdListResponse"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "container prune",
+        "tags": []
+      }
+    },
+    "/containers/{container_id}": {
+      "delete": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Remove a container.",
+        "operationId": "Container.Remove",
+        "parameters": [
+          {
+            "description": "Container identifier, i.e., the name, ID, or an initial unique segment of the ID.",
+            "in": "path",
+            "name": "container_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "No such container: df6ed453357b"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such container"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "container running"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "container remove",
+        "tags": []
+      }
+    },
+    "/containers/{container_id}/inspect": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Inspect a container and its endpoints.",
+        "operationId": "Container.Inspect",
+        "parameters": [
+          {
+            "description": "Identifier of the container",
+            "in": "path",
+            "name": "container_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContainerInspect"
+                }
+              }
+            },
+            "description": "container retrieved"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such container"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "container inspect",
+        "tags": []
+      }
+    },
+    "/containers/{container_id}/stop": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Stop a container. Alle execution instances running in the container will be shut down.",
+        "operationId": "Container.Stop",
+        "parameters": [
+          {
+            "description": "Container identifier, i.e., the name, ID, or an initial unique segment of the ID.",
+            "in": "path",
+            "name": "container_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "no such container"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such container"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "container stop",
+        "tags": []
+      }
+    },
+    "/containers/{container_id}/update": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Re-configure a container.\n\nThe JSON request body is identical to [Container.Create](#operation/Container.Create),\nand is being interpreted as follows:\n\n- The `image` property is ignored.\n- All other properties will replace the existing ones, if they are not `null`.\n\nSome of the changes might require a running container to be restarted.\n",
+        "operationId": "Container.Update",
+        "parameters": [
+          {
+            "description": "Container identifier, i.e., the name, ID, or an initial unique segment of the ID.",
+            "in": "path",
+            "name": "container_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContainerConfig"
+              }
+            }
+          },
+          "description": "Container configuration.",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such container"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error processing update"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "container update",
+        "tags": []
+      }
+    },
+    "/deployment/build": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "> **Important**: This is a 'dummy' specification since the actual endpoint is websocket-based.\n> Below is a description of the websocket protocol and how it relates to the dummy spec.\n\n## General websocket protocol used by Kleened\nAll of Kleened's websocket endpoints follows a similar pattern, having only differences\nin the contents of the fields in the protocol frames.\nThe specifics of the particular endpoint is described below the generic description of the\nprotocol.\n\nOnce the websocket is established Kleened expects a configuration-frame which is given by\nthe specified request body schema. The contents of the request body should be sent as an\ninitial websocket frame instead of being contained in the initiating request.\n\nWhen the config is received, Kleened sends a 'starting-message' back to the client, indicating\nthat Kleened has begun processing the request.\nThe starting message, like all protocol messages, follows the schema shown for\nthe 200-response below (the WebSocketMessage schema) and has `msg_type` set to `starting`.\nAfter the starting-message, subsequent frames will be 'raw' output from the running process.\nWhen the process is finished, Kleened closes the websocket with a Close Code 1000 and a\nWebSocketMessage contained in the Close frame's Close Reason.\nThe `msg_type` is set to `closing` but the contents of the `data` and `message` fields\ndepend on the particular endpoint.\n\nIf the initial configuration message schema is invalid, kleened closes the websocket with\nClose Code 1002 and a WebSocketMessage as the Close frame's Close Reason.\nThe `msg_type` is set to `error` and the contents of the `data` and `message` fields will\ndepend on the specific error.\nThis only happens before a starting-message have been sent to the client.\n\nIf Kleened encounters an error during process execution, Kleened closes the websocket with\nClose Code 1011 and a WebSocketMessage as the Close frame's reason. The `msg_type` is set to\n`error` and the contents of the `data` and `message` fields will depend on the specific error.\n\nIf any unexpected errors/crashes occur during the lifetime of the websocket, Kleend closes\nthe websocket with Close Code 1011 and an empty reason field.\n\n## Endpoint-specific details\nThe following specifics pertain to this endpoint:\n\n\n* The `data` field in the starting and closing messages is empty in all cases.\n",
+        "operationId": "DeploymentBuild",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeploymentConfig"
+              }
+            }
+          },
+          "description": "Image building configuration.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSocketMessage"
+                }
+              }
+            },
+            "description": "no error"
+          }
+        },
+        "summary": "image build",
+        "tags": []
+      }
+    },
+    "/deployment/create/containers": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Create deployment containers.\n",
+        "operationId": "Deployment.CreateContainers",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeploymentConfig"
+              }
+            }
+          },
+          "description": "Deployment configuration.",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContainerList"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error processing request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "deployment create containers",
+        "tags": []
+      }
+    },
+    "/deployment/create/networks": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Create deployment networks.\n",
+        "operationId": "Deployment.CreateNetworks",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeploymentConfig"
+              }
+            }
+          },
+          "description": "Deployment configuration.",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkList"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error processing request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "create deployment networks",
+        "tags": []
+      }
+    },
+    "/deployment/create/volumes": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Create deployment volumes.\n",
+        "operationId": "Deployment.CreateVolumes",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeploymentConfig"
+              }
+            }
+          },
+          "description": "Deployment configuration.",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolumeList"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error processing request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "create deployment volumes",
+        "tags": []
+      }
+    },
+    "/deployment/diff": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Create deployment.\n",
+        "operationId": "Deployment.Diff",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeploymentConfig"
+              }
+            }
+          },
+          "description": "Deployment configuration.",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {}
+            },
+            "description": "no error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "error processing request"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "deployment diff",
+        "tags": []
+      }
+    },
+    "/exec/create": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Create an execution instance within a container.",
+        "operationId": "Exec.Create",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecConfig"
+              }
+            }
+          },
+          "description": "Configuration to use when creating the execution instance.",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "container not found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "exec create",
+        "tags": []
+      }
+    },
+    "/exec/start": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "> **Important**: This is a 'dummy' specification since the actual endpoint is websocket-based.\n> Below is a description of the websocket protocol and how it relates to the dummy spec.\n\n## General websocket protocol used by Kleened\nAll of Kleened's websocket endpoints follows a similar pattern, having only differences\nin the contents of the fields in the protocol frames.\nThe specifics of the particular endpoint is described below the generic description of the\nprotocol.\n\nOnce the websocket is established Kleened expects a configuration-frame which is given by\nthe specified request body schema. The contents of the request body should be sent as an\ninitial websocket frame instead of being contained in the initiating request.\n\nWhen the config is received, Kleened sends a 'starting-message' back to the client, indicating\nthat Kleened has begun processing the request.\nThe starting message, like all protocol messages, follows the schema shown for\nthe 200-response below (the WebSocketMessage schema) and has `msg_type` set to `starting`.\nAfter the starting-message, subsequent frames will be 'raw' output from the running process.\nWhen the process is finished, Kleened closes the websocket with a Close Code 1000 and a\nWebSocketMessage contained in the Close frame's Close Reason.\nThe `msg_type` is set to `closing` but the contents of the `data` and `message` fields\ndepend on the particular endpoint.\n\nIf the initial configuration message schema is invalid, kleened closes the websocket with\nClose Code 1002 and a WebSocketMessage as the Close frame's Close Reason.\nThe `msg_type` is set to `error` and the contents of the `data` and `message` fields will\ndepend on the specific error.\nThis only happens before a starting-message have been sent to the client.\n\nIf Kleened encounters an error during process execution, Kleened closes the websocket with\nClose Code 1011 and a WebSocketMessage as the Close frame's reason. The `msg_type` is set to\n`error` and the contents of the `data` and `message` fields will depend on the specific error.\n\nIf any unexpected errors/crashes occur during the lifetime of the websocket, Kleend closes\nthe websocket with Close Code 1011 and an empty reason field.\n\n## Endpoint-specific details\nThe following specifics pertain to this endpoint:\n\n\n* The starting-message does not have any content.\n* If the exec-instance is started with `attach: false` the starting-message is followed by a\n  Close frame with Close Code 1001.\n* When the executed process exits the closing-message in the Close frame tells wether the\n  entire container has been stopped or just the exec-instance.\n",
+        "operationId": "ExecStartWebSocket",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExecStartConfig"
+              }
+            }
+          },
+          "description": "Execution starting configuration.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSocketMessage"
+                }
+              }
+            },
+            "description": "no error"
+          }
+        },
+        "summary": "exec start",
+        "tags": []
+      }
+    },
+    "/exec/{exec_id}/stop": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Stop and destroy an execution instance.",
+        "operationId": "Exec.Stop",
+        "parameters": [
+          {
+            "description": "Id of the execution instance.",
+            "in": "path",
+            "name": "exec_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          },
+          {
+            "description": "Whether or not to force stop the running process (using `kill -9`).",
+            "in": "query",
+            "name": "force_stop",
+            "required": true,
+            "schema": {
+              "type": "boolean",
+              "x-struct": null,
+              "x-validate": null
+            }
+          },
+          {
+            "description": "Whether or not to stop the entire container or just the specific execution instance.",
+            "in": "query",
+            "name": "stop_container",
+            "required": true,
+            "schema": {
+              "type": "boolean",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "example": {
+                  "message": "container not running"
+                },
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such container"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "exec stop",
+        "tags": []
+      }
+    },
+    "/images/build": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "> **Important**: This is a 'dummy' specification since the actual endpoint is websocket-based.\n> Below is a description of the websocket protocol and how it relates to the dummy spec.\n\n## General websocket protocol used by Kleened\nAll of Kleened's websocket endpoints follows a similar pattern, having only differences\nin the contents of the fields in the protocol frames.\nThe specifics of the particular endpoint is described below the generic description of the\nprotocol.\n\nOnce the websocket is established Kleened expects a configuration-frame which is given by\nthe specified request body schema. The contents of the request body should be sent as an\ninitial websocket frame instead of being contained in the initiating request.\n\nWhen the config is received, Kleened sends a 'starting-message' back to the client, indicating\nthat Kleened has begun processing the request.\nThe starting message, like all protocol messages, follows the schema shown for\nthe 200-response below (the WebSocketMessage schema) and has `msg_type` set to `starting`.\nAfter the starting-message, subsequent frames will be 'raw' output from the running process.\nWhen the process is finished, Kleened closes the websocket with a Close Code 1000 and a\nWebSocketMessage contained in the Close frame's Close Reason.\nThe `msg_type` is set to `closing` but the contents of the `data` and `message` fields\ndepend on the particular endpoint.\n\nIf the initial configuration message schema is invalid, kleened closes the websocket with\nClose Code 1002 and a WebSocketMessage as the Close frame's Close Reason.\nThe `msg_type` is set to `error` and the contents of the `data` and `message` fields will\ndepend on the specific error.\nThis only happens before a starting-message have been sent to the client.\n\nIf Kleened encounters an error during process execution, Kleened closes the websocket with\nClose Code 1011 and a WebSocketMessage as the Close frame's reason. The `msg_type` is set to\n`error` and the contents of the `data` and `message` fields will depend on the specific error.\n\nIf any unexpected errors/crashes occur during the lifetime of the websocket, Kleend closes\nthe websocket with Close Code 1011 and an empty reason field.\n\n## Endpoint-specific details\nThe following specifics pertain to this endpoint:\n\n\n* The `data` field in the starting-message contains the image ID of the image being built.\n* If the build process is successful, the `data` field in the closing-message contains the `image_id`.\n* If the build process fails the closing message's `data` field contains the latest snapshot or is set to `\"\"` if the build failed before any snapshots have been created.\n",
+        "operationId": "ImageBuild",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageBuildConfig"
+              }
+            }
+          },
+          "description": "Image building configuration.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSocketMessage"
+                }
+              }
+            },
+            "description": "no error"
+          }
+        },
+        "summary": "image build",
+        "tags": []
+      }
+    },
+    "/images/create": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "> **Important**: This is a 'dummy' specification since the actual endpoint is websocket-based.\n> Below is a description of the websocket protocol and how it relates to the dummy spec.\n\n## General websocket protocol used by Kleened\nAll of Kleened's websocket endpoints follows a similar pattern, having only differences\nin the contents of the fields in the protocol frames.\nThe specifics of the particular endpoint is described below the generic description of the\nprotocol.\n\nOnce the websocket is established Kleened expects a configuration-frame which is given by\nthe specified request body schema. The contents of the request body should be sent as an\ninitial websocket frame instead of being contained in the initiating request.\n\nWhen the config is received, Kleened sends a 'starting-message' back to the client, indicating\nthat Kleened has begun processing the request.\nThe starting message, like all protocol messages, follows the schema shown for\nthe 200-response below (the WebSocketMessage schema) and has `msg_type` set to `starting`.\nAfter the starting-message, subsequent frames will be 'raw' output from the running process.\nWhen the process is finished, Kleened closes the websocket with a Close Code 1000 and a\nWebSocketMessage contained in the Close frame's Close Reason.\nThe `msg_type` is set to `closing` but the contents of the `data` and `message` fields\ndepend on the particular endpoint.\n\nIf the initial configuration message schema is invalid, kleened closes the websocket with\nClose Code 1002 and a WebSocketMessage as the Close frame's Close Reason.\nThe `msg_type` is set to `error` and the contents of the `data` and `message` fields will\ndepend on the specific error.\nThis only happens before a starting-message have been sent to the client.\n\nIf Kleened encounters an error during process execution, Kleened closes the websocket with\nClose Code 1011 and a WebSocketMessage as the Close frame's reason. The `msg_type` is set to\n`error` and the contents of the `data` and `message` fields will depend on the specific error.\n\nIf any unexpected errors/crashes occur during the lifetime of the websocket, Kleend closes\nthe websocket with Close Code 1011 and an empty reason field.\n\n## Endpoint-specific details\nThe following specifics pertain to this endpoint:\n\n\n* The starting-message does not have any content.\n* If the image creation process finishes succesfully, the ID of the newly built image is stored in the\n  `data` field of the closing-message.\n",
+        "operationId": "ImageCreate",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageCreateConfig"
+              }
+            }
+          },
+          "description": "Image building configuration.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSocketMessage"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSocketMessage"
+                }
+              }
+            },
+            "description": "no error"
+          }
+        },
+        "summary": "image create",
+        "tags": []
+      }
+    },
+    "/images/list": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "List the images. Use the [image inspect](#operation/Image.Inspect) endpoint\n        to get detailed information about an image.",
+        "operationId": "Image.List",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageList"
+                }
+              }
+            },
+            "description": "no error"
+          }
+        },
+        "summary": "image list",
+        "tags": []
+      }
+    },
+    "/images/prune": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Remove images that are not being used by containers.\n",
+        "operationId": "Image.Prune",
+        "parameters": [
+          {
+            "description": "Whether to remove tagged containers as well.",
+            "in": "query",
+            "name": "all",
+            "required": true,
+            "schema": {
+              "type": "boolean",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdListResponse"
+                }
+              }
+            },
+            "description": "no error"
+          }
+        },
+        "summary": "image prune",
+        "tags": []
+      }
+    },
+    "/images/{image_id}": {
+      "delete": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Remove an image.\n\nImages can't be removed if they have descendant images or are being\nused by a running container.\n",
+        "operationId": "Image.Remove",
+        "parameters": [
+          {
+            "description": "Image identifier, i.e., the name, ID, or an initial unique segment of the ID.",
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such image"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "image remove",
+        "tags": []
+      }
+    },
+    "/images/{image_id}/inspect": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Inspect an image.",
+        "operationId": "Image.Inspect",
+        "parameters": [
+          {
+            "description": "Identifier of the image",
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Image"
+                }
+              }
+            },
+            "description": "image retrieved"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such image"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "image inspect",
+        "tags": []
+      }
+    },
+    "/images/{image_id}/tag": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Update the tag of an image.",
+        "operationId": "Image.Tag",
+        "parameters": [
+          {
+            "description": "Identifier of the image",
+            "in": "path",
+            "name": "image_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          },
+          {
+            "description": "New nametag for the image in the `name:tag` format. If `:tag` is omitted, `:latest` is used.",
+            "in": "query",
+            "name": "nametag",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                }
+              }
+            },
+            "description": "image succesfully tagged"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such image"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "image tag",
+        "tags": []
+      }
+    },
+    "/networks/connect": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Connect a container to a network",
+        "operationId": "Network.Connect",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EndPointConfig"
+              }
+            }
+          },
+          "description": "Connection configuration.",
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "operation was succesful"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such network"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "operation not possible with the present configuration"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "network connect",
+        "tags": []
+      }
+    },
+    "/networks/create": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Create a network.",
+        "operationId": "Network.Create",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NetworkConfig"
+              }
+            }
+          },
+          "description": "Configuration used for the network.",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "could not create network"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "network create",
+        "tags": []
+      }
+    },
+    "/networks/list": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Returns a list of networks.\nUse the [network inspect](#operation/Network.Inspect) endpoint\nto get detailed information about a network.\n",
+        "operationId": "Network.List",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkList"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "network list",
+        "tags": []
+      }
+    },
+    "/networks/prune": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Remove all networks that are not used by any containers.\n",
+        "operationId": "Network.Prune",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdListResponse"
+                }
+              }
+            },
+            "description": "network removed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "network prune",
+        "tags": []
+      }
+    },
+    "/networks/{network_id}": {
+      "delete": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Remove a network. Any connected containers will be disconnected.\n",
+        "operationId": "Network.Remove",
+        "parameters": [
+          {
+            "description": "Network identifier, i.e., the name, ID, or an initial unique segment of the ID.",
+            "in": "path",
+            "name": "network_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such network"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "network remove",
+        "tags": []
+      }
+    },
+    "/networks/{network_id}/disconnect/{container_id}": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Disconnect a container from a network.\n\nThe container must be stopped before it can be disconnected.\n",
+        "operationId": "Network.Disconnect",
+        "parameters": [
+          {
+            "description": "Network identifier, i.e., the name, ID, or an initial unique segment of the ID.",
+            "in": "path",
+            "name": "network_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          },
+          {
+            "description": "Container identifier, i.e., the name, ID, or an initial unique segment of the ID.",
+            "in": "path",
+            "name": "container_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "operation was succesful"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such network and/or container"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "network disconnect",
+        "tags": []
+      }
+    },
+    "/networks/{network_id}/inspect": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Inspect a network and its endpoints.",
+        "operationId": "Network.Inspect",
+        "parameters": [
+          {
+            "description": "Network identifier, i.e., the name, ID, or an initial unique segment of the ID.",
+            "in": "path",
+            "name": "network_id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkInspect"
+                }
+              }
+            },
+            "description": "network retrieved"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such network"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "network inspect",
+        "tags": []
+      }
+    },
+    "/volumes/create": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Create a new volume.",
+        "operationId": "Volume.Create",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VolumeConfig"
+              }
+            }
+          },
+          "description": "Volume configuration",
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                }
+              }
+            },
+            "description": "volume created"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "volume create",
+        "tags": []
+      }
+    },
+    "/volumes/list": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "List volumes.",
+        "operationId": "Volume.List",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolumeList"
+                }
+              }
+            },
+            "description": "no error"
+          }
+        },
+        "summary": "volume list",
+        "tags": []
+      }
+    },
+    "/volumes/prune": {
+      "post": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Remove all volumes that are not being mounted into any containers.\n",
+        "operationId": "Volume.Prune",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdListResponse"
+                }
+              }
+            },
+            "description": "volume removed"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "volume prune",
+        "tags": []
+      }
+    },
+    "/volumes/{volume_name}": {
+      "delete": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Remove one or more volumes. A volume that is in use by a container cannot be removed.\n",
+        "operationId": "Volume.Remove",
+        "parameters": [
+          {
+            "description": "Volume name",
+            "in": "path",
+            "name": "volume_name",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IdResponse"
+                }
+              }
+            },
+            "description": "volume removed"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such volume"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "volume remove",
+        "tags": []
+      }
+    },
+    "/volumes/{volume_name}/inspect": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "Inspect a volume and its mountpoints.",
+        "operationId": "Volume.Inspect",
+        "parameters": [
+          {
+            "description": "Volume name",
+            "in": "path",
+            "name": "volume_name",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VolumeInspect"
+                }
+              }
+            },
+            "description": "volume retrieved"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "no such volume"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "server error"
+          }
+        },
+        "summary": "volume inspect",
+        "tags": []
+      }
+    }
+  },
+  "security": [],
+  "servers": [],
+  "tags": []
+}
