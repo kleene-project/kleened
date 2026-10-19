@@ -46,96 +46,6 @@ defmodule Kleened.Core.ImageBulkBuild do
     {:ok, %State{}}
   end
 
-  defp create_image_inheritage_tree(parents) do
-    image_and_parents =
-      Map.to_list(parents)
-      |> Enum.map(fn {image, parent} -> {parent, image} end)
-
-    Graph.new() |> Graph.add_edges(image_and_parents)
-  end
-
-  defp is_base_image(%Schemas.ImageCreateConfig{}) do
-    true
-  end
-
-  defp is_base_image(_) do
-    false
-  end
-
-  @spec extract_parent_images([Schemas.ImageBuildConfig.t()]) ::
-          {:ok, %{String.t() => String.t()}} | {:error, String.t()}
-  def extract_parent_images(images) do
-    extract_parent_images(images, %{})
-  end
-
-  def extract_parent_images([], parents), do: {:ok, parents}
-
-  def extract_parent_images([config | rest], parents) do
-    case config.container_config do
-      %ContainerConfig{image: nil} ->
-        images = [%ImageBuildConfig{config | container_config: nil} | rest]
-        extract_parent_images(images, parents)
-
-      %ContainerConfig{image: image} ->
-        parents = Map.put(parents, config.tag, image)
-        extract_parent_images(rest, parents)
-
-      nil ->
-        with {:ok, instructions} <-
-               Image.load_and_parse_dockerfile(config.dockerfile, config.context),
-             {_, from_instruction} <- find_from_instruction(instructions),
-             image <- parent_image_ref(from_instruction) do
-          parents = Map.put(parents, config.tag, Utils.normalize_nametag(image))
-          extract_parent_images(rest, parents)
-        else
-          {:error, :enoent} -> {:error, "Could not open #{config.context}/#{config.dockerfile}"}
-          {:error, error_msg} -> {:error, error_msg}
-          nil -> {:error, "No FROM instruction found in Dockerfile"}
-        end
-    end
-  end
-
-  # A FROM instruction is either {:from, image} or, with a build-stage alias,
-  # {:from, image, alias}. The parent image reference is the first payload.
-  defp parent_image_ref({:from, image}), do: image
-  defp parent_image_ref({:from, image, _alias}), do: image
-
-  def find_from_instruction(instructions) do
-    Enum.find(instructions, fn
-      {_, {:from, _, _}} -> true
-      {_, {:from, _}} -> true
-      _ -> false
-    end)
-  end
-
-  @spec no_images_with_nonexisting_parents(
-          [Schemas.ImageBuildConfig.t()],
-          [Schemas.ImageCreateConfig.t()],
-          %{String.t() => String.t()}
-        ) :: boolean()
-  def no_images_with_nonexisting_parents(build_images, base_images, parent_images) do
-    # Check if the images to build has a parent that is either already built or going to be built
-    already_built = MetaData.list_images() |> Enum.map(&"#{&1.name}:#{&1.tag}") |> MapSet.new()
-    going_to_built = build_images |> Enum.map(& &1.tag) |> MapSet.new()
-    base_images = base_images |> Enum.map(& &1.tag) |> MapSet.new()
-    all_images = already_built |> MapSet.union(going_to_built) |> MapSet.union(base_images)
-    parent_images = Map.values(parent_images)
-    parent_images |> Enum.all?(&MapSet.member?(all_images, &1))
-  end
-
-  @spec partition_images([Schemas.ImageBuildConfig.t()], %{String.t() => String.t()}) ::
-          {[Schemas.ImageBuildConfig.t()], [Schemas.ImageBuildConfig.t()]}
-  defp partition_images(build_images, parent_map) do
-    # Partition the images to build into two categories:
-    # 1) images where their parent already exists so they can be builded straight away
-    # 2) images with a parent that (also) needs to be built
-    already_built = MetaData.list_images() |> Enum.map(& &1.tag) |> MapSet.new()
-
-    Enum.split_with(build_images, fn image ->
-      MapSet.member?(already_built, Map.get(parent_map, image.tag, ""))
-    end)
-  end
-
   @impl true
   def handle_call(:stop, _from, %State{builds_in_progress: builds} = state) do
     builds
@@ -245,6 +155,97 @@ defmodule Kleened.Core.ImageBulkBuild do
     msg = {:jail_output, "#{image_id}:#{output}"}
     send_msg(msg, state)
     {:noreply, state}
+  end
+
+  ### Internal functions
+  defp create_image_inheritage_tree(parents) do
+    image_and_parents =
+      Map.to_list(parents)
+      |> Enum.map(fn {image, parent} -> {parent, image} end)
+
+    Graph.new() |> Graph.add_edges(image_and_parents)
+  end
+
+  defp is_base_image(%Schemas.ImageCreateConfig{}) do
+    true
+  end
+
+  defp is_base_image(_) do
+    false
+  end
+
+  @spec extract_parent_images([Schemas.ImageBuildConfig.t()]) ::
+          {:ok, %{String.t() => String.t()}} | {:error, String.t()}
+  def extract_parent_images(images) do
+    extract_parent_images(images, %{})
+  end
+
+  def extract_parent_images([], parents), do: {:ok, parents}
+
+  def extract_parent_images([config | rest], parents) do
+    case config.container_config do
+      %ContainerConfig{image: nil} ->
+        images = [%ImageBuildConfig{config | container_config: nil} | rest]
+        extract_parent_images(images, parents)
+
+      %ContainerConfig{image: image} ->
+        parents = Map.put(parents, config.tag, image)
+        extract_parent_images(rest, parents)
+
+      nil ->
+        with {:ok, instructions} <-
+               Image.load_and_parse_dockerfile(config.dockerfile, config.context),
+             {_, from_instruction} <- find_from_instruction(instructions),
+             image <- parent_image_ref(from_instruction) do
+          parents = Map.put(parents, config.tag, Utils.normalize_nametag(image))
+          extract_parent_images(rest, parents)
+        else
+          {:error, :enoent} -> {:error, "Could not open #{config.context}/#{config.dockerfile}"}
+          {:error, error_msg} -> {:error, error_msg}
+          nil -> {:error, "No FROM instruction found in Dockerfile"}
+        end
+    end
+  end
+
+  # A FROM instruction is either {:from, image} or, with a build-stage alias,
+  # {:from, image, alias}. The parent image reference is the first payload.
+  defp parent_image_ref({:from, image}), do: image
+  defp parent_image_ref({:from, image, _alias}), do: image
+
+  def find_from_instruction(instructions) do
+    Enum.find(instructions, fn
+      {_, {:from, _, _}} -> true
+      {_, {:from, _}} -> true
+      _ -> false
+    end)
+  end
+
+  @spec no_images_with_nonexisting_parents(
+          [Schemas.ImageBuildConfig.t()],
+          [Schemas.ImageCreateConfig.t()],
+          %{String.t() => String.t()}
+        ) :: boolean()
+  def no_images_with_nonexisting_parents(build_images, base_images, parent_images) do
+    # Check if the images to build has a parent that is either already built or going to be built
+    already_built = MetaData.list_images() |> Enum.map(&"#{&1.name}:#{&1.tag}") |> MapSet.new()
+    going_to_built = build_images |> Enum.map(& &1.tag) |> MapSet.new()
+    base_images = base_images |> Enum.map(& &1.tag) |> MapSet.new()
+    all_images = already_built |> MapSet.union(going_to_built) |> MapSet.union(base_images)
+    parent_images = Map.values(parent_images)
+    parent_images |> Enum.all?(&MapSet.member?(all_images, &1))
+  end
+
+  @spec partition_images([Schemas.ImageBuildConfig.t()], %{String.t() => String.t()}) ::
+          {[Schemas.ImageBuildConfig.t()], [Schemas.ImageBuildConfig.t()]}
+  defp partition_images(build_images, parent_map) do
+    # Partition the images to build into two categories:
+    # 1) images where their parent already exists so they can be builded straight away
+    # 2) images with a parent that (also) needs to be built
+    already_built = MetaData.list_images() |> Enum.map(& &1.tag) |> MapSet.new()
+
+    Enum.split_with(build_images, fn image ->
+      MapSet.member?(already_built, Map.get(parent_map, image.tag, ""))
+    end)
   end
 
   # Handles successful image build

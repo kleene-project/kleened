@@ -45,7 +45,6 @@ defmodule Kleened.API.DeploymentBuild do
 
     with {:json, {:ok, deploy}} <- {:json, Jason.decode(deploy_raw)},
          {:ok, deploy} <- Utils.cast_deploy_config(deploy),
-         # buildargs = Core.Utils.map2envlist(config.buildargs),
          {:build, :ok} <- {:build, Deployment.build(deploy)} do
       Logger.debug("image build started, awaiting output")
       {[{:text, Utils.starting_message()}], %{handshaking: false}}

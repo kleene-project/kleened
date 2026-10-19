@@ -192,11 +192,15 @@ defmodule Kleened.API.Utils do
       {:ok, container_config} ->
         # The deployment schema defines containers as
         # allOf: [ContainerConfig, {endpoints: [...]}]; the endpoints key is
-        # lost when casting to the ContainerConfig struct, so it is carried
-        # over explicitly for the diff/create logic.
+        # lost when casting to the ContainerConfig struct, so the endpoints
+        # are cast separately and carried over explicitly for the diff/create
+        # logic.
         endpoints = Map.get(config, :endpoints, [])
-        container_config = %{container_config | endpoints: endpoints}
-        cast_deploy_containers(rest, [container_config | containers])
+
+        with {:ok, endpoints} <- cast_endpoints(endpoints) do
+          container_config = %{container_config | endpoints: endpoints}
+          cast_deploy_containers(rest, [container_config | containers])
+        end
 
       {:error, msg} ->
         {:error, msg}

@@ -130,7 +130,6 @@ defmodule Kleened.API.Schemas do
           description:
             "List of files/directories/volumes on the host filesystem that should be mounted into the container.",
           type: :array,
-          # %OpenApiSpex.Reference{"$ref": "#/components/schemas/MountPointConfig"},
           items: Kleened.API.Schemas.MountPointConfig,
           nullable: true,
           default: [],

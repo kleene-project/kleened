@@ -38,7 +38,13 @@ defmodule Kleened.Core.Deployment do
       :not_found ->
         case Kleened.Core.Container.create(config) do
           {:ok, container} ->
-            create_containers_(rest, [container | containers])
+            case connect_endpoints(container, config.endpoints) do
+              [] ->
+                create_containers_(rest, [container | containers])
+
+              reasons ->
+                {:error, Enum.join(reasons, ", ")}
+            end
 
           {:error, reason} ->
             {:error, reason}
@@ -46,6 +52,25 @@ defmodule Kleened.Core.Deployment do
 
       _container ->
         create_containers_(rest, containers)
+    end
+  end
+
+  # Connects a freshly created container to the networks given by its
+  # deployment `endpoints`. Returns the list of error reasons (empty when all
+  # connections succeeded).
+  defp connect_endpoints(_container, nil), do: []
+
+  defp connect_endpoints(_container, []), do: []
+
+  defp connect_endpoints(container, [endpoint | rest]) do
+    case Network.connect(%Schemas.EndPointConfig{endpoint | container: container.id}) do
+      {:ok, _endpoint} ->
+        connect_endpoints(container, rest)
+
+      {:error, reason} ->
+        [
+          "could not connect container '#{container.name}' to network '#{endpoint.network}': #{reason}"
+        ]
     end
   end
 
