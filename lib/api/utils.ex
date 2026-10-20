@@ -106,12 +106,6 @@ defmodule Kleened.API.Utils do
     }
   end
 
-  defp resolve_schema_properties(nil), do: nil
-
-  defp resolve_schema_properties(properties) do
-    Map.new(properties, fn {key, value} -> {key, resolve_schema_modules(value)} end)
-  end
-
   def resolve_schema_modules(module) when is_atom(module) and not is_nil(module) do
     module.schema()
   end
@@ -121,6 +115,12 @@ defmodule Kleened.API.Utils do
   end
 
   def resolve_schema_modules(other), do: other
+
+  defp resolve_schema_properties(nil), do: nil
+
+  defp resolve_schema_properties(properties) do
+    Map.new(properties, fn {key, value} -> {key, resolve_schema_modules(value)} end)
+  end
 
   @spec cast_deploy_config(%{}) :: {:ok, %Schemas.DeploymentConfig{}} | {:error, term()}
   def cast_deploy_config(deploy) do

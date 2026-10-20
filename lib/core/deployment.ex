@@ -111,7 +111,7 @@ defmodule Kleened.Core.Deployment do
   end
 
   @spec diff(%Schemas.DeploymentConfig{}) ::
-          {:ok, %{containers: map(), images: map(), networks: map()}}
+          {:ok, %{containers: map(), images: map(), networks: map(), volumes: map()}}
   def diff(deploy_spec) do
     Logger.debug("Creating diff on spec #{inspect(deploy_spec)}")
 
