@@ -433,30 +433,7 @@
             "default": [],
             "description": "Deployment containers",
             "items": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/ContainerConfig"
-                },
-                {
-                  "properties": {
-                    "endpoints": {
-                      "description": "Network endpoints for the container.",
-                      "items": {
-                        "$ref": "#/components/schemas/EndPointConfig"
-                      },
-                      "type": "array",
-                      "x-struct": null,
-                      "x-validate": null
-                    }
-                  },
-                  "type": "object",
-                  "x-struct": null,
-                  "x-validate": null
-                }
-              ],
-              "type": "object",
-              "x-struct": null,
-              "x-validate": null
+              "$ref": "#/components/schemas/ContainerConfig"
             },
             "type": "array",
             "x-struct": null,
@@ -474,7 +451,6 @@
                   "$ref": "#/components/schemas/ImageCreateConfig"
                 }
               ],
-              "type": "object",
               "x-struct": null,
               "x-validate": null
             },

@@ -12,7 +12,6 @@ defmodule Kleened.API.Schemas do
           description: "Deployment images.",
           type: :array,
           items: %Schema{
-            type: :object,
             anyOf: [
               %OpenApiSpex.Reference{"$ref": "#/components/schemas/ImageBuildConfig"},
               %OpenApiSpex.Reference{"$ref": "#/components/schemas/ImageCreateConfig"}
@@ -40,27 +39,12 @@ defmodule Kleened.API.Schemas do
           items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/NetworkConfig"},
           default: []
         },
+        # A container is a ContainerConfig (which includes endpoints that can
+        # refer to networks defined in the networks section)
         containers: %Schema{
           description: "Deployment containers",
           type: :array,
-          items: %Schema{
-            type: :object,
-            allOf: [
-              # A container is defined by a ContainerConfig (which includes mounpoints)
-              # + a list of endpoints (that can refer to networks defined in the network section)
-              %OpenApiSpex.Reference{"$ref": "#/components/schemas/ContainerConfig"},
-              %Schema{
-                type: :object,
-                properties: %{
-                  endpoints: %Schema{
-                    description: "Network endpoints for the container.",
-                    type: :array,
-                    items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/EndPointConfig"}
-                  }
-                }
-              }
-            ]
-          },
+          items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/ContainerConfig"},
           default: []
         }
       }

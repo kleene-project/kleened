@@ -57,4 +57,34 @@ defmodule DeploymentTest do
 
     assert {:ok, _json} = TestHelper.deployment_diff(config)
   end
+
+  test "deployment diff reports a missing volume" do
+    config =
+      YamlElixir.read_from_string!("""
+      ---
+      volumes:
+        - name: "database-storage"
+      """)
+
+    assert {:ok, json} = TestHelper.deployment_diff(config)
+    result = Jason.decode!(json)
+    assert %{"database-storage" => [%{"type" => "missing_on_host"}]} = result["volumes"]
+  end
+
+  test "deployment diff of an existing volume reports no differences", %{api_spec: api_spec} do
+    config =
+      YamlElixir.read_from_string!("""
+      ---
+      volumes:
+        - name: "database-storage"
+      """)
+
+    TestHelper.volume_create(api_spec, "database-storage")
+
+    assert {:ok, json} = TestHelper.deployment_diff(config)
+    result = Jason.decode!(json)
+    assert result["volumes"] == %{}
+  after
+    TestHelper.volume_remove(api_spec, "database-storage")
+  end
 end

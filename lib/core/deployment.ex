@@ -111,7 +111,7 @@ defmodule Kleened.Core.Deployment do
   end
 
   @spec diff(%Schemas.DeploymentConfig{}) ::
-          {:ok, %{containers: map(), images: map(), networks: map()}}
+          {:ok, %{containers: map(), images: map(), networks: map(), volumes: map()}}
   def diff(deploy_spec) do
     Logger.debug("Creating diff on spec #{inspect(deploy_spec)}")
 
@@ -124,10 +124,14 @@ defmodule Kleened.Core.Deployment do
     networks = MetaData.list_networks()
     network_result = diff_objects(:network, deploy_spec.networks, networks)
 
+    volumes = MetaData.list_volumes()
+    volume_result = diff_objects(:volume, deploy_spec.volumes, volumes)
+
     result = %{
       containers: container_result,
       images: image_result,
-      networks: network_result
+      networks: network_result,
+      volumes: volume_result
     }
 
     Logger.info("Diff result: #{inspect(result)}")
