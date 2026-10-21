@@ -725,14 +725,14 @@ defmodule TestHelper do
 
   def volume_create(api_spec, name) do
     response =
-      conn(:post, "/volumes/create", %{name: name})
+      conn(:post, "/volumes/create", Jason.encode!([%{name: name}]))
       |> put_req_header("content-type", "application/json")
       |> Router.call(@opts)
 
     assert response.status == 201
-    json_body = Jason.decode!(response.resp_body, [{:keys, :atoms}])
-    assert_schema(json_body, "IdResponse", api_spec)
-    MetaData.get_volume(json_body.id) |> Map.drop([:__struct__])
+    [json_body] = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+    assert is_map(json_body) and Map.has_key?(json_body, :name)
+    MetaData.get_volume(json_body.name) |> Map.drop([:__struct__])
   end
 
   def volume_list(api_spec) do

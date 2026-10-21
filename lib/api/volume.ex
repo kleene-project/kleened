@@ -56,17 +56,22 @@ defmodule Kleened.API.Volume do
     def open_api_operation(_) do
       %Operation{
         summary: "volume create",
-        description: "Create a new volume.",
+        description: "Create one or more volumes from a list of configurations.",
         operationId: "Volume.Create",
         requestBody:
           request_body(
-            "Volume configuration",
+            "List of volume configurations.",
             "application/json",
-            Schemas.VolumeConfig,
+            Schemas.VolumeConfigList,
             required: true
           ),
         responses: %{
-          201 => response("volume created", "application/json", Schemas.IdResponse),
+          201 =>
+            response(
+              "volumes created, with per-item error objects for failures",
+              "application/json",
+              Schemas.VolumeCreateResult
+            ),
           500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
@@ -76,9 +81,22 @@ defmodule Kleened.API.Volume do
       conn = Plug.Conn.fetch_query_params(conn)
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
-      name = conn.body_params.name
-      %Schemas.Volume{} = Volume.create(name)
-      send_resp(conn, 201, Utils.id_response(name))
+      configs =
+        case conn.body_params do
+          %{"_json" => list} -> list
+          list when is_list(list) -> list
+        end
+
+      results =
+        Enum.map(configs, fn config ->
+          try do
+            Volume.create(config.name)
+          rescue
+            e -> %{error: Exception.message(e)}
+          end
+        end)
+
+      send_resp(conn, 201, Jason.encode!(results))
     end
   end
 

@@ -975,6 +975,38 @@ defmodule Kleened.API.Schemas do
     })
   end
 
+  defmodule VolumeConfigList do
+    OpenApiSpex.schema(%{
+      description: "List of volume configurations.",
+      type: :array,
+      items: Kleened.API.Schemas.VolumeConfig
+    })
+  end
+
+  defmodule ErrorObject do
+    OpenApiSpex.schema(%{
+      description: "Per-item error, embedded in batch results.",
+      type: :object,
+      properties: %{
+        error: %Schema{
+          type: :string,
+          description: "Human-readable description of what went wrong for this item."
+        }
+      },
+      required: [:error]
+    })
+  end
+
+  defmodule VolumeCreateResult do
+    OpenApiSpex.schema(%{
+      description: "Per-item results of a volume-create request.",
+      type: :array,
+      items: %OpenApiSpex.Schema{
+        oneOf: [Kleened.API.Schemas.Volume, Kleened.API.Schemas.ErrorObject]
+      }
+    })
+  end
+
   defmodule VolumeConfig do
     OpenApiSpex.schema(%{
       description: "Volume configuration",
