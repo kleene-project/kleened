@@ -55,11 +55,7 @@ defmodule Kleened.API.Network do
     def create(conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
-      configs =
-        case conn.body_params do
-          %{"_json" => list} -> list
-          list when is_list(list) -> list
-        end
+      configs = body_params_list(conn)
 
       results =
         Enum.map(configs, fn config ->
@@ -77,6 +73,21 @@ defmodule Kleened.API.Network do
 
       send_resp(conn, 201, Jason.encode!(results))
     end
+
+    # Plug.Parsers replaces body_params with the parsed JSON: a list for
+    # array bodies (wrapped as %{"_json" => list}) or a map for object
+    # bodies. Normalize both shapes into a list of config maps.
+    # `body_params` is opaque to dialyzer: the CastAndValidate pipeline has
+    # Plug.Parsers replace it at runtime, which no local spec can express.
+    @dialyzer {:nowarn_function, body_params_list: 1}
+
+    @spec body_params_list(Plug.Conn.t()) :: [map()]
+    defp body_params_list(%Plug.Conn{body_params: %{"_json" => list}})
+         when is_list(list),
+         do: list
+
+    defp body_params_list(%Plug.Conn{body_params: [_ | _] = list}), do: list
+    defp body_params_list(%Plug.Conn{body_params: %{} = params}), do: [params]
   end
 
   defmodule List do
@@ -235,11 +246,7 @@ defmodule Kleened.API.Network do
     def connect(conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
-      configs =
-        case conn.body_params do
-          %{"_json" => list} -> list
-          list when is_list(list) -> list
-        end
+      configs = body_params_list(conn)
 
       results =
         Enum.map(configs, fn config ->
@@ -251,6 +258,21 @@ defmodule Kleened.API.Network do
 
       send_resp(conn, 201, Jason.encode!(results))
     end
+
+    # Plug.Parsers replaces body_params with the parsed JSON: a list for
+    # array bodies (wrapped as %{"_json" => list}) or a map for object
+    # bodies. Normalize both shapes into a list of config maps.
+    # `body_params` is opaque to dialyzer: the CastAndValidate pipeline has
+    # Plug.Parsers replace it at runtime, which no local spec can express.
+    @dialyzer {:nowarn_function, body_params_list: 1}
+
+    @spec body_params_list(Plug.Conn.t()) :: [map()]
+    defp body_params_list(%Plug.Conn{body_params: %{"_json" => list}})
+         when is_list(list),
+         do: list
+
+    defp body_params_list(%Plug.Conn{body_params: [_ | _] = list}), do: list
+    defp body_params_list(%Plug.Conn{body_params: %{} = params}), do: [params]
   end
 
   defmodule Disconnect do
