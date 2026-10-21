@@ -857,6 +857,24 @@ defmodule Kleened.API.Schemas do
     })
   end
 
+  defmodule EndPointConfigList do
+    OpenApiSpex.schema(%{
+      description: "List of endpoint configurations.",
+      type: :array,
+      items: Kleened.API.Schemas.EndPointConfig
+    })
+  end
+
+  defmodule ConnectResult do
+    OpenApiSpex.schema(%{
+      description: "Per-item results of a network-connect request.",
+      type: :array,
+      items: %OpenApiSpex.Schema{
+        oneOf: [Kleened.API.Schemas.EndPoint, Kleened.API.Schemas.ErrorObject]
+      }
+    })
+  end
+
   defmodule EndPointConfig do
     OpenApiSpex.schema(%{
       description: "Configuration of a connection between a network to a container.",

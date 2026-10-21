@@ -676,18 +676,18 @@ defmodule TestHelper do
   end
 
   def network_connect(config) do
-    api_spec = Kleened.API.Spec.spec()
-
     response =
-      conn(:post, "/networks/connect", config)
+      conn(:post, "/networks/connect", Jason.encode!([config]))
       |> put_req_header("content-type", "application/json")
       |> Router.call(@opts)
 
-    validate_response(api_spec, response, %{
-      204 => "",
-      404 => "ErrorResponse",
-      409 => "ErrorResponse"
-    })
+    assert response.status == 201
+    [json_body] = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+
+    case json_body do
+      %{error: msg} -> %{message: msg}
+      endpoint when is_map(endpoint) -> :ok
+    end
   end
 
   def network_disconnect(api_spec, network_id, container_id) do

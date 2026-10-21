@@ -1396,7 +1396,7 @@ defmodule NetworkTest do
     timeout = 5_000
 
     config_client = %{
-      name: "client",
+      name: "port-range-client-#{System.unique_integer([:positive])}",
       ip_address: "<auto>",
       ip_address6: "",
       network_driver: "ipnet",
@@ -1407,11 +1407,21 @@ defmodule NetworkTest do
     {_, _, _output} = TestHelper.container_valid_run(config_client)
     assert TestHelper.receive_frame(listen4500_conn, timeout) == {:text, "traffic\n"}
 
-    config_client = %{config_client | cmd: ["/bin/sh", "-c", cmd_client("inet", endpoint, 5000)]}
+    config_client = %{
+      config_client
+      | cmd: ["/bin/sh", "-c", cmd_client("inet", endpoint, 5000)],
+        name: "port-range-client-#{System.unique_integer([:positive])}"
+    }
+
     {_, _, _output} = TestHelper.container_valid_run(config_client)
     assert TestHelper.receive_frame(listen5000_conn, timeout) == {:text, "traffic\n"}
 
-    config_client = %{config_client | cmd: ["/bin/sh", "-c", cmd_client("inet", endpoint, 4000)]}
+    config_client = %{
+      config_client
+      | cmd: ["/bin/sh", "-c", cmd_client("inet", endpoint, 4000)],
+        name: "port-range-client-#{System.unique_integer([:positive])}"
+    }
+
     {_, _, _output} = TestHelper.container_valid_run(config_client)
     assert TestHelper.receive_frame(listen4000_conn, timeout) == {:text, "traffic\n"}
   end
@@ -1479,7 +1489,7 @@ defmodule NetworkTest do
       end
 
     config_client_default = %{
-      name: "client",
+      name: "connectivity-client-#{System.unique_integer([:positive])}",
       network: network.id,
       ip_address: "<auto>",
       ip_address6: "",
@@ -1648,7 +1658,7 @@ defmodule NetworkTest do
     config_client =
       Map.merge(
         %{
-          name: "client",
+          name: "icc-client-#{System.unique_integer([:positive])}",
           ip_address: default_ip(protocol),
           ip_address6: default_ip6(protocol),
           network: network_client.id,
@@ -1682,7 +1692,7 @@ defmodule NetworkTest do
     config_client =
       Map.merge(
         %{
-          name: "client",
+          name: "pp-client-#{System.unique_integer([:positive])}",
           ip_address: default_ip(protocol),
           ip_address6: default_ip6(protocol),
           network: network_client.id,
@@ -1705,7 +1715,7 @@ defmodule NetworkTest do
     config_server =
       Map.merge(
         %{
-          name: "server",
+          name: "icc-server-#{System.unique_integer([:positive])}",
           ip_address: default_ip(protocol),
           ip_address6: default_ip6(protocol),
           attach: true,
@@ -1785,7 +1795,7 @@ defmodule NetworkTest do
       "echo \"SPLIT HERE\" && netstat --libxo json -rn && echo \"SPLIT HERE\" && netstat --libxo json -i"
 
     config_default = %{
-      name: "nettest",
+      name: "netstat-test-#{System.unique_integer([:positive])}",
       cmd: ["/bin/sh", "-c", all_in_one_netstat],
       ip_address: "<auto>",
       ip_adress6: ""
@@ -1834,7 +1844,7 @@ defmodule NetworkTest do
   defp failing_to_connect_container(networks, driver) do
     %{id: container_id} =
       TestHelper.container_create(%{
-        name: "nettest",
+        name: "connect-failure-test",
         network: "",
         network_driver: driver
       })
@@ -1890,5 +1900,29 @@ defmodule NetworkTest do
       %{address: address, network: network}
     end)
     |> MapSet.new()
+  end
+
+  test "connect containers to networks from a list with per-item results", %{api_spec: _api_spec} do
+    TestHelper.network_create(%{name: "batchnet", type: "loopback"})
+    TestHelper.container_create(%{name: "batchcon", network_driver: "ipnet"})
+
+    response =
+      conn(
+        :post,
+        "/networks/connect",
+        Jason.encode!([
+          %{container: "batchcon", network: "batchnet", ip_address: "<auto>"},
+          %{container: "batchcon", network: "batchnet", ip_address: "<auto>"}
+        ])
+      )
+      |> put_req_header("content-type", "application/json")
+      |> Router.call(@opts)
+
+    assert response.status == 201
+    results = Jason.decode!(response.resp_body)
+    assert length(results) == 2
+    assert %{"network_id" => _, "container_id" => _} = Enum.at(results, 0)
+    # duplicate connect → per-item error
+    assert %{"error" => "container already connected to the network"} = Enum.at(results, 1)
   end
 end

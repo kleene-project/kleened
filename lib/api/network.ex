@@ -211,24 +211,21 @@ defmodule Kleened.API.Network do
     def open_api_operation(_) do
       %Operation{
         summary: "network connect",
-        description: "Connect a container to a network",
+        description: "Connect containers to networks from a list of configurations.",
         operationId: "Network.Connect",
         requestBody:
           request_body(
-            "Connection configuration.",
+            "List of connection configurations.",
             "application/json",
-            Schemas.EndPointConfig,
+            Schemas.EndPointConfigList,
             required: true
           ),
         responses: %{
-          # 204 => response("operation was succesful", "application/json", Schemas.IdResponse),
-          204 => %Response{description: "operation was succesful"},
-          404 => response("no such network", "application/json", Schemas.ErrorResponse),
-          409 =>
+          201 =>
             response(
-              "operation not possible with the present configuration",
+              "endpoints created, with per-item error objects for failures",
               "application/json",
-              Schemas.ErrorResponse
+              Schemas.ConnectResult
             ),
           500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
@@ -237,18 +234,22 @@ defmodule Kleened.API.Network do
 
     def connect(conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
-      config = conn.body_params
 
-      case Network.connect(config) do
-        {:ok, _endpoint_config} ->
-          send_resp(conn, 204, "")
+      configs =
+        case conn.body_params do
+          %{"_json" => list} -> list
+          list when is_list(list) -> list
+        end
 
-        {:error, msg} ->
-          case String.contains?(msg, "not found") do
-            true -> send_resp(conn, 404, Utils.error_response(msg))
-            false -> send_resp(conn, 409, Utils.error_response(msg))
+      results =
+        Enum.map(configs, fn config ->
+          case Network.connect(config) do
+            {:ok, endpoint} -> endpoint
+            {:error, msg} -> %{error: msg}
           end
-      end
+        end)
+
+      send_resp(conn, 201, Jason.encode!(results))
     end
   end
 
