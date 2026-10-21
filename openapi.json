@@ -2,6 +2,25 @@
   "components": {
     "responses": {},
     "schemas": {
+      "ConnectResult": {
+        "description": "Per-item results of a network-connect request.",
+        "items": {
+          "oneOf": [
+            {
+              "$ref": "#/components/schemas/EndPoint"
+            },
+            {
+              "$ref": "#/components/schemas/ErrorObject"
+            }
+          ],
+          "x-struct": null,
+          "x-validate": null
+        },
+        "title": "ConnectResult",
+        "type": "array",
+        "x-struct": "Elixir.Kleened.API.Schemas.ConnectResult",
+        "x-validate": null
+      },
       "Container": {
         "description": "Kleene container",
         "properties": {
@@ -172,17 +191,6 @@
             "x-struct": null,
             "x-validate": null
           },
-          "endpoints": {
-            "default": [],
-            "description": "Network endpoints for the container. Only used in deployment\nspecifications, where the endpoints refer to networks defined in the\ndeployment's `networks` section.\n",
-            "items": {
-              "$ref": "#/components/schemas/EndPointConfig"
-            },
-            "nullable": true,
-            "type": "array",
-            "x-struct": null,
-            "x-validate": null
-          },
           "env": {
             "default": [],
             "description": "List of environment variables when using the container. This list will be merged with environment variables defined by the image. The values in this list takes precedence if the variable is defined in both.",
@@ -331,6 +339,35 @@
         "x-struct": "Elixir.Kleened.API.Schemas.ContainerConfig",
         "x-validate": null
       },
+      "ContainerConfigList": {
+        "description": "List of container configurations.",
+        "items": {
+          "$ref": "#/components/schemas/ContainerConfig"
+        },
+        "title": "ContainerConfigList",
+        "type": "array",
+        "x-struct": "Elixir.Kleened.API.Schemas.ContainerConfigList",
+        "x-validate": null
+      },
+      "ContainerCreateResult": {
+        "description": "Per-item results of a container-create request.",
+        "items": {
+          "oneOf": [
+            {
+              "$ref": "#/components/schemas/Container"
+            },
+            {
+              "$ref": "#/components/schemas/ErrorObject"
+            }
+          ],
+          "x-struct": null,
+          "x-validate": null
+        },
+        "title": "ContainerCreateResult",
+        "type": "array",
+        "x-struct": "Elixir.Kleened.API.Schemas.ContainerCreateResult",
+        "x-validate": null
+      },
       "ContainerInspect": {
         "description": "Detailed information on a container.",
         "properties": {
@@ -359,16 +396,6 @@
         "title": "ContainerInspect",
         "type": "object",
         "x-struct": "Elixir.Kleened.API.Schemas.ContainerInspect",
-        "x-validate": null
-      },
-      "ContainerList": {
-        "description": "List of images.",
-        "items": {
-          "$ref": "#/components/schemas/Container"
-        },
-        "title": "ContainerList",
-        "type": "array",
-        "x-struct": "Elixir.Kleened.API.Schemas.ContainerList",
         "x-validate": null
       },
       "ContainerSummary": {
@@ -433,7 +460,7 @@
             "default": [],
             "description": "Deployment containers",
             "items": {
-              "$ref": "#/components/schemas/ContainerConfig"
+              "$ref": "#/components/schemas/DeploymentServiceConfig"
             },
             "type": "array",
             "x-struct": null,
@@ -482,6 +509,185 @@
         "title": "DeploymentConfig",
         "type": "object",
         "x-struct": "Elixir.Kleened.API.Schemas.DeploymentConfig",
+        "x-validate": null
+      },
+      "DeploymentServiceConfig": {
+        "description": "Container configuration as used in deployment files. Extends\nContainerConfig with the endpoints that connect the container to the\ndeployment's networks.\n",
+        "properties": {
+          "cmd": {
+            "default": [],
+            "description": "Command to execute when the container is started. If `[]` is specified the command from the image is used.",
+            "example": [
+              "/bin/sh",
+              "-c",
+              "ls /"
+            ],
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "nullable": true,
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "endpoints": {
+            "default": [],
+            "description": "Network endpoints to connect the container to.",
+            "items": {
+              "$ref": "#/components/schemas/EndPointConfig"
+            },
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "env": {
+            "default": [],
+            "description": "List of environment variables when using the container. This list will be merged with environment variables defined by the image. The values in this list takes precedence if the variable is defined in both.",
+            "example": [
+              "DEBUG=0",
+              "LANG=da_DK.UTF-8"
+            ],
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "nullable": true,
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "image": {
+            "description": "The name or id and possibly a snapshot of the image used for creating the container.\nThe parameter uses the followinge format:\n\n- `<image_id>[@<snapshot_id>]` or\n- `<name>[:<tag>][@<snapshot_id>]`.\n\nIf `<tag>` is omitted, `latest` is assumed.\n",
+            "example": [
+              "FreeBSD:13.2-STABLE",
+              "FreeBSD:13.2-STABLE@6b3c821605d4",
+              "48fa55889b0f",
+              "48fa55889b0f@2028818d6f06"
+            ],
+            "nullable": true,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "jail_param": {
+            "default": [],
+            "description": "List of jail parameters to use for the container.\nSee the [jails manual page](https://man.freebsd.org/cgi/man.cgi?query=jail) for an explanation of what jail parameters is,\nand the [Kleene documentation](/run/jail-parameters/) for an explanation of how they are used by Kleene.\n",
+            "example": [
+              "allow.raw_sockets=true",
+              "osrelease=kleenejail"
+            ],
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "nullable": true,
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "mounts": {
+            "default": [],
+            "description": "List of files/directories/volumes on the host filesystem that should be mounted into the container.",
+            "example": [
+              {
+                "destination": "/mnt/db",
+                "source": "database",
+                "type": "volume"
+              },
+              {
+                "destination": "/webapp",
+                "source": "/home/me/develop/webapp",
+                "type": "nullfs"
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/MountPointConfig"
+            },
+            "nullable": true,
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "name": {
+            "description": "Name of the container. Must match `/?[a-zA-Z0-9][a-zA-Z0-9_.-]+`.",
+            "nullable": true,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "network_driver": {
+            "default": "ipnet",
+            "description": "What kind of network driver should the container use.\nPossible values are `ipnet`, `host`, `vnet`, `disabled`.\n",
+            "enum": [
+              "ipnet",
+              "host",
+              "vnet",
+              "disabled"
+            ],
+            "example": "host",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "persist": {
+            "default": false,
+            "description": "Whether or not this container will be removed by pruning.",
+            "example": true,
+            "nullable": true,
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "public_ports": {
+            "default": [],
+            "description": "Listening ports on network interfaces that redirect incoming traffic to the container.",
+            "example": [
+              {
+                "container_port": "8000",
+                "host_port": "8080",
+                "interfaces": [
+                  "em0"
+                ],
+                "properties": "tcp"
+              }
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PublishedPortConfig"
+            },
+            "nullable": true,
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "restart_policy": {
+            "default": "no",
+            "description": "Restarting policy of the container:\n\n- `\"no\"`: There is no automatic restart of the container\n- `\"on-startup\"`: The container is started each time Kleened is.\n",
+            "enum": [
+              "no",
+              "on-startup"
+            ],
+            "example": "on-startup",
+            "nullable": true,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "user": {
+            "default": "",
+            "description": "User that executes the command (cmd).\nIf user is set to `\"\"`, the user from the image will be used, which in turn is 'root' if no user is specified there.\n\nThis parameter will be overwritten by the jail parameter `exec.jail_user` if it is set.\n",
+            "nullable": true,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "title": "DeploymentServiceConfig",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.DeploymentServiceConfig",
         "x-validate": null
       },
       "EndPoint": {
@@ -571,6 +777,34 @@
         "title": "EndPointConfig",
         "type": "object",
         "x-struct": "Elixir.Kleened.API.Schemas.EndPointConfig",
+        "x-validate": null
+      },
+      "EndPointConfigList": {
+        "description": "List of endpoint configurations.",
+        "items": {
+          "$ref": "#/components/schemas/EndPointConfig"
+        },
+        "title": "EndPointConfigList",
+        "type": "array",
+        "x-struct": "Elixir.Kleened.API.Schemas.EndPointConfigList",
+        "x-validate": null
+      },
+      "ErrorObject": {
+        "description": "Per-item error, embedded in batch results.",
+        "properties": {
+          "error": {
+            "description": "Human-readable description of what went wrong for this item.",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "ErrorObject",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.ErrorObject",
         "x-validate": null
       },
       "ErrorResponse": {
@@ -1243,6 +1477,35 @@
         "x-struct": "Elixir.Kleened.API.Schemas.NetworkConfig",
         "x-validate": null
       },
+      "NetworkConfigList": {
+        "description": "List of network configurations.",
+        "items": {
+          "$ref": "#/components/schemas/NetworkConfig"
+        },
+        "title": "NetworkConfigList",
+        "type": "array",
+        "x-struct": "Elixir.Kleened.API.Schemas.NetworkConfigList",
+        "x-validate": null
+      },
+      "NetworkCreateResult": {
+        "description": "Per-item results of a network-create request.",
+        "items": {
+          "oneOf": [
+            {
+              "$ref": "#/components/schemas/Network"
+            },
+            {
+              "$ref": "#/components/schemas/ErrorObject"
+            }
+          ],
+          "x-struct": null,
+          "x-validate": null
+        },
+        "title": "NetworkCreateResult",
+        "type": "array",
+        "x-struct": "Elixir.Kleened.API.Schemas.NetworkCreateResult",
+        "x-validate": null
+      },
       "NetworkInspect": {
         "description": "Detailed information on a network.",
         "properties": {
@@ -1437,6 +1700,35 @@
         "x-struct": "Elixir.Kleened.API.Schemas.VolumeConfig",
         "x-validate": null
       },
+      "VolumeConfigList": {
+        "description": "List of volume configurations.",
+        "items": {
+          "$ref": "#/components/schemas/VolumeConfig"
+        },
+        "title": "VolumeConfigList",
+        "type": "array",
+        "x-struct": "Elixir.Kleened.API.Schemas.VolumeConfigList",
+        "x-validate": null
+      },
+      "VolumeCreateResult": {
+        "description": "Per-item results of a volume-create request.",
+        "items": {
+          "oneOf": [
+            {
+              "$ref": "#/components/schemas/Volume"
+            },
+            {
+              "$ref": "#/components/schemas/ErrorObject"
+            }
+          ],
+          "x-struct": null,
+          "x-validate": null
+        },
+        "title": "VolumeCreateResult",
+        "type": "array",
+        "x-struct": "Elixir.Kleened.API.Schemas.VolumeCreateResult",
+        "x-validate": null
+      },
       "VolumeInspect": {
         "description": "Detailed information on a volume.",
         "properties": {
@@ -1525,18 +1817,18 @@
       "post": {
         "callbacks": {},
         "deprecated": false,
-        "description": "Create a container.\n\nNote that it is not possible to set any of the properties in the request body to `null`.\nThis is only possible when updating containers using the [Container.Update](#operation/Container.Update) endpoint.\n",
+        "description": "Create one or more containers from a list of configurations.\n\nNote that it is not possible to set any of the properties in the\nrequest body to `null`. This is only possible when updating\ncontainers using the [Container.Update](#operation/Container.Update)\nendpoint.\n",
         "operationId": "Container.Create",
         "parameters": [],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ContainerConfig"
+                "$ref": "#/components/schemas/ContainerConfigList"
               }
             }
           },
-          "description": "Container configuration.",
+          "description": "List of container configurations.",
           "required": true
         },
         "responses": {
@@ -1544,21 +1836,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IdResponse"
+                  "$ref": "#/components/schemas/ContainerCreateResult"
                 }
               }
             },
-            "description": "no error"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "no such image"
+            "description": "containers created, with per-item error objects for failures"
           },
           "500": {
             "content": {
@@ -1931,168 +2213,6 @@
           }
         },
         "summary": "image build",
-        "tags": []
-      }
-    },
-    "/deployment/create/containers": {
-      "post": {
-        "callbacks": {},
-        "deprecated": false,
-        "description": "Create deployment containers.\n",
-        "operationId": "Deployment.CreateContainers",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DeploymentConfig"
-              }
-            }
-          },
-          "description": "Deployment configuration.",
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ContainerList"
-                }
-              }
-            },
-            "description": "no error"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error processing request"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "server error"
-          }
-        },
-        "summary": "deployment create containers",
-        "tags": []
-      }
-    },
-    "/deployment/create/networks": {
-      "post": {
-        "callbacks": {},
-        "deprecated": false,
-        "description": "Create deployment networks.\n",
-        "operationId": "Deployment.CreateNetworks",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DeploymentConfig"
-              }
-            }
-          },
-          "description": "Deployment configuration.",
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetworkList"
-                }
-              }
-            },
-            "description": "no error"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error processing request"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "server error"
-          }
-        },
-        "summary": "create deployment networks",
-        "tags": []
-      }
-    },
-    "/deployment/create/volumes": {
-      "post": {
-        "callbacks": {},
-        "deprecated": false,
-        "description": "Create deployment volumes.\n",
-        "operationId": "Deployment.CreateVolumes",
-        "parameters": [],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DeploymentConfig"
-              }
-            }
-          },
-          "description": "Deployment configuration.",
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/VolumeList"
-                }
-              }
-            },
-            "description": "no error"
-          },
-          "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "error processing request"
-          },
-          "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "server error"
-          }
-        },
-        "summary": "create deployment volumes",
         "tags": []
       }
     },
@@ -2630,43 +2750,30 @@
       "post": {
         "callbacks": {},
         "deprecated": false,
-        "description": "Connect a container to a network",
+        "description": "Connect containers to networks from a list of configurations.",
         "operationId": "Network.Connect",
         "parameters": [],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EndPointConfig"
+                "$ref": "#/components/schemas/EndPointConfigList"
               }
             }
           },
-          "description": "Connection configuration.",
+          "description": "List of connection configurations.",
           "required": true
         },
         "responses": {
-          "204": {
-            "description": "operation was succesful"
-          },
-          "404": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/ConnectResult"
                 }
               }
             },
-            "description": "no such network"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "operation not possible with the present configuration"
+            "description": "endpoints created, with per-item error objects for failures"
           },
           "500": {
             "content": {
@@ -2687,18 +2794,18 @@
       "post": {
         "callbacks": {},
         "deprecated": false,
-        "description": "Create a network.",
+        "description": "Create one or more networks from a list of configurations.",
         "operationId": "Network.Create",
         "parameters": [],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/NetworkConfig"
+                "$ref": "#/components/schemas/NetworkConfigList"
               }
             }
           },
-          "description": "Configuration used for the network.",
+          "description": "List of network configurations.",
           "required": true
         },
         "responses": {
@@ -2706,21 +2813,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IdResponse"
+                  "$ref": "#/components/schemas/NetworkCreateResult"
                 }
               }
             },
-            "description": "no error"
-          },
-          "409": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "could not create network"
+            "description": "networks created, with per-item error objects for failures"
           },
           "500": {
             "content": {
@@ -2976,18 +3073,18 @@
       "post": {
         "callbacks": {},
         "deprecated": false,
-        "description": "Create a new volume.",
+        "description": "Create one or more volumes from a list of configurations.",
         "operationId": "Volume.Create",
         "parameters": [],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/VolumeConfig"
+                "$ref": "#/components/schemas/VolumeConfigList"
               }
             }
           },
-          "description": "Volume configuration",
+          "description": "List of volume configurations.",
           "required": true
         },
         "responses": {
@@ -2995,11 +3092,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IdResponse"
+                  "$ref": "#/components/schemas/VolumeCreateResult"
                 }
               }
             },
-            "description": "volume created"
+            "description": "volumes created, with per-item error objects for failures"
           },
           "500": {
             "content": {
