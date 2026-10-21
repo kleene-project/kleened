@@ -39,8 +39,6 @@
    "The pattern can never match the type {:error, :is_running | :not_found}."},
   {"lib/api/container.ex",
    "The pattern can never match the type {:error, <<_::64, _::size(8)>>}."},
-  {"lib/api/container.ex",
-   "The pattern can never match the type %Plug.Conn.Unfetched{:aspect => atom(), binary() => _}."},
 
   # --- Dead branches -------------------------------------------------------
   #
@@ -56,15 +54,10 @@
   {"lib/core/image.ex", "The function call delete_container will not succeed."},
   {"lib/core/exec.ex", "Function jexec_start_container/2 has no local return."},
   {"lib/core/exec.ex", "Function jail_start_container/3 has no local return."},
-  {"lib/api/container.ex", "Function create/2 has no local return."},
   {"lib/api/container.ex", "Function update/2 has no local return."},
   {"lib/api/container.ex", "The function call update will not succeed."},
   {"lib/api/exec.ex", "Function create/2 has no local return."},
   {"lib/api/exec.ex", "The function call create will not succeed."},
-  {"lib/api/network.ex", "Function create/2 has no local return."},
-  {"lib/api/network.ex", "The function call create will not succeed."},
-  {"lib/api/network.ex", "Function connect/2 has no local return."},
-  {"lib/api/network.ex", "The function call connect will not succeed."},
 
   # --- Opaque type misuse --------------------------------------------------
   #
