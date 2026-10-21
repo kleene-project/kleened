@@ -107,7 +107,7 @@ defmodule Kleened.API.Utils do
   end
 
   def resolve_schema_modules(module) when is_atom(module) and not is_nil(module) do
-    module.schema()
+    resolve_schema_modules(module.schema())
   end
 
   def resolve_schema_modules(list) when is_list(list) do
