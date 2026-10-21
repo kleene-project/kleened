@@ -1,6 +1,7 @@
 defmodule Kleened.API.Network do
   alias OpenApiSpex.{Operation, Schema, Response}
   alias Kleened.Core.Network
+  alias Kleened.Core.MetaData
   alias Kleened.API.Utils
   alias Kleened.API.Schemas
   require Logger
@@ -29,20 +30,23 @@ defmodule Kleened.API.Network do
 
     def open_api_operation(_) do
       %Operation{
-        # tags: ["users"],
         summary: "network create",
-        description: "Create a network.",
+        description: "Create one or more networks from a list of configurations.",
         operationId: "Network.Create",
         requestBody:
           request_body(
-            "Configuration used for the network.",
+            "List of network configurations.",
             "application/json",
-            Schemas.NetworkConfig,
+            Schemas.NetworkConfigList,
             required: true
           ),
         responses: %{
-          201 => response("no error", "application/json", Schemas.IdResponse),
-          409 => response("could not create network", "application/json", Schemas.ErrorResponse),
+          201 =>
+            response(
+              "networks created, with per-item error objects for failures",
+              "application/json",
+              Schemas.NetworkCreateResult
+            ),
           500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
@@ -50,16 +54,28 @@ defmodule Kleened.API.Network do
 
     def create(conn, _opts) do
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
-      options = conn.body_params
 
-      case Network.create(options) do
-        {:ok, %Schemas.Network{id: id}} ->
-          send_resp(conn, 201, Utils.id_response(id))
+      configs =
+        case conn.body_params do
+          %{"_json" => list} -> list
+          list when is_list(list) -> list
+        end
 
-        {:error, msg} ->
-          Logger.info("Could not create network: #{msg}")
-          send_resp(conn, 409, Utils.error_response(msg))
-      end
+      results =
+        Enum.map(configs, fn config ->
+          case MetaData.get_network(config.name) do
+            %Schemas.Network{} = existing ->
+              existing
+
+            :not_found ->
+              case Network.create(config) do
+                {:ok, network} -> network
+                {:error, msg} -> %{error: msg}
+              end
+          end
+        end)
+
+      send_resp(conn, 201, Jason.encode!(results))
     end
   end
 

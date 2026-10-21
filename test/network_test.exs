@@ -4,6 +4,9 @@ defmodule NetworkTest do
   alias Kleened.Core.{Network, MetaData, OS}
   alias Kleened.Core.Utils.CIDR
   alias Kleened.API.Schemas
+  alias Kleened.API.Router
+
+  @opts Router.init([])
 
   @moduletag :capture_log
 
@@ -183,17 +186,52 @@ defmodule NetworkTest do
     Network.destroy_interface(interface)
   end
 
-  test "create a network with same name twice", %{api_spec: api_spec} do
-    network = create_network(%{type: "loopback"})
+  test "create a network with same name twice", %{api_spec: _api_spec} do
+    _network = create_network(%{type: "loopback"})
 
-    assert %{message: "network name is already taken"} ==
-             TestHelper.network_create(%{
-               name: "testnet",
-               subnet: "172.19.0.0/16",
-               type: "loopback"
-             })
+    response =
+      conn(
+        :post,
+        "/networks/create",
+        Jason.encode!([%{name: "testnet", subnet: "172.19.0.0/16", type: "loopback"}])
+      )
+      |> put_req_header("content-type", "application/json")
+      |> Router.call(@opts)
 
-    assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
+    # skip-if-exists: the pre-existing network is returned as a success item
+    assert response.status == 201
+    assert [%{"name" => "testnet", "id" => _}] = Jason.decode!(response.resp_body)
+  end
+
+  test "create networks from a list with per-item results", %{api_spec: _api_spec} do
+    TestHelper.network_create(%{name: "batchnet", type: "loopback"})
+
+    response =
+      conn(
+        :post,
+        "/networks/create",
+        Jason.encode!([
+          %{name: "batchnet", type: "loopback"},
+          %{name: "batchnet2", type: "loopback"},
+          %{name: "batchnet3", type: "loopback"},
+          # invalid subnet → per-item error; batch continues
+          %{name: "batchnet4", subnet: "172.19.0.0-16", type: "loopback"}
+        ])
+      )
+      |> put_req_header("content-type", "application/json")
+      |> Router.call(@opts)
+
+    assert response.status == 201
+    results = Jason.decode!(response.resp_body)
+    assert length(results) == 4
+    # existing network → skip-if-exists success item
+    assert %{"id" => _, "name" => "batchnet"} = Enum.at(results, 0)
+    assert %{"name" => "batchnet2"} = Enum.at(results, 1)
+    assert %{"name" => "batchnet3"} = Enum.at(results, 2)
+    # invalid subnet → per-item error
+    assert %{"error" => msg} = Enum.at(results, 3)
+    assert msg =~ "invalid subnet"
+    assert MetaData.get_network("batchnet3") != :not_found
   end
 
   test "try to create a network with an invalid subnet" do

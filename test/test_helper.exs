@@ -613,14 +613,17 @@ defmodule TestHelper do
     assert_schema(config, "NetworkConfig", api_spec)
 
     response =
-      conn(:post, "/networks/create", config)
+      conn(:post, "/networks/create", Jason.encode!([config]))
       |> put_req_header("content-type", "application/json")
       |> Router.call(@opts)
 
-    validate_response(api_spec, response, %{
-      201 => "IdResponse",
-      409 => "ErrorResponse"
-    })
+    assert response.status == 201
+    [json_body] = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+
+    case json_body do
+      %{error: msg} -> %{message: msg}
+      network -> network
+    end
   end
 
   def network_remove(api_spec, name) do

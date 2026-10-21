@@ -623,6 +623,24 @@ defmodule Kleened.API.Schemas do
     })
   end
 
+  defmodule NetworkConfigList do
+    OpenApiSpex.schema(%{
+      description: "List of network configurations.",
+      type: :array,
+      items: Kleened.API.Schemas.NetworkConfig
+    })
+  end
+
+  defmodule NetworkCreateResult do
+    OpenApiSpex.schema(%{
+      description: "Per-item results of a network-create request.",
+      type: :array,
+      items: %OpenApiSpex.Schema{
+        oneOf: [Kleened.API.Schemas.Network, Kleened.API.Schemas.ErrorObject]
+      }
+    })
+  end
+
   defmodule NetworkConfig do
     OpenApiSpex.schema(%{
       description: "Network configuration",
