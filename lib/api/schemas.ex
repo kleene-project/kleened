@@ -39,14 +39,33 @@ defmodule Kleened.API.Schemas do
           items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/NetworkConfig"},
           default: []
         },
-        # A container is a ContainerConfig (which includes endpoints that can
-        # refer to networks defined in the networks section)
+        # A container is a DeploymentServiceConfig (a ContainerConfig that
+        # includes endpoints, which can refer to networks defined in the
+        # networks section)
         containers: %Schema{
           description: "Deployment containers",
           type: :array,
-          items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/ContainerConfig"},
+          items: Kleened.API.Schemas.DeploymentServiceConfig,
           default: []
         }
+      }
+    })
+  end
+
+  defmodule ContainerConfigList do
+    OpenApiSpex.schema(%{
+      description: "List of container configurations.",
+      type: :array,
+      items: Kleened.API.Schemas.ContainerConfig
+    })
+  end
+
+  defmodule ContainerCreateResult do
+    OpenApiSpex.schema(%{
+      description: "Per-item results of a container-create request.",
+      type: :array,
+      items: %OpenApiSpex.Schema{
+        oneOf: [Kleened.API.Schemas.Container, Kleened.API.Schemas.ErrorObject]
       }
     })
   end
@@ -152,17 +171,6 @@ defmodule Kleened.API.Schemas do
           example: "host",
           enum: ["ipnet", "host", "vnet", "disabled"]
         },
-        endpoints: %Schema{
-          description: """
-          Network endpoints for the container. Only used in deployment
-          specifications, where the endpoints refer to networks defined in the
-          deployment's `networks` section.
-          """,
-          type: :array,
-          nullable: true,
-          default: [],
-          items: %OpenApiSpex.Reference{"$ref": "#/components/schemas/EndPointConfig"}
-        },
         public_ports: %Schema{
           description:
             "Listening ports on network interfaces that redirect incoming traffic to the container.",
@@ -200,6 +208,31 @@ defmodule Kleened.API.Schemas do
           nullable: true
         }
       }
+    })
+  end
+
+  defmodule DeploymentServiceConfig do
+    OpenApiSpex.schema(%{
+      description: """
+      Container configuration as used in deployment files. Extends
+      ContainerConfig with the endpoints that connect the container to the
+      deployment's networks.
+      """,
+      type: :object,
+      # A flat schema (ContainerConfig's properties plus endpoints) instead of
+      # an allOf composite: allOf composites break both the direct cast and
+      # the client generator.
+      properties:
+        Map.merge(Kleened.API.Schemas.ContainerConfig.schema().properties, %{
+          endpoints: %Schema{
+            description: "Network endpoints to connect the container to.",
+            type: :array,
+            default: [],
+            items: %OpenApiSpex.Reference{
+              "$ref": "#/components/schemas/EndPointConfig"
+            }
+          }
+        })
     })
   end
 

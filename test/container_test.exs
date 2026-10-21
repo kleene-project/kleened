@@ -2,6 +2,9 @@ defmodule ContainerTest do
   use Kleened.Test.ConnCase
   alias Kleened.Core.{Container, Exec, MetaData, OS}
   alias Kleened.API.Schemas
+  alias Kleened.API.Router
+
+  @opts Router.init([])
 
   @moduletag :capture_log
 
@@ -92,5 +95,31 @@ defmodule ContainerTest do
   defp container_succesfully_create(config) do
     %{id: container_id} = TestHelper.container_create(config)
     MetaData.get_container(container_id)
+  end
+
+  test "create containers from a list with per-item results", %{api_spec: _api_spec} do
+    TestHelper.container_create(%{name: "batchcon", network_driver: "host"})
+
+    response =
+      conn(
+        :post,
+        "/containers/create",
+        Jason.encode!([
+          %{name: "batchcon", image: "FreeBSD:testing", network_driver: "host"},
+          %{name: "batchcon2", image: "FreeBSD:nonexistent", network_driver: "host"},
+          %{name: "batchcon3", image: "FreeBSD:testing", network_driver: "host"}
+        ])
+      )
+      |> put_req_header("content-type", "application/json")
+      |> Router.call(@opts)
+
+    assert response.status == 201
+    results = Jason.decode!(response.resp_body)
+    assert length(results) == 3
+    # existing container → skip-if-exists success item
+    assert %{"name" => "batchcon", "id" => _} = Enum.at(results, 0)
+    # bad image → per-item error; batch continued
+    assert %{"error" => "no such image 'FreeBSD:nonexistent'"} = Enum.at(results, 1)
+    assert %{"name" => "batchcon3", "id" => _} = Enum.at(results, 2)
   end
 end

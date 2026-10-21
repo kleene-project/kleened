@@ -129,7 +129,7 @@ defmodule Kleened.API.Utils do
     with {:ok, deploy} <-
            OpenApiSpex.cast_value(
              deploy,
-             Schemas.DeploymentConfig.schema(),
+             resolve_schema_modules(Schemas.DeploymentConfig.schema()),
              Kleened.API.Spec.spec()
            ),
          _validation <-
@@ -176,7 +176,7 @@ defmodule Kleened.API.Utils do
   end
 
   @spec cast_deploy_containers([%{}]) ::
-          {:ok, [%Schemas.ContainerConfig{}]} | {:error, term()}
+          {:ok, [%Schemas.DeploymentServiceConfig{}]} | {:error, term()}
   def cast_deploy_containers(container_configs) do
     Logger.debug("Casting deploy containers: #{inspect(container_configs)}")
 
@@ -188,17 +188,22 @@ defmodule Kleened.API.Utils do
   end
 
   def cast_deploy_containers([config | rest], containers) do
-    case Cast.cast(resolve_schema_modules(Schemas.ContainerConfig.schema()), config, schemas()) do
+    case Cast.cast(
+           resolve_schema_modules(Schemas.DeploymentServiceConfig.schema()),
+           config,
+           schemas()
+         ) do
       {:ok, container_config} ->
-        # The deployment schema defines containers as
-        # allOf: [ContainerConfig, {endpoints: [...]}]; the endpoints key is
-        # lost when casting to the ContainerConfig struct, so the endpoints
-        # are cast separately and carried over explicitly for the diff/create
-        # logic.
-        endpoints = Map.get(config, :endpoints, [])
+        # The DeploymentServiceConfig is a composite (allOf of ContainerConfig
+        # and the endpoints object); casting yields a plain map with the
+        # ContainerConfig keys plus `endpoints`. Cast the endpoints separately
+        # into EndPointConfig structs and keep the result as a map, so the
+        # diff/create logic can read both the container properties and the
+        # endpoints.
+        endpoints = Map.get(container_config, :endpoints, [])
 
         with {:ok, endpoints} <- cast_endpoints(endpoints) do
-          container_config = %{container_config | endpoints: endpoints}
+          container_config = Map.put(container_config, :endpoints, endpoints)
           cast_deploy_containers(rest, [container_config | containers])
         end
 

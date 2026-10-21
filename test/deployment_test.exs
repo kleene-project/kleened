@@ -87,4 +87,27 @@ defmodule DeploymentTest do
   after
     TestHelper.volume_remove(api_spec, "database-storage")
   end
+
+  test "deployment diff still reads endpoints from deployment containers" do
+    config =
+      YamlElixir.read_from_string!("""
+      ---
+      containers:
+        - name: "endpointcon"
+          image: "FreeBSD:latest"
+          endpoints:
+            - container: "endpointcon"
+              network: "testnet"
+
+      networks:
+        - name: "testnet"
+          type: "bridge"
+          subnet: "10.13.37.0/24"
+      """)
+
+    assert {:ok, json} = TestHelper.deployment_diff(config)
+    result = Jason.decode!(json)
+    # the container is missing on the host → missing_on_host (endpoints parsed fine)
+    assert [%{"type" => "missing_on_host"}] = result["containers"]["endpointcon"]
+  end
 end

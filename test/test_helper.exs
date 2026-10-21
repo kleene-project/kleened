@@ -143,35 +143,35 @@ defmodule TestHelper do
     assert_schema(config, "ContainerConfig", api_spec)
 
     response =
-      conn(:post, "/containers/create?name=#{config.name}", config)
+      conn(:post, "/containers/create", Jason.encode!([config]))
       |> put_req_header("content-type", "application/json")
       |> Router.call(@opts)
 
-    case validate_response(api_spec, response, %{
-           201 => "IdResponse",
-           404 => "ErrorResponse"
-         }) do
-      %{id: container_id} = resp ->
+    assert response.status == 201
+    [json_body] = Jason.decode!(response.resp_body, [{:keys, :atoms}])
+
+    case json_body do
+      %{error: msg} ->
+        %{message: msg}
+
+      container ->
         case network_name do
           "" ->
-            resp
+            container
 
           _ ->
             endpoint_config = %{
-              container: container_id,
+              container: container.id,
               network: network_name,
               ip_address: ip_address,
               ip_address6: ip_address6
             }
 
             case network_connect(endpoint_config) do
-              :ok -> resp
+              :ok -> container
               other -> other
             end
         end
-
-      resp ->
-        resp
     end
   end
 

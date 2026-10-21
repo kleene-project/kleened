@@ -1,6 +1,7 @@
 defmodule Kleened.API.Container do
   alias OpenApiSpex.{Operation, Schema, Cast}
   alias Kleened.Core.Container
+  alias Kleened.Core.MetaData
   alias Kleened.API.Schemas
   require Logger
 
@@ -80,22 +81,28 @@ defmodule Kleened.API.Container do
       %Operation{
         summary: "container create",
         description: """
-        Create a container.
+        Create one or more containers from a list of configurations.
 
-        Note that it is not possible to set any of the properties in the request body to `null`.
-        This is only possible when updating containers using the [Container.Update](#operation/Container.Update) endpoint.
+        Note that it is not possible to set any of the properties in the
+        request body to `null`. This is only possible when updating
+        containers using the [Container.Update](#operation/Container.Update)
+        endpoint.
         """,
         operationId: "Container.Create",
         requestBody:
           request_body(
-            "Container configuration.",
+            "List of container configurations.",
             "application/json",
-            Schemas.ContainerConfig,
+            Schemas.ContainerConfigList,
             required: true
           ),
         responses: %{
-          201 => response("no error", "application/json", Schemas.IdResponse),
-          404 => response("no such image", "application/json", Schemas.ErrorResponse),
+          201 =>
+            response(
+              "containers created, with per-item error objects for failures",
+              "application/json",
+              Schemas.ContainerCreateResult
+            ),
           500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
@@ -105,24 +112,35 @@ defmodule Kleened.API.Container do
       conn = Plug.Conn.fetch_query_params(conn)
       conn = Plug.Conn.put_resp_header(conn, "content-type", "application/json")
 
-      container_config = %{mounts: mounts} = conn.body_params
+      configs =
+        case conn.body_params do
+          %{"_json" => list} -> list
+          list when is_list(list) -> list
+        end
 
-      case Utils.cast_mountpoints(mounts) do
-        {:ok, mounts} ->
-          config = %Schemas.ContainerConfig{container_config | mounts: mounts}
+      results =
+        Enum.map(configs, fn config ->
+          case MetaData.get_container(config.name || "") do
+            %Schemas.Container{} = existing ->
+              existing
 
-          case Container.create(config) do
-            {:ok, %Schemas.Container{id: id}} ->
-              send_resp(conn, 201, Utils.id_response(id))
+            :not_found ->
+              case Utils.cast_mountpoints(config.mounts) do
+                {:ok, mounts} ->
+                  config = %Schemas.ContainerConfig{config | mounts: mounts}
 
-            {:error, reason} ->
-              send_resp(conn, 404, Utils.error_response(reason))
+                  case Container.create(config) do
+                    {:ok, container} -> container
+                    {:error, reason} -> %{error: reason}
+                  end
+
+                {:error, [openapispex_error | _rest]} ->
+                  %{error: Cast.Error.message(openapispex_error)}
+              end
           end
+        end)
 
-        {:error, [openapispex_error | _rest]} ->
-          error_message = Cast.Error.message(openapispex_error)
-          send_resp(conn, 404, Utils.error_response(error_message))
-      end
+      send_resp(conn, 201, Jason.encode!(results))
     end
   end
 
