@@ -96,6 +96,8 @@ defmodule Kleened.API.Container do
         responses: %{
           201 => response("no error", "application/json", Schemas.IdResponse),
           404 => response("no such image", "application/json", Schemas.ErrorResponse),
+          409 =>
+            response("container name already exists", "application/json", Schemas.ErrorResponse),
           500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
@@ -114,6 +116,9 @@ defmodule Kleened.API.Container do
           case Container.create(config) do
             {:ok, %Schemas.Container{id: id}} ->
               send_resp(conn, 201, Utils.id_response(id))
+
+            {:error, "container name is already taken" = msg} ->
+              send_resp(conn, 409, Utils.error_response(msg))
 
             {:error, reason} ->
               send_resp(conn, 404, Utils.error_response(reason))

@@ -206,6 +206,42 @@ defmodule NetworkTest do
              })
   end
 
+  test "invalid network configuration gives 400 while a taken name gives 409", %{
+    api_spec: api_spec
+  } do
+    network = create_network(%{type: "loopback"})
+
+    # A duplicate name is a conflict with the current state: 409
+    response =
+      conn(:post, "/networks/create", %{
+        name: network.name,
+        subnet: "172.19.0.0/16",
+        type: "loopback"
+      })
+      |> put_req_header("content-type", "application/json")
+      |> Kleened.API.Router.call(Kleened.API.Router.init([]))
+
+    assert response.status == 409
+
+    assert %{message: "network name is already taken"} ==
+             Jason.decode!(response.resp_body, keys: :atoms)
+
+    # An invalid configuration is a malformed request: 400
+    response =
+      conn(:post, "/networks/create", %{
+        name: "testnet400",
+        subnet: "172.18.0.0-16",
+        type: "bridge"
+      })
+      |> put_req_header("content-type", "application/json")
+      |> Kleened.API.Router.call(Kleened.API.Router.init([]))
+
+    assert response.status == 400
+    assert %{message: "invalid subnet: " <> _} = Jason.decode!(response.resp_body, keys: :atoms)
+
+    assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
+  end
+
   test "cannot set ip-adresses when there is no corresponding subnet defined on the network" do
     interface = "testnet"
     Network.destroy_interface(interface)
@@ -1358,7 +1394,8 @@ defmodule NetworkTest do
     timeout = 5_000
 
     config_client = %{
-      name: "client",
+      # Unique name: created several times within this test; duplicates are rejected (409).
+      name: "client-#{System.unique_integer([:positive])}",
       ip_address: "<auto>",
       ip_address6: "",
       network_driver: "ipnet",
@@ -1369,11 +1406,23 @@ defmodule NetworkTest do
     {_, _, _output} = TestHelper.container_valid_run(config_client)
     assert TestHelper.receive_frame(listen4500_conn, timeout) == {:text, "traffic\n"}
 
-    config_client = %{config_client | cmd: ["/bin/sh", "-c", cmd_client("inet", endpoint, 5000)]}
+    config_client = %{
+      config_client
+      | # Fresh name per run: duplicates are rejected (409).
+        name: "client-#{System.unique_integer([:positive])}",
+        cmd: ["/bin/sh", "-c", cmd_client("inet", endpoint, 5000)]
+    }
+
     {_, _, _output} = TestHelper.container_valid_run(config_client)
     assert TestHelper.receive_frame(listen5000_conn, timeout) == {:text, "traffic\n"}
 
-    config_client = %{config_client | cmd: ["/bin/sh", "-c", cmd_client("inet", endpoint, 4000)]}
+    config_client = %{
+      config_client
+      | # Fresh name per run: duplicates are rejected (409).
+        name: "client-#{System.unique_integer([:positive])}",
+        cmd: ["/bin/sh", "-c", cmd_client("inet", endpoint, 4000)]
+    }
+
     {_, _, _output} = TestHelper.container_valid_run(config_client)
     assert TestHelper.receive_frame(listen4000_conn, timeout) == {:text, "traffic\n"}
   end
@@ -1441,7 +1490,9 @@ defmodule NetworkTest do
       end
 
     config_client_default = %{
-      name: "client",
+      # Unique name: the helper can be invoked several times within one test;
+      # duplicate container names are rejected (409).
+      name: "client-#{System.unique_integer([:positive])}",
       network: network.id,
       ip_address: "<auto>",
       ip_address6: "",
@@ -1610,7 +1661,9 @@ defmodule NetworkTest do
     config_client =
       Map.merge(
         %{
-          name: "client",
+          # Unique name: the helper can be invoked several times within one test;
+          # duplicate container names are rejected (409).
+          name: "client-#{System.unique_integer([:positive])}",
           ip_address: default_ip(protocol),
           ip_address6: default_ip6(protocol),
           network: network_client.id,
@@ -1644,7 +1697,9 @@ defmodule NetworkTest do
     config_client =
       Map.merge(
         %{
-          name: "client",
+          # Unique name: the helper can be invoked several times within one test;
+          # duplicate container names are rejected (409).
+          name: "client-#{System.unique_integer([:positive])}",
           ip_address: default_ip(protocol),
           ip_address6: default_ip6(protocol),
           network: network_client.id,
@@ -1667,7 +1722,9 @@ defmodule NetworkTest do
     config_server =
       Map.merge(
         %{
-          name: "server",
+          # Unique name: the helper can be invoked several times within one test;
+          # duplicate container names are rejected (409).
+          name: "server-#{System.unique_integer([:positive])}",
           ip_address: default_ip(protocol),
           ip_address6: default_ip6(protocol),
           attach: true,
@@ -1747,7 +1804,9 @@ defmodule NetworkTest do
       "echo \"SPLIT HERE\" && netstat --libxo json -rn && echo \"SPLIT HERE\" && netstat --libxo json -i"
 
     config_default = %{
-      name: "nettest",
+      # Unique name: the helper can be called several times within one test,
+      # and duplicate container names are rejected (409).
+      name: "nettest-#{System.unique_integer([:positive])}",
       cmd: ["/bin/sh", "-c", all_in_one_netstat],
       ip_address: "<auto>",
       ip_adress6: ""
@@ -1796,7 +1855,9 @@ defmodule NetworkTest do
   defp failing_to_connect_container(networks, driver) do
     %{id: container_id} =
       TestHelper.container_create(%{
-        name: "nettest",
+        # Unique name: the helper can be called several times within one test,
+        # and duplicate container names are rejected (409).
+        name: "nettest-#{System.unique_integer([:positive])}",
         network: "",
         network_driver: driver
       })

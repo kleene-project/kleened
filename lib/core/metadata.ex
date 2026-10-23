@@ -277,6 +277,25 @@ defmodule Kleened.Core.MetaData do
     end
   end
 
+  @doc """
+  Look up a container by its exact name.
+
+  Unlike `get_container/1`, this never matches a container id: it is the
+  right primitive for uniqueness checks, where `get_container/1` would
+  false-positive on any container whose id happens to start with the name.
+  """
+  @spec get_container_by_name(String.t()) :: Container.t() | :not_found
+  def get_container_by_name(name) do
+    query = """
+    SELECT id, container FROM containers WHERE json_extract(container, '$.name') = ?
+    """
+
+    case sql(query, [name]) do
+      [] -> :not_found
+      [row | _rest] -> row
+    end
+  end
+
   @spec list_containers() :: [Schemas.Container.t()]
   def list_containers() do
     sql("SELECT id, container FROM containers ORDER BY container -> '$.created'")

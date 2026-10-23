@@ -149,7 +149,8 @@ defmodule TestHelper do
 
     case validate_response(api_spec, response, %{
            201 => "IdResponse",
-           404 => "ErrorResponse"
+           404 => "ErrorResponse",
+           409 => "ErrorResponse"
          }) do
       %{id: container_id} = resp ->
         case network_name do
@@ -619,6 +620,7 @@ defmodule TestHelper do
 
     validate_response(api_spec, response, %{
       201 => "IdResponse",
+      400 => "ErrorResponse",
       409 => "ErrorResponse"
     })
   end
