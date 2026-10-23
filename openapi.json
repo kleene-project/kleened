@@ -1560,6 +1560,16 @@
             },
             "description": "no such image"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "container name already exists"
+          },
           "500": {
             "content": {
               "application/json": {

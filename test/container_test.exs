@@ -78,6 +78,20 @@ defmodule ContainerTest do
     Container.stop(container_id2)
   end
 
+  test "creating a container with a name that is already taken fails with 409" do
+    container_succesfully_create(container_config(%{name: "dup-name-test"}))
+
+    response =
+      conn(:post, "/containers/create", container_config(%{name: "dup-name-test"}))
+      |> put_req_header("content-type", "application/json")
+      |> Kleened.API.Router.call(Kleened.API.Router.init([]))
+
+    assert response.status == 409
+
+    assert %{message: "container name is already taken"} ==
+             Jason.decode!(response.resp_body, keys: :atoms)
+  end
+
   defp container_config(config) do
     defaults = %{
       name: "container_testing",
