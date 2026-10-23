@@ -101,13 +101,13 @@ defmodule Kleened.Core.Container do
     {image_name, potential_image_snapshot} = Utils.decode_snapshot(image_ident)
 
     with :ok <- validate_name(config.name),
-         :not_found <- name_taken?(config.name),
+         {:name_free, false} <- {:name_free, name_taken?(config.name)},
          {:image, %Schemas.Image{} = image} <- {:image, MetaData.get_image(image_name)},
          {:ok, pub_ports} <- validate_public_ports(config),
          {:ok, dataset} <- create_dataset(potential_image_snapshot, container_id, image) do
       assemble_container(container_id, image, dataset, pub_ports, config)
     else
-      %Schemas.Container{} ->
+      {:name_free, true} ->
         {:error, "container name is already taken"}
 
       {:image, :not_found} ->
@@ -118,12 +118,12 @@ defmodule Kleened.Core.Container do
     end
   end
 
-  # An unnamed container never collides with an existing name.
   # NB: get_container_by_name/1, not get_container/1 — the latter also
   # prefix-matches container ids, which would false-positive on short names.
-  defp name_taken?(nil), do: :not_found
+  # An unnamed container never collides with an existing name.
+  defp name_taken?(nil), do: false
 
-  defp name_taken?(name), do: MetaData.get_container_by_name(name)
+  defp name_taken?(name), do: match?(%Schemas.Container{}, MetaData.get_container_by_name(name))
 
   defp validate_name(nil) do
     :ok
