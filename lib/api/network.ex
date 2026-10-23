@@ -42,7 +42,10 @@ defmodule Kleened.API.Network do
           ),
         responses: %{
           201 => response("no error", "application/json", Schemas.IdResponse),
-          409 => response("could not create network", "application/json", Schemas.ErrorResponse),
+          400 =>
+            response("invalid network configuration", "application/json", Schemas.ErrorResponse),
+          409 =>
+            response("network name already exists", "application/json", Schemas.ErrorResponse),
           500 => response("server error", "application/json", Schemas.ErrorResponse)
         }
       }
@@ -58,7 +61,15 @@ defmodule Kleened.API.Network do
 
         {:error, msg} ->
           Logger.info("Could not create network: #{msg}")
-          send_resp(conn, 409, Utils.error_response(msg))
+
+          status =
+            if msg == "network name is already taken" do
+              409
+            else
+              400
+            end
+
+          send_resp(conn, status, Utils.error_response(msg))
       end
     end
   end

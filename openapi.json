@@ -2712,6 +2712,16 @@
             },
             "description": "no error"
           },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "invalid network configuration"
+          },
           "409": {
             "content": {
               "application/json": {
@@ -2720,7 +2730,7 @@
                 }
               }
             },
-            "description": "could not create network"
+            "description": "network name already exists"
           },
           "500": {
             "content": {

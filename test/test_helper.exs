@@ -619,6 +619,7 @@ defmodule TestHelper do
 
     validate_response(api_spec, response, %{
       201 => "IdResponse",
+      400 => "ErrorResponse",
       409 => "ErrorResponse"
     })
   end

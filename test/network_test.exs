@@ -206,6 +206,42 @@ defmodule NetworkTest do
              })
   end
 
+  test "invalid network configuration gives 400 while a taken name gives 409", %{
+    api_spec: api_spec
+  } do
+    network = create_network(%{type: "loopback"})
+
+    # A duplicate name is a conflict with the current state: 409
+    response =
+      conn(:post, "/networks/create", %{
+        name: network.name,
+        subnet: "172.19.0.0/16",
+        type: "loopback"
+      })
+      |> put_req_header("content-type", "application/json")
+      |> Kleened.API.Router.call(Kleened.API.Router.init([]))
+
+    assert response.status == 409
+
+    assert %{message: "network name is already taken"} ==
+             Jason.decode!(response.resp_body, keys: :atoms)
+
+    # An invalid configuration is a malformed request: 400
+    response =
+      conn(:post, "/networks/create", %{
+        name: "testnet400",
+        subnet: "172.18.0.0-16",
+        type: "bridge"
+      })
+      |> put_req_header("content-type", "application/json")
+      |> Kleened.API.Router.call(Kleened.API.Router.init([]))
+
+    assert response.status == 400
+    assert %{message: "invalid subnet: " <> _} = Jason.decode!(response.resp_body, keys: :atoms)
+
+    assert TestHelper.network_remove(api_spec, network.name) == %{id: network.id}
+  end
+
   test "cannot set ip-adresses when there is no corresponding subnet defined on the network" do
     interface = "testnet"
     Network.destroy_interface(interface)
