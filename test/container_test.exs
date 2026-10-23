@@ -92,6 +92,28 @@ defmodule ContainerTest do
              Jason.decode!(response.resp_body, keys: :atoms)
   end
 
+  test "a name that is a prefix of another container's id does not collide with it" do
+    %{id: container_id} = container_succesfully_create(container_config(%{name: "prefix-source"}))
+
+    # A short name (here: the first chars of the other container's id) must be
+    # treated as a *name*, not as an id-prefix: no 409, no match on the id.
+    response =
+      conn(
+        :post,
+        "/containers/create",
+        container_config(%{name: String.slice(container_id, 0, 2)})
+      )
+      |> put_req_header("content-type", "application/json")
+      |> Kleened.API.Router.call(Kleened.API.Router.init([]))
+
+    assert response.status == 201
+    other_id = Jason.decode!(response.resp_body, keys: :atoms).id
+    assert other_id != container_id
+
+    assert String.slice(container_id, 0, 2) ==
+             Jason.decode!(Jason.encode!(MetaData.get_container(other_id)), keys: :atoms)[:name]
+  end
+
   defp container_config(config) do
     defaults = %{
       name: "container_testing",

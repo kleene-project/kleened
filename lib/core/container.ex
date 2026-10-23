@@ -119,9 +119,11 @@ defmodule Kleened.Core.Container do
   end
 
   # An unnamed container never collides with an existing name.
+  # NB: get_container_by_name/1, not get_container/1 — the latter also
+  # prefix-matches container ids, which would false-positive on short names.
   defp name_taken?(nil), do: :not_found
 
-  defp name_taken?(name), do: MetaData.get_container(name)
+  defp name_taken?(name), do: MetaData.get_container_by_name(name)
 
   defp validate_name(nil) do
     :ok
