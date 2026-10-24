@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Guidance for AI coding agents (Claude Code, Codex, OpenCode, Crush, Hermes, …) working in this repository.
 
 ## Overview
 
@@ -9,7 +9,7 @@ jails, ZFS and pf. It is an Elixir/OTP application exposing a REST + WebSocket A
 reference client is the `klee` Python CLI, whose HTTP client is generated from this repo's
 OpenAPI spec.
 
-When working inside the `kleene_dev` checkout, `../CLAUDE.md` documents the QEMU/libvirt
+When working inside the `kleene_dev` checkout, `../AGENTS.md` documents the QEMU/libvirt
 development VM, the `klee` CLI and the docs site. This file covers the daemon itself.
 
 When implementing new features, remember to adjust the docs site and relevant docs in
@@ -196,7 +196,11 @@ ruleset from MetaData and renders it into the three EEx placeholders of the temp
 `pf_config_template_path` (`kleene_macros`, `kleene_translation`, `kleene_filtering` — see
 `example/pf.conf.kleene`), writes it to `pf_config_path`, and reloads pf. Published container
 ports become `rdr` rules, so publishing a port is a full pf-config regeneration rather than a
-per-container operation.
+per-container operation. Every file kleened writes is claimed by a header line
+(`@kleene_pf_header` in `lib/core/network.ex`); before overwriting a pf.conf
+lacking that header, `load_pf_config/1` preserves a copy at
+`<pf_config_path>.kleene.bak` — never overwritten once it exists (see
+`backup_foreign_pf_config/1`).
 
 ### Shelling out
 
