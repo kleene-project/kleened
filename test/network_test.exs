@@ -1,7 +1,7 @@
 defmodule NetworkTest do
   use Kleened.Test.ConnCase
   require Logger
-  alias Kleened.Core.{Network, MetaData, OS}
+  alias Kleened.Core.{Config, Network, MetaData, OS}
   alias Kleened.Core.Utils.CIDR
   alias Kleened.API.Schemas
 
@@ -1438,6 +1438,38 @@ defmodule NetworkTest do
 
     assert %{message: "invalid port value (should be in the range 0 - 65535)"} ==
              TestHelper.container_create(config)
+  end
+
+  test "load_pf_config preserves a foreign pf.conf and claims it with the header" do
+    dir =
+      System.tmp_dir!()
+      |> Path.join("kleene_load_pf_backup_#{:erlang.unique_integer([:positive])}")
+
+    File.mkdir_p!(dir)
+    pf_conf = Path.join(dir, "pf.conf")
+    File.write!(pf_conf, "pass in proto tcp from any to any port 22\n")
+
+    previous_path = Config.get("pf_config_path")
+    Config.put("pf_config_path", pf_conf)
+
+    try do
+      # An invalid ruleset: pfctl rejects it, so the kernel ruleset stays
+      # untouched while the file itself is still written.
+      Network.load_pf_config("pass all\nnot a valid pf rule\n")
+
+      assert File.read!(pf_conf) =~ "not a valid pf rule"
+      # The written file carries kleened's header, so the next write
+      # recognizes it as kleened's own and does not back it up again.
+      assert File.read!(pf_conf) =~ "managed by kleened"
+      assert File.read!(pf_conf <> ".kleene.bak") =~ "port 22"
+
+      # A second write must not touch the backup: the file is kleened's now.
+      Network.load_pf_config("pass all\n")
+      assert File.read!(pf_conf <> ".kleene.bak") =~ "port 22"
+    after
+      Config.put("pf_config_path", previous_path)
+      File.rm_rf!(dir)
+    end
   end
 
   defp routes(%{

@@ -1138,8 +1138,9 @@ defmodule Kleened.Core.Network do
     # For debugging purposes:
     # Logger.debug("PF Config:\n#{config}")
     pf_config_path = Config.get("pf_config_path")
+    :ok = backup_foreign_pf_config(pf_config_path)
 
-    case File.write(pf_config_path, config, [:write]) do
+    case File.write(pf_config_path, @kleene_pf_header <> "\n" <> config, [:write]) do
       :ok ->
         case OS.cmd(~w"/sbin/pfctl -f #{pf_config_path}") do
           {_, 0} ->
