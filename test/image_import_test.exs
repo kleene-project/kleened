@@ -135,6 +135,37 @@ defmodule OCIImageImportTest do
     end
   end
 
+  test "container from OCI image inherits entrypoint and workdir" do
+    archive =
+      import_archive("meta",
+        layers: [executable_layer()],
+        cmd: ["/bin/cat", "/etc/hello"],
+        workdir: "/etc"
+      )
+
+    {1000, %{data: image_id}} = find_closing(TestHelper.image_import(%{url: archive, tag: "oci-meta:latest"}))
+
+    # entrypoint ++ cmd is the effective command; workdir inherited
+    container_config = %{name: "oci-meta-container", image: image_id}
+    %{id: container_id} = TestHelper.container_create(container_config)
+
+    container = MetaData.get_container(container_id)
+    # cmd from the image config (no entrypoint in this fixture)
+    assert container.cmd == ["/bin/cat", "/etc/hello"]
+    assert container.workdir == "/etc"
+
+    api_spec = Kleened.API.Spec.spec()
+    TestHelper.container_remove(api_spec, container_id)
+    TestHelper.image_remove(image_id)
+  end
+
+  defp find_closing(frames) do
+    Enum.find(frames, fn
+      {code, _} when is_integer(code) -> true
+      _ -> false
+    end)
+  end
+
   test "import fails cleanly on a corrupt layout" do
     dir = Path.join(@tmp_dir, "corrupt")
     File.mkdir_p!(dir)

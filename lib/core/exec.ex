@@ -326,6 +326,17 @@ defmodule Kleened.Core.Exec do
     port
   end
 
+  # OCI WorkingDir: wrap shell-form commands with a `cd` prefix. Docker
+  # semantics applied minimally — only affects shell commands ("/bin/sh -c").
+  defp adapt_cmd_to_workdir(cmd, workdir) when workdir in [nil, "", "/"],
+    do: cmd
+
+  defp adapt_cmd_to_workdir(["/bin/sh", "-c", command], workdir),
+    do: ["/bin/sh", "-c", "cd #{workdir} && #{command}"]
+
+  defp adapt_cmd_to_workdir(cmd, _workdir),
+    do: cmd
+
   defp jail_start_container(
          %Schemas.Container{
            id: id,
@@ -333,7 +344,8 @@ defmodule Kleened.Core.Exec do
            cmd: command,
            user: user,
            jail_param: jail_param,
-           env: env
+           env: env,
+           workdir: workdir
          } = container,
          use_tty,
          state
@@ -343,6 +355,7 @@ defmodule Kleened.Core.Exec do
     setup_networking(container, state)
     network_config = create_networking_jail_params(container)
     path = ZFS.mountpoint(dataset)
+    command = adapt_cmd_to_workdir(command, workdir)
 
     # Since booleans can have two different forms:
     # - w/o 'no' prefix ['nopersist', 'exec.noclean']

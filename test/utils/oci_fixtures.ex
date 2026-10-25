@@ -125,10 +125,22 @@ defmodule Kleened.Test.OCIFixtures do
       "created" => "2026-10-24T12:00:00Z",
       "architecture" => Keyword.get(opts, :arch, "amd64"),
       "os" => Keyword.get(opts, :os, "freebsd"),
-      "config" => %{
-        "Cmd" => Keyword.get(opts, :cmd, ["/bin/sh"]),
-        "Env" => Keyword.get(opts, :env, ["PATH=/bin:/usr/bin"])
-      },
+      "config" =>
+        Map.merge(
+          %{
+            "Cmd" => Keyword.get(opts, :cmd, ["/bin/sh"]),
+            "Env" => Keyword.get(opts, :env, ["PATH=/bin:/usr/bin"])
+          },
+          opts
+          |> Enum.filter(fn
+            {:workdir, v} when not is_nil(v) -> true
+            {:entrypoint, v} when not is_nil(v) -> true
+            {:user, v} when not is_nil(v) -> true
+            {:labels, v} when not is_nil(v) -> true
+            _ -> false
+          end)
+          |> Map.new(fn {k, v} -> {oci_config_key(k), v} end)
+        ),
       "rootfs" => %{
         "type" => "layers",
         "diff_ids" => []
@@ -142,6 +154,11 @@ defmodule Kleened.Test.OCIFixtures do
     descriptor = write_blob(dir, content)
     %{descriptor | "mediaType" => @config_media_type}
   end
+
+  defp oci_config_key(:workdir), do: "WorkingDir"
+  defp oci_config_key(:entrypoint), do: "Entrypoint"
+  defp oci_config_key(:user), do: "User"
+  defp oci_config_key(:labels), do: "Labels"
 
   defp build_manifest_blob(dir, config, layers, _opts) do
     manifest = %{

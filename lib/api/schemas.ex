@@ -289,7 +289,13 @@ defmodule Kleened.API.Schemas do
         },
         created: %Schema{description: "When the container was created", type: :string},
         dataset: %Schema{description: "ZFS dataset of the container", type: :string},
-        running: %Schema{description: "whether or not the container is running", type: :boolean}
+        running: %Schema{description: "whether or not the container is running", type: :boolean},
+        workdir: %Schema{
+          description: "Working directory used when executing the command. Inherited from the image when unset.",
+          type: :string,
+          nullable: true,
+          default: ""
+        }
       }
     })
   end
