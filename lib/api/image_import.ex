@@ -91,14 +91,6 @@ defmodule Kleened.API.ImageImport do
     {[{:text, msg}], state}
   end
 
-  defp truncate(reason, max_length) do
-    if String.length(reason) > max_length do
-      String.slice(reason, 0, max_length) <> "..."
-    else
-      reason
-    end
-  end
-
   def websocket_info({:EXIT, _pid, reason}, state) do
     error = Utils.error_message("image import crashed: #{inspect(reason)}")
     {[{:close, 1011, error}], state}
@@ -107,5 +99,16 @@ defmodule Kleened.API.ImageImport do
   def websocket_info(unknown_msg, state) do
     Logger.warning("unknown message received: #{inspect(unknown_msg)}")
     {:ok, state}
+  end
+
+  # Close-frame payloads are capped at 125 bytes by the websocket spec, and
+  # the JSON envelope adds ~55 — truncate the reason hard. The full reason
+  # has already been relayed as a text frame.
+  defp truncate(reason, max_length) do
+    if String.length(reason) > max_length do
+      String.slice(reason, 0, max_length) <> "..."
+    else
+      reason
+    end
   end
 end

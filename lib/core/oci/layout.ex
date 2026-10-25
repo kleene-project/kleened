@@ -22,7 +22,6 @@ defmodule Kleened.Core.OCI.Layout do
           manifest_digest: String.t()
         }
 
-  @index_media_type "application/vnd.oci.image.index.v1+json"
   @manifest_media_type "application/vnd.oci.image.manifest.v1+json"
   @config_media_type "application/vnd.oci.image.config.v1+json"
 

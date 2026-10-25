@@ -96,19 +96,19 @@ defmodule Kleened.Core.ImageCreate do
     end
   end
 
+  defp fetch_oci_archive(path) do
+    case File.exists?(path) do
+      true -> {:ok, path}
+      false -> {:error, "no such file: #{path}"}
+    end
+  end
+
   # fetch_file_from_url/3 reports progress to a receiver; the import flow
   # reports its own progress, so use a silent variant.
   defp fetch_file_from_url_quiet(url, output_file) do
     case OS.cmd(["/usr/bin/fetch", "-q", "-o", output_file, url]) do
       {_output, 0} -> :ok
       {output, _exitcode} -> {:error, String.trim_trailing(output, "\n")}
-    end
-  end
-
-  defp fetch_oci_archive(path) do
-    case File.exists?(path) do
-      true -> {:ok, path}
-      false -> {:error, "no such file: #{path}"}
     end
   end
 
