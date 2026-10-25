@@ -586,7 +586,72 @@ defmodule Kleened.API.Schemas do
           example: []
         },
         created: %Schema{description: "When the image was created", type: :string},
-        dataset: %Schema{description: "ZFS dataset of the image", type: :string}
+        dataset: %Schema{description: "ZFS dataset of the image", type: :string},
+        entrypoint: %Schema{
+          description:
+            "Entrypoint of the image (OCI images). Prepended to `cmd` when starting a container.",
+          type: :array,
+          items: %Schema{type: :string},
+          default: [],
+          nullable: true
+        },
+        workdir: %Schema{
+          description: "Working directory of the image (OCI images).",
+          type: :string,
+          default: "",
+          nullable: true
+        },
+        labels: %Schema{
+          description: "Labels of the image (OCI images).",
+          type: :object,
+          default: %{},
+          nullable: true
+        },
+        digest: %Schema{
+          description: "Digest of the image manifest (OCI images).",
+          type: :string,
+          default: "",
+          nullable: true
+        },
+        source: %Schema{
+          description: "Where the image came from: `\"build\"` or `\"oci\"`.",
+          type: :string,
+          default: "build"
+        }
+      }
+    })
+  end
+
+  defmodule ImageImportConfig do
+    OpenApiSpex.schema(%{
+      description: "Configuration for importing an OCI image layout archive.",
+      type: :object,
+      required: [:url],
+      properties: %{
+        url: %Schema{
+          description: """
+          URL or local path to an OCI image layout archive (a `.txz`/`.tar` file
+          containing `oci-layout`, `index.json` and `blobs/`, like the container
+          images published on download.freebsd.org).
+          """,
+          type: :string
+        },
+        tag: %Schema{
+          description: """
+          Name and optionally a tag in the `name:tag` format for the imported image.
+          If `tag` is omitted, the default value `latest` is used.
+          """,
+          type: :string,
+          default: ""
+        },
+        platform: %Schema{
+          description: """
+          `os/architecture` selector when the archive is a multi-platform index
+          (e.g. `freebsd/amd64`). Defaults to the first manifest in the index.
+          """,
+          type: :string,
+          nullable: true
+        }
       }
     })
   end

@@ -109,6 +109,12 @@ defmodule Kleened.Test.OCIFixtures do
     File.ln!(Path.join(Path.dirname(Path.dirname(path)), source), path)
   end
 
+  defp write_layer_file(path, {:copy, source, mode}) do
+    File.mkdir_p!(Path.dirname(path))
+    File.copy!(source, path)
+    File.chmod!(path, mode)
+  end
+
   defp write_layer_file(path, {content, mode}) when is_binary(content) and is_integer(mode) do
     write_layer_file(path, content)
     File.chmod!(path, mode)
