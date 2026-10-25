@@ -1,10 +1,11 @@
 defmodule OCIImageImportTest do
   use Kleened.Test.ConnCase
   alias Kleened.API.Schemas
-  alias Kleened.Core.{MetaData, ZFS}
+  alias Kleened.Core.MetaData
   alias Kleened.Test.OCIFixtures
   import TestHelper
 
+  @kleened_host "/var/run/kleened.sock"
   @tmp_dir Path.join(System.tmp_dir(), "kleened-oci-import-test")
 
   setup do
@@ -60,11 +61,7 @@ defmodule OCIImageImportTest do
   test "import an OCI layout archive and run a container from it" do
     archive = import_archive("single", layers: [executable_layer()])
 
-    [_, _, closing_message] =
-      TestHelper.image_import(%{url: archive, tag: "oci-test:single"})
-
-    assert {1000, %Schemas.WebSocketMessage{message: "image imported", data: image_id}} =
-             closing_message
+    assert {:ok, image_id} = import_via_websocket(archive, "oci-test:single")
 
     # The image is registered with OCI metadata and materialized on ZFS
     {:ok, image} = MetaData.get_image(image_id) |> then(&{:ok, &1})
@@ -117,16 +114,8 @@ defmodule OCIImageImportTest do
   test "re-importing the same digest with the same tag returns the existing image" do
     archive = import_archive("idem", layers: [[{"a", "b"}]])
 
-    [_, _, {1000, %{data: id1}}] = TestHelper.image_import(%{url: archive, tag: "oci-test:idem"})
-
-    frames = TestHelper.image_import(%{url: archive, tag: "oci-test:idem"})
-
-    {1000, %{data: id2}} =
-      Enum.find(frames, fn
-        {code, _} when is_integer(code) -> code == 1000
-        _ -> false
-      end)
-
+    assert {:ok, id1} = import_via_websocket(archive, "oci-test:idem")
+    assert {:ok, id2} = import_via_websocket(archive, "oci-test:idem")
     assert id1 == id2
   after
     case MetaData.get_image("oci-test:idem") do
@@ -143,7 +132,7 @@ defmodule OCIImageImportTest do
         workdir: "/etc"
       )
 
-    {1000, %{data: image_id}} = find_closing(TestHelper.image_import(%{url: archive, tag: "oci-meta:latest"}))
+    assert {:ok, image_id} = import_via_websocket(archive, "oci-meta:latest")
 
     # entrypoint ++ cmd is the effective command; workdir inherited
     container_config = %{name: "oci-meta-container", image: image_id}
@@ -159,13 +148,6 @@ defmodule OCIImageImportTest do
     TestHelper.image_remove(image_id)
   end
 
-  defp find_closing(frames) do
-    Enum.find(frames, fn
-      {code, _} when is_integer(code) -> true
-      _ -> false
-    end)
-  end
-
   test "import fails cleanly on a corrupt layout" do
     dir = Path.join(@tmp_dir, "corrupt")
     File.mkdir_p!(dir)
@@ -177,10 +159,14 @@ defmodule OCIImageImportTest do
     assert reason =~ "not an OCI layout" or reason =~ "image import failed"
   end
 
-  # Drive /images/import over the raw websocket like klee does, so the test
-  # does not depend on TestHelper.receive_frames' post-close behavior.
+  # Drive /images/import over the raw websocket like klee does. The shared
+  # TestHelper.image_import/1 builds on receive_frames/2, which drops every
+  # collected frame when gun reports an abnormal close before the calling
+  # process drains the close frame — a race that showed up when several test
+  # files run in one BEAM. Collecting straight from the socket is
+  # deterministic.
   defp import_via_websocket(archive, tag) do
-    {:ok, conn} = :gun.open_unix("/var/run/kleened.sock", %{protocols: [:http]})
+    {:ok, conn} = :gun.open_unix(@kleened_host, %{protocols: [:http]})
     {:ok, _} = :gun.await_up(conn)
     :gun.ws_upgrade(conn, "/images/import")
 
@@ -199,29 +185,22 @@ defmodule OCIImageImportTest do
     receive do
       {:gun_ws, ^conn, ^stream, {:text, msg}} ->
         case Jason.decode(msg) do
-          {:ok, %{"msg_type" => "error", "message" => message}} -> {:error, message}
-          _ -> collect_import_frames(conn, stream)
+          # progress frames are plain text, not JSON
+          {:error, _} -> collect_import_frames(conn, stream)
+          {:ok, decoded} -> decode_import_frame(decoded, conn, stream)
         end
 
       {:gun_ws, ^conn, ^stream, {:close, _code, msg}} ->
-        {:ok, closing} = Jason.decode(msg)
-
-        case closing do
-          %{"msg_type" => "error", "message" => message} -> {:error, message}
-          %{"msg_type" => "closing", "data" => data} -> {:ok, data}
-        end
+        {:ok, decoded} = Jason.decode(msg)
+        import_result(decoded)
 
       {:gun_down, ^conn, :ws, _reason, _} ->
         # The close frame may already be in the mailbox; give it a chance
         # before giving up.
         receive do
           {:gun_ws, ^conn, ^stream, {:close, _code, msg}} ->
-            {:ok, closing} = Jason.decode(msg)
-
-            case closing do
-              %{"msg_type" => "error", "message" => message} -> {:error, message}
-              %{"msg_type" => "closing", "data" => data} -> {:ok, data}
-            end
+            {:ok, decoded} = Jason.decode(msg)
+            import_result(decoded)
         after
           500 -> flunk("websocket closed before result frame")
         end
@@ -229,4 +208,19 @@ defmodule OCIImageImportTest do
       20_000 -> flunk("timed out waiting for import result")
     end
   end
+
+  defp decode_import_frame(%{"msg_type" => "error", "message" => message}, _conn, _stream) do
+    {:error, message}
+  end
+
+  defp decode_import_frame(%{"msg_type" => "closing", "data" => data}, _conn, _stream) do
+    {:ok, data}
+  end
+
+  defp decode_import_frame(_progress_frame, conn, stream) do
+    collect_import_frames(conn, stream)
+  end
+
+  defp import_result(%{"msg_type" => "error", "message" => message}), do: {:error, message}
+  defp import_result(%{"msg_type" => "closing", "data" => data}), do: {:ok, data}
 end
