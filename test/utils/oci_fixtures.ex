@@ -14,8 +14,6 @@ defmodule Kleened.Test.OCIFixtures do
   inspect blobs with `:erl_tar` without gzip concerns.
   """
 
-  alias Kleened.Core.OCI.Ref
-
   @layer_media_type "application/vnd.oci.image.layer.v1.tar"
   @manifest_media_type "application/vnd.oci.image.manifest.v1+json"
   @config_media_type "application/vnd.oci.image.config.v1+json"
@@ -188,8 +186,4 @@ defmodule Kleened.Test.OCIFixtures do
 
     {dir, manifest}
   end
-
-  @doc "Reference fixture for Ref tests, kept here to avoid circular deps."
-  def sample_ref,
-    do: %Ref{registry: "docker.io", repository: "library/nginx", tag: "latest", digest: nil}
 end

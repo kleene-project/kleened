@@ -9,8 +9,6 @@ defmodule Kleened.Core.OCI.Layout do
   reads, and returns the manifest, its config, and the layer descriptors.
   """
 
-  alias Kleened.Core.OCI.Ref
-
   @enforce_keys [:root, :manifest, :config, :layers, :manifest_digest]
   defstruct [:root, :manifest, :config, :layers, :manifest_digest]
 

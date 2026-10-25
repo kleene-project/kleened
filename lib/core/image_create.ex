@@ -112,7 +112,7 @@ defmodule Kleened.Core.ImageCreate do
     end
   end
 
-  defp unpack_oci_layout(archive, receiver) do
+  defp unpack_oci_layout(archive, _receiver) do
     layout_root = Path.join(System.tmp_dir(), "kleened-oci-layout-#{Utils.uuid()}")
 
     with :ok <- make_dir(layout_root),
@@ -120,9 +120,8 @@ defmodule Kleened.Core.ImageCreate do
            OS.cmd(["/usr/bin/tar", "-xf", archive, "-C", layout_root]) do
       {:ok, layout_root}
     else
-      {output, _} -> {:crash, "could not unpack OCI archive #{archive}: #{output}"}
       {:error, reason} -> {:crash, "could not create #{layout_root}: #{inspect(reason)}"}
-      _ -> send_msg(receiver, {:info, "unpack failed\n"})
+      {output, _} -> {:crash, "could not unpack OCI archive #{archive}: #{output}"}
     end
   end
 
@@ -175,7 +174,6 @@ defmodule Kleened.Core.ImageCreate do
       end)
     else
       {output, _} -> {:error, "could not create image dataset #{dataset}: #{output}"}
-      {:error, reason} -> {:error, reason}
     end
   end
 
