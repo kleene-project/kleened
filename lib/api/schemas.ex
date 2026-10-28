@@ -656,7 +656,9 @@ defmodule Kleened.API.Schemas do
         platform: %Schema{
           description: """
           `os/architecture` selector when the archive is a multi-platform index
-          (e.g. `freebsd/amd64`). Defaults to the first manifest in the index.
+          (e.g. `freebsd/amd64`). Defaults to the host's own os/architecture
+          (from `uname(1)`) when the index carries platform information, and to
+          the first manifest otherwise.
           """,
           type: :string,
           nullable: true

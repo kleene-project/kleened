@@ -106,30 +106,39 @@ defmodule Kleened.Core.OCI.Layout do
           "no manifest annotated with ref name #{ref}"
         )
 
-      {_, _, {os, arch}} ->
-        find_descriptor(
-          manifests,
-          fn descriptor ->
-            plat = descriptor["platform"]
-            plat != nil and plat["os"] == os and plat["architecture"] == arch
-          end,
-          "no manifest for platform #{os}/#{arch} (index has: #{inspect(available_platforms(manifests))})"
-        )
+      {_, _, {os, arch} = platform} when platform != nil ->
+        case platform_annotated?(manifests) do
+          true ->
+            find_descriptor(
+              manifests,
+              fn descriptor ->
+                plat = descriptor["platform"]
+                plat != nil and plat["os"] == os and plat["architecture"] == arch
+              end,
+              "no manifest for platform #{os}/#{arch} (index has: #{inspect(available_platforms(manifests))})"
+            )
+
+          # No entry carries platform information, so the selector cannot match
+          # anything — fall through to the single/ambiguous rules.
+          false ->
+            select_single(manifests)
+        end
 
       {nil, nil, nil} ->
-        case manifests do
-          [] ->
-            {:error, "index has no manifests"}
-
-          [single] ->
-            {:ok, single}
-
-          _ ->
-            {:error,
-             "ambiguous index: multiple manifests and no digest, ref or platform selector"}
-        end
+        select_single(manifests)
     end
   end
+
+  # Selecting without any selector: a single manifest is it; several require
+  # the caller to disambiguate.
+  defp select_single([single]), do: {:ok, single}
+  defp select_single([]), do: {:error, "index has no manifests"}
+
+  defp select_single(_manifests),
+    do: {:error, "ambiguous index: multiple manifests and no digest, ref or platform selector"}
+
+  defp platform_annotated?(manifests),
+    do: Enum.any?(manifests, &(&1["platform"] != nil))
 
   defp find_descriptor(manifests, predicate, error_message) do
     case Enum.find(manifests, predicate) do

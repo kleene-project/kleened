@@ -127,6 +127,9 @@ defmodule Kleened.Core.ImageCreate do
     end
   end
 
+  # Default the platform selector to the host's own os/architecture (from
+  # uname(1)) when the config does not specify one, so a multi-platform index
+  # imports the image that matches the host instead of the first manifest.
   defp open_oci_layout(layout_root, %Schemas.ImageImportConfig{platform: platform}, receiver) do
     opts = [platform: platform_option(platform)] |> Keyword.reject(fn {_k, v} -> v == nil end)
 
@@ -141,7 +144,11 @@ defmodule Kleened.Core.ImageCreate do
   end
 
   # platform comes as "freebsd/amd64" from the config schema
-  defp platform_option(nil), do: nil
+  defp platform_option(nil) do
+    {os, _version, arch} = detect_freebsd_version()
+    {String.downcase(os), arch}
+  end
+
   defp platform_option(platform), do: List.to_tuple(String.split(platform, "/"))
 
   defp materialize_layers(%OCI.Layout{layers: layers, root: root}, image_id, receiver) do

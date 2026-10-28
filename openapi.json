@@ -1005,7 +1005,7 @@
         "description": "Configuration for importing an OCI image layout archive.",
         "properties": {
           "platform": {
-            "description": "`os/architecture` selector when the archive is a multi-platform index\n(e.g. `freebsd/amd64`). Defaults to the first manifest in the index.\n",
+            "description": "`os/architecture` selector when the archive is a multi-platform index\n(e.g. `freebsd/amd64`). Defaults to the host's own os/architecture\n(from `uname(1)`) when the index carries platform information, and to\nthe first manifest otherwise.\n",
             "nullable": true,
             "type": "string",
             "x-struct": null,
