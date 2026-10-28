@@ -1043,6 +1043,31 @@
         "x-struct": "Elixir.Kleened.API.Schemas.ImageList",
         "x-validate": null
       },
+      "ImagePullConfig": {
+        "description": "Configuration for pulling an image from an OCI registry.",
+        "properties": {
+          "platform": {
+            "description": "`os/architecture` selector when the registry serves a multi-platform\nindex (e.g. `freebsd/amd64`). Defaults to the host's own\nos/architecture (from `uname(1)`).\n",
+            "nullable": true,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "ref": {
+            "description": "Image reference to pull: `[registry/]repository[:tag][@digest]`.\nUnqualified names resolve against the configured default registry\n(`nginx` -> `docker.io/library/nginx`).\n",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "ref"
+        ],
+        "title": "ImagePullConfig",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.ImagePullConfig",
+        "x-validate": null
+      },
       "MountPoint": {
         "description": "Mount point between the host file system and a container.\n\nThere are two types of mount points:\n\n- `nullfs`: Mount a user-specified file or directory from the host machine into the container.\n- `volume`: Mount a Kleene volume into the container.\n",
         "properties": {
@@ -2413,6 +2438,50 @@
           }
         },
         "summary": "image prune",
+        "tags": []
+      }
+    },
+    "/images/pull": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "> **Important**: This is a 'dummy' specification since the actual endpoint is websocket-based.\n> Below is a description of the websocket protocol and how it relates to the dummy spec.\n\n## General websocket protocol used by Kleened\nAll of Kleened's websocket endpoints follows a similar pattern, having only differences\nin the contents of the fields in the protocol frames.\nThe specifics of the particular endpoint is described below the generic description of the\nprotocol.\n\nOnce the websocket is established Kleened expects a configuration-frame which is given by\nthe specified request body schema. The contents of the request body should be sent as an\ninitial websocket frame instead of being contained in the initiating request.\n\nWhen the config is received, Kleened sends a 'starting-message' back to the client, indicating\nthat Kleened has begun processing the request.\nThe starting message, like all protocol messages, follows the schema shown for\nthe 200-response below (the WebSocketMessage schema) and has `msg_type` set to `starting`.\nAfter the starting-message, subsequent frames will be 'raw' output from the running process.\nWhen the process is finished, Kleened closes the websocket with a Close Code 1000 and a\nWebSocketMessage contained in the Close frame's Close Reason.\nThe `msg_type` is set to `closing` but the contents of the `data` and `message` fields\ndepend on the particular endpoint.\n\nIf the initial configuration message schema is invalid, kleened closes the websocket with\nClose Code 1002 and a WebSocketMessage as the Close frame's Close Reason.\nThe `msg_type` is set to `error` and the contents of the `data` and `message` fields will\ndepend on the specific error.\nThis only happens before a starting-message have been sent to the client.\n\nIf Kleened encounters an error during process execution, Kleened closes the websocket with\nClose Code 1011 and a WebSocketMessage as the Close frame's reason. The `msg_type` is set to\n`error` and the contents of the `data` and `message` fields will depend on the specific error.\n\nIf any unexpected errors/crashes occur during the lifetime of the websocket, Kleend closes\nthe websocket with Close Code 1011 and an empty reason field.\n\n## Endpoint-specific details\nThe following specifics pertain to this endpoint:\n\n\n* The starting-message does not have any content.\n* If the image pull finishes succesfully, the ID of the newly pulled image is stored in the\n`data` field of the closing-message.\n",
+        "operationId": "ImagePull",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImagePullConfig"
+              }
+            }
+          },
+          "description": "Image pull configuration.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSocketMessage"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSocketMessage"
+                }
+              }
+            },
+            "description": "no error"
+          }
+        },
+        "summary": "image pull",
         "tags": []
       }
     },
