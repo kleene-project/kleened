@@ -13,6 +13,7 @@ defmodule Kleened.Core.Registry do
   # is used. The result is an on-disk OCI layout (index.json + blobs/) that
   # `Core.OCI.Layout.open/2` consumes.
 
+  alias Kleened.Core.OS
   alias Kleened.Core.OCI.{Layout, Ref}
 
   # gun registers its connection supervisor under its own application; the
@@ -38,8 +39,7 @@ defmodule Kleened.Core.Registry do
   @type progress() :: (String.t() -> any())
 
   @spec pull(String.t(), keyword()) ::
-          {:ok, %{root: Path.t(), manifest: map(), config: map(), layers: [map()]}}
-          | {:error, String.t()}
+          {:ok, Kleened.Core.OCI.Layout.t()} | {:error, String.t()}
   def pull(reference, opts \\ []) do
     with {:ok, ref} <- parse_ref(reference),
          :ok <- ensure_gun_started(),
@@ -57,12 +57,12 @@ defmodule Kleened.Core.Registry do
       ref_string = ref.digest || ref.tag || "latest"
       accept = Enum.join(@default_accept, ", ")
 
-      with {:ok, manifest, manifest_digest, media_type} <-
+      with {:ok, manifest, manifest_digest, manifest_raw} <-
              get_manifest(conn, base, repo, ref_string, token, accept) do
         download_dir = download_dir(opts)
 
         with {:ok, layout} <-
-               fetch_layout(conn, base, repo, manifest, manifest_digest, media_type, token,
+               fetch_layout(conn, repo, manifest, manifest_digest, manifest_raw, token,
                  download_dir: download_dir,
                  progress: progress
                ) do
@@ -182,7 +182,7 @@ defmodule Kleened.Core.Registry do
 
   # -- auth ------------------------------------------------------------------
 
-  defp authenticate(conn, base, repo) do
+  defp authenticate(conn, _base, repo) do
     case request(conn, "GET", "/v2/", []) do
       {:ok, 200, _headers, _body} ->
         {:ok, nil}
@@ -227,9 +227,11 @@ defmodule Kleened.Core.Registry do
   defp challenge(headers) do
     header =
       Enum.find_value(headers, fn
-        {<<"www-authenticate">>, value} -> value
-        {key, value} when is_list(key) -> if to_string(key) == "www-authenticate", do: value
-        _ -> nil
+        {key, value} ->
+          if to_string(key) == "www-authenticate", do: to_string(value)
+
+        _ ->
+          nil
       end)
 
     case header do
@@ -267,7 +269,7 @@ defmodule Kleened.Core.Registry do
 
   # -- manifest --------------------------------------------------------------
 
-  defp get_manifest(conn, base, repo, ref_string, token, accept) do
+  defp get_manifest(conn, _base, repo, ref_string, token, accept) do
     path = "/v2/#{repo}/manifests/#{ref_string}"
     headers = [{"accept", accept} | auth_headers(token)]
 
@@ -278,7 +280,7 @@ defmodule Kleened.Core.Registry do
 
         with {:ok, decoded} <- decode_manifest_or_index(body, media_type) do
           case verify_manifest_digest(body, digest, media_type) do
-            :ok -> {:ok, decoded, digest || digest_of(body), media_type}
+            :ok -> {:ok, decoded, digest || digest_of(body), body}
             error -> error
           end
         else
@@ -328,7 +330,7 @@ defmodule Kleened.Core.Registry do
 
   # -- layout assembly -------------------------------------------------------
 
-  defp fetch_layout(conn, base, repo, manifest, manifest_digest, media_type, token, opts) do
+  defp fetch_layout(conn, repo, manifest, manifest_digest, manifest_raw, token, opts) do
     download_dir = Keyword.fetch!(opts, :download_dir)
     progress = Keyword.get(opts, :progress)
     File.mkdir_p!(Path.join(download_dir, "blobs/sha256"))
@@ -337,24 +339,44 @@ defmodule Kleened.Core.Registry do
       %{"manifests" => _} ->
         # An index: select by platform (host default) and fetch that manifest.
         with {:ok, descriptor} <- select_platform_manifest(manifest["manifests"], opts),
-             {:ok, inner} <- fetch_indexed_manifest(conn, repo, descriptor, token) do
-          assemble_layout(conn, repo, inner, token, manifest_digest, download_dir, progress)
+             {:ok, inner, inner_raw} <- fetch_indexed_manifest(conn, repo, descriptor, token) do
+          assemble_layout(
+            conn,
+            repo,
+            inner,
+            inner_raw,
+            descriptor["digest"],
+            token,
+            download_dir,
+            progress
+          )
         end
 
       %{"layers" => _} ->
-        assemble_layout(conn, repo, manifest, token, manifest_digest, download_dir, progress)
+        assemble_layout(
+          conn,
+          repo,
+          manifest,
+          manifest_raw,
+          manifest_digest,
+          token,
+          download_dir,
+          progress
+        )
     end
   end
 
   defp select_platform_manifest(manifests, opts) do
-    platform = Keyword.get(opts, :platform)
+    platform = Keyword.get(opts, :platform) || host_platform()
 
     case find_by_platform(manifests, platform) do
       {:ok, _} = ok ->
         ok
 
       {:error, reason} = error ->
-        if platform == nil do
+        # No entry carries platform information: the selector cannot match
+        # anything, so fall through to the single/first entry.
+        if platform_annotated?(manifests) do
           error
         else
           case Enum.find(manifests, &(&1["platform"] == nil)) or List.first(manifests) do
@@ -365,7 +387,15 @@ defmodule Kleened.Core.Registry do
     end
   end
 
-  defp find_by_platform(manifests, nil),
+  defp host_platform do
+    {output, 0} = OS.cmd(["/usr/bin/uname", "-rms"])
+    [os, _version, arch] = String.split(String.trim(output), " ")
+    {String.downcase(os), arch}
+  end
+
+  defp platform_annotated?(manifests), do: Enum.any?(manifests, &(&1["platform"] != nil))
+
+  defp find_by_platform(_manifests, nil),
     do: {:error, "no manifests in index"}
 
   defp find_by_platform(manifests, {os, arch}) do
@@ -407,7 +437,7 @@ defmodule Kleened.Core.Registry do
         case Jason.decode(body) do
           {:ok, decoded} ->
             with :ok <- verify_descriptor(body, descriptor) do
-              {:ok, decoded}
+              {:ok, decoded, body}
             end
 
           error ->
@@ -425,7 +455,16 @@ defmodule Kleened.Core.Registry do
     end
   end
 
-  defp assemble_layout(conn, repo, manifest, token, manifest_digest, download_dir, progress) do
+  defp assemble_layout(
+         conn,
+         repo,
+         manifest,
+         manifest_raw,
+         manifest_digest,
+         token,
+         download_dir,
+         progress
+       ) do
     total = length(Map.get(manifest, "layers", []))
 
     with {:ok, config} <-
@@ -448,7 +487,7 @@ defmodule Kleened.Core.Registry do
 
       case layers do
         {:ok, :ok} ->
-          store_manifest_blob(download_dir, manifest, manifest_digest)
+          store_manifest_blob(download_dir, manifest_raw, manifest_digest)
           write_layout_index(download_dir, manifest, manifest_digest)
           _ = config
           layout_summary(download_dir)
@@ -460,11 +499,12 @@ defmodule Kleened.Core.Registry do
   end
 
   # The manifest blob itself belongs in the downloaded layout: Layout.open reads
-  # it through the index descriptor.
-  defp store_manifest_blob(download_dir, manifest, manifest_digest) do
+  # it through the index descriptor. The ORIGINAL served bytes must be stored —
+  # re-encoding the decoded manifest changes the digest.
+  defp store_manifest_blob(download_dir, manifest_raw, manifest_digest) do
     hex = String.replace_prefix(manifest_digest, "sha256:", "")
     blob_path = Path.join([download_dir, "blobs", "sha256", hex])
-    File.write!(blob_path, Jason.encode!(manifest))
+    File.write!(blob_path, manifest_raw)
     :ok
   end
 
@@ -477,6 +517,21 @@ defmodule Kleened.Core.Registry do
       {:ok, 200, _resp_headers, body} ->
         verify_and_store(body, descriptor, download_dir, kind)
 
+      # Registries redirect blob downloads to a CDN; the Location is absolute.
+      {:ok, status, resp_headers, _body} when status in [301, 302, 303, 307] ->
+        case Enum.find_value(resp_headers, fn {k, v} ->
+               if to_string(k) == "location", do: to_string(v)
+             end) do
+          nil ->
+            {:error, "registry returned #{status} for #{kind} blob #{digest} without a location"}
+
+          location ->
+            case download_redirected(location) do
+              {:ok, body} -> verify_and_store(body, descriptor, download_dir, kind)
+              error -> error
+            end
+        end
+
       {:ok, 404, _headers, _body} ->
         {:error, "#{kind} blob not found: #{digest}"}
 
@@ -485,6 +540,27 @@ defmodule Kleened.Core.Registry do
 
       error ->
         {:error, "#{kind} blob download failed: #{inspect(error)}"}
+    end
+  end
+
+  defp download_redirected(location) do
+    with {:ok, conn} <- open(location, []) do
+      uri = URI.parse(location)
+      path = uri.path <> if uri.query, do: "?" <> uri.query, else: ""
+
+      case request(conn, "GET", path, []) do
+        {:ok, 200, _headers, body} ->
+          :gun.close(conn)
+          {:ok, body}
+
+        {:ok, status, _headers, _body} ->
+          :gun.close(conn)
+          {:error, "blob redirect target returned #{status}"}
+
+        error ->
+          :gun.close(conn)
+          error
+      end
     end
   end
 
@@ -538,18 +614,14 @@ defmodule Kleened.Core.Registry do
 
   defp content_type(headers) do
     Enum.find_value(headers, fn
-      {<<"content-type">>, value} -> to_string(value)
-      {key, value} when is_list(key) -> if to_string(key) == "content-type", do: to_string(value)
+      {key, value} -> if to_string(key) == "content-type", do: to_string(value)
       _ -> nil
     end)
   end
 
   defp digest_header(headers) do
     Enum.find_value(headers, fn
-      {<<"docker-content-digest">>, value} ->
-        to_string(value)
-
-      {key, value} when is_list(key) ->
+      {key, value} ->
         if to_string(key) == "docker-content-digest", do: to_string(value)
 
       _ ->

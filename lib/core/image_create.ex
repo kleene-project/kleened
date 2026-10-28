@@ -87,9 +87,6 @@ defmodule Kleened.Core.ImageCreate do
     else
       {:error, reason} ->
         send_msg(receiver, {:error, reason})
-
-      {:crash, reason} ->
-        exit(receiver, reason)
     end
   end
 
@@ -100,6 +97,8 @@ defmodule Kleened.Core.ImageCreate do
     end
   end
 
+  # An explicit platform selector is passed through; Registry defaults a
+  # missing selector to the host's own os/architecture.
   defp pull_platform(opts, nil), do: opts
 
   defp pull_platform(opts, platform) do
