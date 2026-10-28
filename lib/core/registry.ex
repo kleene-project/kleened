@@ -13,7 +13,7 @@ defmodule Kleened.Core.Registry do
   # is used. The result is an on-disk OCI layout (index.json + blobs/) that
   # `Core.OCI.Layout.open/2` consumes.
 
-  alias Kleened.Core.OCI.Ref
+  alias Kleened.Core.OCI.{Layout, Ref}
 
   # gun registers its connection supervisor under its own application; the
   # test suite may run with --no-start, so ensure gun on demand.
@@ -88,10 +88,21 @@ defmodule Kleened.Core.Registry do
 
   defp base_url(%Ref{registry: registry}, opts) do
     case Keyword.get(opts, :base_url) do
-      nil -> "https://#{registry}"
-      override -> String.replace_trailing(override, "/", "")
+      nil ->
+        # A registry on localhost serves plain http (matching docker's
+        # localhost behavior); everything else defaults to https.
+        scheme = if local_host?(registry), do: "http", else: "https"
+        "#{scheme}://#{registry}"
+
+      override ->
+        String.replace_trailing(override, "/", "")
     end
   end
+
+  defp local_host?("localhost" <> _), do: true
+  defp local_host?("127.0.0.1" <> _), do: true
+  defp local_host?("[::1]" <> _), do: true
+  defp local_host?(_), do: false
 
   defp download_dir(opts) do
     Keyword.get_lazy(opts, :download_dir, fn ->
@@ -439,7 +450,8 @@ defmodule Kleened.Core.Registry do
         {:ok, :ok} ->
           store_manifest_blob(download_dir, manifest, manifest_digest)
           write_layout_index(download_dir, manifest, manifest_digest)
-          {:ok, layout_summary(download_dir, manifest, config)}
+          _ = config
+          layout_summary(download_dir)
 
         {:error, reason} ->
           {:error, reason}
@@ -506,13 +518,16 @@ defmodule Kleened.Core.Registry do
     :ok
   end
 
-  defp layout_summary(download_dir, manifest, config) do
-    %{
-      root: download_dir,
-      manifest: manifest,
-      config: config,
-      layers: Map.get(manifest, "layers", [])
-    }
+  defp layout_summary(download_dir) do
+    # Re-open the downloaded layout through Layout.open so the result carries
+    # the same verified structure an import produces.
+    case Layout.open(download_dir) do
+      {:ok, %Layout{} = layout} ->
+        {:ok, layout}
+
+      {:error, reason} ->
+        {:error, "downloaded layout failed verification: #{reason}"}
+    end
   end
 
   # -- helpers ---------------------------------------------------------------

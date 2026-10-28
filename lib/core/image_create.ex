@@ -1,6 +1,7 @@
 defmodule Kleened.Core.ImageCreate do
   alias Kleened.Core.{Const, ZFS, Utils, OS}
   alias Kleened.Core.{OCI, MetaData}
+  alias Kleened.Core.Registry
   alias Kleened.API.Schemas
   alias Schemas.ImageCreateConfig, as: Config
   require Logger
@@ -49,13 +50,79 @@ defmodule Kleened.Core.ImageCreate do
     {:ok, image_id, Process.spawn(worker, [:link])}
   end
 
+  @doc """
+  Pull an image from an OCI distribution registry. The image is downloaded
+  (manifest, config and layer blobs, all sha256-verified) into a temporary
+  OCI layout and materialized into a new image dataset layer by layer.
+
+  Reports progress to the calling process as `{:image_creator, pid, msg}`
+  messages, exactly like `create/1` and `import_oci/1`.
+  """
+  @spec pull_oci(Schemas.ImagePullConfig.t()) :: {:ok, String.t(), pid()}
+  def pull_oci(config) do
+    client = self()
+    image_id = Utils.uuid()
+
+    worker = fn -> pull_oci_layout(client, image_id, config) end
+    {:ok, image_id, Process.spawn(worker, [:link])}
+  end
+
+  defp pull_oci_layout(receiver, image_id, %Schemas.ImagePullConfig{ref: ref, platform: platform}) do
+    progress = fn msg -> send_msg(receiver, {:info, msg}) end
+    pull_opts = [progress: progress] |> pull_platform(platform)
+
+    with {:ok, parsed} <- parse_pull_ref(ref),
+         {:ok, layout} <- Registry.pull(ref, pull_opts),
+         {:existing, existing_image} <- skip_if_pulled(layout, parsed),
+         {:ok, image} <-
+           materialize_unless_exists(
+             existing_image,
+             layout,
+             image_id,
+             pull_tag(parsed),
+             receiver
+           ) do
+      File.rm_rf!(layout.root)
+      send_msg(receiver, {:ok, image})
+    else
+      {:error, reason} ->
+        send_msg(receiver, {:error, reason})
+
+      {:crash, reason} ->
+        exit(receiver, reason)
+    end
+  end
+
+  defp parse_pull_ref(ref) do
+    case OCI.Ref.parse(ref) do
+      {:ok, parsed} -> {:ok, parsed}
+      :error -> {:error, "invalid image reference #{ref}"}
+    end
+  end
+
+  defp pull_platform(opts, nil), do: opts
+
+  defp pull_platform(opts, platform) do
+    Keyword.put(opts, :platform, List.to_tuple(String.split(platform, "/")))
+  end
+
+  # The image is tagged with repository:tag from the pulled reference.
+  defp pull_tag(%OCI.Ref{} = ref), do: "#{ref.repository}:#{ref.tag || "latest"}"
+
+  defp skip_if_pulled(%OCI.Layout{manifest_digest: digest}, %OCI.Ref{} = ref) do
+    case MetaData.get_image(pull_tag(ref)) do
+      %Schemas.Image{digest: ^digest} = image -> {:existing, image}
+      _ -> {:existing, nil}
+    end
+  end
+
   defp import_oci_layout(receiver, image_id, %Schemas.ImageImportConfig{url: url} = config) do
     with {:ok, archive} <- fetch_oci_archive(url, receiver),
          {:ok, layout_root} <- unpack_oci_layout(archive),
          {:ok, layout} <- open_oci_layout(layout_root, config, receiver),
          {:existing, existing_image} <- skip_if_imported(layout, config),
          {:ok, image} <-
-           materialize_unless_exists(existing_image, layout, image_id, config, receiver) do
+           materialize_unless_exists(existing_image, layout, image_id, config.tag, receiver) do
       File.rm_rf!(layout_root)
       send_msg(receiver, {:ok, image})
     else
@@ -69,9 +136,9 @@ defmodule Kleened.Core.ImageCreate do
 
   # An already-imported image (same manifest digest under the same name:tag)
   # is returned as-is; otherwise the layout is materialized into a new image.
-  defp materialize_unless_exists(nil, layout, image_id, config, receiver) do
+  defp materialize_unless_exists(nil, layout, image_id, tag, receiver) do
     with :ok <- materialize_layers(layout, image_id, receiver) do
-      register_oci_image(layout, image_id, config)
+      register_oci_image(layout, image_id, tag)
     end
   end
 
@@ -182,7 +249,7 @@ defmodule Kleened.Core.ImageCreate do
   defp register_oci_image(
          %OCI.Layout{config: config, manifest_digest: manifest_digest},
          image_id,
-         %Schemas.ImageImportConfig{tag: tag}
+         tag
        ) do
     dataset = Const.image_dataset(image_id)
     {_, 0} = ZFS.snapshot(Const.image_snapshot(dataset))

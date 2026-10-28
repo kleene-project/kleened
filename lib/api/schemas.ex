@@ -667,6 +667,33 @@ defmodule Kleened.API.Schemas do
     })
   end
 
+  defmodule ImagePullConfig do
+    OpenApiSpex.schema(%{
+      description: "Configuration for pulling an image from an OCI registry.",
+      type: :object,
+      required: [:ref],
+      properties: %{
+        ref: %Schema{
+          description: """
+          Image reference to pull: `[registry/]repository[:tag][@digest]`.
+          Unqualified names resolve against the configured default registry
+          (`nginx` -> `docker.io/library/nginx`).
+          """,
+          type: :string
+        },
+        platform: %Schema{
+          description: """
+          `os/architecture` selector when the registry serves a multi-platform
+          index (e.g. `freebsd/amd64`). Defaults to the host's own
+          os/architecture (from `uname(1)`).
+          """,
+          type: :string,
+          nullable: true
+        }
+      }
+    })
+  end
+
   defmodule ImageList do
     OpenApiSpex.schema(%{
       description: "List of images.",

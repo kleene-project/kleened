@@ -77,6 +77,11 @@ defmodule Kleened.API.Spec do
           OpenApiSpex.PathItem.from_routes([
             %{verb: :get, plug: API.ImageImport, opts: []}
           ]),
+        # websocket
+        "/images/pull" =>
+          OpenApiSpex.PathItem.from_routes([
+            %{verb: :get, plug: API.ImagePull, opts: []}
+          ]),
         "/images/{image_id}/tag" =>
           OpenApiSpex.PathItem.from_routes([
             %{verb: :post, plug: API.Image.Tag, opts: []}
