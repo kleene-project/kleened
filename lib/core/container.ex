@@ -292,6 +292,15 @@ defmodule Kleened.Core.Container do
     end
   end
 
+  # OCI images carry an optional entrypoint that prefixes the command
+  # (docker semantics: Entrypoint ++ Cmd).
+  defp effective_cmd(%Schemas.Image{entrypoint: entrypoint, cmd: cmd})
+       when is_list(entrypoint) and entrypoint != [] do
+    entrypoint ++ cmd
+  end
+
+  defp effective_cmd(%Schemas.Image{cmd: cmd}), do: cmd
+
   defp assemble_container(
          container_id,
          image,
@@ -311,7 +320,7 @@ defmodule Kleened.Core.Container do
 
     command =
       case command do
-        [] -> image.cmd
+        [] -> effective_cmd(image)
         _ -> command
       end
 
@@ -319,6 +328,12 @@ defmodule Kleened.Core.Container do
       case user do
         "" -> image.user
         _ -> user
+      end
+
+    workdir =
+      case Map.get(container_map, :workdir) do
+        nil -> Map.get(image, :workdir) || ""
+        wd -> wd
       end
 
     container =
@@ -332,6 +347,7 @@ defmodule Kleened.Core.Container do
           user: user,
           public_ports: pub_ports,
           env: env,
+          workdir: workdir,
           created: DateTime.to_iso8601(DateTime.utc_now()),
           running: false
         })

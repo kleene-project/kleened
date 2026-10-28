@@ -145,6 +145,14 @@
             "type": "string",
             "x-struct": null,
             "x-validate": null
+          },
+          "workdir": {
+            "default": "",
+            "description": "Working directory used when executing the command. Inherited from the image when unset.",
+            "nullable": true,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
           }
         },
         "title": "Container",
@@ -742,6 +750,27 @@
             "x-struct": null,
             "x-validate": null
           },
+          "digest": {
+            "default": "",
+            "description": "Digest of the image manifest (OCI images).",
+            "nullable": true,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "entrypoint": {
+            "default": [],
+            "description": "Entrypoint of the image. Prepended to `cmd` when starting a container. Currently only set by OCI image imports; Dockerfile builds do not produce an entrypoint yet.",
+            "items": {
+              "type": "string",
+              "x-struct": null,
+              "x-validate": null
+            },
+            "nullable": true,
+            "type": "array",
+            "x-struct": null,
+            "x-validate": null
+          },
           "env": {
             "default": [],
             "description": "Environment variables and their values to set before running command.",
@@ -782,8 +811,23 @@
             "x-struct": null,
             "x-validate": null
           },
+          "labels": {
+            "default": {},
+            "description": "Labels of the image. Currently only set by OCI image imports; Dockerfile builds do not produce labels yet.",
+            "nullable": true,
+            "type": "object",
+            "x-struct": null,
+            "x-validate": null
+          },
           "name": {
             "description": "Name of the image",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "source": {
+            "default": "build",
+            "description": "Where the image came from: `\"build\"` or `\"oci\"`.",
             "type": "string",
             "x-struct": null,
             "x-validate": null
@@ -796,6 +840,14 @@
           },
           "user": {
             "description": "User used for running `cmd`",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "workdir": {
+            "default": "",
+            "description": "Working directory of the image. Currently only set by OCI image imports; Dockerfile builds do not produce a working directory yet.",
+            "nullable": true,
             "type": "string",
             "x-struct": null,
             "x-validate": null
@@ -947,6 +999,38 @@
         "title": "ImageCreateConfig",
         "type": "object",
         "x-struct": "Elixir.Kleened.API.Schemas.ImageCreateConfig",
+        "x-validate": null
+      },
+      "ImageImportConfig": {
+        "description": "Configuration for importing an OCI image layout archive.",
+        "properties": {
+          "platform": {
+            "description": "`os/architecture` selector when the archive is a multi-platform index\n(e.g. `freebsd/amd64`). Defaults to the host's own os/architecture\n(from `uname(1)`) when the index carries platform information, and to\nthe first manifest otherwise.\n",
+            "nullable": true,
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "tag": {
+            "default": "",
+            "description": "Name and optionally a tag in the `name:tag` format for the imported image.\nIf `tag` is omitted, the default value `latest` is used.\n",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          },
+          "url": {
+            "description": "URL or local path to an OCI image layout archive (a `.txz`/`.tar` file\ncontaining `oci-layout`, `index.json` and `blobs/`, like the container\nimages published on download.freebsd.org).\n",
+            "type": "string",
+            "x-struct": null,
+            "x-validate": null
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "title": "ImageImportConfig",
+        "type": "object",
+        "x-struct": "Elixir.Kleened.API.Schemas.ImageImportConfig",
         "x-validate": null
       },
       "ImageList": {
@@ -2227,6 +2311,50 @@
           }
         },
         "summary": "image create",
+        "tags": []
+      }
+    },
+    "/images/import": {
+      "get": {
+        "callbacks": {},
+        "deprecated": false,
+        "description": "> **Important**: This is a 'dummy' specification since the actual endpoint is websocket-based.\n> Below is a description of the websocket protocol and how it relates to the dummy spec.\n\n## General websocket protocol used by Kleened\nAll of Kleened's websocket endpoints follows a similar pattern, having only differences\nin the contents of the fields in the protocol frames.\nThe specifics of the particular endpoint is described below the generic description of the\nprotocol.\n\nOnce the websocket is established Kleened expects a configuration-frame which is given by\nthe specified request body schema. The contents of the request body should be sent as an\ninitial websocket frame instead of being contained in the initiating request.\n\nWhen the config is received, Kleened sends a 'starting-message' back to the client, indicating\nthat Kleened has begun processing the request.\nThe starting message, like all protocol messages, follows the schema shown for\nthe 200-response below (the WebSocketMessage schema) and has `msg_type` set to `starting`.\nAfter the starting-message, subsequent frames will be 'raw' output from the running process.\nWhen the process is finished, Kleened closes the websocket with a Close Code 1000 and a\nWebSocketMessage contained in the Close frame's Close Reason.\nThe `msg_type` is set to `closing` but the contents of the `data` and `message` fields\ndepend on the particular endpoint.\n\nIf the initial configuration message schema is invalid, kleened closes the websocket with\nClose Code 1002 and a WebSocketMessage as the Close frame's Close Reason.\nThe `msg_type` is set to `error` and the contents of the `data` and `message` fields will\ndepend on the specific error.\nThis only happens before a starting-message have been sent to the client.\n\nIf Kleened encounters an error during process execution, Kleened closes the websocket with\nClose Code 1011 and a WebSocketMessage as the Close frame's reason. The `msg_type` is set to\n`error` and the contents of the `data` and `message` fields will depend on the specific error.\n\nIf any unexpected errors/crashes occur during the lifetime of the websocket, Kleend closes\nthe websocket with Close Code 1011 and an empty reason field.\n\n## Endpoint-specific details\nThe following specifics pertain to this endpoint:\n\n\n* The starting-message does not have any content.\n* If the image import finishes succesfully, the ID of the newly imported image is stored in the\n`data` field of the closing-message.\n",
+        "operationId": "ImageImport",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImageImportConfig"
+              }
+            }
+          },
+          "description": "Image import configuration.",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSocketMessage"
+                }
+              }
+            },
+            "description": "no error"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebSocketMessage"
+                }
+              }
+            },
+            "description": "no error"
+          }
+        },
+        "summary": "image import",
         "tags": []
       }
     },

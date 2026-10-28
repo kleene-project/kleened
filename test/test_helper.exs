@@ -581,6 +581,17 @@ defmodule TestHelper do
     end
   end
 
+  def image_import(config) do
+    case initialize_websocket("/images/import") do
+      {:ok, stream_ref, conn} ->
+        send_data(conn, stream_ref, Jason.encode!(config))
+        receive_frames(conn, 20_000)
+
+      error_msg ->
+        error_msg
+    end
+  end
+
   def image_list(api_spec) do
     response =
       conn(:get, "/images/list")

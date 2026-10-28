@@ -1,5 +1,6 @@
 defmodule Kleened.Core.ImageCreate do
   alias Kleened.Core.{Const, ZFS, Utils, OS}
+  alias Kleened.Core.{OCI, MetaData}
   alias Kleened.API.Schemas
   alias Schemas.ImageCreateConfig, as: Config
   require Logger
@@ -28,6 +29,185 @@ defmodule Kleened.Core.ImageCreate do
       end
 
     {:ok, image_id, Process.spawn(worker, [:link])}
+  end
+
+  @doc """
+  Import an image from an OCI image layout archive (the `.txz` files published
+  on download.freebsd.org are OCI layouts). The archive is fetched from `url`
+  (or copied, when it is a local path), unpacked to a temporary directory,
+  and materialized into a new image dataset layer by layer.
+
+  Reports progress to the calling process as `{:image_creator, pid, msg}`
+  messages, exactly like `create/1`.
+  """
+  @spec import_oci(Schemas.ImageImportConfig.t()) :: {:ok, String.t(), pid()}
+  def import_oci(config) do
+    client = self()
+    image_id = Utils.uuid()
+
+    worker = fn -> import_oci_layout(client, image_id, config) end
+    {:ok, image_id, Process.spawn(worker, [:link])}
+  end
+
+  defp import_oci_layout(receiver, image_id, %Schemas.ImageImportConfig{url: url} = config) do
+    with {:ok, archive} <- fetch_oci_archive(url, receiver),
+         {:ok, layout_root} <- unpack_oci_layout(archive),
+         {:ok, layout} <- open_oci_layout(layout_root, config, receiver),
+         {:existing, existing_image} <- skip_if_imported(layout, config),
+         {:ok, image} <-
+           materialize_unless_exists(existing_image, layout, image_id, config, receiver) do
+      File.rm_rf!(layout_root)
+      send_msg(receiver, {:ok, image})
+    else
+      {:error, reason} ->
+        send_msg(receiver, {:error, reason})
+
+      {:crash, reason} ->
+        exit(receiver, reason)
+    end
+  end
+
+  # An already-imported image (same manifest digest under the same name:tag)
+  # is returned as-is; otherwise the layout is materialized into a new image.
+  defp materialize_unless_exists(nil, layout, image_id, config, receiver) do
+    with :ok <- materialize_layers(layout, image_id, receiver) do
+      register_oci_image(layout, image_id, config)
+    end
+  end
+
+  defp materialize_unless_exists(existing_image, _layout, _image_id, _config, _receiver) do
+    {:ok, existing_image}
+  end
+
+  # Skip-if-exists: an image with the same manifest digest already imported
+  # under the same name:tag is returned as success (idempotent re-import).
+  defp skip_if_imported(%OCI.Layout{manifest_digest: digest}, %Schemas.ImageImportConfig{tag: tag}) do
+    {name, tag} = Utils.decode_tagname(tag)
+
+    case Kleened.Core.MetaData.get_image("#{name}:#{tag}") do
+      %Schemas.Image{digest: ^digest} = image ->
+        {:existing, image}
+
+      _ ->
+        {:existing, nil}
+    end
+  end
+
+  defp fetch_oci_archive("http" <> _ = url, receiver) do
+    archive = Path.join(System.tmp_dir(), "kleened-oci-import-#{Utils.uuid()}.txz")
+    # fetch_file_from_url/3 relays fetch(1)'s progress output to the receiver,
+    # so slow downloads are not silent.
+    fetch_file_from_url(url, archive, receiver)
+  end
+
+  defp fetch_oci_archive(path, _receiver) do
+    case File.exists?(path) do
+      true -> {:ok, path}
+      false -> {:error, "no such file: #{path}"}
+    end
+  end
+
+  defp unpack_oci_layout(archive) do
+    layout_root = Path.join(System.tmp_dir(), "kleened-oci-layout-#{Utils.uuid()}")
+
+    with :ok <- make_dir(layout_root),
+         {_, 0} <-
+           OS.cmd(["/usr/bin/tar", "-xf", archive, "-C", layout_root]) do
+      {:ok, layout_root}
+    else
+      {:error, reason} -> {:crash, "could not create #{layout_root}: #{inspect(reason)}"}
+      {output, _} -> {:crash, "could not unpack OCI archive #{archive}: #{output}"}
+    end
+  end
+
+  defp make_dir(path) do
+    case File.mkdir_p(path) do
+      :ok -> :ok
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  # Default the platform selector to the host's own os/architecture (from
+  # uname(1)) when the config does not specify one, so a multi-platform index
+  # imports the image that matches the host instead of the first manifest.
+  defp open_oci_layout(layout_root, %Schemas.ImageImportConfig{platform: platform}, receiver) do
+    opts = [platform: platform_option(platform)] |> Keyword.reject(fn {_k, v} -> v == nil end)
+
+    case OCI.Layout.open(layout_root, opts) do
+      {:ok, layout} ->
+        {:ok, layout}
+
+      {:error, reason} ->
+        send_msg(receiver, {:info, "could not open OCI layout: #{reason}\n"})
+        {:error, reason}
+    end
+  end
+
+  # platform comes as "freebsd/amd64" from the config schema
+  defp platform_option(nil) do
+    {os, _version, arch} = detect_freebsd_version()
+    {String.downcase(os), arch}
+  end
+
+  defp platform_option(platform), do: List.to_tuple(String.split(platform, "/"))
+
+  defp materialize_layers(%OCI.Layout{layers: layers, root: root}, image_id, receiver) do
+    dataset = Const.image_dataset(image_id)
+    total = length(layers)
+
+    with {_, 0} <- ZFS.create(dataset) do
+      mountpoint = ZFS.mountpoint(dataset)
+
+      layers
+      |> Enum.with_index(1)
+      |> Enum.reduce_while(:ok, fn {descriptor, n}, :ok ->
+        blob = OCI.Layout.blob_path(root, descriptor["digest"])
+        msg = "extracting layer #{n}/#{total} (#{String.slice(descriptor["digest"], 7, 12)})...\n"
+        send_msg(receiver, {:info, msg})
+
+        case OCI.Layer.apply(blob, mountpoint) do
+          :ok ->
+            {_, 0} = ZFS.snapshot(dataset <> "@layer-#{n}")
+            {:cont, :ok}
+
+          {:error, reason} ->
+            {:halt, {:error, "layer #{n}: #{reason}"}}
+        end
+      end)
+    else
+      {output, _} -> {:error, "could not create image dataset #{dataset}: #{output}"}
+    end
+  end
+
+  defp register_oci_image(
+         %OCI.Layout{config: config, manifest_digest: manifest_digest},
+         image_id,
+         %Schemas.ImageImportConfig{tag: tag}
+       ) do
+    dataset = Const.image_dataset(image_id)
+    {_, 0} = ZFS.snapshot(Const.image_snapshot(dataset))
+    {name, tag} = Utils.decode_tagname(tag)
+    image_config = Map.get(config, "config", %{})
+
+    image = %Schemas.Image{
+      id: image_id,
+      user: Map.get(image_config, "User", "root"),
+      name: name,
+      tag: tag,
+      cmd: Map.get(image_config, "Cmd", []),
+      entrypoint: Map.get(image_config, "Entrypoint", []),
+      env: Map.get(image_config, "Env", []),
+      workdir: Map.get(image_config, "WorkingDir", ""),
+      labels: Map.get(image_config, "Labels", %{}),
+      instructions: [],
+      created: Map.get(config, "created", DateTime.to_iso8601(DateTime.utc_now())),
+      dataset: dataset,
+      digest: manifest_digest,
+      source: "oci"
+    }
+
+    MetaData.add_image(image)
+    {:ok, image}
   end
 
   defp create_using_zfs_copy(

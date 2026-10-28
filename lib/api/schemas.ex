@@ -289,7 +289,14 @@ defmodule Kleened.API.Schemas do
         },
         created: %Schema{description: "When the container was created", type: :string},
         dataset: %Schema{description: "ZFS dataset of the container", type: :string},
-        running: %Schema{description: "whether or not the container is running", type: :boolean}
+        running: %Schema{description: "whether or not the container is running", type: :boolean},
+        workdir: %Schema{
+          description:
+            "Working directory used when executing the command. Inherited from the image when unset.",
+          type: :string,
+          nullable: true,
+          default: ""
+        }
       }
     })
   end
@@ -586,7 +593,76 @@ defmodule Kleened.API.Schemas do
           example: []
         },
         created: %Schema{description: "When the image was created", type: :string},
-        dataset: %Schema{description: "ZFS dataset of the image", type: :string}
+        dataset: %Schema{description: "ZFS dataset of the image", type: :string},
+        entrypoint: %Schema{
+          description:
+            "Entrypoint of the image. Prepended to `cmd` when starting a container. Currently only set by OCI image imports; Dockerfile builds do not produce an entrypoint yet.",
+          type: :array,
+          items: %Schema{type: :string},
+          default: [],
+          nullable: true
+        },
+        workdir: %Schema{
+          description:
+            "Working directory of the image. Currently only set by OCI image imports; Dockerfile builds do not produce a working directory yet.",
+          type: :string,
+          default: "",
+          nullable: true
+        },
+        labels: %Schema{
+          description:
+            "Labels of the image. Currently only set by OCI image imports; Dockerfile builds do not produce labels yet.",
+          type: :object,
+          default: %{},
+          nullable: true
+        },
+        digest: %Schema{
+          description: "Digest of the image manifest (OCI images).",
+          type: :string,
+          default: "",
+          nullable: true
+        },
+        source: %Schema{
+          description: "Where the image came from: `\"build\"` or `\"oci\"`.",
+          type: :string,
+          default: "build"
+        }
+      }
+    })
+  end
+
+  defmodule ImageImportConfig do
+    OpenApiSpex.schema(%{
+      description: "Configuration for importing an OCI image layout archive.",
+      type: :object,
+      required: [:url],
+      properties: %{
+        url: %Schema{
+          description: """
+          URL or local path to an OCI image layout archive (a `.txz`/`.tar` file
+          containing `oci-layout`, `index.json` and `blobs/`, like the container
+          images published on download.freebsd.org).
+          """,
+          type: :string
+        },
+        tag: %Schema{
+          description: """
+          Name and optionally a tag in the `name:tag` format for the imported image.
+          If `tag` is omitted, the default value `latest` is used.
+          """,
+          type: :string,
+          default: ""
+        },
+        platform: %Schema{
+          description: """
+          `os/architecture` selector when the archive is a multi-platform index
+          (e.g. `freebsd/amd64`). Defaults to the host's own os/architecture
+          (from `uname(1)`) when the index carries platform information, and to
+          the first manifest otherwise.
+          """,
+          type: :string,
+          nullable: true
+        }
       }
     })
   end
