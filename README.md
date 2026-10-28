@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/kleene-project/docs/main/docs/assets/images/kleene-logo.svg" alt="Kleene logo" width="180">
+</p>
+
 # Kleened
 
 Kleened is the backend daemon component of Kleene, a container management tool
