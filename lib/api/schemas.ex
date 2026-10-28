@@ -291,7 +291,8 @@ defmodule Kleened.API.Schemas do
         dataset: %Schema{description: "ZFS dataset of the container", type: :string},
         running: %Schema{description: "whether or not the container is running", type: :boolean},
         workdir: %Schema{
-          description: "Working directory used when executing the command. Inherited from the image when unset.",
+          description:
+            "Working directory used when executing the command. Inherited from the image when unset.",
           type: :string,
           nullable: true,
           default: ""
@@ -595,20 +596,22 @@ defmodule Kleened.API.Schemas do
         dataset: %Schema{description: "ZFS dataset of the image", type: :string},
         entrypoint: %Schema{
           description:
-            "Entrypoint of the image (OCI images). Prepended to `cmd` when starting a container.",
+            "Entrypoint of the image. Prepended to `cmd` when starting a container. Currently only set by OCI image imports; Dockerfile builds do not produce an entrypoint yet.",
           type: :array,
           items: %Schema{type: :string},
           default: [],
           nullable: true
         },
         workdir: %Schema{
-          description: "Working directory of the image (OCI images).",
+          description:
+            "Working directory of the image. Currently only set by OCI image imports; Dockerfile builds do not produce a working directory yet.",
           type: :string,
           default: "",
           nullable: true
         },
         labels: %Schema{
-          description: "Labels of the image (OCI images).",
+          description:
+            "Labels of the image. Currently only set by OCI image imports; Dockerfile builds do not produce labels yet.",
           type: :object,
           default: %{},
           nullable: true

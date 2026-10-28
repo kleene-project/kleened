@@ -78,68 +78,63 @@ defmodule Kleened.Core.OCI.Layout do
     marker = Path.join(root, "oci-layout")
     index_path = Path.join(root, "index.json")
 
-    with true <-
-           File.exists?(marker) ||
-             {:error, "not an OCI layout: missing oci-layout marker in #{root}"},
+    # File.exists?/1 returns a boolean, so it is turned into a with-compatible
+    # ok/error tuple here; the else-clause is unreachable but required by `with`.
+    with true <- File.exists?(marker),
          {:ok, index_bin} <- read_file(index_path),
          {:ok, %{"manifests" => manifests}} <- Jason.decode(index_bin) do
       {:ok, manifests}
     else
-      {:error, _} = error -> error
       false -> {:error, "not an OCI layout: missing oci-layout marker in #{root}"}
+      {:error, _} = error -> error
     end
   end
 
   defp select_manifest(manifests, opts) do
-    case Keyword.get(opts, :digest) do
-      nil ->
-        select_by_ref_or_platform(manifests, opts)
+    case {Keyword.get(opts, :digest), Keyword.get(opts, :ref), Keyword.get(opts, :platform)} do
+      {digest, _, _} when digest != nil ->
+        find_descriptor(
+          manifests,
+          &(&1["digest"] == digest),
+          "no manifest with digest #{digest} in index"
+        )
 
-      digest ->
-        case Enum.find(manifests, &(&1["digest"] == digest)) do
-          nil -> {:error, "no manifest with digest #{digest} in index"}
-          descriptor -> {:ok, descriptor}
+      {_, ref, _} when ref != nil ->
+        find_descriptor(
+          manifests,
+          &(&1["annotations"]["org.opencontainers.image.ref.name"] == ref),
+          "no manifest annotated with ref name #{ref}"
+        )
+
+      {_, _, {os, arch}} ->
+        find_descriptor(
+          manifests,
+          fn descriptor ->
+            plat = descriptor["platform"]
+            plat != nil and plat["os"] == os and plat["architecture"] == arch
+          end,
+          "no manifest for platform #{os}/#{arch} (index has: #{inspect(available_platforms(manifests))})"
+        )
+
+      {nil, nil, nil} ->
+        case manifests do
+          [] ->
+            {:error, "index has no manifests"}
+
+          [single] ->
+            {:ok, single}
+
+          _ ->
+            {:error,
+             "ambiguous index: multiple manifests and no digest, ref or platform selector"}
         end
     end
   end
 
-  defp select_by_ref_or_platform(manifests, opts) do
-    ref = Keyword.get(opts, :ref)
-    platform = Keyword.get(opts, :platform)
-
-    cond do
-      ref != nil ->
-        case Enum.find(
-               manifests,
-               &(&1["annotations"]["org.opencontainers.image.ref.name"] == ref)
-             ) do
-          nil -> {:error, "no manifest annotated with ref name #{ref}"}
-          descriptor -> {:ok, descriptor}
-        end
-
-      platform != nil ->
-        {os, arch} = platform
-
-        case Enum.find(manifests, fn descriptor ->
-               plat = descriptor["platform"]
-               plat != nil and plat["os"] == os and plat["architecture"] == arch
-             end) do
-          nil ->
-            {:error,
-             "no manifest for platform #{os}/#{arch} (index has: #{inspect(available_platforms(manifests))})"}
-
-          descriptor ->
-            {:ok, descriptor}
-        end
-
-      manifests == [] ->
-        {:error, "index has no manifests"}
-
-      length(manifests) == 1 ->
-        {:ok, hd(manifests)}
-
-      true ->
-        {:error, "ambiguous index: multiple manifests and no digest, ref or platform selector"}
+  defp find_descriptor(manifests, predicate, error_message) do
+    case Enum.find(manifests, predicate) do
+      nil -> {:error, error_message}
+      descriptor -> {:ok, descriptor}
     end
   end
 

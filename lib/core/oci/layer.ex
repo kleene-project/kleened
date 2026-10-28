@@ -12,8 +12,8 @@ defmodule Kleened.Core.OCI.Layer do
 
   Extraction shells out to bsdtar (`/usr/bin/tar -xpf`) rather than
   `:erl_tar.extract/2`: the latter rejects relative symlinks that escape the
-  extraction root (`usr/bin/ld -> ../../libexec/ld-elf.so.1`) as unsafe, which
-  real FreeBSD images contain (found during the phase-0 spike).
+  extraction root (`usr/bin/ld -> ../../libexec/ld-elf.so.1`) as unsafe,
+  which real FreeBSD images contain.
   """
 
   alias Kleened.Core.OS
@@ -121,32 +121,34 @@ defmodule Kleened.Core.OCI.Layer do
     end
   end
 
-  # bsdtar extracts the .wh.* marker files themselves; remove them afterwards.
-  defp remove_whiteout_artifacts(dest) do
-    find_and_rm_whiteout_files(dest)
-    :ok
-  end
-
-  defp find_and_rm_whiteout_files(dir) do
+  # bsdtar extracts the .wh.* marker files themselves; remove them afterwards
+  # by walking the extracted tree.
+  defp remove_whiteout_artifacts(dir) do
     case File.ls(dir) do
-      {:ok, children} ->
-        Enum.each(children, fn child ->
-          path = Path.join(dir, child)
-
-          cond do
-            String.starts_with?(child, @whiteout_prefix) ->
-              File.rm_rf(path)
-
-            File.dir?(path) ->
-              find_and_rm_whiteout_files(path)
-
-            true ->
-              :ok
-          end
-        end)
-
-      {:error, _} ->
-        :ok
+      {:ok, children} -> remove_whiteout_entries(dir, children)
+      {:error, _} -> :ok
     end
   end
+
+  defp remove_whiteout_entries(dir, [child | rest]) do
+    path = Path.join(dir, child)
+
+    cond do
+      whiteout_entry?(child) ->
+        File.rm_rf!(path)
+
+      File.dir?(path) ->
+        remove_whiteout_artifacts(path)
+
+      true ->
+        :ok
+    end
+
+    remove_whiteout_entries(dir, rest)
+  end
+
+  defp remove_whiteout_entries(_dir, []), do: :ok
+
+  defp whiteout_entry?(child),
+    do: String.starts_with?(child, @whiteout_prefix)
 end

@@ -74,26 +74,10 @@ defmodule OCIImageImportTest do
 
     # Layer snapshot plus the regular @image snapshot
     assert {_, 0} =
-             System.cmd("/sbin/zfs", [
-               "list",
-               "-t",
-               "snapshot",
-               "-o",
-               "name",
-               "-H",
-               "#{image.dataset}@layer-1"
-             ])
+             System.cmd("/sbin/zfs", ~w"list -t snapshot -o name -H #{image.dataset}@layer-1")
 
     assert {_, 0} =
-             System.cmd("/sbin/zfs", [
-               "list",
-               "-t",
-               "snapshot",
-               "-o",
-               "name",
-               "-H",
-               "#{image.dataset}@image"
-             ])
+             System.cmd("/sbin/zfs", ~w"list -t snapshot -o name -H #{image.dataset}@image")
 
     # A container from the imported image sees the layer content
     container_config = %{

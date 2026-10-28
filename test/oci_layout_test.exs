@@ -90,8 +90,9 @@ defmodule Kleened.OCILayoutTest do
     File.write!(Path.join(dir, "index.json"), Jason.encode!(index))
     File.write!(Path.join(dir, "oci-layout"), Jason.encode!(%{"imageLayoutVersion" => "1.0.0"}))
 
+    # The platform selector error always names the requested platform.
     assert {:error, reason} = Layout.open(dir, platform: {"freebsd", "amd64"})
-    assert reason =~ "platform" or reason =~ "digest"
+    assert reason =~ "platform"
   end
 
   test "selects the manifest annotated with the wanted ref name" do

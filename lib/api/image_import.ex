@@ -101,9 +101,6 @@ defmodule Kleened.API.ImageImport do
     {:ok, state}
   end
 
-  # Close-frame payloads are capped at 125 bytes by the websocket spec, and
-  # the JSON envelope adds ~55 — truncate the reason hard. The full reason
-  # has already been relayed as a text frame.
   defp truncate(reason, max_length) do
     if String.length(reason) > max_length do
       String.slice(reason, 0, max_length) <> "..."

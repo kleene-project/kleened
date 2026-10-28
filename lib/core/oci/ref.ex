@@ -38,17 +38,12 @@ defmodule Kleened.Core.OCI.Ref do
   def parse(reference) when is_binary(reference) do
     with {:ok, rest, digest} <- split_digest(reference),
          {:ok, repository, tag} <- split_tag(rest, digest),
-         {registry, repository} <- split_registry(repository) do
-      case valid_path?(repository) and valid_component?(tag) do
-        true ->
-          tag = if digest != nil and tag == "latest", do: nil, else: tag
-          {:ok, %__MODULE__{registry: registry, repository: repository, tag: tag, digest: digest}}
-
-        false ->
-          :error
-      end
+         {registry, repository} <- split_registry(repository),
+         true <- valid_path?(repository) and valid_component?(tag) do
+      tag = if digest != nil and tag == "latest", do: nil, else: tag
+      {:ok, %__MODULE__{registry: registry, repository: repository, tag: tag, digest: digest}}
     else
-      :error -> :error
+      _ -> :error
     end
   end
 
@@ -70,28 +65,34 @@ defmodule Kleened.Core.OCI.Ref do
     end
   end
 
-  # The tag separator is the last colon that comes after the last slash, so
-  # registry hosts with ports (`localhost:5000/repo:tag`) parse correctly.
-  # A digest pin replaces a defaulted `latest` tag with `nil`.
+  # The tag, when present, is the part after the colon of the last path
+  # component; earlier components may contain colons themselves (registry
+  # hosts with ports, `localhost:5000/repo:tag`). A digest pin replaces a
+  # defaulted `latest` tag with `nil`.
   defp split_tag(rest, digest) do
-    colon = last_index(rest, ":")
-    slash = last_index(rest, "/") || -1
+    {last, leading} = rest |> String.split("/") |> List.pop_at(-1)
 
-    if colon != nil and colon > slash do
-      tag = binary_part(rest, colon + 1, byte_size(rest) - colon - 1)
-      path = binary_part(rest, 0, colon)
-      {:ok, path, tag}
-    else
-      {:ok, rest, if(digest == nil, do: "latest", else: nil)}
+    case String.split(last, ":") do
+      # no tag in the last component
+      [^last] ->
+        {:ok, rest, default_tag(digest)}
+
+      # exactly one colon: the tag is what follows it
+      [path, tag] when leading == [] ->
+        {:ok, path, tag}
+
+      [path, tag] ->
+        {:ok, Path.join(leading ++ [path]), tag}
+
+      # several colons in the last component (`foo:bar:baz`) is not a
+      # valid reference
+      _ ->
+        :error
     end
   end
 
-  defp last_index(binary, pattern) do
-    case :binary.matches(binary, [pattern]) do
-      [] -> nil
-      matches -> matches |> List.last() |> then(fn {index, _} -> index end)
-    end
-  end
+  defp default_tag(nil), do: "latest"
+  defp default_tag(_digest), do: nil
 
   # The first path component is a registry host when it looks like one
   # (contains a dot or a colon, or is `localhost`); otherwise the whole
@@ -103,9 +104,6 @@ defmodule Kleened.Core.OCI.Ref do
 
       [first, rest] ->
         if registry_host?(first), do: {first, rest}, else: {"docker.io", repository}
-
-      _ ->
-        :error
     end
   end
 
@@ -136,6 +134,8 @@ defmodule Kleened.Core.OCI.Ref do
     end
   end
 
+  # String.Chars implementation, so references interpolate in logs and
+  # error messages (`"...#{ref}"`).
   defimpl String.Chars, for: __MODULE__ do
     def to_string(ref), do: @for.to_string(ref)
   end

@@ -50,27 +50,33 @@ defmodule Kleened.Core.ImageCreate do
   end
 
   defp import_oci_layout(receiver, image_id, %Schemas.ImageImportConfig{url: url} = config) do
-    with {:ok, archive} <- fetch_oci_archive(url),
-         {:ok, layout_root} <- unpack_oci_layout(archive, receiver),
+    with {:ok, archive} <- fetch_oci_archive(url, receiver),
+         {:ok, layout_root} <- unpack_oci_layout(archive),
          {:ok, layout} <- open_oci_layout(layout_root, config, receiver),
          {:existing, existing_image} <- skip_if_imported(layout, config),
          {:ok, image} <-
-           if(existing_image == nil,
-             do: materialize_and_register(layout, image_id, config, receiver),
-             else: {:ok, existing_image}
-           ) do
+           materialize_unless_exists(existing_image, layout, image_id, config, receiver) do
       File.rm_rf!(layout_root)
       send_msg(receiver, {:ok, image})
     else
-      {:existing, image} ->
-        send_msg(receiver, {:ok, image})
-
       {:error, reason} ->
         send_msg(receiver, {:error, reason})
 
       {:crash, reason} ->
         exit(receiver, reason)
     end
+  end
+
+  # An already-imported image (same manifest digest under the same name:tag)
+  # is returned as-is; otherwise the layout is materialized into a new image.
+  defp materialize_unless_exists(nil, layout, image_id, config, receiver) do
+    with :ok <- materialize_layers(layout, image_id, receiver) do
+      register_oci_image(layout, image_id, config)
+    end
+  end
+
+  defp materialize_unless_exists(existing_image, _layout, _image_id, _config, _receiver) do
+    {:ok, existing_image}
   end
 
   # Skip-if-exists: an image with the same manifest digest already imported
@@ -87,32 +93,21 @@ defmodule Kleened.Core.ImageCreate do
     end
   end
 
-  defp fetch_oci_archive("http" <> _ = url) do
+  defp fetch_oci_archive("http" <> _ = url, receiver) do
     archive = Path.join(System.tmp_dir(), "kleened-oci-import-#{Utils.uuid()}.txz")
-
-    case fetch_file_from_url_quiet(url, archive) do
-      :ok -> {:ok, archive}
-      {:error, reason} -> {:error, "could not fetch #{url}: #{reason}"}
-    end
+    # fetch_file_from_url/3 relays fetch(1)'s progress output to the receiver,
+    # so slow downloads are not silent.
+    fetch_file_from_url(url, archive, receiver)
   end
 
-  defp fetch_oci_archive(path) do
+  defp fetch_oci_archive(path, _receiver) do
     case File.exists?(path) do
       true -> {:ok, path}
       false -> {:error, "no such file: #{path}"}
     end
   end
 
-  # fetch_file_from_url/3 reports progress to a receiver; the import flow
-  # reports its own progress, so use a silent variant.
-  defp fetch_file_from_url_quiet(url, output_file) do
-    case OS.cmd(["/usr/bin/fetch", "-q", "-o", output_file, url]) do
-      {_output, 0} -> :ok
-      {output, _exitcode} -> {:error, String.trim_trailing(output, "\n")}
-    end
-  end
-
-  defp unpack_oci_layout(archive, _receiver) do
+  defp unpack_oci_layout(archive) do
     layout_root = Path.join(System.tmp_dir(), "kleened-oci-layout-#{Utils.uuid()}")
 
     with :ok <- make_dir(layout_root),
@@ -174,12 +169,6 @@ defmodule Kleened.Core.ImageCreate do
       end)
     else
       {output, _} -> {:error, "could not create image dataset #{dataset}: #{output}"}
-    end
-  end
-
-  defp materialize_and_register(layout, image_id, config, receiver) do
-    with :ok <- materialize_layers(layout, image_id, receiver) do
-      register_oci_image(layout, image_id, config)
     end
   end
 

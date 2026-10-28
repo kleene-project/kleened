@@ -52,7 +52,7 @@ defmodule Kleened.OCILayerTest do
   end
 
   test "opaque marker clears the directory before the layer's own files land" do
-    lower = layer_blob("lower-opq", [{"b/old", "1"}, {"b/keep", "2"}])
+    lower = layer_blob("lower-opq", [{"b/doomed-old", "1"}, {"b/doomed", "2"}])
     upper = layer_blob("upper-opq", [{"b/.wh..wh..opq", ""}, {"b/new", "3"}])
     dest = Path.join(@tmp_dir, "dest-opaque")
     File.mkdir_p!(dest)
@@ -60,30 +60,31 @@ defmodule Kleened.OCILayerTest do
     apply!(lower, dest)
     apply!(upper, dest)
 
-    refute File.exists?(Path.join(dest, "b/old"))
-    refute File.exists?(Path.join(dest, "b/keep"))
+    refute File.exists?(Path.join(dest, "b/doomed-old"))
+    refute File.exists?(Path.join(dest, "b/doomed"))
     assert File.exists?(Path.join(dest, "b/new"))
     refute File.exists?(Path.join(dest, "b/.wh..wh..opq"))
   end
 
-  test "layers apply associatively: fresh vs stacked equals" do
+  test "layers apply associatively: sequence order does not matter" do
+    # Applying layers in sequence gives the same result regardless of destination.
     l1 = layer_blob("assoc-1", [{"x", "1"}])
     l2 = layer_blob("assoc-2", [{"y", "2"}])
-    stacked = Path.join(@tmp_dir, "dest-stacked")
-    fresh = Path.join(@tmp_dir, "dest-fresh")
-    File.mkdir_p!(stacked)
-    File.mkdir_p!(fresh)
+    dest_one = Path.join(@tmp_dir, "dest-one")
+    dest_two = Path.join(@tmp_dir, "dest-two")
+    File.mkdir_p!(dest_one)
+    File.mkdir_p!(dest_two)
 
-    apply!(l1, stacked)
-    apply!(l2, stacked)
+    apply!(l1, dest_one)
+    apply!(l2, dest_one)
 
-    apply!(l1, fresh)
-    apply!(l2, fresh)
+    apply!(l1, dest_two)
+    apply!(l2, dest_two)
 
-    assert File.read!(Path.join(stacked, "x")) == "1"
-    assert File.read!(Path.join(stacked, "y")) == "2"
-    assert File.read!(Path.join(fresh, "x")) == File.read!(Path.join(stacked, "x"))
-    assert File.read!(Path.join(fresh, "y")) == File.read!(Path.join(stacked, "y"))
+    assert File.read!(Path.join(dest_one, "x")) == "1"
+    assert File.read!(Path.join(dest_one, "y")) == "2"
+    assert File.read!(Path.join(dest_two, "x")) == File.read!(Path.join(dest_one, "x"))
+    assert File.read!(Path.join(dest_two, "y")) == File.read!(Path.join(dest_one, "y"))
   end
 
   test "symlinks and file modes are preserved, including relative symlinks escaping dest" do
@@ -99,6 +100,7 @@ defmodule Kleened.OCILayerTest do
     apply!(blob, dest)
 
     assert File.read_link!(Path.join(dest, "bin/ld")) == "../../libexec/ld-elf.so.1"
+    # stat/1 mode includes the file-type bits; mask to the permission bits.
     assert 0o700 == Bitwise.band(File.stat!(Path.join(dest, "secret")).mode, 0o777)
   end
 
@@ -109,15 +111,11 @@ defmodule Kleened.OCILayerTest do
         {"b/link", {:hardlink, "a/file"}}
       ])
 
-    # erl_tar cannot express hardlinks; fixtures use tar -c which does.
-    # Build the hardlink layer manually if the fixture form is unsupported.
     dest = Path.join(@tmp_dir, "dest-hardlink")
     File.mkdir_p!(dest)
 
-    if blob != nil do
-      apply!(blob, dest)
-      assert File.read!(Path.join(dest, "b/link")) == "content"
-    end
+    apply!(blob, dest)
+    assert File.read!(Path.join(dest, "b/link")) == "content"
   end
 
   test "error path: corrupt layer blob" do

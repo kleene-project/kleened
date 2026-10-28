@@ -760,7 +760,7 @@
           },
           "entrypoint": {
             "default": [],
-            "description": "Entrypoint of the image (OCI images). Prepended to `cmd` when starting a container.",
+            "description": "Entrypoint of the image. Prepended to `cmd` when starting a container. Currently only set by OCI image imports; Dockerfile builds do not produce an entrypoint yet.",
             "items": {
               "type": "string",
               "x-struct": null,
@@ -813,7 +813,7 @@
           },
           "labels": {
             "default": {},
-            "description": "Labels of the image (OCI images).",
+            "description": "Labels of the image. Currently only set by OCI image imports; Dockerfile builds do not produce labels yet.",
             "nullable": true,
             "type": "object",
             "x-struct": null,
@@ -846,7 +846,7 @@
           },
           "workdir": {
             "default": "",
-            "description": "Working directory of the image (OCI images).",
+            "description": "Working directory of the image. Currently only set by OCI image imports; Dockerfile builds do not produce a working directory yet.",
             "nullable": true,
             "type": "string",
             "x-struct": null,
