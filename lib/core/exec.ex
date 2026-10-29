@@ -411,10 +411,11 @@ defmodule Kleened.Core.Exec do
 
   # The jail command inherits this process's environment; kleened builds it
   # explicitly so nothing from the daemon leaks in: PATH defaults to the
-  # docker-standard set, HOME/USER/SHELL follow the configured user.
+  # root login-class set (jail's exec.* commands like exec.prestart=ifconfig
+  # resolve through it), HOME/USER/SHELL follow the configured user.
   defp jail_env(env, user) do
     defaults = [
-      "PATH=/bin:/usr/bin:/usr/local/bin",
+      "PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin",
       "HOME=/root",
       "USER=#{user}",
       "SHELL=/bin/sh"
