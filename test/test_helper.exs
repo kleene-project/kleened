@@ -764,19 +764,17 @@ defmodule TestHelper do
     assert output_envs == expected_envs
   end
 
+  # The environment a jailed command sees since the host-side env injection:
+  # kleened's defaults (PATH/HOME/USER/SHELL) plus the image/env variables —
+  # no login-class variables (LANG/MAIL/MM_CHARSET/BLOCKSIZE are gone).
   def jail_environment(additional_envs) do
     MapSet.new(
       [
-        "LANG=C.UTF-8",
-        "MAIL=/var/mail/root",
-        "PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/sbin:/usr/local/bin:/root/bin",
-        "PWD=/root",
-        "TERM=xterm-256color",
+        "PATH=/sbin:/bin:/usr/sbin:/usr/bin:/usr/local/bin",
+        "PWD=/",
         "USER=root",
         "HOME=/root",
-        "SHELL=/bin/sh",
-        "MM_CHARSET=UTF-8",
-        "BLOCKSIZE=K"
+        "SHELL=/bin/sh"
       ] ++ additional_envs
     )
     |> remove_TERM_variable()
