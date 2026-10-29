@@ -37,6 +37,59 @@ defmodule ExecTest do
     {:ok, ^container_id} = Container.remove(container_id)
   end
 
+  # The container environment is injected by kleened (host-side env -i), not
+  # by an in-image helper: the variables from the container config arrive in
+  # the jail, and nothing from the daemon's own environment leaks in.
+  test "container env arrives in the jail and the daemon env does not leak" do
+    System.put_env("KLEENED_LEAK_PROBE", "should-not-appear")
+
+    %{id: container_id} =
+      TestHelper.container_create(%{
+        name: "test_env_injection",
+        cmd: ["/bin/sh", "-c", "env"],
+        env: ["MYVAR=injected"]
+      })
+
+    on_exit(fn -> System.delete_env("KLEENED_LEAK_PROBE") end)
+
+    {:ok, exec_id} = Exec.create(container_id)
+
+    {_stop_msg, output} =
+      TestHelper.exec_valid_start(%{exec_id: exec_id, attach: true, start_container: true})
+
+    env_output = Enum.join(output)
+    assert env_output =~ "MYVAR=injected"
+    assert env_output =~ "USER=root"
+    assert env_output =~ "HOME=/root"
+    # the daemon's own environment must not leak into the jail
+    refute env_output =~ "KLEENED_LEAK_PROBE"
+
+    {:ok, ^container_id} = Container.remove(container_id)
+  end
+
+  # A user-provided PATH wins (docker semantics): jexec -U would run the
+  # command through setusercontext(3) and rebuild PATH from the login class,
+  # so no user is selected for the root default.
+  test "user-provided PATH is not overridden by the login class" do
+    %{id: container_id} =
+      TestHelper.container_create(%{
+        name: "test_path_override",
+        cmd: ["/usr/bin/env"],
+        env: ["PATH=/custom/path"]
+      })
+
+    {:ok, exec_id} = Exec.create(container_id)
+
+    {_stop_msg, output} =
+      TestHelper.exec_valid_start(%{exec_id: exec_id, attach: true, start_container: true})
+
+    env_output = Enum.join(output)
+    assert env_output =~ "PATH=/custom/path"
+    refute env_output =~ "/sbin:/bin:/usr/sbin"
+
+    {:ok, ^container_id} = Container.remove(container_id)
+  end
+
   test "start a second process in a container and receive output from it" do
     %{id: container_id} =
       TestHelper.container_create(%{name: "testcont", cmd: ["/bin/sleep", "10"]})

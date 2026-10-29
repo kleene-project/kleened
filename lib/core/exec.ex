@@ -320,11 +320,19 @@ defmodule Kleened.Core.Exec do
          use_tty
        ) do
     # jexec [-l] [-u username | -U username] jail [command ...]
-    args = ~w"-l -U #{user} #{container_id} /usr/bin/env" ++ env ++ cmd
-
-    port = OS.cmd_async([~c"/usr/sbin/jexec" | args], use_tty)
-    port
+    # No -l (exec.clean): a clean environment would strip the variables
+    # injected below. The jail inherits them from this process instead.
+    # Selecting a user via -U runs the command through setusercontext(3),
+    # which rebuilds PATH from the login class — so a user is only selected
+    # when it is not root; kleened's injected environment is the authority
+    # otherwise (docker semantics: the image environment wins).
+    args = jexec_user_args(user) ++ [container_id | cmd]
+    OS.cmd_async([~c"/usr/sbin/jexec" | args], use_tty, jail_env(env, user))
   end
+
+  defp jexec_user_args("root"), do: []
+  defp jexec_user_args(""), do: []
+  defp jexec_user_args(user), do: ~w"-U #{user}"
 
   # OCI WorkingDir: wrap shell-form commands with a `cd` prefix. Docker
   # semantics applied minimally — only affects shell commands ("/bin/sh -c").
@@ -366,20 +374,60 @@ defmodule Kleened.Core.Exec do
     jail_param =
       jail_param
       |> update_jailparam_if_not_exist(["host.hostname"], "host.hostname=#{id}")
-      |> update_jailparam_if_not_exist(["exec.jail_user"], "exec.jail_user=#{user}")
-      |> update_jailparam_if_not_exist(["exec.clean", "exec.noclean"], "exec.clean=true")
-      |> update_jailparam_if_not_exist(["exec.stop", "exec.nostop"], default_exec_stop)
+      |> then(fn params ->
+        # exec.jail_user runs the command through setusercontext(3), which
+        # rebuilds PATH from the login class — same rationale as jexec's -U:
+        # only select a user when it is not root.
+        update_jailparam_if_not_exist(params, ["exec.jail_user"], jail_user_param(user))
+      end)
+      # exec.clean would discard the environment injected via cmd_async/3 and
+      # rebuild it from the login class database — kleened owns the
+      # environment construction instead (docker semantics: image env wins).
+      |> update_jailparam_if_not_exist(["exec.clean", "exec.noclean"], "exec.noclean")
+      # exec.stop needs /bin/sh inside the jail; an image without one (the
+      # minimal OCI flavors) cannot run it, so it is only defaulted in when
+      # the shell exists.
+      |> then(fn params ->
+        if jail_shell_exists?(path) do
+          update_jailparam_if_not_exist(params, ["exec.stop", "exec.nostop"], default_exec_stop)
+        else
+          update_jailparam_if_not_exist(params, ["exec.stop", "exec.nostop"], "exec.nostop")
+        end
+      end)
       |> update_jailparam_if_not_exist(["mount.devfs", "mount.nodevfs"], "mount.devfs=true")
 
     args =
       ~w"-c path=#{path} name=#{id}" ++
-        network_config ++
-        jail_param ++
-        ["command=/usr/bin/env"] ++ env ++ command
+        network_config ++ jail_param ++ jail_command_args(command)
 
-    port = OS.cmd_async([~c"/usr/sbin/jail" | args], use_tty)
-    port
+    OS.cmd_async([~c"/usr/sbin/jail" | args], use_tty, jail_env(env, user))
   end
+
+  # jail's `command=` pseudo-parameter uses the remainder of the command line as
+  # its own arguments — the command list is passed through verbatim so argv
+  # boundaries (quoted arguments like `-c "echo hi"`) survive.
+  defp jail_command_args([executable | rest]), do: ["command=" <> executable | rest]
+  defp jail_command_args([]), do: []
+
+  # The jail command inherits this process's environment; kleened builds it
+  # explicitly so nothing from the daemon leaks in: PATH defaults to the
+  # docker-standard set, HOME/USER/SHELL follow the configured user.
+  defp jail_env(env, user) do
+    defaults = [
+      "PATH=/bin:/usr/bin:/usr/local/bin",
+      "HOME=/root",
+      "USER=#{user}",
+      "SHELL=/bin/sh"
+    ]
+
+    defaults ++ env
+  end
+
+  defp jail_user_param("root"), do: nil
+  defp jail_user_param(""), do: nil
+  defp jail_user_param(user), do: "exec.jail_user=#{user}"
+
+  defp jail_shell_exists?(path), do: File.exists?(Path.join(path, "bin/sh"))
 
   defp setup_mounts(container, state) do
     MetaData.get_mounts_from_container(container.id)
@@ -443,6 +491,10 @@ defmodule Kleened.Core.Exec do
       end
     )
   end
+
+  # A nil default means "do not set this parameter" — used for parameters
+  # whose unconditional default would break environment injection.
+  defp update_jailparam_if_not_exist(jail_params, _paramtype, nil), do: jail_params
 
   defp update_jailparam_if_not_exist(jail_params, paramtype, default_value) do
     case if_paramtype_exist?(jail_params, paramtype) do

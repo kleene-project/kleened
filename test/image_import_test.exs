@@ -26,10 +26,12 @@ defmodule OCIImageImportTest do
   end
 
   # All entries of a minimal but *executable* layer: a real /bin/sh and
-  # /bin/cat from /rescue (statically linked), kleened's exec wrapper
-  # /usr/bin/env with the complete runtime library set from /lib and
-  # /libexec, and the test content. The jail needs /dev for mount.devfs,
-  # /etc/pwd.db for getpwnam, and /root as the default working directory.
+  # /bin/cat from /rescue (statically linked), /usr/bin/env with the complete
+  # runtime library set from /lib and /libexec, and the test content. The jail
+  # needs /dev for mount.devfs, /etc/pwd.db for getpwnam, and /root as the
+  # default working directory. (Since the env-injection rework kleened no
+  # longer needs /usr/bin/env inside the image to set variables, but the
+  # fixture keeps it so `env` assertions can run.)
   defp executable_layer do
     [
       {"dev", :dir},
@@ -46,10 +48,9 @@ defmodule OCIImageImportTest do
     ]
   end
 
-  # kleened's exec runs `/usr/bin/env <env> <cmd>` inside the jail; env is
-  # dynamically linked, so the layer carries the loader (executable!) and
-  # every library of /lib (wholesale — enumerating the closure is fragile
-  # across releases).
+  # /usr/bin/env is dynamically linked, so the layer carries the loader
+  # (executable!) and every library of /lib (wholesale — enumerating the
+  # closure is fragile across releases).
   defp runtime_libs do
     ["/libexec/ld-elf.so.1" | Path.wildcard("/lib/*.so.*")]
     |> Enum.map(fn source ->
