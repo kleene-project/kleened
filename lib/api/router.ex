@@ -62,6 +62,7 @@ defmodule Kleened.API.Router do
          {"/images/build", API.ImageBuild, []},
          {"/images/create", API.ImageCreate, []},
          {"/images/import", API.ImageImport, []},
+         {"/images/pull", API.ImagePull, []},
          {"/deployment/build", API.DeploymentBuild, []},
          {:_, Plug.Cowboy.Handler, {Kleened.API.Router, []}}
        ]}
