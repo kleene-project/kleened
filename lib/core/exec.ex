@@ -326,7 +326,7 @@ defmodule Kleened.Core.Exec do
     # which rebuilds PATH from the login class — so a user is only selected
     # when it is not root; kleened's injected environment is the authority
     # otherwise (docker semantics: the image environment wins).
-    args = jexec_user_args(user) ++ [container_id | cmd]
+    args = jexec_user_args(user) ++ [container_id | adapt_cmd_to_default_home(cmd)]
     OS.cmd_async([~c"/usr/sbin/jexec" | args], use_tty, jail_env(env, user))
   end
 
@@ -344,6 +344,14 @@ defmodule Kleened.Core.Exec do
 
   defp adapt_cmd_to_workdir(cmd, _workdir),
     do: cmd
+
+  # The pre-injection behavior (setusercontext via exec.jail_user) started
+  # jailed commands in the user's home directory. An interactive bare shell
+  # keeps that behavior (like ssh does); other commands start in the jail
+  # root (docker semantics: WORKDIR or /).
+  defp adapt_cmd_to_default_home(["/bin/sh"]), do: ["/bin/sh", "-c", "cd /root && exec /bin/sh"]
+  defp adapt_cmd_to_default_home(["sh"]), do: ["/bin/sh", "-c", "cd /root && exec /bin/sh"]
+  defp adapt_cmd_to_default_home(cmd), do: cmd
 
   defp jail_start_container(
          %Schemas.Container{
@@ -363,7 +371,11 @@ defmodule Kleened.Core.Exec do
     setup_networking(container, state)
     network_config = create_networking_jail_params(container)
     path = ZFS.mountpoint(dataset)
-    command = adapt_cmd_to_workdir(command, workdir)
+
+    command =
+      command
+      |> adapt_cmd_to_workdir(workdir)
+      |> adapt_cmd_to_default_home()
 
     # Since booleans can have two different forms:
     # - w/o 'no' prefix ['nopersist', 'exec.noclean']
