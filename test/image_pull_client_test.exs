@@ -1,8 +1,8 @@
-defmodule Kleened.RegistryTest do
+defmodule Kleened.ImagePullTest do
   use ExUnit.Case, async: true
   @moduletag :unit
 
-  alias Kleened.Core.Registry
+  alias Kleened.Core.ImagePull
   alias Kleened.Test.{OCIFixtures, RegistryDouble}
 
   @tmp_dir Path.join(System.tmp_dir(), "kleened-registry-test")
@@ -23,7 +23,7 @@ defmodule Kleened.RegistryTest do
     on_exit(fn -> RegistryDouble.stop(listener) end)
 
     assert {:ok, %{root: download_dir}} =
-             Registry.pull("127.0.0.1:#{port}/test/minimal:latest",
+             ImagePull.pull("127.0.0.1:#{port}/test/minimal:latest",
                base_url: "http://127.0.0.1:#{port}"
              )
 
@@ -50,7 +50,7 @@ defmodule Kleened.RegistryTest do
     # a corrupted manifest is rejected — either as a digest mismatch or as a
     # decode failure, depending on where the corruption lands
     assert {:error, reason} =
-             Registry.pull("127.0.0.1:#{port}/test/minimal:latest",
+             ImagePull.pull("127.0.0.1:#{port}/test/minimal:latest",
                base_url: "http://127.0.0.1:#{port}"
              )
 
@@ -62,7 +62,7 @@ defmodule Kleened.RegistryTest do
     on_exit(fn -> RegistryDouble.stop(listener) end)
 
     assert {:error, reason} =
-             Registry.pull("127.0.0.1:#{port}/test/minimal:no-such-tag",
+             ImagePull.pull("127.0.0.1:#{port}/test/minimal:no-such-tag",
                base_url: "http://127.0.0.1:#{port}"
              )
 
@@ -76,7 +76,7 @@ defmodule Kleened.RegistryTest do
     test_pid = self()
 
     assert {:ok, _} =
-             Registry.pull("127.0.0.1:#{port}/test/minimal:latest",
+             ImagePull.pull("127.0.0.1:#{port}/test/minimal:latest",
                base_url: "http://127.0.0.1:#{port}",
                progress: fn msg -> send(test_pid, {:progress, msg}) end
              )

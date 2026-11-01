@@ -1,7 +1,7 @@
 defmodule Kleened.Core.ImageCreate do
   alias Kleened.Core.{Const, ZFS, Utils, OS}
   alias Kleened.Core.{OCI, MetaData}
-  alias Kleened.Core.Registry
+  alias Kleened.Core.ImagePull
   alias Kleened.API.Schemas
   alias Schemas.ImageCreateConfig, as: Config
   require Logger
@@ -72,7 +72,7 @@ defmodule Kleened.Core.ImageCreate do
     pull_opts = [progress: progress] |> pull_platform(platform)
 
     with {:ok, parsed} <- parse_pull_ref(ref),
-         {:ok, layout} <- Registry.pull(ref, pull_opts),
+         {:ok, layout} <- ImagePull.pull(ref, pull_opts),
          {:existing, existing_image} <- skip_if_pulled(layout, parsed),
          {:ok, image} <-
            materialize_unless_exists(
@@ -97,7 +97,7 @@ defmodule Kleened.Core.ImageCreate do
     end
   end
 
-  # An explicit platform selector is passed through; Registry defaults a
+  # An explicit platform selector is passed through; ImagePull defaults a
   # missing selector to the host's own os/architecture.
   defp pull_platform(opts, nil), do: opts
 

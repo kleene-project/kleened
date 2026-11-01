@@ -1,4 +1,4 @@
-defmodule Kleened.Core.Registry do
+defmodule Kleened.Core.ImagePull do
   @moduledoc false
 
   # OCI distribution registry client ("pull" only). Speaks the anonymous-token
