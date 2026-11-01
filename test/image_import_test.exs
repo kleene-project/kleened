@@ -5,7 +5,6 @@ defmodule OCIImageImportTest do
   alias Kleened.Test.OCIFixtures
   import TestHelper
 
-  @kleened_host "/var/run/kleened.sock"
   @tmp_dir Path.join(System.tmp_dir(), "kleened-oci-import-test")
 
   setup do
@@ -143,68 +142,9 @@ defmodule OCIImageImportTest do
     assert reason =~ "not an OCI layout" or reason =~ "image import failed"
   end
 
-  # Drive /images/import over the raw websocket like klee does. The shared
-  # TestHelper.image_import/1 builds on receive_frames/2, which drops every
-  # collected frame when gun reports an abnormal close before the calling
-  # process drains the close frame — a race that showed up when several test
-  # files run in one BEAM. Collecting straight from the socket is
-  # deterministic.
+  # Drive /images/import over the raw websocket (test/utils/ws.ex — the shared
+  # TestHelper receive loop races on abnormal closes).
   defp import_via_websocket(archive, tag) do
-    {:ok, conn} = :gun.open_unix(@kleened_host, %{protocols: [:http]})
-    {:ok, _} = :gun.await_up(conn)
-    :gun.ws_upgrade(conn, "/images/import")
-
-    stream =
-      receive do
-        {:gun_upgrade, ^conn, ref, ["websocket"], _} -> ref
-      after
-        5_000 -> flunk("websocket upgrade timed out")
-      end
-
-    :gun.ws_send(conn, stream, {:text, Jason.encode!(%{url: archive, tag: tag})})
-    collect_import_frames(conn, stream)
+    Kleened.Test.WS.send_config_and_collect("/images/import", %{url: archive, tag: tag})
   end
-
-  defp collect_import_frames(conn, stream) do
-    receive do
-      {:gun_ws, ^conn, ^stream, {:text, msg}} ->
-        case Jason.decode(msg) do
-          # progress frames are plain text, not JSON
-          {:error, _} -> collect_import_frames(conn, stream)
-          {:ok, decoded} -> decode_import_frame(decoded, conn, stream)
-        end
-
-      {:gun_ws, ^conn, ^stream, {:close, _code, msg}} ->
-        {:ok, decoded} = Jason.decode(msg)
-        import_result(decoded)
-
-      {:gun_down, ^conn, :ws, _reason, _} ->
-        # The close frame may already be in the mailbox; give it a chance
-        # before giving up.
-        receive do
-          {:gun_ws, ^conn, ^stream, {:close, _code, msg}} ->
-            {:ok, decoded} = Jason.decode(msg)
-            import_result(decoded)
-        after
-          500 -> flunk("websocket closed before result frame")
-        end
-    after
-      20_000 -> flunk("timed out waiting for import result")
-    end
-  end
-
-  defp decode_import_frame(%{"msg_type" => "error", "message" => message}, _conn, _stream) do
-    {:error, message}
-  end
-
-  defp decode_import_frame(%{"msg_type" => "closing", "data" => data}, _conn, _stream) do
-    {:ok, data}
-  end
-
-  defp decode_import_frame(_progress_frame, conn, stream) do
-    collect_import_frames(conn, stream)
-  end
-
-  defp import_result(%{"msg_type" => "error", "message" => message}), do: {:error, message}
-  defp import_result(%{"msg_type" => "closing", "data" => data}), do: {:ok, data}
 end

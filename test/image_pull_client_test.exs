@@ -22,7 +22,7 @@ defmodule Kleened.ImagePullTest do
     {:ok, listener, port} = RegistryDouble.start(root)
     on_exit(fn -> RegistryDouble.stop(listener) end)
 
-    assert {:ok, %{root: download_dir}} =
+    assert {:ok, %Kleened.Core.OCI.Layout{root: download_dir}} =
              ImagePull.pull("127.0.0.1:#{port}/test/minimal:latest",
                base_url: "http://127.0.0.1:#{port}"
              )

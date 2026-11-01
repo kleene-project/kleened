@@ -5,7 +5,6 @@ defmodule OCIImagePullTest do
   alias Kleened.Test.{OCIFixtures, RegistryDouble}
   import TestHelper
 
-  @kleened_host "/var/run/kleened.sock"
   @tmp_dir Path.join(System.tmp_dir(), "kleened-oci-pull-test")
 
   setup do
@@ -94,57 +93,9 @@ defmodule OCIImagePullTest do
     assert reason =~ "no-such-tag" or reason =~ "404"
   end
 
-  # Drive /images/pull over the raw websocket (same rationale as the import
-  # test: the shared TestHelper receive loop races on abnormal closes).
+  # Drive /images/pull over the raw websocket (test/utils/ws.ex — the shared
+  # TestHelper receive loop races on abnormal closes).
   defp pull_via_websocket(ref) do
-    {:ok, conn} = :gun.open_unix(@kleened_host, %{protocols: [:http]})
-    {:ok, _} = :gun.await_up(conn)
-    :gun.ws_upgrade(conn, "/images/pull")
-
-    stream =
-      receive do
-        {:gun_upgrade, ^conn, ref_, ["websocket"], _} -> ref_
-      after
-        5_000 -> flunk("websocket upgrade timed out")
-      end
-
-    :gun.ws_send(conn, stream, {:text, Jason.encode!(%{ref: ref})})
-    collect_pull_frames(conn, stream)
+    Kleened.Test.WS.send_config_and_collect("/images/pull", %{ref: ref})
   end
-
-  defp collect_pull_frames(conn, stream) do
-    receive do
-      {:gun_ws, ^conn, ^stream, {:text, msg}} ->
-        case Jason.decode(msg) do
-          {:error, _} -> collect_pull_frames(conn, stream)
-          {:ok, decoded} -> decode_pull_frame(decoded, conn, stream)
-        end
-
-      {:gun_ws, ^conn, ^stream, {:close, _code, msg}} ->
-        {:ok, decoded} = Jason.decode(msg)
-        pull_result(decoded)
-
-      {:gun_down, ^conn, :ws, _reason, _} ->
-        receive do
-          {:gun_ws, ^conn, ^stream, {:close, _code, msg}} ->
-            {:ok, decoded} = Jason.decode(msg)
-            pull_result(decoded)
-        after
-          500 -> flunk("websocket closed before result frame")
-        end
-    after
-      30_000 -> flunk("timed out waiting for pull result")
-    end
-  end
-
-  defp decode_pull_frame(%{"msg_type" => "error", "message" => message}, _conn, _stream) do
-    {:error, message}
-  end
-
-  defp decode_pull_frame(_progress_frame, conn, stream) do
-    collect_pull_frames(conn, stream)
-  end
-
-  defp pull_result(%{"msg_type" => "error", "message" => message}), do: {:error, message}
-  defp pull_result(%{"msg_type" => "closing", "data" => data}), do: {:ok, data}
 end

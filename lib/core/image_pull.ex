@@ -43,37 +43,25 @@ defmodule Kleened.Core.ImagePull do
   def pull(reference, opts \\ []) do
     with {:ok, ref} <- parse_ref(reference),
          :ok <- ensure_gun_started(),
-         {:ok, conn} <- open(base_url(ref, opts), opts) do
-      pull(conn, ref, opts)
-    end
-  end
-
-  defp pull(conn, %Ref{} = ref, opts) do
-    progress = Keyword.get(opts, :progress)
-    base = base_url(ref, opts)
-    repo = ref.repository
-
-    with {:ok, token} <- authenticate(conn, base, repo) do
-      ref_string = ref.digest || ref.tag || "latest"
-      accept = Enum.join(@default_accept, ", ")
-
-      with {:ok, manifest, manifest_digest, manifest_raw} <-
-             get_manifest(conn, base, repo, ref_string, token, accept) do
-        download_dir = download_dir(opts)
-
-        with {:ok, layout} <-
-               fetch_layout(conn, repo, manifest, manifest_digest, manifest_raw, token,
-                 download_dir: download_dir,
-                 progress: progress
-               ) do
-          :gun.close(conn)
-          {:ok, layout}
-        else
-          {:error, reason} ->
-            :gun.close(conn)
-            {:error, reason}
-        end
-      end
+         {:ok, conn} <- open(base_url(ref, opts), opts),
+         {:ok, token} <- authenticate(conn, base_url(ref, opts), ref.repository),
+         {:ok, manifest, manifest_digest, manifest_raw} <-
+           get_manifest(conn, ref, token),
+         {:ok, layout} <-
+           fetch_layout(
+             conn,
+             ref.repository,
+             manifest,
+             manifest_digest,
+             manifest_raw,
+             token,
+             Keyword.take(opts, [:download_dir, :progress, :platform])
+           ) do
+      :gun.close(conn)
+      {:ok, layout}
+    else
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -105,9 +93,12 @@ defmodule Kleened.Core.ImagePull do
   defp local_host?(_), do: false
 
   defp download_dir(opts) do
-    Keyword.get_lazy(opts, :download_dir, fn ->
-      Path.join(System.tmp_dir(), "kleened-registry-pull-#{:erlang.unique_integer([:positive])}")
-    end)
+    # A fresh directory per pull; the caller may override (tests do).
+    Keyword.get(opts, :download_dir, default_download_dir())
+  end
+
+  defp default_download_dir do
+    Path.join(System.tmp_dir(), "kleened-registry-pull-#{:erlang.unique_integer([:positive])}")
   end
 
   # -- HTTP plumbing ---------------------------------------------------------
@@ -240,6 +231,10 @@ defmodule Kleened.Core.ImagePull do
     end
   end
 
+  # Parse a `WWW-Authenticate: Bearer realm="...",service="..."` challenge
+  # into a map: split the params on commas, trim whitespace, strip quotes.
+  # Registries differ in spacing (ghcr sends `realm="...",service="..."`
+  # without spaces), so each part is trimmed.
   defp parse_challenge("Bearer " <> params) do
     params
     |> String.split(",")
@@ -269,37 +264,33 @@ defmodule Kleened.Core.ImagePull do
 
   # -- manifest --------------------------------------------------------------
 
-  defp get_manifest(conn, _base, repo, ref_string, token, accept) do
+  # Fetch and decode the manifest (or index) for a reference; verifies the
+  # served bytes against the registry-provided digest. Returns the decoded
+  # manifest, its digest, and the ORIGINAL raw bytes (the raw bytes must be
+  # stored in the downloaded layout — re-encoding changes the digest).
+  defp get_manifest(conn, %Ref{} = ref, token) do
+    repo = ref.repository
+    ref_string = ref.digest || ref.tag || "latest"
     path = "/v2/#{repo}/manifests/#{ref_string}"
-    headers = [{"accept", accept} | auth_headers(token)]
+    headers = [{"accept", Enum.join(@default_accept, ", ")} | auth_headers(token)]
 
-    case request(conn, "GET", path, headers) do
-      {:ok, 200, resp_headers, body} ->
-        media_type = content_type(resp_headers)
-        digest = digest_header(resp_headers)
-
-        with {:ok, decoded} <- decode_manifest_or_index(body, media_type) do
-          case verify_manifest_digest(body, digest, media_type) do
-            :ok -> {:ok, decoded, digest || digest_of(body), body}
-            error -> error
-          end
-        else
-          {:error, %Jason.DecodeError{} = reason} ->
-            {:error,
-             "could not decode manifest for #{repo}:#{ref_string}: #{Exception.message(reason)}"}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
-
+    with {:ok, 200, resp_headers, body} <- request(conn, "GET", path, headers),
+         {:ok, decoded} <- decode_manifest_or_index(body, content_type(resp_headers)),
+         :ok <- verify_manifest_digest(body, digest_header(resp_headers)) do
+      {:ok, decoded, digest_header(resp_headers) || digest_of(body), body}
+    else
       {:ok, 404, _headers, _body} ->
         {:error, "registry returned 404 for manifest #{repo}:#{ref_string}"}
 
       {:ok, status, _headers, _body} ->
         {:error, "registry returned #{status} for manifest #{repo}:#{ref_string}"}
 
-      error ->
-        error
+      {:error, %Jason.DecodeError{} = reason} ->
+        {:error,
+         "could not decode manifest for #{repo}:#{ref_string}: #{Exception.message(reason)}"}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
@@ -318,9 +309,9 @@ defmodule Kleened.Core.ImagePull do
     end
   end
 
-  defp verify_manifest_digest(_body, nil, _media_type), do: :ok
+  defp verify_manifest_digest(_body, nil), do: :ok
 
-  defp verify_manifest_digest(body, digest, _media_type) do
+  defp verify_manifest_digest(body, digest) do
     if digest_of(body) == digest do
       :ok
     else
@@ -331,7 +322,7 @@ defmodule Kleened.Core.ImagePull do
   # -- layout assembly -------------------------------------------------------
 
   defp fetch_layout(conn, repo, manifest, manifest_digest, manifest_raw, token, opts) do
-    download_dir = Keyword.fetch!(opts, :download_dir)
+    download_dir = Keyword.get(opts, :download_dir, default_download_dir())
     progress = Keyword.get(opts, :progress)
     File.mkdir_p!(Path.join(download_dir, "blobs/sha256"))
 
@@ -428,33 +419,34 @@ defmodule Kleened.Core.ImagePull do
     end
   end
 
+  # Fetch the manifest an index entry points at, verifying the served bytes
+  # against the entry's digest.
   defp fetch_indexed_manifest(conn, repo, descriptor, token) do
     path = "/v2/#{repo}/manifests/#{descriptor["digest"]}"
     headers = [{"accept", Enum.join(@default_accept, ", ")} | auth_headers(token)]
 
-    case request(conn, "GET", path, headers) do
-      {:ok, 200, _resp_headers, body} ->
-        case Jason.decode(body) do
-          {:ok, decoded} ->
-            with :ok <- verify_descriptor(body, descriptor) do
-              {:ok, decoded, body}
-            end
-
-          error ->
-            {:error, "could not decode manifest: #{inspect(error)}"}
-        end
-
+    with {:ok, 200, _resp_headers, body} <- request(conn, "GET", path, headers),
+         {:ok, decoded} <- Jason.decode(body),
+         :ok <- verify_descriptor(body, descriptor) do
+      {:ok, decoded, body}
+    else
       {:ok, 404, _headers, _body} ->
         {:error, "registry returned 404 for manifest #{descriptor["digest"]}"}
 
       {:ok, status, _headers, _body} ->
         {:error, "registry returned #{status} for manifest #{descriptor["digest"]}"}
 
-      error ->
-        error
+      {:error, %Jason.DecodeError{} = reason} ->
+        {:error, "could not decode manifest: #{Exception.message(reason)}"}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
+  # Download the config and layer blobs of a manifest into `download_dir`,
+  # store the manifest blob itself, write the layout index, and re-open the
+  # finished layout through Layout.open (which re-verifies every digest).
   defp assemble_layout(
          conn,
          repo,
@@ -465,36 +457,33 @@ defmodule Kleened.Core.ImagePull do
          download_dir,
          progress
        ) do
-    total = length(Map.get(manifest, "layers", []))
+    with {:ok, _config_blob} <-
+           download_blob(conn, repo, manifest["config"], token, download_dir, "config"),
+         :ok <-
+           download_blob_layers(
+             conn,
+             repo,
+             Enum.with_index(manifest["layers"], 1),
+             token,
+             download_dir,
+             progress
+           ) do
+      store_manifest_blob(download_dir, manifest_raw, manifest_digest)
+      write_layout_index(download_dir, manifest, manifest_digest)
+      layout_summary(download_dir)
+    end
+  end
 
-    with {:ok, config} <-
-           download_blob(conn, repo, manifest["config"], token, download_dir, "config") do
-      layers =
-        manifest["layers"]
-        |> Enum.with_index(1)
-        |> Enum.map(fn {layer, index} ->
-          report(
-            progress,
-            "downloading layer #{index}/#{total} (#{digest_prefix(layer["digest"])})\n"
-          )
+  # Download the layer blobs in order, stopping at the first failure.
+  defp download_blob_layers(_conn, _repo, [], _token, _download_dir, _progress), do: :ok
 
-          case download_blob(conn, repo, layer, token, download_dir, "layer") do
-            {:ok, _blob} -> :ok
-            {:error, reason} -> {:error, reason}
-          end
-        end)
-        |> Enum.find({:ok, :ok}, &match?({:error, _}, &1))
+  defp download_blob_layers(conn, repo, [{layer, index} | rest], token, download_dir, progress) do
+    total = index + length(rest)
+    report(progress, "downloading layer #{index}/#{total} (#{digest_prefix(layer["digest"])})\n")
 
-      case layers do
-        {:ok, :ok} ->
-          store_manifest_blob(download_dir, manifest_raw, manifest_digest)
-          write_layout_index(download_dir, manifest, manifest_digest)
-          _ = config
-          layout_summary(download_dir)
-
-        {:error, reason} ->
-          {:error, reason}
-      end
+    case download_blob(conn, repo, layer, token, download_dir, "layer") do
+      {:ok, _blob_path} -> download_blob_layers(conn, repo, rest, token, download_dir, progress)
+      {:error, reason} -> {:error, reason}
     end
   end
 
@@ -543,24 +532,26 @@ defmodule Kleened.Core.ImagePull do
     end
   end
 
+  # A redirect target (a CDN): download the blob bytes from the absolute URL.
+  # The with/else construction is unnecessary — a case is the honest shape.
   defp download_redirected(location) do
-    with {:ok, conn} <- open(location, []) do
-      uri = URI.parse(location)
-      path = uri.path <> if uri.query, do: "?" <> uri.query, else: ""
+    case open(location, []) do
+      {:ok, conn} ->
+        uri = URI.parse(location)
+        path = uri.path <> if uri.query, do: "?" <> uri.query, else: ""
 
-      case request(conn, "GET", path, []) do
-        {:ok, 200, _headers, body} ->
-          :gun.close(conn)
-          {:ok, body}
+        result =
+          case request(conn, "GET", path, []) do
+            {:ok, 200, _headers, body} -> {:ok, body}
+            {:ok, status, _headers, _body} -> {:error, "blob redirect target returned #{status}"}
+            error -> error
+          end
 
-        {:ok, status, _headers, _body} ->
-          :gun.close(conn)
-          {:error, "blob redirect target returned #{status}"}
+        :gun.close(conn)
+        result
 
-        error ->
-          :gun.close(conn)
-          error
-      end
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
