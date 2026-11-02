@@ -44,7 +44,7 @@ defmodule Kleened.MixProject do
   # Run "mix help compile.app" to learn about applications.
   def application do
     [
-      extra_applications: [:logger, :crypto, :eex, :cowboy, :plug],
+      extra_applications: [:logger, :crypto, :eex, :cowboy, :plug, :ssl],
       mod: {Kleened.Core.Application, []}
     ]
   end
@@ -64,7 +64,7 @@ defmodule Kleened.MixProject do
       {:dialyxir, "~> 1.4.8", only: :dev, runtime: false},
       {:excoveralls, "~> 0.18", only: :test},
       {:libgraph, "~> 0.16.0"},
-      {:gun, "~> 2.4", only: :test}
+      {:gun, "~> 2.4"}
     ]
   end
 
