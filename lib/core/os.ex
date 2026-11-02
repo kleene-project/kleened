@@ -50,8 +50,23 @@ defmodule Kleened.Core.OS do
     output
   end
 
-  @spec cmd_async([String.t()], boolean()) :: port()
-  def cmd_async(command, use_pty \\ false) do
+  @doc """
+  Spawn `command` as a port, optionally with a fully replaced environment.
+
+  `env` is a list of `"VAR=value"` strings. When it is non-empty the command is
+  spawned through the host's `/usr/bin/env -i`, so the child sees EXACTLY the
+  given variables — nothing from kleened's own environment leaks into the
+  jail. (Erlang's own `{:env, ...}` port option only merges with the parent
+  environment; host `env -i` is the replacement semantics jails need.)
+  """
+  @spec cmd_async([String.t()], boolean(), [String.t()]) :: port()
+  def cmd_async(command, use_pty \\ false, env \\ []) do
+    command =
+      case env do
+        [] -> command
+        [_ | _] -> ~w"/usr/bin/env -i" ++ env ++ command
+      end
+
     {executable, args} =
       case use_pty do
         false ->
