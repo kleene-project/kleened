@@ -320,12 +320,12 @@ defmodule Kleened.Core.Exec do
          use_tty
        ) do
     # jexec [-l] [-u username | -U username] jail [command ...]
-    # No -l (exec.clean): a clean environment would strip the variables
-    # injected below. The jail inherits them from this process instead.
-    # Selecting a user via -U runs the command through setusercontext(3),
-    # which rebuilds PATH from the login class — so a user is only selected
-    # when it is not root; kleened's injected environment is the authority
-    # otherwise (docker semantics: the image environment wins).
+    #  - No -l (exec.clean): It strips the variables injected below. 
+    #    The jail inherits them from this process instead.
+    #  - Using -U runs the command through setusercontext(3),
+    #    which rebuilds PATH from the login class. '-U' is only used when a
+    #    custom user is selected. Othwerise kleened's injected environment is
+    #    the authority (docker semantics).
     args = jexec_user_args(user) ++ [container_id | adapt_cmd_to_default_home(cmd)]
     OS.cmd_async([~c"/usr/sbin/jexec" | args], use_tty, jail_env(env, user))
   end
