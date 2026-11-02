@@ -419,8 +419,6 @@ defmodule Kleened.Core.ImagePull do
     end
   end
 
-  # Fetch the manifest an index entry points at, verifying the served bytes
-  # against the entry's digest.
   defp fetch_indexed_manifest(conn, repo, descriptor, token) do
     path = "/v2/#{repo}/manifests/#{descriptor["digest"]}"
     headers = [{"accept", Enum.join(@default_accept, ", ")} | auth_headers(token)]
@@ -444,9 +442,6 @@ defmodule Kleened.Core.ImagePull do
     end
   end
 
-  # Download the config and layer blobs of a manifest into `download_dir`,
-  # store the manifest blob itself, write the layout index, and re-open the
-  # finished layout through Layout.open (which re-verifies every digest).
   defp assemble_layout(
          conn,
          repo,
@@ -487,9 +482,6 @@ defmodule Kleened.Core.ImagePull do
     end
   end
 
-  # The manifest blob itself belongs in the downloaded layout: Layout.open reads
-  # it through the index descriptor. The ORIGINAL served bytes must be stored —
-  # re-encoding the decoded manifest changes the digest.
   defp store_manifest_blob(download_dir, manifest_raw, manifest_digest) do
     hex = String.replace_prefix(manifest_digest, "sha256:", "")
     blob_path = Path.join([download_dir, "blobs", "sha256", hex])
@@ -533,7 +525,6 @@ defmodule Kleened.Core.ImagePull do
   end
 
   # A redirect target (a CDN): download the blob bytes from the absolute URL.
-  # The with/else construction is unnecessary — a case is the honest shape.
   defp download_redirected(location) do
     case open(location, []) do
       {:ok, conn} ->
