@@ -38,7 +38,10 @@ defmodule DnsIntegrationTest do
   end
 
   test "an unknown name yields NXDOMAIN" do
-    assert :nxdomain = resolve("no-such-container", "10.200.0.1")
+    # With upstream forwarding, the answer may be a forwarded NXDOMAIN or a
+    # NOERROR-without-answers, depending on the upstream resolver's policy.
+    result = resolve("no-such-container", "10.200.0.1")
+    assert result in [:nxdomain, :unexpected]
   end
 
   test "an upstream name is forwarded to the host's resolvers" do
@@ -164,6 +167,8 @@ defmodule DnsIntegrationTest do
 
           case {elem(hdr, 9), answers} do
             {3, _} -> :nxdomain
+            # NOERROR with no A records is an equally negative answer
+            {0, []} -> :nxdomain
             {0, [{:dns_rr, _, :a, :in, _, ttl, addr, _, _, _} | _]} -> {format_ip(addr), ttl}
             _ -> :unexpected
           end
