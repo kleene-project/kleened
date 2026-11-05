@@ -134,23 +134,25 @@ defmodule Kleened.Core.DNS do
   # A known container name is answered locally; anything else is forwarded to
   # the host's upstream resolvers (docker-style), if any. The raw query bytes
   # are forwarded verbatim and the upstream reply is relayed back unchanged,
-  # so EDNS/DNSSEC options pass through untouched.
-  # NB: :inet_dns.encode/1 returns the binary directly (unlike decode/1,
-  # which returns {:ok, rec}).
-  defp respond(socket, src_ip, src_port, %{:dns_rec => _} = query, addrs, %State{} = state) do
+  # so EDNS/DNSSEC options pass through untouched. When forwarding is not
+  # possible (no forwarders, or the upstream cannot answer), the query is
+  # answered negatively instead.
+  defp respond(socket, src_ip, src_port, {:dns_rec, _, _, _, _, _} = query, addrs, %State{} = state) do
     if addrs != [] do
       bin = :inet_dns.encode(answer(%{query: query, addrs: addrs}))
       :gen_udp.send(socket, src_ip, src_port, bin)
     else
-      forward(socket, src_ip, src_port, query, state)
+      case forward(socket, src_ip, src_port, query, state) do
+        :forwarded -> :ok
+        :not_forwarded -> send_nxdomain(socket, src_ip, src_port, query)
+      end
     end
 
     :ok
   end
 
-  defp respond(socket, src_ip, src_port, query, addrs, %State{} = _state) do
-    # NXDOMAIN with no forwarders available: answer negatively.
-    bin = :inet_dns.encode(answer(%{query: query, addrs: addrs}))
+  defp send_nxdomain(socket, src_ip, src_port, query) do
+    bin = :inet_dns.encode(answer(%{query: query, addrs: []}))
     :gen_udp.send(socket, src_ip, src_port, bin)
   end
 
@@ -164,9 +166,9 @@ defmodule Kleened.Core.DNS do
   defp forward(socket, src_ip, src_port, query, %State{forwarders: forwarders}) do
     case forwarders do
       [] ->
-        :ok
+        :not_forwarded
 
-      [forwarder | _] ->
+      [forwarder | _rest] ->
         qbin = :inet_dns.encode(query)
 
         with {:ok, sock} <- :gen_udp.open(0, [:binary, {:active, false}]),
@@ -174,10 +176,11 @@ defmodule Kleened.Core.DNS do
              {:ok, {_ip, _port, rbin}} <- :gen_udp.recv(sock, 0, 2000) do
           :gen_udp.close(sock)
           :gen_udp.send(socket, src_ip, src_port, rbin)
+          :forwarded
         else
           {:error, reason} ->
             Logger.debug("DNS: forwarding failed: #{inspect(reason)}")
-            :ok
+            :not_forwarded
         end
     end
   end

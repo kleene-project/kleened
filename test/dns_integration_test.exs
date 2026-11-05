@@ -41,6 +41,17 @@ defmodule DnsIntegrationTest do
     assert :nxdomain = resolve("no-such-container", "10.200.0.1")
   end
 
+  test "an upstream name is forwarded to the host's resolvers" do
+    # Requires internet access; skipped when the upstream cannot answer.
+    case resolve("one.one.one.one", "10.200.0.1") do
+      {ip, _ttl} ->
+        assert ip =~ ~r/^\d+\.\d+\.\d+\.\d+$/
+
+      other ->
+        ExUnit.Assertions.flunk("expected an upstream answer, got: #{inspect(other)}")
+    end
+  end
+
   defp endpoint_ip(container_id) do
     case TestHelper.container_inspect(container_id) do
       %{container_endpoints: [%Schemas.EndPoint{ip_address: ip}]} -> ip
