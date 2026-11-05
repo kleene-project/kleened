@@ -11,7 +11,7 @@ defmodule Kleened.Core.DNS do
   """
 
   alias Kleened.API.Schemas
-  alias Kleened.Core.{FreeBSD, MetaData, Network}
+  alias Kleened.Core.{FreeBSD, MetaData, Network, ZFS}
   require Logger
 
   use GenServer
@@ -41,6 +41,84 @@ defmodule Kleened.Core.DNS do
   @spec inspect_state() :: {:ok, term()}
   def inspect_state() do
     GenServer.call(__MODULE__, :inspect)
+  end
+
+  @doc """
+  Write the container's /etc/resolv.conf and the kleene-managed block of its
+  /etc/hosts, pointing at the resolvers of the container's networks. Called
+  from Exec.jail_start_container before the jail is created.
+
+  `host`/`disabled`-driver containers have no network interface of their
+  own and keep their files untouched.
+  """
+  @spec configure_dns_files(Schemas.Container.t()) :: :ok
+  def configure_dns_files(%Schemas.Container{network_driver: driver})
+      when driver in ["host", "disabled"],
+      do: :ok
+
+  def configure_dns_files(%Schemas.Container{} = container) do
+    networks = MetaData.connected_networks(container.id)
+
+    mountpoint = ZFS.mountpoint(container.dataset)
+    write_resolv_conf(mountpoint, container, networks)
+    write_hosts_block(mountpoint, container, networks)
+    :ok
+  end
+
+  defp write_resolv_conf(mountpoint, _container, networks) do
+    content =
+      networks
+      |> Enum.flat_map(fn network ->
+        case resolver_ip(network) do
+          nil -> []
+          ip -> ["nameserver #{:inet.ntoa(ip)}", "search #{network.name}"]
+        end
+      end)
+      |> Enum.join("\n")
+
+    File.write(Path.join(mountpoint, "etc/resolv.conf"), content <> "\n")
+  end
+
+  @hosts_start "# kleene-managed hosts start"
+  @hosts_end "# kleene-managed hosts end"
+
+  defp write_hosts_block(mountpoint, container, networks) do
+    path = Path.join(mountpoint, "etc/hosts")
+
+    existing =
+      case File.read(path) do
+        {:ok, content} -> String.replace_suffix(content, "\n", "")
+        {:error, _} -> "127.0.0.1 localhost\n::1 localhost"
+      end
+
+    # Drop any previous kleene-managed block, then append the fresh one.
+    kept =
+      existing
+      |> String.split(@hosts_start)
+      |> hd()
+      |> String.trim_trailing()
+      |> String.trim_trailing(@hosts_end)
+      |> String.trim_trailing()
+
+    own_entries =
+      networks
+      |> Enum.flat_map(fn network ->
+        endpoint = MetaData.get_endpoint(container.id, network.id)
+
+        case endpoint do
+          %Schemas.EndPoint{} = ep ->
+            [{ep.ip_address, container.name}, {ep.ip_address6, container.name}]
+
+          :not_found ->
+            []
+        end
+      end)
+      |> Enum.reject(fn {ip, _name} -> ip in [nil, ""] end)
+      |> Enum.map(fn {ip, name} -> "#{ip}  #{name}" end)
+      |> Enum.join("\n")
+
+    block = Enum.join([@hosts_start, own_entries, @hosts_end], "\n")
+    File.write(path, kept <> "\n\n" <> block <> "\n")
   end
 
   @impl true
