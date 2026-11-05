@@ -156,7 +156,8 @@ defmodule NetworkTest do
     {container_id, _, addresses} =
       netstat_in_container(%{network: network.name, network_driver: "ipnet"})
 
-    assert [%{"address" => "172.19.3.2", "network" => "172.19.3.2/32"}] =
+    # Custom networks get no DNS resolver, so the first IP is allocatable.
+    assert [%{"address" => "172.19.3.1", "network" => "172.19.3.1/32"}] =
              filter_by_interface(addresses, interface)
 
     # Inspect container
@@ -165,7 +166,7 @@ defmodule NetworkTest do
              container_endpoints: [
                %Schemas.EndPoint{
                  epair: nil,
-                 ip_address: "172.19.3.2",
+                 ip_address: "172.19.3.1",
                  ip_address6: "",
                  network_id: ^network_id
                }
@@ -504,10 +505,11 @@ defmodule NetworkTest do
     {_container_id, routing_info, addresses} =
       netstat_in_container(%{network: network.name, network_driver: "ipnet"})
 
-    assert [%{"address" => "172.19.1.2", "network" => "172.19.1.2/32"}] =
+    # Custom networks get no DNS resolver, so the first IP is allocatable.
+    assert [%{"address" => "172.19.1.1", "network" => "172.19.1.1/32"}] =
              filter_by_interface(addresses, interface)
 
-    assert [%{"destination" => "172.19.1.2", "interface-name" => ^interface}] =
+    assert [%{"destination" => "172.19.1.1", "interface-name" => ^interface}] =
              routes(routing_info)
 
     Network.remove(network.id)
@@ -558,7 +560,8 @@ defmodule NetworkTest do
       })
 
     assert [
-             %{"address" => "172.19.1.2", "network" => "172.19.1.0/24"},
+             # .3: the resolver holds .1 and the ipnet container above holds .2
+             %{"address" => "172.19.1.3", "network" => "172.19.1.0/24"},
              %{"address" => "fdef:1234:5678::2", "network" => "fdef:1234:5678::/48"},
              %{"network" => "fe80::%epair0b/64"}
            ] = filter_by_interface(addresses, "epair0b")
@@ -575,7 +578,7 @@ defmodule NetworkTest do
                "interface-name" => "epair0b"
              },
              %{
-               "destination" => "172.19.1.2",
+               "destination" => "172.19.1.3",
                "gateway" => <<"link#", _::binary>>,
                "interface-name" => "lo0"
              }
@@ -1834,7 +1837,7 @@ defmodule NetworkTest do
 
   defp netstat_in_container(config) do
     all_in_one_netstat =
-      "echo \"SPLIT HERE\" && netstat --libxo json -rn && echo \"SPLIT HERE\" && netstat --libxo json -i"
+      "echo \"SPLIT HERE\" && netstat --libxo json -rn && echo \"SPLIT HERE\" && netstat --libxo json -n -i"
 
     config_default = %{
       # Unique name: the helper can be called several times within one test,
@@ -1922,7 +1925,7 @@ defmodule NetworkTest do
   end
 
   defp host_addresses() do
-    {output, 0} = OS.cmd(~w"/usr/bin/netstat --libxo json -i")
+    {output, 0} = OS.cmd(~w"/usr/bin/netstat --libxo json -n -i")
     %{"statistics" => %{"interface" => addresses}} = Jason.decode!(output)
     trim_adresses(addresses)
   end

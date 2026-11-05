@@ -11,7 +11,7 @@ defmodule Kleened.Core.DNS do
   """
 
   alias Kleened.API.Schemas
-  alias Kleened.Core.{FreeBSD, MetaData, Network, ZFS}
+  alias Kleened.Core.{FreeBSD, MetaData, ZFS}
   require Logger
 
   use GenServer
@@ -218,6 +218,12 @@ defmodule Kleened.Core.DNS do
   # so EDNS/DNSSEC options pass through untouched. When forwarding is not
   # possible (no forwarders, or the upstream cannot answer), the query is
   # answered negatively instead.
+  defp respond(socket, src_ip, src_port, nil, :formerr, _state) do
+    hdr = {:dns_header, 0, true, :query, false, false, false, false, false, 1}
+    bin = :inet_dns.encode({:dns_rec, hdr, [], [], [], []})
+    :gen_udp.send(socket, src_ip, src_port, bin)
+  end
+
   defp respond(socket, src_ip, src_port, {:dns_rec, _, _, _, _, _} = query, addrs, %State{} = state) do
     if addrs != [] do
       bin = :inet_dns.encode(answer(%{query: query, addrs: addrs}))
@@ -234,13 +240,6 @@ defmodule Kleened.Core.DNS do
 
   defp send_nxdomain(socket, src_ip, src_port, query) do
     bin = :inet_dns.encode(answer(%{query: query, addrs: []}))
-    :gen_udp.send(socket, src_ip, src_port, bin)
-  end
-
-  # formerr does not have a query to echo
-  defp respond(socket, src_ip, src_port, nil, :formerr, _state) do
-    hdr = {:dns_header, 0, true, :query, false, false, false, false, false, 1}
-    bin = :inet_dns.encode({:dns_rec, hdr, [], [], [], []})
     :gen_udp.send(socket, src_ip, src_port, bin)
   end
 
@@ -405,11 +404,17 @@ defmodule Kleened.Core.DNS do
     if ip_on_interface?(ip, interface) do
       :ok
     else
-      ip_string = :inet.ntoa(ip)
+      case :inet.ntoa(ip) do
+        {:error, reason} ->
+          {:error, "could not format resolver IP #{inspect(ip)}: #{inspect(reason)}"}
 
-      case FreeBSD.ifconfig_alias(ip_string, interface, "inet") do
-        :ok -> :ok
-        {:error, output} -> if String.contains?(output, "File exists"), do: :ok, else: {:error, output}
+        ip_string ->
+          ip_string = to_string(ip_string)
+
+          case FreeBSD.ifconfig_alias(ip_string, interface, "inet") do
+            :ok -> :ok
+            {:error, output} -> if String.contains?(output, "File exists"), do: :ok, else: {:error, output}
+          end
       end
     end
   end
@@ -426,11 +431,13 @@ defmodule Kleened.Core.DNS do
   end
 
   # The resolver IP for a network: the first usable IPv4 address of its
-  # subnet. Networks without a subnet (custom types, subnet-less) or with the
-  # built-in resolver disabled get no resolver. IPv6-only resolution is not
-  # supported in this version.
+  # subnet. Only kleened-managed interfaces (loopback/bridge networks) get a
+  # resolver: a custom interface belongs to the operator, and adding aliases
+  # to it (e.g. the host's physical NIC) is not Kleene's to do. Networks
+  # without a subnet or with the resolver disabled get none either. IPv6-only
+  # resolution is not supported in this version.
   defp resolver_ip(%Schemas.Network{dns: false}), do: nil
-
+  defp resolver_ip(%Schemas.Network{type: "custom"}), do: nil
   defp resolver_ip(%Schemas.Network{subnet: ""}), do: nil
 
   defp resolver_ip(%Schemas.Network{subnet: subnet}) do
