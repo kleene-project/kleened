@@ -814,6 +814,15 @@ defmodule Kleened.API.Schemas do
           type: :boolean,
           description: "Whether or not outgoing traffic is allowed on the network.",
           default: false
+        },
+        dns: %Schema{
+          type: :boolean,
+          description: """
+          Whether Kleene runs its built-in DNS resolver on the network, making
+          container names resolvable as hostnames within it. When disabled, no
+          resolver IP is reserved and containers fall back to host DNS.
+          """,
+          default: true
         }
       },
       required: [:name, :type]
@@ -892,6 +901,11 @@ defmodule Kleened.API.Schemas do
         internal: %Schema{
           type: :boolean,
           description: "Whether or not outgoing traffic is allowed on the network.",
+          default: true
+        },
+        dns: %Schema{
+          type: :boolean,
+          description: "Whether the built-in DNS resolver runs on this network.",
           default: true
         }
       }

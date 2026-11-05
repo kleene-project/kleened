@@ -66,7 +66,7 @@ defmodule Kleened.Core.DNS do
   end
 
   defp write_resolv_conf(mountpoint, _container, networks) do
-    content =
+    entries =
       networks
       |> Enum.flat_map(fn network ->
         case resolver_ip(network) do
@@ -74,9 +74,12 @@ defmodule Kleened.Core.DNS do
           ip -> ["nameserver #{:inet.ntoa(ip)}", "search #{network.name}"]
         end
       end)
-      |> Enum.join("\n")
 
-    File.write(Path.join(mountpoint, "etc/resolv.conf"), content <> "\n")
+    # Networks without resolvers leave the image's resolv.conf in place.
+    case entries do
+      [] -> :ok
+      _ -> File.write(Path.join(mountpoint, "etc/resolv.conf"), Enum.join(entries, "\n") <> "\n")
+    end
   end
 
   @hosts_start "# kleene-managed hosts start"
@@ -423,8 +426,11 @@ defmodule Kleened.Core.DNS do
   end
 
   # The resolver IP for a network: the first usable IPv4 address of its
-  # subnet. Networks without a subnet (custom types, subnet-less) get no
-  # resolver. IPv6-only resolution is not supported in this version.
+  # subnet. Networks without a subnet (custom types, subnet-less) or with the
+  # built-in resolver disabled get no resolver. IPv6-only resolution is not
+  # supported in this version.
+  defp resolver_ip(%Schemas.Network{dns: false}), do: nil
+
   defp resolver_ip(%Schemas.Network{subnet: ""}), do: nil
 
   defp resolver_ip(%Schemas.Network{subnet: subnet}) do

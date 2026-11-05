@@ -106,6 +106,39 @@ defmodule DnsIntegrationTest do
     output
   end
 
+  test "a network with dns disabled gets no resolver and no resolv.conf injection" do
+    api_spec = Kleened.API.Spec.spec()
+
+    {:ok, %Schemas.Network{id: nodns_id} = nodns} =
+      Network.create(%Schemas.NetworkConfig{
+        name: "dnsnet-off",
+        subnet: "10.201.0.0/24",
+        interface: "kleene7",
+        type: "loopback",
+        dns: false
+      })
+
+    # No resolver socket for the dns-disabled network...
+    {:ok, state} = DNS.inspect_state()
+    refute nodns_id in Map.values(state.sockets)
+
+    # ...and its first IP stays allocatable (not reserved).
+    %{id: cid} =
+      TestHelper.container_create(%{
+        name: "dnstest-off",
+        cmd: ["/bin/sleep", "60"],
+        network: "dnsnet-off",
+        network_driver: "ipnet",
+        attach: false
+      })
+
+    %{container_endpoints: [%Schemas.EndPoint{ip_address: ip}]} = TestHelper.container_inspect(cid)
+    assert ip == "10.201.0.1"
+
+    TestHelper.container_remove(api_spec, cid)
+    Network.remove(nodns.id)
+  end
+
   defp endpoint_ip(container_id) do
     case TestHelper.container_inspect(container_id) do
       %{container_endpoints: [%Schemas.EndPoint{ip_address: ip}]} -> ip
