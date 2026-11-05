@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Exec do
-  alias Kleened.Core.{Container, Network, MetaData, OS, FreeBSD, ZFS, Utils, ExecInstances, Mount}
+  alias Kleened.Core.{Container, Jail, Network, MetaData, OS, FreeBSD, ZFS, Utils, ExecInstances, Mount}
   alias Utils.CIDR
   alias Kleened.API.Schemas
 
@@ -385,7 +385,7 @@ defmodule Kleened.Core.Exec do
 
     jail_param =
       jail_param
-      |> update_jailparam_if_not_exist(["host.hostname"], "host.hostname=#{id}")
+      |> update_jailparam_if_not_exist(["host.hostname"], "host.hostname=#{Jail.default_hostname(container)}")
       |> then(fn params ->
         # exec.jail_user runs the command through setusercontext(3), which
         # rebuilds PATH from the login class — same rationale as jexec's -U:

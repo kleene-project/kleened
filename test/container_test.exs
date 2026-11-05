@@ -129,4 +129,67 @@ defmodule ContainerTest do
     %{id: container_id} = TestHelper.container_create(config)
     MetaData.get_container(container_id)
   end
+
+  test "host.hostname defaults to the container name; the jail stays named by id" do
+    api_spec = Kleened.API.Spec.spec()
+    %{id: container_id} = TestHelper.container_create(container_config(%{name: "hostname-test"}))
+
+    {:ok, exec_id} = Exec.create(container_id)
+    :ok = Exec.start(exec_id, %{attach: true, start_container: true})
+
+    # The jail is registered under the container id and addressable by it...
+    assert eventually_jail_up?(container_id)
+    # ...while its hostname (what jls shows by default) is the container name.
+    assert {output, 0} = System.cmd("/usr/sbin/jexec", [container_id, "hostname"], stderr_to_stdout: true)
+    assert output =~ "hostname-test"
+
+    TestHelper.container_stop(api_spec, container_id)
+    TestHelper.container_remove(api_spec, container_id)
+  end
+
+  test "a dotted container name is a legal hostname and is used as-is" do
+    api_spec = Kleened.API.Spec.spec()
+    %{id: container_id} = TestHelper.container_create(container_config(%{name: "my.app"}))
+
+    {:ok, exec_id} = Exec.create(container_id)
+    :ok = Exec.start(exec_id, %{attach: true, start_container: true})
+
+    assert eventually_jail_up?(container_id)
+    assert {output, 0} = System.cmd("/usr/sbin/jexec", [container_id, "hostname"], stderr_to_stdout: true)
+    assert output =~ "my.app"
+
+    TestHelper.container_stop(api_spec, container_id)
+    TestHelper.container_remove(api_spec, container_id)
+  end
+
+  test "an unnamed container keeps the id as hostname" do
+    api_spec = Kleened.API.Spec.spec()
+    %{id: container_id} = TestHelper.container_create(container_config(%{name: nil}))
+
+    {:ok, exec_id} = Exec.create(container_id)
+    :ok = Exec.start(exec_id, %{attach: true, start_container: true})
+
+    assert eventually_jail_up?(container_id)
+    assert {output, 0} = System.cmd("/usr/sbin/jexec", [container_id, "hostname"], stderr_to_stdout: true)
+    assert output =~ container_id
+
+    TestHelper.container_stop(api_spec, container_id)
+    TestHelper.container_remove(api_spec, container_id)
+  end
+
+  # Kernel jail registration lags the port spawn; poll for it to appear.
+  defp eventually_jail_up?(name), do: eventually_jail_up?(name, 50)
+
+  defp eventually_jail_up?(_name, 0), do: false
+
+  defp eventually_jail_up?(name, attempts) do
+    case System.cmd("jls", ["-j", name, "name"], stderr_to_stdout: true) do
+      {_, 0} ->
+        true
+
+      {_, 1} ->
+        Process.sleep(100)
+        eventually_jail_up?(name, attempts - 1)
+    end
+  end
 end
