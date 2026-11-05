@@ -223,7 +223,7 @@
           },
           "jail_param": {
             "default": [],
-            "description": "List of jail parameters to use for the container.\nSee the [jails manual page](https://man.freebsd.org/cgi/man.cgi?query=jail) for an explanation of what jail parameters is,\nand the [Kleene documentation](/run/jail-parameters/) for an explanation of how they are used by Kleene.\n",
+            "description": "List of jail parameters to use for the container.\nSee the [jails manual page](https://man.freebsd.org/cgi/man.cgi?query=jail) for an explanation of what jail parameters is,\nand the [Kleene documentation](/run/jail-parameters/) for an explanation of how they are used by Kleene.\n\nWhen `host.hostname` is not set, Kleene defaults it to the container name,\nor to the container id when the container has no name.\n",
             "example": [
               "allow.raw_sockets=true",
               "osrelease=kleenejail"
@@ -262,7 +262,7 @@
             "x-validate": null
           },
           "name": {
-            "description": "Name of the container. Must match `/?[a-zA-Z0-9][a-zA-Z0-9_.-]+`.",
+            "description": "Name of the container. Must match `/?[a-zA-Z0-9][a-zA-Z0-9_.-]+`. When set, it becomes the default hostname of the container.",
             "nullable": true,
             "type": "string",
             "x-struct": null,

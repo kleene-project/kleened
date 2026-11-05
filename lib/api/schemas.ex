@@ -58,7 +58,8 @@ defmodule Kleened.API.Schemas do
       type: :object,
       properties: %{
         name: %Schema{
-          description: "Name of the container. Must match `/?[a-zA-Z0-9][a-zA-Z0-9_.-]+`.",
+          description:
+            "Name of the container. Must match `/?[a-zA-Z0-9][a-zA-Z0-9_.-]+`. When set, it becomes the default hostname of the container.",
           type: :string,
           nullable: true
         },
@@ -135,6 +136,9 @@ defmodule Kleened.API.Schemas do
           List of jail parameters to use for the container.
           See the [jails manual page](https://man.freebsd.org/cgi/man.cgi?query=jail) for an explanation of what jail parameters is,
           and the [Kleene documentation](/run/jail-parameters/) for an explanation of how they are used by Kleene.
+
+          When `host.hostname` is not set, Kleene defaults it to the container name,
+          or to the container id when the container has no name.
           """,
           type: :array,
           items: %Schema{type: :string},
