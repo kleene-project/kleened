@@ -40,7 +40,7 @@ defmodule NetworkTest do
     {container_id, _, addresses} =
       netstat_in_container(%{network_driver: "ipnet", network: network.name})
 
-    assert [%{"address" => "172.19.1.1", "network" => "172.19.1.1/32"}] =
+    assert [%{"address" => "172.19.1.2", "network" => "172.19.1.2/32"}] =
              filter_by_interface(addresses, interface)
 
     # Inspect container
@@ -49,7 +49,7 @@ defmodule NetworkTest do
              container_endpoints: [
                %Schemas.EndPoint{
                  epair: nil,
-                 ip_address: "172.19.1.1",
+                 ip_address: "172.19.1.2",
                  network_id: ^network_id,
                  ip_address6: ""
                }
@@ -88,7 +88,7 @@ defmodule NetworkTest do
     {container_id_ipnet, _, addresses} =
       netstat_in_container(%{network: network.name, network_driver: "ipnet"})
 
-    assert [%{"address" => "172.19.2.1", "network" => "172.19.2.1/32"}] =
+    assert [%{"address" => "172.19.2.2", "network" => "172.19.2.2/32"}] =
              filter_by_interface(addresses, interface)
 
     # Inspect container
@@ -97,7 +97,7 @@ defmodule NetworkTest do
              container_endpoints: [
                %Schemas.EndPoint{
                  epair: nil,
-                 ip_address: "172.19.2.1",
+                 ip_address: "172.19.2.2",
                  ip_address6: "",
                  network_id: ^network_id
                }
@@ -108,7 +108,8 @@ defmodule NetworkTest do
     {container_id_vnet, _, addresses} =
       netstat_in_container(%{network: network.name, network_driver: "vnet"})
 
-    assert [%{"address" => "172.19.2.2", "network" => "172.19.2.0/24"}] =
+    # .3: the resolver holds .1 and the ipnet container above holds .2
+    assert [%{"address" => "172.19.2.3", "network" => "172.19.2.0/24"}] =
              filter_by_interface(addresses, "epair0b")
 
     # Inspect container
@@ -118,7 +119,7 @@ defmodule NetworkTest do
                %Schemas.EndPoint{
                  # Because the container is not running there is no 'epair' allocated.
                  epair: nil,
-                 ip_address: "172.19.2.2",
+                 ip_address: "172.19.2.3",
                  ip_address6: "",
                  network_id: ^network_id
                }
@@ -155,7 +156,7 @@ defmodule NetworkTest do
     {container_id, _, addresses} =
       netstat_in_container(%{network: network.name, network_driver: "ipnet"})
 
-    assert [%{"address" => "172.19.3.1", "network" => "172.19.3.1/32"}] =
+    assert [%{"address" => "172.19.3.2", "network" => "172.19.3.2/32"}] =
              filter_by_interface(addresses, interface)
 
     # Inspect container
@@ -164,7 +165,7 @@ defmodule NetworkTest do
              container_endpoints: [
                %Schemas.EndPoint{
                  epair: nil,
-                 ip_address: "172.19.3.1",
+                 ip_address: "172.19.3.2",
                  ip_address6: "",
                  network_id: ^network_id
                }
@@ -353,16 +354,16 @@ defmodule NetworkTest do
   end
 
   test "exhaust all ips in a network" do
+    # The DNS resolver holds the first IP of the /30's two usable addresses,
+    # leaving exactly one for a container.
     create_network(%{name: "smallnet", subnet: "172.19.0.0/30", type: "loopback"})
 
     config = %{cmd: ["/bin/ls"], network: "smallnet", network_driver: "ipnet"}
 
     %{id: _id} = TestHelper.container_create(Map.put(config, :name, "exhaust1"))
-    %{id: _id} = TestHelper.container_create(Map.put(config, :name, "exhaust2"))
-    %{id: _id} = TestHelper.container_create(Map.put(config, :name, "exhaust3"))
 
     assert %{message: "no more inet IP's left in the network"} =
-             TestHelper.container_create(Map.put(config, :name, "exhaust4"))
+             TestHelper.container_create(Map.put(config, :name, "exhaust2"))
   end
 
   test "create a container that uses the 'host' network driver" do
@@ -476,10 +477,10 @@ defmodule NetworkTest do
     {_container_id, routing_info, addresses} =
       netstat_in_container(%{network: network.name, network_driver: "ipnet"})
 
-    assert [%{"address" => "172.19.1.1", "network" => "172.19.1.1/32"}] =
+    assert [%{"address" => "172.19.1.2", "network" => "172.19.1.2/32"}] =
              filter_by_interface(addresses, "kleene0")
 
-    assert [%{"destination" => "172.19.1.1", "interface-name" => "kleene0"}] =
+    assert [%{"destination" => "172.19.1.2", "interface-name" => "kleene0"}] =
              routes(routing_info)
   end
 
@@ -503,10 +504,10 @@ defmodule NetworkTest do
     {_container_id, routing_info, addresses} =
       netstat_in_container(%{network: network.name, network_driver: "ipnet"})
 
-    assert [%{"address" => "172.19.1.1", "network" => "172.19.1.1/32"}] =
+    assert [%{"address" => "172.19.1.2", "network" => "172.19.1.2/32"}] =
              filter_by_interface(addresses, interface)
 
-    assert [%{"destination" => "172.19.1.1", "interface-name" => ^interface}] =
+    assert [%{"destination" => "172.19.1.2", "interface-name" => ^interface}] =
              routes(routing_info)
 
     Network.remove(network.id)
@@ -538,11 +539,11 @@ defmodule NetworkTest do
 
     assert MapSet.new([
              %{address: "fdef:1234:5678::1", network: "fdef:1234:5678::1/128"},
-             %{address: "172.19.1.1", network: "172.19.1.1/32"}
+             %{address: "172.19.1.2", network: "172.19.1.2/32"}
            ]) == filter_by_interface(addresses, "kleene0") |> address_mapset()
 
     # Unsure why it ends up being "lo0" and not "kleene0"
-    assert [%{"destination" => "172.19.1.1", "interface-name" => "lo0"}] = routes(routing_info)
+    assert [%{"destination" => "172.19.1.2", "interface-name" => "lo0"}] = routes(routing_info)
 
     assert [%{"destination" => "fdef:1234:5678::1", "interface-name" => "lo0"}] =
              routes6(routing_info)

@@ -278,15 +278,32 @@ defmodule Kleened.Core.DNS do
   end
 
   # The resolver IP must exist as an address on the network's interface
-  # before a socket can bind it. Adding an alias that is already present
-  # fails harmlessly with 'File exists', which is treated as success.
+  # before a socket can bind it. On networks with an '<auto>' gateway the
+  # alias is already there (same IP, correct subnet mask); re-adding it with
+  # a /32 mask would create a duplicate alias with a different netmask, so
+  # the interface is queried first and the alias only added when missing.
   defp ensure_alias(ip, %Schemas.Network{interface: interface}) do
-    ip_string = :inet.ntoa(ip)
+    if ip_on_interface?(ip, interface) do
+      :ok
+    else
+      ip_string = :inet.ntoa(ip)
 
-    case FreeBSD.ifconfig_alias(ip_string, interface, "inet") do
-      :ok -> :ok
-      {:error, output} -> if String.contains?(output, "File exists"), do: :ok, else: {:error, output}
+      case FreeBSD.ifconfig_alias(ip_string, interface, "inet") do
+        :ok -> :ok
+        {:error, output} -> if String.contains?(output, "File exists"), do: :ok, else: {:error, output}
+      end
     end
+  end
+
+  defp ip_on_interface?(ip, interface) do
+    addresses = FreeBSD.get_interface_addresses(interface)
+
+    Enum.any?(addresses, fn %{"address" => address} ->
+      case :inet.parse_address(String.to_charlist(address)) do
+        {:ok, ^ip} -> true
+        _ -> false
+      end
+    end)
   end
 
   # The resolver IP for a network: the first usable IPv4 address of its

@@ -1357,8 +1357,26 @@ defmodule Kleened.Core.Network do
 
     %CIDR{:last => last_ip} = CIDR.parse(subnet)
     first_ip = first_ip_address(subnet, protocol)
-    generate_ip(first_ip, last_ip, ips_in_use, protocol)
+
+    # The last address of a subnet is its broadcast address: never hand it to
+    # a container. With the DNS resolver additionally holding the first IP,
+    # small subnets would otherwise allocate it.
+    last_usable = broadcast_dec(last_ip, protocol)
+
+    generate_ip(first_ip, last_usable, ips_in_use, protocol)
   end
+
+  defp broadcast_dec(ip, "inet") do
+    {a, b, c, d} = ip
+    {a, b, c, d - 1}
+  end
+
+  defp broadcast_dec(ip, "inet6") do
+    List.to_tuple(Enum.reverse(Tuple.to_list(ip)) |> decrement_first_non_zero() |> Enum.reverse())
+  end
+
+  defp decrement_first_non_zero([h | t]) when h > 0, do: [h - 1 | t]
+  defp decrement_first_non_zero([0 | t]), do: [0 | decrement_first_non_zero(t)]
 
   @spec first_ip_address(String.t(), protocol()) :: String.t()
   def first_ip_address(subnet, protocol) do
