@@ -92,9 +92,44 @@ defmodule Kleened.Core.DNS do
     end
   end
 
-  # The resolve/3 lookup is B2; the socket plumbing (refresh_sockets) is B5.
-  # Placeholder until then so the compile stays green for the pure tests.
-  defp resolve(_question, _network_id, _src_ip), do: []
+  # B2: a query arriving on network `network_id` from `src_ip` resolves the
+  # queried name against container names. The answer carries the target
+  # container's address on that network: the question's own network scope is
+  # the network the query arrived on, so a container reachable on it is
+  # answered with that address (docker-style per-network isolation).
+  defp resolve({:dns_query, domain, type, :in, _}, network_id, _src_ip) do
+    name = domain |> to_string() |> String.downcase()
+
+    endpoints =
+      case MetaData.get_container_by_name(name) do
+        %Schemas.Container{id: target_id} ->
+          MetaData.get_endpoints_from_container(target_id)
+
+        :not_found ->
+          []
+      end
+
+    endpoints
+    |> Enum.filter(&(&1.network_id == network_id))
+    |> Enum.flat_map(fn %Schemas.EndPoint{ip_address: ip, ip_address6: ip6} = ep ->
+      case type do
+        :a -> parse_ips([ip])
+        :aaaa -> parse_ips([ip6])
+        _ -> parse_ips([ip, ep.ip_address6])
+      end
+    end)
+  end
+
+  defp parse_ips(ips) do
+    ips
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.flat_map(fn ip ->
+      case :inet.parse_address(String.to_charlist(ip)) do
+        {:ok, addr} -> [addr]
+        _ -> []
+      end
+    end)
+  end
 
   # A known container name is answered locally; anything else is forwarded to
   # the host's upstream resolvers (docker-style), if any. The raw query bytes
