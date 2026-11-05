@@ -11,6 +11,7 @@ defmodule Kleened.Core.DNS do
   """
 
   alias Kleened.API.Schemas
+  alias Kleened.Core.{FreeBSD, MetaData, Network}
   require Logger
 
   use GenServer
@@ -36,6 +37,12 @@ defmodule Kleened.Core.DNS do
     GenServer.call(__MODULE__, :refresh)
   end
 
+  @doc "The internal state, for tests and diagnostics."
+  @spec inspect_state() :: {:ok, term()}
+  def inspect_state() do
+    GenServer.call(__MODULE__, :inspect)
+  end
+
   @impl true
   def init([]) do
     {:ok, %State{forwarders: read_forwarders()}}
@@ -44,6 +51,11 @@ defmodule Kleened.Core.DNS do
   @impl true
   def handle_call(:refresh, _from, %State{} = state) do
     {:reply, :ok, refresh_sockets(state)}
+  end
+
+  @impl true
+  def handle_call(:inspect, _from, state) do
+    {:reply, {:ok, state}, state}
   end
 
   @impl true
@@ -88,9 +100,11 @@ defmodule Kleened.Core.DNS do
   # the host's upstream resolvers (docker-style), if any. The raw query bytes
   # are forwarded verbatim and the upstream reply is relayed back unchanged,
   # so EDNS/DNSSEC options pass through untouched.
+  # NB: :inet_dns.encode/1 returns the binary directly (unlike decode/1,
+  # which returns {:ok, rec}).
   defp respond(socket, src_ip, src_port, %{:dns_rec => _} = query, addrs, %State{} = state) do
     if addrs != [] do
-      {:ok, bin} = :inet_dns.encode(answer(%{query: query, addrs: addrs}))
+      bin = :inet_dns.encode(answer(%{query: query, addrs: addrs}))
       :gen_udp.send(socket, src_ip, src_port, bin)
     else
       forward(socket, src_ip, src_port, query, state)
@@ -101,14 +115,14 @@ defmodule Kleened.Core.DNS do
 
   defp respond(socket, src_ip, src_port, query, addrs, %State{} = _state) do
     # NXDOMAIN with no forwarders available: answer negatively.
-    {:ok, bin} = :inet_dns.encode(answer(%{query: query, addrs: addrs}))
+    bin = :inet_dns.encode(answer(%{query: query, addrs: addrs}))
     :gen_udp.send(socket, src_ip, src_port, bin)
   end
 
   # formerr does not have a query to echo
   defp respond(socket, src_ip, src_port, nil, :formerr, _state) do
     hdr = {:dns_header, 0, true, :query, false, false, false, false, false, 1}
-    {:ok, bin} = :inet_dns.encode({:dns_rec, hdr, [], [], [], []})
+    bin = :inet_dns.encode({:dns_rec, hdr, [], [], [], []})
     :gen_udp.send(socket, src_ip, src_port, bin)
   end
 
@@ -118,8 +132,9 @@ defmodule Kleened.Core.DNS do
         :ok
 
       [forwarder | _] ->
-        with {:ok, qbin} <- :inet_dns.encode(query),
-             {:ok, sock} <- :gen_udp.open(0, [:binary, {:active, false}]),
+        qbin = :inet_dns.encode(query)
+
+        with {:ok, sock} <- :gen_udp.open(0, [:binary, {:active, false}]),
              :ok <- :gen_udp.send(sock, forwarder, @dns_port, qbin),
              {:ok, {_ip, _port, rbin}} <- :gen_udp.recv(sock, 0, 2000) do
           :gen_udp.close(sock)
@@ -191,7 +206,100 @@ defmodule Kleened.Core.DNS do
     end
   end
 
-  defp refresh_sockets(state) do
-    state
+  # One UDP:53 socket per network, bound to the network's resolver IP: the
+  # first usable address of its subnet (the same IP the '<auto>' gateway
+  # alias uses, so the alias usually already exists on the interface). The
+  # alias is ensured before binding: on networks without a gateway, DNS owns
+  # the only first-IP alias. A bind failure (e.g. another service on port 53
+  # of that IP) disables DNS for that network, like a pf load failure
+  # disables the ruleset.
+  defp refresh_sockets(%State{} = state) do
+    networks = MetaData.list_networks()
+
+    wanted =
+      networks
+      |> Enum.flat_map(fn network ->
+        case resolver_ip(network) do
+          nil -> []
+          ip -> [{network.id, ip, network}]
+        end
+      end)
+      |> Map.new(fn {id, ip, net} -> {id, {ip, net}} end)
+
+    # Close (and drop) sockets for networks that no longer resolve; keeping
+    # the closed port in the map would make later refreshes treat the
+    # network as still served.
+    {keep, drop} =
+      Enum.split_with(state.sockets, fn {_socket, network_id} ->
+        Map.has_key?(wanted, network_id)
+      end)
+
+    Enum.each(drop, fn {socket, _network_id} -> :gen_udp.close(socket) end)
+    sockets = Map.new(keep)
+
+    sockets =
+      Enum.reduce(wanted, sockets, fn {network_id, {ip, network}}, sockets ->
+        already_open =
+          Enum.any?(sockets, fn {_socket, open_id} -> open_id == network_id end)
+
+        case already_open do
+          true ->
+            sockets
+
+          false ->
+            with :ok <- ensure_alias(ip, network) do
+              open_socket(network_id, ip, sockets)
+            else
+              {:error, reason} ->
+                Logger.warning(
+                  "could not configure DNS resolver address for network #{network_id}: #{inspect(reason)}"
+                )
+
+                sockets
+            end
+        end
+      end)
+
+    %State{state | sockets: sockets}
+  end
+
+  defp open_socket(network_id, ip, sockets) do
+    case :gen_udp.open(@dns_port, [:binary, {:active, true}, {:ip, ip}]) do
+      {:ok, socket} ->
+        Map.put(sockets, socket, network_id)
+
+      {:error, reason} ->
+        Logger.warning(
+          "could not bind DNS resolver for network #{network_id} on #{inspect(ip)}: #{inspect(reason)}"
+        )
+
+        sockets
+    end
+  end
+
+  # The resolver IP must exist as an address on the network's interface
+  # before a socket can bind it. Adding an alias that is already present
+  # fails harmlessly with 'File exists', which is treated as success.
+  defp ensure_alias(ip, %Schemas.Network{interface: interface}) do
+    ip_string = :inet.ntoa(ip)
+
+    case FreeBSD.ifconfig_alias(ip_string, interface, "inet") do
+      :ok -> :ok
+      {:error, output} -> if String.contains?(output, "File exists"), do: :ok, else: {:error, output}
+    end
+  end
+
+  # The resolver IP for a network: the first usable IPv4 address of its
+  # subnet. Networks without a subnet (custom types, subnet-less) get no
+  # resolver. IPv6-only resolution is not supported in this version.
+  defp resolver_ip(%Schemas.Network{subnet: ""}), do: nil
+
+  defp resolver_ip(%Schemas.Network{subnet: subnet}) do
+    ip_string = Kleened.Core.Network.first_ip_address(subnet, "inet")
+
+    case :inet.parse_address(String.to_charlist(ip_string)) do
+      {:ok, ip} -> ip
+      _ -> nil
+    end
   end
 end

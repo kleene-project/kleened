@@ -1,6 +1,6 @@
 defmodule Kleened.Core.Network do
   use GenServer
-  alias Kleened.Core.{Config, Container, Utils, MetaData, OS, FreeBSD}
+  alias Kleened.Core.{Config, Container, DNS, Utils, MetaData, OS, FreeBSD}
   alias Utils.CIDR
   alias Kleened.API.Schemas
   require Logger
@@ -625,7 +625,12 @@ defmodule Kleened.Core.Network do
   def configure_pf() do
     case create_pf_config() do
       {:ok, pf_config} ->
-        load_pf_config(pf_config)
+        result = load_pf_config(pf_config)
+        # The DNS listeners track the network topology the same way the pf
+        # ruleset does: rebuild after every load. Failures are logged inside
+        # DNS.refresh/0 and never fail the pf configuration.
+        DNS.refresh()
+        result
 
       {:error, msg} ->
         {:error, msg}

@@ -18,6 +18,10 @@ defmodule Kleened.Core.Application do
     children = [
       Kleened.Core.Config,
       Kleened.Core.MetaData,
+      # DNS starts before Network: Network.init/1 -> configure_pf/0 calls
+      # DNS.refresh/0, which needs the DNS GenServer alive. MetaData (the
+      # refresh source) is already up by then.
+      Kleened.Core.DNS,
       Kleened.Core.Network,
       Kleened.Core.ImageBulkBuild,
       {Registry, keys: :unique, name: Kleened.Core.ExecInstances},
