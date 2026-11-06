@@ -1360,16 +1360,29 @@ defmodule Kleened.Core.Network do
 
     # The last address of a subnet is its broadcast address: never hand it to
     # a container. With the DNS resolver additionally holding the first IP,
-    # small subnets would otherwise allocate it.
-    last_usable = broadcast_dec(last_ip, protocol)
-
-    generate_ip(first_ip, last_usable, ips_in_use, protocol)
+    # small subnets would otherwise allocate it. The empty allocation that
+    # results when the subnet is too small to shrink further is what the
+    # generator already reports as 'no more IP's left'.
+    case broadcast_dec(last_ip, protocol) do
+      :too_small -> :out_of_ips
+      last_usable -> generate_ip(first_ip, last_usable, ips_in_use, protocol)
+    end
   end
 
-  defp broadcast_dec(ip, "inet") do
-    {a, b, c, d} = ip
-    {a, b, c, d - 1}
+  defp broadcast_dec({a, b, c, d}, "inet") do
+    if {a, b, c, d} == {a, b, c, 0} do
+      # last byte 0 only when the whole address IS the network (a /32):
+      # no broadcast to exclude, and no usable address below the first.
+      :too_small
+    else
+      {a, b, c, d - 1}
+    end
   end
+
+  # IPv6 has no broadcast: the 'last' address is simply unallocatable to
+  # keep the /128-subnet behaviour symmetric with IPv4. The all-zero tuple
+  # (::/128) cannot be decremented.
+  defp broadcast_dec({0, 0, 0, 0, 0, 0, 0, 0}, "inet6"), do: :too_small
 
   defp broadcast_dec(ip, "inet6") do
     List.to_tuple(Enum.reverse(Tuple.to_list(ip)) |> decrement_first_non_zero() |> Enum.reverse())
