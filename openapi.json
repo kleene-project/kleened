@@ -1155,6 +1155,13 @@
       "Network": {
         "description": "Kleene network",
         "properties": {
+          "dns": {
+            "default": true,
+            "description": "Whether the built-in DNS resolver runs on this network.",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
           "gateway": {
             "default": "",
             "description": "The default IPv4 router that is added to `vnet` containers connecting to the network.\nIf `\"\"` no gateway is used.\n",
@@ -1250,6 +1257,13 @@
       "NetworkConfig": {
         "description": "Network configuration",
         "properties": {
+          "dns": {
+            "default": true,
+            "description": "Whether Kleene runs its built-in DNS resolver on the network, making\ncontainer names resolvable as hostnames within it. When disabled, no\nresolver IP is reserved and containers fall back to host DNS.\n",
+            "type": "boolean",
+            "x-struct": null,
+            "x-validate": null
+          },
           "gateway": {
             "default": "",
             "description": "**`bridge` networks only**\n\nThe default (IPv4) router that is added to `vnet` containers connecting to bridged networks.\nIf set to `\"\"` no gateway is used. If set to `\"<auto>\"` the first IP of the subnet is added to `interface` and used as gateway.\n",

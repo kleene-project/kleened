@@ -18,6 +18,8 @@ defmodule Kleened.Core.Application do
     children = [
       Kleened.Core.Config,
       Kleened.Core.MetaData,
+      # Network:init/1 requires the DNS GenServer to be alive
+      Kleened.Core.DNS,
       Kleened.Core.Network,
       Kleened.Core.ImageBulkBuild,
       {Registry, keys: :unique, name: Kleened.Core.ExecInstances},
