@@ -626,9 +626,6 @@ defmodule Kleened.Core.Network do
     case create_pf_config() do
       {:ok, pf_config} ->
         result = load_pf_config(pf_config)
-        # The DNS listeners track the network topology the same way the pf
-        # ruleset does: rebuild after every load. Failures are logged inside
-        # DNS.refresh/0 and never fail the pf configuration.
         DNS.refresh()
         result
 
