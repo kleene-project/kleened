@@ -396,7 +396,7 @@ defmodule Kleened.Core.DNS do
   end
 
   # Add resolver ip alias to the network interface, if it is not already
-  # created as a gateway
+  # created for the gateway
   defp ensure_ip_alias(ip, %Schemas.Network{interface: interface}) do
     if ip_on_interface?(ip, interface) do
       :ok
@@ -427,12 +427,9 @@ defmodule Kleened.Core.DNS do
     end)
   end
 
-  # The resolver IP for a network: the first usable IPv4 address of its
-  # subnet. Only kleened-managed interfaces (loopback/bridge networks) get a
-  # resolver: a custom interface belongs to the operator, and adding aliases
-  # to it (e.g. the host's physical NIC) is not Kleene's to do. Networks
-  # without a subnet or with the resolver disabled get none either. IPv6-only
-  # resolution is not supported in this version.
+  # Resolver IP: the first usable IPv4 address of its subnet. Only loopback/bridge networks
+  # get a resolver: a custom interface should be managed by the operator.
+  # Networks with no subnet or resolver disabled get none either.
   defp resolver_ip(%Schemas.Network{dns: false}), do: nil
   defp resolver_ip(%Schemas.Network{type: "custom"}), do: nil
   defp resolver_ip(%Schemas.Network{subnet: ""}), do: nil
