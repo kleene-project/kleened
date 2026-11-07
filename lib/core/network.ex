@@ -1398,11 +1398,8 @@ defmodule Kleened.Core.Network do
     |> Enum.map(& &1["address"])
   end
 
-  # The last address of a subnet is its broadcast address: never hand it to
-  # a container (with the DNS resolver additionally holding the first IP,
-  # small subnets would otherwise allocate it). Degenerate subnets (/32,
-  # ::/128) where first and last collide come out empty here, which the
-  # caller reports as 'no more IP's left'.
+  # The last address of a subnet is its broadcast address
+  # and the DNS resolver + gateway holds the first IP,
   defp generate_ip(first_ip, last_ip, ips_in_use, protocol) do
     first_ip = ip2int(first_ip, protocol)
     last_ip = broadcast_dec(ip2int(last_ip, protocol))
