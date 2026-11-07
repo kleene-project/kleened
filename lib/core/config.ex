@@ -16,12 +16,10 @@ defmodule Kleened.Core.Config do
     loader_conf = "/boot/loader.conf"
     rc_conf = "/etc/rc.conf"
 
-    ensure_kmod_loaded("zfs", options)
+    ensure_zfs_enabled(rc_conf)
+
     ensure_kmod_loaded("pf", options)
     ensure_kmod_loaded("pflog", options)
-
-    ensure_sysrc_enabled("zfs_load", loader_conf, options)
-    ensure_sysrc_enabled("zfs_enable", rc_conf, options)
 
     ensure_sysrc_enabled("pf_load", loader_conf, options)
     ensure_sysrc_enabled("pf_enable", rc_conf, options)
@@ -109,6 +107,43 @@ defmodule Kleened.Core.Config do
     if MapSet.member?(log_levels, config["log_level"]) do
       log_level = String.to_existing_atom(config["log_level"])
       Logger.configure(level: log_level)
+    end
+  end
+
+  defp ensure_zfs_enabled(rc_conf) do
+    IO.write("Verifying that ZFS is enabled...")
+
+    problems =
+      for {enabled?, problem} <- [
+            {kmod_loaded?("zfs"), "the zfs kernel module is not loaded"},
+            {sysrc_enabled?("zfs_enable", rc_conf),
+             "zfs_enable is not set to \"YES\" in #{rc_conf}"},
+            {zpool_available?(), "no zpool seems to be available on the host"}
+          ],
+          not enabled?,
+          do: problem
+
+    case problems do
+      [] ->
+        IO.puts("OK")
+
+      _ ->
+        IO.puts("error!")
+
+        init_error(
+          "ZFS is not enabled (#{Enum.join(problems, "; ")}). " <>
+            "Kleene requires ZFS and it cannot be enabled automatically: " <>
+            "set zfs_enable=\"YES\" in #{rc_conf} (loads the module at boot), " <>
+            "make sure a zpool exists (see zpool(8)), load the module for the " <>
+            "current boot with 'kldload zfs', and run init again."
+        )
+    end
+  end
+
+  defp zpool_available?() do
+    case System.cmd("/sbin/zpool", ["list", "-H", "-o", "name"], stderr_to_stdout: true) do
+      {_output, 0} -> true
+      _ -> false
     end
   end
 
