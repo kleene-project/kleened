@@ -16,8 +16,6 @@ defmodule Kleened.Core.Config do
     loader_conf = "/boot/loader.conf"
     rc_conf = "/etc/rc.conf"
 
-    # A zpool cannot be created for the user, so ZFS is never auto-configured:
-    # init only verifies that it is enabled and fails otherwise.
     ensure_zfs_enabled(rc_conf)
 
     ensure_kmod_loaded("pf", options)
