@@ -400,15 +400,18 @@ defmodule Kleened.Core.DNS do
   # created for the gateway. A 'File exists' failure means some other
   # component (typically the '<auto>' gateway) already holds the address.
   defp ensure_ip_alias(ip, %Schemas.Network{interface: interface}) do
-    with false <- ip_on_interface?(ip, interface),
-          ip_string <- to_string(:inet.ntoa(ip)),
+    ip_string = to_string(:inet.ntoa(ip))
 
-      :ok <- ensure_not_alias_or_exists(ip_string, interface) do
+    with false <- ip_on_interface?(ip, interface),
+         :ok <- ensure_not_alias_or_exists(ip_string, interface) do
+      :ok
+    else
+      true ->
+        # The address is already on the interface (e.g. added for the gateway)
         :ok
-      else
-        {:error, output} ->
-          {:error, "could not configure resolver IP #{ip_string} on #{interface}: #{output}"}
-      end
+
+      {:error, output} ->
+        {:error, "could not configure resolver IP #{ip_string} on #{interface}: #{output}"}
     end
   end
 
