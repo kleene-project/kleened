@@ -258,6 +258,9 @@ defmodule Kleened.API.Container do
 
         {:error, :is_running} ->
           send_resp(conn, 409, Utils.error_response("you cannot remove a running container"))
+
+        {:error, reason} when is_binary(reason) ->
+          send_resp(conn, 500, Utils.error_response(reason))
       end
     end
   end

@@ -37,7 +37,10 @@ defmodule Kleened.Core.Container do
   end
 
   @spec remove(id_or_name()) ::
-          {:ok, container_id()} | {:error, :not_found} | {:error, :is_running}
+          {:ok, container_id()}
+          | {:error, :not_found}
+          | {:error, :is_running}
+          | {:error, String.t()}
   def remove(id_or_name) do
     cont = MetaData.get_container(id_or_name)
     remove_(cont)
@@ -373,9 +376,17 @@ defmodule Kleened.Core.Container do
         :ok = Mount.remove_mounts(container)
         mountpoint = ZFS.mountpoint(container.dataset)
         FreeBSD.clear_devfs(mountpoint)
-        :ok = MetaData.delete_container(container.id)
-        {_, 0} = Kleened.Core.ZFS.destroy_force(container.dataset)
-        {:ok, container.id}
+
+        case ZFS.destroy_force(container.dataset) do
+          {_output, 0} ->
+            :ok = MetaData.delete_container(container.id)
+            {:ok, container.id}
+
+          {output, _nonzero_exit} ->
+            # Keep the metadata row so a later removal can retry: dropping the
+            # row first would orphan the dataset beyond any API-based cleanup.
+            {:error, "could not destroy container dataset: #{output}"}
+        end
 
       true ->
         {:error, :is_running}

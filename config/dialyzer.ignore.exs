@@ -36,7 +36,7 @@
 ]."},
   {"lib/core/image.ex", "The pattern can never match the type :error | {:error, binary()}."},
   {"lib/api/container.ex",
-   "The pattern can never match the type {:error, :is_running | :not_found}."},
+   "The pattern can never match the type {:error, :is_running | :not_found | <<_::64, _::size(8)>>}."},
   {"lib/api/container.ex",
    "The pattern can never match the type {:error, <<_::64, _::size(8)>>}."},
   {"lib/api/container.ex",

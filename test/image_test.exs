@@ -927,6 +927,28 @@ defmodule ImageTest do
               }}
   end
 
+  # The zfs-clone method snapshots the source dataset; that origin snapshot
+  # must be marked deferred so it is reclaimed when the image (its only clone)
+  # is removed. Otherwise one snapshot leaks on the source dataset per run.
+  test "creating a base image with 'zfs-clone' does not leak its origin snapshot" do
+    source = "zroot/kleene_basejail"
+    config = %{method: "zfs-clone", zfs_dataset: source, tag: "zfsclone:leakprobe"}
+
+    frames = TestHelper.image_create(config)
+    assert {1000, %Message{data: _image_id}} = List.last(frames)
+
+    image = MetaData.get_image("zfsclone:leakprobe")
+    origin_snapshot = "#{source}@#{image.id}"
+
+    # The origin is marked deferred: it outlives only while the clone exists.
+    {defer, 0} = ZFS.cmd("get -H -o value defer_destroy #{origin_snapshot}")
+    assert String.trim(defer) == "on"
+
+    :ok = Kleened.Core.Image.remove(image.id)
+
+    assert Kleened.Core.ZFS.exists?(origin_snapshot) == false
+  end
+
   test "that the default CMD, when using a base image as parent, is ['/bin/sh', '/etc/rc']" do
     dockerfile = """
     FROM FreeBSD:testing
