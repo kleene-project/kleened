@@ -365,7 +365,7 @@ defmodule Kleened.Core.DNS do
             sockets
 
           false ->
-            with :ok <- ensure_alias(ip, network) do
+            with :ok <- ensure_ip_alias(ip, network) do
               open_socket(network_id, ip, sockets)
             else
               {:error, reason} ->
@@ -395,12 +395,9 @@ defmodule Kleened.Core.DNS do
     end
   end
 
-  # The resolver IP must exist as an address on the network's interface
-  # before a socket can bind it. On networks with an '<auto>' gateway the
-  # alias is already there (same IP, correct subnet mask); re-adding it with
-  # a /32 mask would create a duplicate alias with a different netmask, so
-  # the interface is queried first and the alias only added when missing.
-  defp ensure_alias(ip, %Schemas.Network{interface: interface}) do
+  # Add resolver ip alias to the network interface, if it is not already
+  # created as a gateway
+  defp ensure_ip_alias(ip, %Schemas.Network{interface: interface}) do
     if ip_on_interface?(ip, interface) do
       :ok
     else
