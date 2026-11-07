@@ -143,7 +143,7 @@ defmodule ExecTest do
     {:ok, _stream_ref, conn} =
       TestHelper.exec_start(exec_id, %{attach: true, start_container: false})
 
-    assert number_of_jailed_processes(container_id) == 2
+    assert eventually_number_of_jailed_processes?(container_id, 2)
 
     assert %{id: exec_id} ==
              TestHelper.exec_stop(api_spec, exec_id, %{stop_container: false, force_stop: true})
@@ -153,7 +153,7 @@ defmodule ExecTest do
 
     assert [error_msg] == TestHelper.receive_frames(conn)
 
-    assert number_of_jailed_processes(container_id) == 1
+    assert eventually_number_of_jailed_processes?(container_id, 1)
 
     assert Utils.is_container_running?(container_id)
 
@@ -379,6 +379,22 @@ defmodule ExecTest do
 
       {_, _nonzero} ->
         0
+    end
+  end
+
+  # The jail process table lags both exec-start (the new process must appear)
+  # and exec-stop (the killed process must vanish), so poll instead of
+  # asserting on an immediate count.
+  defp eventually_number_of_jailed_processes?(container_id, expected, attempts \\ 50)
+
+  defp eventually_number_of_jailed_processes?(_container_id, _expected, 0), do: false
+
+  defp eventually_number_of_jailed_processes?(container_id, expected, attempts) do
+    if number_of_jailed_processes(container_id) == expected do
+      true
+    else
+      Process.sleep(100)
+      eventually_number_of_jailed_processes?(container_id, expected, attempts - 1)
     end
   end
 end

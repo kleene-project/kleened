@@ -1,5 +1,5 @@
 defmodule Kleened.Core.Exec do
-  alias Kleened.Core.{Container, Jail, Network, MetaData, OS, FreeBSD, ZFS, Utils, ExecInstances, Mount}
+  alias Kleened.Core.{Container, DNS, Jail, Network, MetaData, OS, FreeBSD, ZFS, Utils, ExecInstances, Mount}
   alias Utils.CIDR
   alias Kleened.API.Schemas
 
@@ -369,6 +369,7 @@ defmodule Kleened.Core.Exec do
     Logger.info("Starting container #{id}")
     setup_mounts(container, state)
     setup_networking(container, state)
+    DNS.configure_dns_files(container)
     network_config = create_networking_jail_params(container)
     path = ZFS.mountpoint(dataset)
 

@@ -1,6 +1,6 @@
 defmodule Kleened.Core.Network do
   use GenServer
-  alias Kleened.Core.{Config, Container, Utils, MetaData, OS, FreeBSD}
+  alias Kleened.Core.{Config, Container, DNS, Utils, MetaData, OS, FreeBSD}
   alias Utils.CIDR
   alias Kleened.API.Schemas
   require Logger
@@ -625,7 +625,9 @@ defmodule Kleened.Core.Network do
   def configure_pf() do
     case create_pf_config() do
       {:ok, pf_config} ->
-        load_pf_config(pf_config)
+        result = load_pf_config(pf_config)
+        DNS.refresh()
+        result
 
       {:error, msg} ->
         {:error, msg}
@@ -1396,9 +1398,11 @@ defmodule Kleened.Core.Network do
     |> Enum.map(& &1["address"])
   end
 
+  # The last address of a subnet is its broadcast address
+  # and the DNS resolver + gateway holds the first IP,
   defp generate_ip(first_ip, last_ip, ips_in_use, protocol) do
     first_ip = ip2int(first_ip, protocol)
-    last_ip = ip2int(last_ip, protocol)
+    last_ip = broadcast_dec(ip2int(last_ip, protocol))
     ips_in_use = MapSet.new(Enum.map(ips_in_use, &ip2int(&1, protocol)))
     next_ip = first_ip
 
@@ -1410,6 +1414,13 @@ defmodule Kleened.Core.Network do
         int2ip(ip_int, protocol)
     end
   end
+
+  # Decrement an address-as-integer so it never goes below zero: the
+  # all-zero address (a ::/128 subnet) is simply kept, and first > last then
+  # exhausts the range in the generator.
+  defp broadcast_dec(0), do: 0
+
+  defp broadcast_dec(ip_int), do: ip_int - 1
 
   defp next_unused_int_ip(_first_ip, last_ip, next_ip, _ips_in_use) when next_ip > last_ip do
     :out_of_ips
