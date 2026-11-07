@@ -108,7 +108,6 @@ defmodule NetworkTest do
     {container_id_vnet, _, addresses} =
       netstat_in_container(%{network: network.name, network_driver: "vnet"})
 
-    # .3: the resolver holds .1 and the ipnet container above holds .2
     assert [%{"address" => "172.19.2.3", "network" => "172.19.2.0/24"}] =
              filter_by_interface(addresses, "epair0b")
 
@@ -355,8 +354,6 @@ defmodule NetworkTest do
   end
 
   test "exhaust all ips in a network" do
-    # The DNS resolver holds the first IP of the /30's two usable addresses,
-    # leaving exactly one for a container.
     create_network(%{name: "smallnet", subnet: "172.19.0.0/30", type: "loopback"})
 
     config = %{cmd: ["/bin/ls"], network: "smallnet", network_driver: "ipnet"}
@@ -560,7 +557,6 @@ defmodule NetworkTest do
       })
 
     assert [
-             # .3: the resolver holds .1 and the ipnet container above holds .2
              %{"address" => "172.19.1.3", "network" => "172.19.1.0/24"},
              %{"address" => "fdef:1234:5678::2", "network" => "fdef:1234:5678::/48"},
              %{"network" => "fe80::%epair0b/64"}

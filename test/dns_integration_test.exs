@@ -56,57 +56,20 @@ defmodule DnsIntegrationTest do
   end
 
   test "a started container gets the resolver in resolv.conf and itself in /etc/hosts" do
-    api_spec = Kleened.API.Spec.spec()
-
-    %{id: web_id} =
-      TestHelper.container_create(%{
+    # The DNS files are written before the jail starts, so the container's
+    # own command can dump them as its output.
+    {_id, _closing, output} =
+      TestHelper.container_valid_run(%{
         name: "dnstest-files",
-        cmd: ["/bin/sleep", "60"],
+        cmd: ["/bin/sh", "-c", "cat /etc/resolv.conf /etc/hosts"],
         network: "dnsnet",
-        network_driver: "ipnet",
-        attach: false
+        network_driver: "ipnet"
       })
 
-    {:ok, exec_id} = Kleened.Core.Exec.create(web_id)
-    :ok = Kleened.Core.Exec.start(exec_id, %{attach: false, start_container: true})
-    :timer.sleep(1_000)
-
-    files_out = read_files_in_container(web_id)
+    files_out = Enum.join(output, "")
     assert files_out =~ "nameserver 10.200.0.1"
     assert files_out =~ "search dnsnet"
     assert files_out =~ "10.200.0.2  dnstest-files"
-
-    TestHelper.container_stop(api_spec, web_id)
-    TestHelper.container_remove(api_spec, web_id)
-  end
-
-  # Read the file contents by running cat in the running container.
-  defp read_files_in_container(container_id) do
-    {:ok, exec_id} =
-      Kleened.Core.Exec.create(%Schemas.ExecConfig{
-        container_id: container_id,
-        cmd: ["/bin/sh", "-c", "cat /etc/resolv.conf /etc/hosts"],
-        env: [],
-        user: "root"
-      })
-
-    :ok = Kleened.Core.Exec.start(exec_id, %{attach: true, start_container: false})
-
-    output =
-      receive do
-        {:container, ^exec_id, {:jail_output, data}} -> data
-      after
-        5_000 -> "EXEC TIMEOUT"
-      end
-
-    # Drain the shutdown message so the exec GenServer terminates cleanly.
-    receive do
-      {:container, ^exec_id, {:shutdown, _}} -> :ok
-    after
-      5_000 -> :ok
-    end
-
-    output
   end
 
   test "a network with dns disabled gets no resolver and no resolv.conf injection" do
