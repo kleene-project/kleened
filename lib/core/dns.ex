@@ -5,9 +5,6 @@ defmodule Kleened.Core.DNS do
   Answers A/AAAA queries for container names from MetaData and forwards
   everything else to the host's upstream nameservers. One UDP:53 socket per
   network, bound to the network's resolver IP (the first IP of its subnet).
-
-  All host-side jail/tooling addressing keeps using the container id; this
-  resolver is only about *name resolution* between containers.
   """
 
   alias Kleened.API.Schemas
@@ -357,28 +354,32 @@ defmodule Kleened.Core.DNS do
 
     sockets =
       Enum.reduce(wanted, sockets, fn {network_id, {ip, network}}, sockets ->
-        already_open =
-          Enum.any?(sockets, fn {_socket, open_id} -> open_id == network_id end)
-
-        case already_open do
-          true ->
-            sockets
-
-          false ->
-            with :ok <- ensure_ip_alias(ip, network) do
-              open_socket(network_id, ip, sockets)
-            else
-              {:error, reason} ->
-                Logger.warning(
-                  "could not configure DNS resolver address for network #{network_id}: #{inspect(reason)}"
-                )
-
-                sockets
-            end
+        if socket_open?(sockets, network_id) do
+          sockets
+        else
+          open_network_socket(network_id, ip, network, sockets)
         end
       end)
 
     %State{state | sockets: sockets}
+  end
+
+  defp socket_open?(sockets, network_id) do
+    Enum.any?(sockets, fn {_socket, open_id} -> open_id == network_id end)
+  end
+
+  defp open_network_socket(network_id, ip, network, sockets) do
+    case ensure_ip_alias(ip, network) do
+      :ok ->
+        open_socket(network_id, ip, sockets)
+
+      {:error, reason} ->
+        Logger.warning(
+          "could not configure DNS resolver address for network #{network_id}: #{inspect(reason)}"
+        )
+
+        sockets
+    end
   end
 
   defp open_socket(network_id, ip, sockets) do
@@ -396,23 +397,27 @@ defmodule Kleened.Core.DNS do
   end
 
   # Add resolver ip alias to the network interface, if it is not already
-  # created for the gateway
+  # created for the gateway. A 'File exists' failure means some other
+  # component (typically the '<auto>' gateway) already holds the address.
   defp ensure_ip_alias(ip, %Schemas.Network{interface: interface}) do
     if ip_on_interface?(ip, interface) do
       :ok
     else
-      case :inet.ntoa(ip) do
-        {:error, reason} ->
-          {:error, "could not format resolver IP #{inspect(ip)}: #{inspect(reason)}"}
+      ip_string = to_string(:inet.ntoa(ip))
 
-        ip_string ->
-          ip_string = to_string(ip_string)
-
-          case FreeBSD.ifconfig_alias(ip_string, interface, "inet") do
-            :ok -> :ok
-            {:error, output} -> if String.contains?(output, "File exists"), do: :ok, else: {:error, output}
-          end
+      with :ok <- ensure_not_alias_or_exists(ip_string, interface) do
+        :ok
+      else
+        {:error, output} ->
+          {:error, "could not configure resolver IP #{ip_string} on #{interface}: #{output}"}
       end
+    end
+  end
+
+  defp ensure_not_alias_or_exists(ip_string, interface) do
+    case FreeBSD.ifconfig_alias(ip_string, interface, "inet") do
+      :ok -> :ok
+      {:error, output} -> if String.contains?(output, "File exists"), do: :ok, else: {:error, output}
     end
   end
 
