@@ -1354,39 +1354,8 @@ defmodule Kleened.Core.Network do
 
     %CIDR{:last => last_ip} = CIDR.parse(subnet)
     first_ip = first_ip_address(subnet, protocol)
-
-    # The last address of a subnet is its broadcast address: never hand it to
-    # a container. With the DNS resolver additionally holding the first IP,
-    # small subnets would otherwise allocate it. The empty allocation that
-    # results when the subnet is too small to shrink further is what the
-    # generator already reports as 'no more IP's left'.
-    case broadcast_dec(last_ip, protocol) do
-      :too_small -> :out_of_ips
-      last_usable -> generate_ip(first_ip, last_usable, ips_in_use, protocol)
-    end
+    generate_ip(first_ip, last_ip, ips_in_use, protocol)
   end
-
-  defp broadcast_dec({a, b, c, d}, "inet") do
-    if {a, b, c, d} == {a, b, c, 0} do
-      # last byte 0 only when the whole address IS the network (a /32):
-      # no broadcast to exclude, and no usable address below the first.
-      :too_small
-    else
-      {a, b, c, d - 1}
-    end
-  end
-
-  # IPv6 has no broadcast: the 'last' address is simply unallocatable to
-  # keep the /128-subnet behaviour symmetric with IPv4. The all-zero tuple
-  # (::/128) cannot be decremented.
-  defp broadcast_dec({0, 0, 0, 0, 0, 0, 0, 0}, "inet6"), do: :too_small
-
-  defp broadcast_dec(ip, "inet6") do
-    List.to_tuple(Enum.reverse(Tuple.to_list(ip)) |> decrement_first_non_zero() |> Enum.reverse())
-  end
-
-  defp decrement_first_non_zero([h | t]) when h > 0, do: [h - 1 | t]
-  defp decrement_first_non_zero([0 | t]), do: [0 | decrement_first_non_zero(t)]
 
   @spec first_ip_address(String.t(), protocol()) :: String.t()
   def first_ip_address(subnet, protocol) do
@@ -1429,9 +1398,14 @@ defmodule Kleened.Core.Network do
     |> Enum.map(& &1["address"])
   end
 
+  # The last address of a subnet is its broadcast address: never hand it to
+  # a container (with the DNS resolver additionally holding the first IP,
+  # small subnets would otherwise allocate it). Degenerate subnets (/32,
+  # ::/128) where first and last collide come out empty here, which the
+  # caller reports as 'no more IP's left'.
   defp generate_ip(first_ip, last_ip, ips_in_use, protocol) do
     first_ip = ip2int(first_ip, protocol)
-    last_ip = ip2int(last_ip, protocol)
+    last_ip = broadcast_dec(ip2int(last_ip, protocol))
     ips_in_use = MapSet.new(Enum.map(ips_in_use, &ip2int(&1, protocol)))
     next_ip = first_ip
 
@@ -1443,6 +1417,13 @@ defmodule Kleened.Core.Network do
         int2ip(ip_int, protocol)
     end
   end
+
+  # Decrement an address-as-integer so it never goes below zero: the
+  # all-zero address (a ::/128 subnet) is simply kept, and first > last then
+  # exhausts the range in the generator.
+  defp broadcast_dec(0), do: 0
+
+  defp broadcast_dec(ip_int), do: ip_int - 1
 
   defp next_unused_int_ip(_first_ip, last_ip, next_ip, _ips_in_use) when next_ip > last_ip do
     :out_of_ips
