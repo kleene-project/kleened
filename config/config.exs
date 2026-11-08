@@ -1,10 +1,6 @@
 import Config
-require Logger
 
-# NOTE The Logger-configuration uses and old format (Elixir 1.14.5).
-# Should be updated with Elixir 1.15.x or 1.16.x when the port is updated.
-
-config :logger, :console,
+config :logger, :default_formatter,
   format: "$time [$level] $metadata:$message\n",
   metadata: [:pid, :file]
 
@@ -18,9 +14,7 @@ config :kleened, :logger, [
        max_no_bytes: 10_000_000,
        max_no_files: 5,
        compress_on_rotate: false
-     },
-     format: "$time $file [$level] $metadata:$message\n",
-     metadata: [:pid, :file]
+     }
    }}
 ]
 
