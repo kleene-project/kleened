@@ -1,6 +1,19 @@
 defmodule Kleened.Test.Utils do
   import ExUnit.Assertions
-  alias Kleened.Core.{Config, MetaData, Container, Image, ImageCreate, Network, OS, Volume, ZFS}
+
+  alias Kleened.Core.{
+    Config,
+    MetaData,
+    Container,
+    Image,
+    ImageCreate,
+    Network,
+    OS,
+    Volume,
+    ZFS,
+    FreeBSD
+  }
+
   alias Kleened.API.Schemas
   require Logger
 
@@ -46,31 +59,157 @@ defmodule Kleened.Test.Utils do
   Lives here rather than in `TestHelper` so that `Kleened.Test.ConnCase` -- which
   is compiled, unlike `test_helper.exs` -- can call it without a compile-time
   warning about an undefined module.
+
+  Beyond the metadata-driven removal, a general host-cleanup is performed:
+  orphan datasets (created by a crashed run), leaked `kleene*`-interfaces,
+  devfs/nullfs mounts under `kleene_root` and deferred snapshots on the basejail
+  dataset are all removed.
   """
   def cleanup() do
-    runnning_containers = Container.list(all: false)
-
-    case length(runnning_containers) do
-      0 ->
-        :ok
-
-      _ ->
-        runnning_containers |> Enum.map(fn %{id: id} -> Container.stop(id) end)
-
-        :timer.sleep(500)
-    end
-
+    stop_all_containers()
     MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
 
+    sweep_orphan_datasets()
+
     MetaData.list_volumes() |> Enum.map(&Volume.remove(&1.name))
-
-    MetaData.list_networks() |> Enum.map(fn %{id: id} -> Network.remove(id) end)
-
+    MetaData.list_networks() |> Enum.map(&Network.remove(&1.id))
     MetaData.list_images()
     |> Enum.filter(fn image ->
       not (image.name == "FreeBSD" and image.tag == "testing")
     end)
     |> Enum.map(fn image -> Image.remove(image.id) end)
+
+    sweep_basejail_snapshots()
+    sweep_leaked_interfaces()
+    sweep_leaked_mounts()
+    :ok
+  end
+
+  defp stop_all_containers() do
+    case Container.list(all: false) do
+      [] ->
+        :ok
+
+      running_containers ->
+        running_containers |> Enum.map(fn %{id: id} -> Container.stop(id) end)
+        wait_for_containers_to_stop(50)
+    end
+  end
+
+  # Jail teardown lags the synchronous stop response; poll actual liveness
+  # instead of a fixed sleep, so a slow teardown no longer leaks the container
+  # into the next test.
+  defp wait_for_containers_to_stop(0) do
+    :ok
+  end
+
+  defp wait_for_containers_to_stop(attempts_left) do
+    case Container.list(all: false) do
+      [] ->
+        :ok
+
+      running ->
+        running |> Enum.map(fn %{id: id} -> Container.stop(id) end)
+        :timer.sleep(100)
+        wait_for_containers_to_stop(attempts_left - 1)
+    end
+  end
+
+  defp sweep_orphan_datasets() do
+    container_root = Config.get("container_root")
+    image_root = Config.get("image_root")
+    volume_root = Config.get("volume_root")
+
+    known_datasets =
+      (MetaData.list_containers() |> Enum.map(& &1.dataset)) ++
+        (MetaData.list_image_datasets() |> Enum.map(& &1.dataset)) ++
+        (MetaData.list_volumes() |> Enum.map(& &1.dataset))
+
+    orphans =
+      [container_root, image_root, volume_root]
+      |> Enum.flat_map(&child_datasets/1)
+      |> Enum.reject(&(&1 in known_datasets))
+
+    Enum.map(orphans, fn dataset ->
+      Logger.info("cleaning up orphan dataset #{dataset}")
+      ZFS.destroy_force(dataset)
+    end)
+  end
+
+  defp child_datasets(root) do
+    {output, 0} = ZFS.cmd("list -H -r -o name #{root}")
+    output |> String.split("\n") |> Enum.reject(&(&1 == "" or &1 == root))
+  end
+
+  # zfs-clone image creation snapshots the source dataset. With the origin
+  # snapshot marked deferred the snapshot dies with its image, but snapshots
+  # from runs predating that (or whose clone was force-destroyed) linger.
+  # Anything on the basejail dataset without a live clone is garbage: the only
+  # legitimate clone is a known image dataset, e.g. FreeBSD:testing.
+  defp sweep_basejail_snapshots() do
+    dataset = "zroot/kleene_basejail"
+
+    if ZFS.exists?(dataset) do
+      {output, 0} = ZFS.cmd("list -t snapshot -H -o name,clones -d 1 #{dataset}")
+
+      snapshots =
+        output
+        |> String.split("\n")
+        |> Enum.reject(&(&1 == ""))
+        |> Enum.map(&String.split(&1, "\t"))
+        |> Enum.filter(fn [_name, clones] -> clones == "-" end)
+        |> Enum.map(fn [snapshot, _clones] ->
+          String.replace_prefix(snapshot, "#{dataset}@", "")
+        end)
+
+      case snapshots do
+        [] ->
+          :ok
+
+        _ ->
+          Logger.info("cleaning up #{length(snapshots)} basejail snapshots")
+
+          snapshots
+          |> Enum.chunk_every(500)
+          |> Enum.map(fn chunk ->
+            snaps = Enum.join(chunk, ",")
+            ZFS.cmd("destroy -d #{dataset}@#{snaps}", %{suppress_warning: true})
+          end)
+      end
+    end
+  end
+
+  # Kleene interfaces are all named 'kleene<id>' (see Network's naming); any
+  # such interface without a network row is residue from a crashed remove.
+  defp sweep_leaked_interfaces() do
+    known = MetaData.list_networks() |> Enum.map(& &1.interface) |> MapSet.new()
+
+    {output, 0} = OS.cmd(~w"ifconfig -l")
+    interface_list = output |> String.trim() |> String.split(" ")
+
+    interface_list
+    |> Enum.filter(&String.starts_with?(&1, "kleene"))
+    |> Enum.reject(&(&1 in known))
+    |> Enum.map(fn interface ->
+      Logger.info("cleaning up leaked interface #{interface}")
+      Network.destroy_interface(interface)
+    end)
+  end
+
+  # devfs and nullfs mounts under kleene_root are left behind when a jail dies
+  # without 'jail -r' teardown. ZFS mounts of the datasets themselves must be
+  # left alone, hence the fstype filter and the trailing-slash prefix.
+  defp sweep_leaked_mounts() do
+    kleene_root = Config.get("kleene_root") <> "/"
+
+    FreeBSD.mounts()
+    |> Enum.filter(fn %{"node" => node, "fstype" => fstype} ->
+      (fstype == "devfs" or fstype == "nullfs") and String.starts_with?(node, kleene_root)
+    end)
+    |> Enum.map(fn %{"node" => node} ->
+      Logger.info("cleaning up leaked mount #{node}")
+      OS.cmd(["/sbin/umount", "-f", node])
+    end)
   end
 
   @doc """

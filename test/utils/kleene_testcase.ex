@@ -29,8 +29,8 @@ defmodule Kleened.Test.ConnCase do
     # Added to the context to validate responses with assert_schema/3
     api_spec = Kleened.API.Spec.spec()
 
-    state = Kleened.Test.Utils.get_host_state()
     Kleened.Test.Utils.cleanup()
+    state = Kleened.Test.Utils.get_host_state()
 
     on_exit(fn ->
       ExUnit.CaptureLog.capture_log(fn ->
