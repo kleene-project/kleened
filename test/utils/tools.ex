@@ -60,24 +60,19 @@ defmodule Kleened.Test.Utils do
   is compiled, unlike `test_helper.exs` -- can call it without a compile-time
   warning about an undefined module.
 
-  Beyond the metadata-driven removal, the sweep is *convergent*: orphan datasets
-  (created by a crashed run and no longer known to MetaData), leaked
-  `kleene*`-interfaces, devfs/nullfs mounts under `kleene_root` and deferred
-  snapshots on the basejail dataset are all reclaimed, so a failed run cannot
-  poison the next one.
+  Beyond the metadata-driven removal, a general host-cleanup is performed:
+  orphan datasets (created by a crashed run), leaked `kleene*`-interfaces,
+  devfs/nullfs mounts under `kleene_root` and deferred snapshots on the basejail
+  dataset are all removed.
   """
   def cleanup() do
     stop_all_containers()
     MetaData.list_containers() |> Enum.map(fn %{id: id} -> Container.remove(id) end)
 
-    # Orphan container datasets pin image datasets as clone origins; destroy
-    # them before removing images so a single pass converges.
     sweep_orphan_datasets()
 
     MetaData.list_volumes() |> Enum.map(&Volume.remove(&1.name))
-
-    MetaData.list_networks() |> Enum.map(fn %{id: id} -> Network.remove(id) end)
-
+    MetaData.list_networks() |> Enum.map(&Network.remove(&1.id))
     MetaData.list_images()
     |> Enum.filter(fn image ->
       not (image.name == "FreeBSD" and image.tag == "testing")
@@ -120,9 +115,6 @@ defmodule Kleened.Test.Utils do
     end
   end
 
-  # Datasets under kleene_root with no metadata row: residue from a crashed
-  # create/remove. They keep image datasets pinned (clone origins), so they must
-  # go before the image sweep can converge.
   defp sweep_orphan_datasets() do
     container_root = Config.get("container_root")
     image_root = Config.get("image_root")
@@ -177,9 +169,6 @@ defmodule Kleened.Test.Utils do
         _ ->
           Logger.info("cleaning up #{length(snapshots)} basejail snapshots")
 
-          # 'zfs destroy -d dataset@<snap>[,<snap>...]': one process for the
-          # whole backlog, chunked to stay clear of ARG_MAX. '-d' keeps the
-          # operation safe for snapshots whose clone appeared after listing.
           snapshots
           |> Enum.chunk_every(500)
           |> Enum.map(fn chunk ->

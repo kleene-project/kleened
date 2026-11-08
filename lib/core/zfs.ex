@@ -28,8 +28,7 @@ defmodule Kleened.Core.ZFS do
 
   @spec destroy_deferred(snapshot()) :: OS.cmd_result()
   def destroy_deferred(snapshot) do
-    # zfs destroy [-dnpRrv] snapshot[%snapname][,...]
-    # '-d' defers the destruction until the last clone is gone; a snapshot
+    # defers the destruction until the last clone is gone; a snapshot
     # without clones is destroyed immediately.
     cmd("destroy -d #{snapshot}")
   end

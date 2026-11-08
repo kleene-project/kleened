@@ -29,9 +29,6 @@ defmodule Kleened.Test.ConnCase do
     # Added to the context to validate responses with assert_schema/3
     api_spec = Kleened.API.Spec.spec()
 
-    # Heal first, snapshot second: against a dirty host (leftover state from a
-    # crashed run), the pre-test cleanup must converge before the baseline is
-    # taken, or the very first test fails on residue it did not create.
     Kleened.Test.Utils.cleanup()
     state = Kleened.Test.Utils.get_host_state()
 

@@ -317,9 +317,7 @@ defmodule Kleened.Core.ImageCreate do
     send_msg(receiver, {:info, "cloning dataset...\n"})
     clone_zfs_dataset(snapshot_parent, image_dataset, receiver)
 
-    # The clone keeps the origin snapshot alive; mark it deferred so it is
-    # reclaimed together with the image instead of accumulating on the
-    # source dataset.
+    # defers the destruction until the last clone is gone
     ZFS.destroy_deferred(snapshot_parent)
 
     # Wrap up

@@ -383,8 +383,6 @@ defmodule Kleened.Core.Container do
             {:ok, container.id}
 
           {output, _nonzero_exit} ->
-            # Keep the metadata row so a later removal can retry: dropping the
-            # row first would orphan the dataset beyond any API-based cleanup.
             {:error, "could not destroy container dataset: #{output}"}
         end
 
